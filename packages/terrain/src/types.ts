@@ -64,6 +64,26 @@ export interface District {
   area: number
 }
 
+/** A sample along a road centreline, in world units. */
+export interface RoadPoint {
+  x: number
+  y: number
+  z: number
+}
+
+/**
+ * A carriageway. Highways form closed loops through every city; later phases
+ * add open arterials and streets. `structure` holds one `ROAD_*` code per
+ * segment: segment `i` runs from `points[i]` to the next point, wrapping for a
+ * closed road, so it is one shorter than `points` when open.
+ */
+export interface Road {
+  id: number
+  closed: boolean
+  points: RoadPoint[]
+  structure: Uint8Array
+}
+
 export interface TerrainOptions {
   size?: number
   cellSize?: number
@@ -96,4 +116,5 @@ export interface TerrainMap {
   districts: District[]
   /** Row-major district code (`DISTRICT_*`) for every cell. */
   districtOf: Uint8Array
+  roads: Road[]
 }

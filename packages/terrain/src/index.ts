@@ -12,8 +12,16 @@ export {
   type DistrictMap,
 } from './districts.ts'
 export { computeFlowRouting, findLakes, type FlowRouting } from './flow.ts'
-export { generateTerrain } from './generate.ts'
+export { WORLD_SCALE, generateTerrain } from './generate.ts'
 export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
+export {
+  MAX_ROAD_GRADE,
+  ROAD_BRIDGE,
+  ROAD_GRADE,
+  ROAD_TUNNEL,
+  ROAD_WIDTH,
+  generateRoads,
+} from './roads.ts'
 export {
   orientedTriangle,
   signedDistanceToTriangle,
@@ -28,6 +36,8 @@ export type {
   Mountain,
   River,
   RiverPoint,
+  Road,
+  RoadPoint,
   TerrainMap,
   TerrainOptions,
 } from './types.ts'
