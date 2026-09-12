@@ -15,12 +15,20 @@ const MAX_GRADE = 0.08
 const COAST_MARGIN = 1.5
 /** Cities to place, when the island has room for them. */
 const CITY_COUNT = 3
-const CITY_RADIUS = { min: 16, max: 26 } as const
-const SUBURB_WIDTH = { min: 12, max: 20 } as const
+const CITY_RADIUS = { min: 22, max: 34 } as const
+const SUBURB_WIDTH = { min: 16, max: 26 } as const
 /** A candidate needs this much level ground around it to become a city. */
 const MIN_LEVEL_FRACTION = 0.4
 /** Cities keep at least this much space between their centres. */
-const MIN_CITY_SPACING = 120
+const MIN_CITY_SPACING = 160
+/** A city triangle may have each corner off a perfect equilateral by this much. */
+const MAX_ANGLE_DEVIATION = 20
+/** Candidate sites are thinned onto this coarse grid before the triangle search. */
+const SITE_GRID = 96
+/** Most sites considered when searching for the city triangle. */
+const MAX_SITES = 64
+/** Fraction of the full spacing allowed when backfilling the remaining cities. */
+const FILL_SPACING_FRACTION = 0.6
 const DISTRICT_SALT = 0x5d15
 
 /** Greatest height change from a cell to its four neighbours, scaled to world units. */
@@ -78,46 +86,104 @@ function boxBlur(source: Float32Array, width: number, depth: number, radius: num
   return result
 }
 
-/** Fraction of the disc that is buildable land, used to size up a city site. */
-function levelFraction(
-  field: Heightfield,
-  buildable: Uint8Array,
-  col: number,
-  row: number,
-  radius: number,
-): number {
-  const cellRadius = Math.ceil(radius / field.cellSize)
-  const minCol = Math.max(col - cellRadius, 0)
-  const maxCol = Math.min(col + cellRadius, field.width - 1)
-  const minRow = Math.max(row - cellRadius, 0)
-  const maxRow = Math.min(row + cellRadius, field.depth - 1)
-  const radiusSq = (radius / field.cellSize) ** 2
-
-  let level = 0
-  let total = 0
-  for (let r = minRow; r <= maxRow; r++) {
-    for (let c = minCol; c <= maxCol; c++) {
-      const dc = c - col
-      const dr = r - row
-      if (dc * dc + dr * dr > radiusSq) continue
-      total++
-      if (buildable[r * field.width + c]) level++
-    }
-  }
-
-  return total === 0 ? 0 : level / total
-}
-
 export interface DistrictMap {
   districts: District[]
   /** Row-major district code (`DISTRICT_*`) for every cell. */
   districtOf: Uint8Array
 }
 
+interface Point {
+  x: number
+  z: number
+}
+
+/** World-space centre of a cell. */
+function cellCenter(cell: number, width: number, cellSize: number): Point {
+  return { x: ((cell % width) + 0.5) * cellSize, z: (((cell / width) | 0) + 0.5) * cellSize }
+}
+
 /**
- * Split the island into cities, suburbs and country. A city sits in the
- * gentlest ground it can find; its suburbs surround it, and everything on
- * ground too steep to build on stays country. Placement is deterministic.
+ * Thin the candidate cells onto a coarse grid, keeping the flattest cell in
+ * each square. This gives the triangle search a handful of sites spread over
+ * the whole island instead of a cluster from one flat patch.
+ */
+function representativeSites(candidates: number[], width: number, cellSize: number): number[] {
+  const grid = Math.max(1, Math.round(SITE_GRID / cellSize))
+  const columns = Math.ceil(width / grid)
+  const seen = new Set<number>()
+  const sites: number[] = []
+  for (const cell of candidates) {
+    const gx = ((cell % width) / grid) | 0
+    const gz = (((cell / width) | 0) / grid) | 0
+    const key = gz * columns + gx
+    if (seen.has(key)) continue
+    seen.add(key)
+    sites.push(cell)
+    if (sites.length >= MAX_SITES) break
+  }
+  return sites
+}
+
+/** Interior angles of a triangle with the given side lengths, in degrees. */
+function triangleAngles(a: number, b: number, c: number): [number, number, number] {
+  const angle = (opposite: number, x: number, y: number): number =>
+    (Math.acos(Math.min(Math.max((x * x + y * y - opposite * opposite) / (2 * x * y), -1), 1)) * 180) / Math.PI
+  return [angle(a, b, c), angle(b, c, a), angle(c, a, b)]
+}
+
+/**
+ * Score a candidate city triangle: the summed roominess of its corners, or
+ * `-Infinity` when it is too small or not roughly equilateral.
+ */
+function triangleScore(
+  points: [Point, Point, Point],
+  cells: [number, number, number],
+  level: Float32Array,
+): number {
+  const [a, b, c] = points
+  const ab = Math.hypot(a.x - b.x, a.z - b.z)
+  const bc = Math.hypot(b.x - c.x, b.z - c.z)
+  const ca = Math.hypot(c.x - a.x, c.z - a.z)
+  if (Math.min(ab, bc, ca) < MIN_CITY_SPACING) return -Infinity
+  const deviation = Math.max(...triangleAngles(bc, ca, ab).map((angle) => Math.abs(angle - 60)))
+  if (deviation > MAX_ANGLE_DEVIATION) return -Infinity
+  return level[cells[0]]! + level[cells[1]]! + level[cells[2]]!
+}
+
+/** The roomiest roughly-equilateral triangle of sites, or `null` if none fits. */
+function bestTriangle(
+  sites: number[],
+  level: Float32Array,
+  width: number,
+  cellSize: number,
+): number[] | null {
+  if (sites.length < 3) return null
+  const points = sites.map((cell) => cellCenter(cell, width, cellSize))
+  let best: [number, number, number] | null = null
+  let bestScore = -Infinity
+  for (let i = 0; i < sites.length; i++) {
+    for (let j = i + 1; j < sites.length; j++) {
+      for (let k = j + 1; k < sites.length; k++) {
+        const score = triangleScore(
+          [points[i]!, points[j]!, points[k]!],
+          [sites[i]!, sites[j]!, sites[k]!],
+          level,
+        )
+        if (score > bestScore) {
+          bestScore = score
+          best = [sites[i]!, sites[j]!, sites[k]!]
+        }
+      }
+    }
+  }
+  return best
+}
+
+/**
+ * Split the island into cities, suburbs and country. The three cities prefer a
+ * roomy, roughly equilateral triangle so they never line up; a rough or cramped
+ * island still gets its full complement on whatever dry land is available.
+ * Placement is deterministic.
  */
 export function generateDistricts(
   field: Heightfield,
@@ -139,19 +205,22 @@ export function generateDistricts(
     candidates.push(cell)
   }
 
+  // Fraction of buildable land in a window the size of a city, blurred once so
+  // scoring a candidate is a lookup rather than a scan over its footprint.
+  const levelWindow = Math.max(1, Math.round((CITY_RADIUS.max * 0.7) / cellSize))
+  const level = boxBlur(Float32Array.from(buildable), width, depth, levelWindow)
+
   // Flattest first, with row-major order as a stable tie-break.
   candidates.sort((a, b) => grade[a]! - grade[b]! || a - b)
 
   const rng: Rng = createRng(seed ^ DISTRICT_SALT)
-  const probeRadius = CITY_RADIUS.max
-  const spacingSq = MIN_CITY_SPACING ** 2
-  const centers: { col: number; row: number }[] = []
+  const centers: Point[] = []
   const districts: District[] = []
 
   const placeCity = (cell: number): void => {
     const col = cell % width
     const row = (cell / width) | 0
-    centers.push({ col, row })
+    centers.push({ x: (col + 0.5) * cellSize, z: (row + 0.5) * cellSize })
     districts.push({
       id: districts.length,
       cx: (col + 0.5) * cellSize,
@@ -162,30 +231,59 @@ export function generateDistricts(
     })
   }
 
+  const tooClose = (cell: number, spacingSq: number): boolean => {
+    const center = cellCenter(cell, width, cellSize)
+    for (const placed of centers) {
+      const dx = center.x - placed.x
+      const dz = center.z - placed.z
+      if (dx * dx + dz * dz < spacingSq) return true
+    }
+    return false
+  }
+
+  // Prefer a roughly equilateral triangle of roomy sites, so the cities do not
+  // line up and the loop between them has room to bend.
+  const sites = representativeSites(candidates, width, cellSize)
+  const triangle = bestTriangle(sites, level, width, cellSize)
+  if (triangle) for (const cell of triangle) placeCity(cell)
+
+  // Roomiest, flattest sites first.
   for (const cell of candidates) {
     if (districts.length >= CITY_COUNT) break
-
-    const col = cell % width
-    const row = (cell / width) | 0
-    const x = (col + 0.5) * cellSize
-    const z = (row + 0.5) * cellSize
-    let tooClose = false
-    for (const center of centers) {
-      const dx = x - (center.col + 0.5) * cellSize
-      const dz = z - (center.row + 0.5) * cellSize
-      if (dx * dx + dz * dz < spacingSq) {
-        tooClose = true
-        break
-      }
-    }
-    if (tooClose) continue
-    if (levelFraction(field, buildable, col, row, probeRadius) < MIN_LEVEL_FRACTION) continue
-
+    if (tooClose(cell, MIN_CITY_SPACING ** 2)) continue
+    if (level[cell]! < MIN_LEVEL_FRACTION) continue
     placeCity(cell)
   }
 
-  // Rough islands may have no spot roomy enough; fall back to the gentlest one.
-  if (districts.length === 0 && candidates.length > 0) placeCity(candidates[0]!)
+  // Backfill from the gentlest remaining land, then from the dry land farthest
+  // from the cities so far, so a small or rough island still gets its full
+  // complement of cities without stacking them on top of one another.
+  const fillSpacingSq = (MIN_CITY_SPACING * FILL_SPACING_FRACTION) ** 2
+  for (const cell of candidates) {
+    if (districts.length >= CITY_COUNT) break
+    if (tooClose(cell, fillSpacingSq)) continue
+    placeCity(cell)
+  }
+  while (districts.length < CITY_COUNT) {
+    let best = -1
+    let bestDistance = -1
+    for (let cell = 0; cell < count; cell++) {
+      if (heights[cell]! <= seaLevel || water.has(cell)) continue
+      const point = cellCenter(cell, width, cellSize)
+      let nearest = Infinity
+      for (const center of centers) {
+        const dx = point.x - center.x
+        const dz = point.z - center.z
+        nearest = Math.min(nearest, dx * dx + dz * dz)
+      }
+      if (nearest > bestDistance) {
+        bestDistance = nearest
+        best = cell
+      }
+    }
+    if (best < 0) break
+    placeCity(best)
+  }
 
   const districtOf = new Uint8Array(count)
   for (let cell = 0; cell < count; cell++) {
