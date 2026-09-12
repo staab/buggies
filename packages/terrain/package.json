@@ -1,0 +1,26 @@
+{
+  "name": "@buggies/terrain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --sourcemap && tsc -b",
+    "dev": "tsup src/index.ts --format esm --sourcemap --watch",
+    "typecheck": "tsc -b",
+    "preview": "tsx --conditions=development scripts/preview.ts"
+  },
+  "dependencies": {
+    "@buggies/physics": "workspace:*"
+  }
+}

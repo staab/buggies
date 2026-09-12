@@ -1,0 +1,20 @@
+{
+  "name": "@buggies/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@buggies/game": "workspace:*",
+    "@buggies/terrain": "workspace:*",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4"
+  }
+}
