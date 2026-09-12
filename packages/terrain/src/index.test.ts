@@ -4,16 +4,23 @@ import {
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
   DISTRICT_SUBURB,
+  MAX_ROAD_GRADE,
+  ROAD_BRIDGE,
+  ROAD_GRADE,
+  ROAD_TUNNEL,
+  WORLD_SCALE,
   computeFlowRouting,
   findLakes,
   flatHeightfield,
   generateDistricts,
+  generateRoads,
+  heightAt,
   orientedTriangle,
   triangleCentroid,
   triangleInradius,
 } from './index.ts'
 import { generateTerrain } from './generate.ts'
-import type { Heightfield } from './types.ts'
+import type { District, Heightfield, River, Road } from './types.ts'
 
 describe('generateTerrain', () => {
   it(
@@ -28,6 +35,8 @@ describe('generateTerrain', () => {
       expect(a.rivers).toEqual(b.rivers)
       expect(a.districts).toEqual(b.districts)
       expect(a.districtOf).toEqual(b.districtOf)
+      expect(a.roads).toEqual(b.roads)
+      expect(a.roads[0]?.structure).toEqual(b.roads[0]?.structure)
       expect(a.heightfield.heights).not.toEqual(c.heightfield.heights)
     },
     20_000,
@@ -61,7 +70,7 @@ describe('generateTerrain', () => {
       for (let i = 0; i < centers.length; i++) {
         for (let j = i + 1; j < centers.length; j++) {
           const distance = Math.hypot(centers[i]!.x - centers[j]!.x, centers[i]!.z - centers[j]!.z)
-          expect(distance).toBeLessThanOrEqual(spread * 2 + 1e-6)
+          expect(distance).toBeLessThanOrEqual(spread * 2 * WORLD_SCALE + 1e-6)
         }
       }
     }
@@ -83,7 +92,7 @@ describe('generateTerrain', () => {
       expect(first.y).toBeLessThan(maxHeight - 5)
       expect(last.y).toBeLessThanOrEqual(map.seaLevel + 1e-3)
       // Headwaters are thread-thin and widen as the river descends.
-      expect(first.width).toBeLessThan(1)
+      expect(first.width).toBeLessThan(WORLD_SCALE)
       expect(last.width).toBeGreaterThan(first.width)
 
       for (let i = 1; i < river.points.length; i++) {
@@ -255,6 +264,146 @@ describe('districts', () => {
     expect(districtCount).toBeGreaterThan(0)
     expect(districtSlope / districtCount).toBeLessThan(landSlope / landCount)
   })
+})
+
+describe('roads', () => {
+  const city = (id: number, cx: number, cz: number): District => ({
+    id,
+    cx,
+    cz,
+    radius: 20,
+    suburbWidth: 14,
+    area: 100,
+  })
+
+  function steepestGrade(road: Road): number {
+    const { points } = road
+    const segmentCount = road.closed ? points.length : points.length - 1
+    let steepest = 0
+    for (let i = 0; i < segmentCount; i++) {
+      const a = points[i]!
+      const b = points[(i + 1) % points.length]!
+      const run = Math.hypot(b.x - a.x, b.z - a.z)
+      if (run < 1e-6) continue
+      steepest = Math.max(steepest, Math.abs(b.y - a.y) / run)
+    }
+    return steepest
+  }
+
+  function nearestRoadDistance(road: Road, x: number, z: number): number {
+    let nearest = Infinity
+    for (const point of road.points) nearest = Math.min(nearest, Math.hypot(point.x - x, point.z - z))
+    return nearest
+  }
+
+  it('loops through every city with no dead ends', () => {
+    const field = flatHeightfield(101, 101, 1, 5)
+    const districts = [city(0, 25, 50), city(1, 75, 50), city(2, 50, 80)]
+    const roads = generateRoads(field, 0, districts, [], [])
+
+    expect(roads).toHaveLength(1)
+    const road = roads[0]!
+    expect(road.closed).toBe(true)
+    expect(road.points.length).toBeGreaterThan(16)
+    expect(road.structure).toHaveLength(road.points.length)
+
+    for (const district of districts) {
+      expect(nearestRoadDistance(road, district.cx, district.cz)).toBeLessThan(1)
+    }
+  })
+
+  it('keeps elevation changes gentle along the whole loop', () => {
+    const field = flatHeightfield(101, 101, 1, 5)
+    const districts = [city(0, 25, 50), city(1, 75, 50), city(2, 50, 80)]
+    const road = generateRoads(field, 0, districts, [], [])[0]!
+
+    expect(steepestGrade(road)).toBeLessThanOrEqual(MAX_ROAD_GRADE + 1e-3)
+    for (const structure of road.structure) {
+      expect([ROAD_GRADE, ROAD_BRIDGE, ROAD_TUNNEL]).toContain(structure)
+    }
+  })
+
+  it('bridges a river crossing instead of fording it', () => {
+    const field = flatHeightfield(201, 201, 1, 20)
+    const points = []
+    for (let z = 0; z <= 200; z += 4) points.push({ x: 100, y: 18, z, width: 6 })
+    const river: River = { id: 0, points }
+    const districts = [city(0, 60, 100), city(1, 140, 100)]
+    const road = generateRoads(field, 0, districts, [river], [])[0]!
+
+    const deck = road.points.filter((_, i) => road.structure[i] === ROAD_BRIDGE)
+    expect(deck.length).toBeGreaterThan(0)
+    // The deck clears the water rather than dipping to the river bed.
+    for (const point of deck) expect(point.y).toBeGreaterThan(18)
+  })
+
+  it('tunnels beneath a mountain instead of climbing straight over it', () => {
+    const size = 201
+    const field = flatHeightfield(size, size, 1, 5)
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const distance = Math.hypot(col - 100, row - 100)
+        if (distance < 30) field.heights[row * size + col] = 5 + 60 * (1 - distance / 30)
+      }
+    }
+    const districts = [city(0, 30, 100), city(1, 170, 100), city(2, 100, 170)]
+    const road = generateRoads(field, 0, districts, [], [])[0]!
+
+    let tunnels = 0
+    for (let i = 0; i < road.points.length; i++) {
+      if (road.structure[i] !== ROAD_TUNNEL) continue
+      tunnels++
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % road.points.length]!
+      const groundA = field.heights[Math.round(a.z) * size + Math.round(a.x)]!
+      const groundB = field.heights[Math.round(b.z) * size + Math.round(b.x)]!
+      // At least one end is buried below ground; that is what makes it a tunnel.
+      expect(Math.max(groundA - a.y, groundB - b.y)).toBeGreaterThan(0)
+    }
+    expect(tunnels).toBeGreaterThan(0)
+  })
+
+  it('lifts the at-grade highway into an embankment above the ground', () => {
+    const map = generateTerrain(1, { size: 513 })
+    const road = map.roads[0]!
+    const { heightfield } = map
+
+    let grade = 0
+    let elevated = 0
+    for (let i = 0; i < road.points.length; i++) {
+      if (road.structure[i] !== ROAD_GRADE) continue
+      grade++
+      const point = road.points[i]!
+      const ground = heightAt(
+        heightfield,
+        Math.floor(point.x / map.cellSize),
+        Math.floor(point.z / map.cellSize),
+      )
+      // An at-grade deck is never buried, and mostly rides well clear.
+      expect(ground - point.y).toBeLessThanOrEqual(2)
+      if (point.y - ground > 1) elevated++
+    }
+
+    expect(grade).toBeGreaterThan(0)
+    expect(elevated).toBeGreaterThan(grade / 2)
+  })
+
+  it('gives every map with a city a closed highway within the grade limit', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const map = generateTerrain(seed, { size: 513 })
+      if (map.districts.length === 0) continue
+
+      expect(map.roads.length).toBeGreaterThanOrEqual(1)
+      for (const road of map.roads) {
+        expect(road.closed).toBe(true)
+        expect(road.structure).toHaveLength(road.points.length)
+        expect(steepestGrade(road)).toBeLessThanOrEqual(MAX_ROAD_GRADE + 1e-3)
+        for (const district of map.districts) {
+          expect(nearestRoadDistance(road, district.cx, district.cz)).toBeLessThan(100 * WORLD_SCALE)
+        }
+      }
+    }
+  }, 20_000)
 })
 
 describe('findLakes', () => {

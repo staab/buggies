@@ -2,7 +2,7 @@ import { generateTerrain } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
-import { createTerrainView } from './terrain-view.ts'
+import { createScaleCar, createTerrainView } from './terrain-view.ts'
 
 const container = document.getElementById('app')!
 const hud = document.getElementById('hud')!
@@ -13,7 +13,6 @@ container.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color('#a9cbe6')
-scene.fog = new THREE.Fog('#a9cbe6', 500, 1800)
 
 const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 5000)
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -46,14 +45,19 @@ function load(seed: number): void {
 
   const map = generateTerrain(seed)
   view = createTerrainView(map)
+  view.add(createScaleCar(map))
   scene.add(view)
 
   const worldSize = map.size * map.cellSize
+  // View distances ride the world scale so the framing stays the same.
+  scene.fog = new THREE.Fog('#a9cbe6', worldSize * 0.65, worldSize * 2.34)
+  camera.far = worldSize * 6.5
+  camera.updateProjectionMatrix()
   camera.position.set(worldSize * 0.85, worldSize * 0.8, worldSize * 1.15)
   controls.target.set(worldSize / 2, 0, worldSize / 2)
   controls.update()
 
-  hud.textContent = `seed ${seed} | cities ${map.districts.length}, rivers ${map.rivers.length}, lakes ${map.lakes.length} | press R for a new map`
+  hud.textContent = `seed ${seed} | cities ${map.districts.length}, highways ${map.roads.length}, rivers ${map.rivers.length}, lakes ${map.lakes.length} | press R for a new map`
 }
 
 function readSeed(): number {

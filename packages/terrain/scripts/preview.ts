@@ -1,6 +1,8 @@
 import {
   DISTRICT_CITY,
   DISTRICT_SUBURB,
+  ROAD_BRIDGE,
+  ROAD_TUNNEL,
   generateTerrain,
   orientedTriangle,
   triangleCentroid,
@@ -8,7 +10,7 @@ import {
 
 const seed = Number(process.argv[2] ?? 1)
 const map = generateTerrain(seed)
-const { heightfield, seaLevel, rivers, lakes, mountains, districts, districtOf } = map
+const { heightfield, seaLevel, rivers, lakes, mountains, districts, districtOf, roads } = map
 const { width, depth, heights } = heightfield
 
 const riverCells = new Set<number>()
@@ -21,6 +23,31 @@ for (const river of rivers) {
 }
 const lakeCells = new Set<number>(lakes.flatMap((lake) => lake.cells))
 
+interface Overlay {
+  rank: number
+  char: string
+}
+const roadAt = new Map<number, Overlay>()
+for (const road of roads) {
+  const segmentCount = road.closed ? road.points.length : road.points.length - 1
+  for (let i = 0; i < segmentCount; i++) {
+    const a = road.points[i]!
+    const b = road.points[(i + 1) % road.points.length]!
+    const structure = road.structure[i]!
+    const char = structure === ROAD_BRIDGE ? 'B' : structure === ROAD_TUNNEL ? 'T' : '#'
+    const rank = structure === ROAD_TUNNEL ? 11 : structure === ROAD_BRIDGE ? 9 : 10
+    const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / map.cellSize))
+    for (let k = 0; k <= steps; k++) {
+      const x = a.x + ((b.x - a.x) * k) / steps
+      const z = a.z + ((b.z - a.z) * k) / steps
+      const col = Math.min(Math.max(Math.round(x / map.cellSize), 0), width - 1)
+      const row = Math.min(Math.max(Math.round(z / map.cellSize), 0), depth - 1)
+      const cell = row * width + col
+      if ((roadAt.get(cell)?.rank ?? -1) < rank) roadAt.set(cell, { rank, char })
+    }
+  }
+}
+
 let maxHeight = 0
 for (const height of heights) maxHeight = Math.max(maxHeight, height)
 
@@ -31,7 +58,25 @@ const outHeight = Math.ceil(depth / stride)
 const grid: string[] = new Array(outWidth * outHeight).fill(' ')
 
 const rank = (char: string): number =>
-  char === 'o' ? 6 : char === '*' ? 5 : char === '~' ? 4 : char === 'C' ? 3 : char === 's' ? 2 : char === ' ' ? 0 : 1
+  char === 'T'
+    ? 11
+    : char === 'B'
+      ? 10
+      : char === '#'
+        ? 9
+        : char === 'o'
+          ? 6
+          : char === '*'
+            ? 5
+            : char === '~'
+              ? 4
+              : char === 'C'
+                ? 3
+                : char === 's'
+                  ? 2
+                  : char === ' '
+                    ? 0
+                    : 1
 
 for (let row = 0; row < depth; row++) {
   for (let col = 0; col < width; col++) {
@@ -47,6 +92,8 @@ for (let row = 0; row < depth; row++) {
       const t = maxHeight > 0 ? height / maxHeight : 0
       char = t < 0.08 ? '.' : t < 0.28 ? '-' : t < 0.6 ? '^' : 'A'
     }
+    const road = roadAt.get(cell)
+    if (road && road.rank > rank(char)) char = road.char
     const out = Math.floor(row / stride) * outWidth + Math.floor(col / stride)
     if (rank(char) > rank(grid[out]!)) grid[out] = char
   }
@@ -60,7 +107,9 @@ const lakeSizes = lakes
   .sort((a, b) => b - a)
   .join(', ')
 
-console.log(`seed ${seed}  size ${width}x${depth}  maxHeight ${maxHeight.toFixed(1)}`)
+console.log(
+  `seed ${seed}  world ${(width * map.cellSize).toFixed(0)} (${width}x${depth} cells @ ${map.cellSize})  maxHeight ${maxHeight.toFixed(1)}`,
+)
 console.log(`mountains ${mountains.length}  rivers ${rivers.length}  lakes ${lakes.length} [${lakeSizes}]`)
 for (const mountain of mountains) {
   const center = triangleCentroid(orientedTriangle(mountain))
@@ -74,6 +123,25 @@ for (const district of districts) {
     `  city ${district.id} at (${district.cx.toFixed(0)},${district.cz.toFixed(0)}) radius ${district.radius.toFixed(0)} suburbs +${district.suburbWidth.toFixed(0)} area ${district.area}`,
   )
 }
+for (const road of roads) {
+  const segmentCount = road.closed ? road.points.length : road.points.length - 1
+  let length = 0
+  let bridges = 0
+  let tunnels = 0
+  for (let i = 0; i < segmentCount; i++) {
+    const a = road.points[i]!
+    const b = road.points[(i + 1) % road.points.length]!
+    length += Math.hypot(b.x - a.x, b.z - a.z)
+  }
+  for (let i = 0; i < segmentCount; i++) {
+    const structure = road.structure[i]!
+    if (structure === ROAD_BRIDGE) bridges++
+    else if (structure === ROAD_TUNNEL) tunnels++
+  }
+  console.log(
+    `  highway ${road.id}: ${road.points.length} points, ${road.closed ? 'closed' : 'open'}, length ${length.toFixed(0)}, grade ${segmentCount - bridges - tunnels} bridge ${bridges} tunnel ${tunnels}`,
+  )
+}
 for (const river of rivers) {
   const start = river.points[0]!
   const end = river.points.at(-1)!
@@ -81,5 +149,7 @@ for (const river of rivers) {
     `  river ${river.id}: ${river.points.length} points, start (${start.x.toFixed(0)},${start.z.toFixed(0)}) y${start.y.toFixed(1)} -> end (${end.x.toFixed(0)},${end.z.toFixed(0)}) y${end.y.toFixed(1)}`,
   )
 }
-console.log('legend: ~ sea  . plains  - foothills  ^ mountains  A summit  * river  o lake  C city  s suburb')
+console.log(
+  'legend: ~ sea  . plains  - foothills  ^ mountains  A summit  * river  o lake  C city  s suburb  # highway  B bridge  T tunnel',
+)
 console.log(lines.join('\n'))

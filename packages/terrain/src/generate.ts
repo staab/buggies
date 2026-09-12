@@ -9,6 +9,7 @@ import {
   type Triangle,
 } from './mountain.ts'
 import { fbm2D, ridged2D, smoothstep } from './noise.ts'
+import { generateRoads } from './roads.ts'
 import { traceRivers } from './rivers.ts'
 import type { Heightfield, Lake, Mountain, River, TerrainMap, TerrainOptions } from './types.ts'
 
@@ -18,6 +19,13 @@ const DEFAULTS = {
   seaLevel: 0,
   oceanDepth: 10,
 } as const
+
+/**
+ * The island is grown at a reference scale, then enlarged. Terrain features —
+ * mountains, rivers, cities — scale with it and keep their proportions; roads
+ * and the car are built afterwards at full size, so they stay as they are.
+ */
+export const WORLD_SCALE = 3
 
 /** Island extent as a fraction of the map, leaving a ring of open sea. */
 const ISLAND_RADIUS_FRACTION = 0.31
@@ -225,6 +233,45 @@ function carveRiverChannels(field: Heightfield, rivers: River[]): void {
   }
 }
 
+/** Enlarge a finished map in place, preserving every terrain proportion. */
+function scaleWorld(map: TerrainMap, scale: number): void {
+  map.seaLevel *= scale
+  map.cellSize *= scale
+  map.heightfield.cellSize = map.cellSize
+
+  const { heights } = map.heightfield
+  for (let i = 0; i < heights.length; i++) heights[i] = heights[i]! * scale
+
+  for (const mountain of map.mountains) {
+    mountain.ax *= scale
+    mountain.az *= scale
+    mountain.bx *= scale
+    mountain.bz *= scale
+    mountain.cx *= scale
+    mountain.cz *= scale
+    mountain.skirt *= scale
+    mountain.height *= scale
+  }
+
+  for (const river of map.rivers) {
+    for (const point of river.points) {
+      point.x *= scale
+      point.y *= scale
+      point.z *= scale
+      point.width *= scale
+    }
+  }
+
+  for (const lake of map.lakes) lake.level *= scale
+
+  for (const district of map.districts) {
+    district.cx *= scale
+    district.cz *= scale
+    district.radius *= scale
+    district.suburbWidth *= scale
+  }
+}
+
 /**
  * Generate a complete island from a seed. Deterministic: the same seed and
  * options always produce byte-identical output.
@@ -277,5 +324,20 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   }
   const { districts, districtOf } = generateDistricts(field, seed, seaLevel, water)
 
-  return { seed, size, cellSize, seaLevel, heightfield: field, mountains, rivers, lakes, districts, districtOf }
+  const map: TerrainMap = {
+    seed,
+    size,
+    cellSize,
+    seaLevel,
+    heightfield: field,
+    mountains,
+    rivers,
+    lakes,
+    districts,
+    districtOf,
+    roads: [],
+  }
+  scaleWorld(map, WORLD_SCALE)
+  map.roads = generateRoads(map.heightfield, map.seaLevel, map.districts, map.rivers, map.lakes)
+  return map
 }
