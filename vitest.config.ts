@@ -8,5 +8,7 @@ export default defineConfig({
   test: {
     include: ['packages/*/src/**/*.test.ts'],
     environment: 'node',
+    // Generating a full-size island is seconds of work, so give tests room.
+    testTimeout: 20_000,
   },
 })

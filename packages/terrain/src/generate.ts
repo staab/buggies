@@ -14,7 +14,7 @@ import { traceRivers } from './rivers.ts'
 import type { Heightfield, Lake, Mountain, River, TerrainMap, TerrainOptions } from './types.ts'
 
 const DEFAULTS = {
-  size: 769,
+  size: 1025,
   cellSize: 1,
   seaLevel: 0,
   oceanDepth: 10,
@@ -28,7 +28,7 @@ const DEFAULTS = {
 export const WORLD_SCALE = 3
 
 /** Island extent as a fraction of the map, leaving a ring of open sea. */
-const ISLAND_RADIUS_FRACTION = 0.31
+const ISLAND_RADIUS_FRACTION = 0.35
 /** Mountains keep a fixed world size so a bigger island means more land around them. */
 const MOUNTAIN_RADIUS = { min: 50, max: 80 } as const
 const MOUNTAIN_SKIRT = { min: 22, max: 38 } as const
