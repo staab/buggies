@@ -1,8 +1,14 @@
-import { generateTerrain } from '../src/index.ts'
+import {
+  DISTRICT_CITY,
+  DISTRICT_SUBURB,
+  generateTerrain,
+  orientedTriangle,
+  triangleCentroid,
+} from '../src/index.ts'
 
 const seed = Number(process.argv[2] ?? 1)
 const map = generateTerrain(seed)
-const { heightfield, seaLevel, rivers, lakes, ridges } = map
+const { heightfield, seaLevel, rivers, lakes, mountains, districts, districtOf } = map
 const { width, depth, heights } = heightfield
 
 const riverCells = new Set<number>()
@@ -24,7 +30,8 @@ const outWidth = Math.ceil(width / stride)
 const outHeight = Math.ceil(depth / stride)
 const grid: string[] = new Array(outWidth * outHeight).fill(' ')
 
-const rank = (char: string): number => (char === 'o' ? 3 : char === '*' ? 2 : char === '~' ? 1 : char === ' ' ? 0 : 1)
+const rank = (char: string): number =>
+  char === 'o' ? 6 : char === '*' ? 5 : char === '~' ? 4 : char === 'C' ? 3 : char === 's' ? 2 : char === ' ' ? 0 : 1
 
 for (let row = 0; row < depth; row++) {
   for (let col = 0; col < width; col++) {
@@ -34,6 +41,8 @@ for (let row = 0; row < depth; row++) {
     if (lakeCells.has(cell)) char = 'o'
     else if (riverCells.has(cell)) char = '*'
     else if (height <= seaLevel) char = '~'
+    else if (districtOf[cell] === DISTRICT_CITY) char = 'C'
+    else if (districtOf[cell] === DISTRICT_SUBURB) char = 's'
     else {
       const t = maxHeight > 0 ? height / maxHeight : 0
       char = t < 0.08 ? '.' : t < 0.28 ? '-' : t < 0.6 ? '^' : 'A'
@@ -52,10 +61,17 @@ const lakeSizes = lakes
   .join(', ')
 
 console.log(`seed ${seed}  size ${width}x${depth}  maxHeight ${maxHeight.toFixed(1)}`)
-console.log(`ridges ${ridges.length}  rivers ${rivers.length}  lakes ${lakes.length} [${lakeSizes}]`)
-for (const ridge of ridges) {
+console.log(`mountains ${mountains.length}  rivers ${rivers.length}  lakes ${lakes.length} [${lakeSizes}]`)
+for (const mountain of mountains) {
+  const center = triangleCentroid(orientedTriangle(mountain))
   console.log(
-    `  ridge (${ridge.x.toFixed(0)},${ridge.z.toFixed(0)}) length ${ridge.length.toFixed(0)} width ${ridge.width.toFixed(0)} height ${ridge.height.toFixed(0)}`,
+    `  mountain (${center.x.toFixed(0)},${center.z.toFixed(0)}) height ${mountain.height.toFixed(0)} skirt ${mountain.skirt.toFixed(0)}`,
+  )
+}
+console.log(`districts ${districts.length}`)
+for (const district of districts) {
+  console.log(
+    `  city ${district.id} at (${district.cx.toFixed(0)},${district.cz.toFixed(0)}) radius ${district.radius.toFixed(0)} suburbs +${district.suburbWidth.toFixed(0)} area ${district.area}`,
   )
 }
 for (const river of rivers) {
@@ -65,5 +81,5 @@ for (const river of rivers) {
     `  river ${river.id}: ${river.points.length} points, start (${start.x.toFixed(0)},${start.z.toFixed(0)}) y${start.y.toFixed(1)} -> end (${end.x.toFixed(0)},${end.z.toFixed(0)}) y${end.y.toFixed(1)}`,
   )
 }
-console.log('legend: ~ sea  . plains  - foothills  ^ mountains  A summit  * river  o lake')
+console.log('legend: ~ sea  . plains  - foothills  ^ mountains  A summit  * river  o lake  C city  s suburb')
 console.log(lines.join('\n'))

@@ -1,10 +1,16 @@
 import { createRng, randomRange, type Rng } from '@buggies/physics'
 
+import { generateDistricts } from './districts.ts'
 import { computeFlowRouting, findLakes } from './flow.ts'
+import {
+  orientedTriangle,
+  signedDistanceToTriangle,
+  triangleInradius,
+  type Triangle,
+} from './mountain.ts'
 import { fbm2D, ridged2D, smoothstep } from './noise.ts'
-import { distanceToSegment, ridgeSegment } from './ridge.ts'
 import { traceRivers } from './rivers.ts'
-import type { Heightfield, Lake, Ridge, River, TerrainMap, TerrainOptions } from './types.ts'
+import type { Heightfield, Lake, Mountain, River, TerrainMap, TerrainOptions } from './types.ts'
 
 const DEFAULTS = {
   size: 769,
@@ -15,43 +21,83 @@ const DEFAULTS = {
 
 /** Island extent as a fraction of the map, leaving a ring of open sea. */
 const ISLAND_RADIUS_FRACTION = 0.31
-/** Ridges keep a fixed world size so a bigger island means more land around them. */
-const RIDGE_LENGTH = { min: 150, max: 280 } as const
-const RIDGE_WIDTH = { min: 12, max: 20 } as const
-const RIDGE_HEIGHT = { min: 26, max: 40 } as const
-/** How much two crossing ridges reinforce each other, 0 = max, 1 = pure sum. */
-const RIDGE_OVERLAP = 0.6
+/** Mountains keep a fixed world size so a bigger island means more land around them. */
+const MOUNTAIN_RADIUS = { min: 50, max: 80 } as const
+const MOUNTAIN_SKIRT = { min: 22, max: 38 } as const
+const MOUNTAIN_HEIGHT = { min: 26, max: 40 } as const
+/** Default radius of the cluster the mountains are placed within. */
+const MOUNTAIN_SPREAD = 120
+/** How much overlapping mountains reinforce each other, 0 = max, 1 = pure sum. */
+const MOUNTAIN_OVERLAP = 0.6
 /** River channels are cut this deep below the water surface at their centre. */
 const CHANNEL_DEPTH = 1.4
 /** Upper bound on how far a channel may cut into a steep bank. */
 const CHANNEL_MAX_INCISION = 5
 
-function createRidges(rng: Rng, count: number, worldSize: number, islandRadius: number): Ridge[] {
-  const center = worldSize / 2
+function createMountains(
+  rng: Rng,
+  count: number,
+  worldSize: number,
+  islandRadius: number,
+  spread: number,
+): Mountain[] {
+  const mapCenter = worldSize / 2
 
-  // All ridges share one massif centre so they always cross. The centre can sit
-  // anywhere on the island, and the long crests run off toward the water.
-  const massifAngle = randomRange(rng, 0, Math.PI * 2)
-  const massifDistance = islandRadius * randomRange(rng, 0, 0.5)
-  const massifX = center + Math.cos(massifAngle) * massifDistance
-  const massifZ = center + Math.sin(massifAngle) * massifDistance
+  // The massif cluster can sit anywhere on the island; the individual peaks are
+  // scattered within it rather than pinned to a single crossing.
+  const clusterAngle = randomRange(rng, 0, Math.PI * 2)
+  const clusterDistance = islandRadius * randomRange(rng, 0, 0.5)
+  const clusterX = mapCenter + Math.cos(clusterAngle) * clusterDistance
+  const clusterZ = mapCenter + Math.sin(clusterAngle) * clusterDistance
 
-  const baseAngle = randomRange(rng, 0, Math.PI * 2)
-  return Array.from({ length: count }, (_, i) => ({
-    x: massifX,
-    z: massifZ,
-    // Spread the crests evenly so they cross instead of stacking up.
-    angle: baseAngle + (i * Math.PI) / Math.max(count, 1) + randomRange(rng, -0.25, 0.25),
-    length: randomRange(rng, RIDGE_LENGTH.min, RIDGE_LENGTH.max),
-    width: randomRange(rng, RIDGE_WIDTH.min, RIDGE_WIDTH.max),
-    height: randomRange(rng, RIDGE_HEIGHT.min, RIDGE_HEIGHT.max),
-  }))
+  return Array.from({ length: count }, () => {
+    const offsetAngle = randomRange(rng, 0, Math.PI * 2)
+    const offset = spread * Math.sqrt(rng())
+    const cx = clusterX + Math.cos(offsetAngle) * offset
+    const cz = clusterZ + Math.sin(offsetAngle) * offset
+
+    const radius = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
+    const rotation = randomRange(rng, 0, Math.PI * 2)
+    const corners = Array.from({ length: 3 }, (_, k) => {
+      const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
+      const r = radius * randomRange(rng, 0.65, 1.05)
+      return { x: cx + Math.cos(angle) * r, z: cz + Math.sin(angle) * r }
+    })
+
+    const a = corners[0]!
+    let b = corners[1]!
+    let c = corners[2]!
+    // Orient counter-clockwise for consistent edge distances.
+    if ((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x) < 0) {
+      const swap = b
+      b = c
+      c = swap
+    }
+
+    return {
+      ax: a.x,
+      az: a.z,
+      bx: b.x,
+      bz: b.z,
+      cx: c.x,
+      cz: c.z,
+      skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max),
+      height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max),
+    }
+  })
+}
+
+interface MountainShape {
+  triangle: Triangle
+  inradius: number
+  skirt: number
+  height: number
 }
 
 function buildHeights(
   field: Heightfield,
   seed: number,
-  ridges: Ridge[],
+  shapes: MountainShape[],
   seaLevel: number,
   oceanDepth: number,
   islandRadius: number,
@@ -63,10 +109,9 @@ function buildHeights(
 
   // Frequencies are in world units, so terrain detail does not grow with the map.
   const baseFrequency = 0.018
-  const ridgeFrequency = 0.03
+  const roughFrequency = 0.03
   const warpFrequency = 0.006
   const warpAmplitude = islandRadius * 0.45
-  const segments = ridges.map(ridgeSegment)
 
   for (let row = 0; row < depth; row++) {
     for (let col = 0; col < width; col++) {
@@ -85,28 +130,24 @@ function buildHeights(
       const mask = 1 - smoothstep(islandRadius * 0.55, islandRadius, distance)
 
       const base = fbm2D(x * baseFrequency, z * baseFrequency, seed + 1, 5)
-      const roughness = ridged2D(x * ridgeFrequency, z * ridgeFrequency, seed + 2, 5)
+      const roughness = ridged2D(x * roughFrequency, z * roughFrequency, seed + 2, 5)
       // A gentle central dome keeps water draining outward to the sea instead
       // of pooling into giant interior basins.
       const dome = 1 - smoothstep(0, islandRadius * 0.85, distance)
       const land = base * plainsAmplitude + domeHeight * dome
 
       let mountain = 0
-      for (let i = 0; i < ridges.length; i++) {
-        const ridge = ridges[i]!
-        const segment = segments[i]!
-        const { distance: across, along } = distanceToSegment(x, z, segment)
-        const cross = Math.exp(-(across * across) / (2 * ridge.width * ridge.width))
-        const taper = smoothstep(0, 0.18, along) * smoothstep(1, 0.82, along)
-        // Tilt so one end of the crest is higher than the other.
-        const tilt = 0.35 + 0.65 * along
-        const contribution = ridge.height * cross * taper * tilt * (0.55 + 0.45 * roughness)
+      for (const shape of shapes) {
+        const signed = signedDistanceToTriangle(x, z, shape.triangle)
+        // Full height in the triangle core, decaying over the skirt outside.
+        const factor = smoothstep(-shape.skirt, shape.inradius, signed)
+        const contribution = shape.height * factor * (0.6 + 0.4 * roughness)
 
-        // Combine additively at crossings, but damped, so the intersection
-        // forms a higher massif without doubling into a spike.
+        // Overlaps reinforce, but damped, so a cluster reads as one massif
+        // without stacking into a spike.
         const high = Math.max(mountain, contribution)
         const low = Math.min(mountain, contribution)
-        mountain = high + RIDGE_OVERLAP * low
+        mountain = high + MOUNTAIN_OVERLAP * low
       }
 
       const cell = row * width + col
@@ -197,15 +238,30 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const islandRadius = options.islandRadius ?? worldSize * ISLAND_RADIUS_FRACTION
 
   const rng = createRng(seed)
-  const ridgeCount = options.ridgeCount ?? 2
-  const ridges = createRidges(rng, ridgeCount, worldSize, islandRadius)
+  const mountainCount = options.mountainCount ?? 3
+  const mountains = createMountains(
+    rng,
+    mountainCount,
+    worldSize,
+    islandRadius,
+    options.mountainSpread ?? MOUNTAIN_SPREAD,
+  )
+  const shapes: MountainShape[] = mountains.map((mountain) => {
+    const triangle = orientedTriangle(mountain)
+    return {
+      triangle,
+      inradius: Math.max(triangleInradius(triangle), 1e-3),
+      skirt: mountain.skirt,
+      height: mountain.height,
+    }
+  })
 
   const field: Heightfield = { width: size, depth: size, cellSize, heights: new Float32Array(size * size) }
-  buildHeights(field, seed, ridges, seaLevel, oceanDepth, islandRadius)
+  buildHeights(field, seed, shapes, seaLevel, oceanDepth, islandRadius)
 
   const routing = computeFlowRouting(field, seaLevel)
-  const riverCount = options.riverCount ?? ridgeCount
-  const rivers = traceRivers(field, routing, ridges, riverCount, seaLevel)
+  const riverCount = options.riverCount ?? Math.min(2, mountainCount)
+  const rivers = traceRivers(field, routing, mountains, riverCount, seaLevel)
   const lakes = selectLakes(
     field,
     findLakes(field, routing, seaLevel),
@@ -215,5 +271,11 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   )
   carveRiverChannels(field, rivers)
 
-  return { seed, size, cellSize, seaLevel, heightfield: field, ridges, rivers, lakes }
+  const water = riverCellSet(rivers, field.width, field.depth, cellSize)
+  for (const lake of lakes) {
+    for (const cell of lake.cells) water.add(cell)
+  }
+  const { districts, districtOf } = generateDistricts(field, seed, seaLevel, water)
+
+  return { seed, size, cellSize, seaLevel, heightfield: field, mountains, rivers, lakes, districts, districtOf }
 }

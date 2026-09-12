@@ -53,7 +53,7 @@ function load(seed: number): void {
   controls.target.set(worldSize / 2, 0, worldSize / 2)
   controls.update()
 
-  hud.textContent = `seed ${seed} | rivers ${map.rivers.length}, lakes ${map.lakes.length} | press R for a new map`
+  hud.textContent = `seed ${seed} | cities ${map.districts.length}, rivers ${map.rivers.length}, lakes ${map.lakes.length} | press R for a new map`
 }
 
 function readSeed(): number {

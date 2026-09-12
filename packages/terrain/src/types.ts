@@ -11,16 +11,19 @@ export interface Heightfield {
 }
 
 /**
- * An elongated mountain ridge. The crest runs through `x`/`z` along `angle`
- * for `length` world units; `width` is the cross-ridge falloff scale and
- * `height` is the crest rise above the surrounding land.
+ * A mountain with a triangular footprint. The three corners define the base;
+ * elevation peaks in the middle and falls to `skirt` around the edges.
  */
-export interface Ridge {
-  x: number
-  z: number
-  angle: number
-  length: number
-  width: number
+export interface Mountain {
+  ax: number
+  az: number
+  bx: number
+  bz: number
+  cx: number
+  cz: number
+  /** Foothill falloff scale around the triangle. */
+  skirt: number
+  /** Crest rise above the surrounding land. */
   height: number
 }
 
@@ -44,6 +47,23 @@ export interface Lake {
   cells: number[]
 }
 
+/**
+ * A city anchor. The core is `radius` wide; suburbs extend `suburbWidth`
+ * further out, and everything beyond is country.
+ */
+export interface District {
+  id: number
+  /** City centre, in world units. */
+  cx: number
+  cz: number
+  /** City core radius, in world units. */
+  radius: number
+  /** How far suburbs reach past the core, in world units. */
+  suburbWidth: number
+  /** Buildable land cells the district covers. */
+  area: number
+}
+
 export interface TerrainOptions {
   size?: number
   cellSize?: number
@@ -51,9 +71,11 @@ export interface TerrainOptions {
   oceanDepth?: number
   /** Radius of the island in world units. Defaults to a fraction of the map. */
   islandRadius?: number
-  /** Number of mountain ridges. Defaults to 2. */
-  ridgeCount?: number
-  /** Number of rivers, 1 or 2. Defaults to one per ridge. */
+  /** Number of triangular mountains. Defaults to 3. */
+  mountainCount?: number
+  /** Radius, in world units, of the cluster the mountains are placed within. */
+  mountainSpread?: number
+  /** Number of rivers. Defaults to two, or one per mountain if fewer. */
   riverCount?: number
   /** Depressions smaller than this are not treated as lakes. */
   minLakeCells?: number
@@ -68,7 +90,10 @@ export interface TerrainMap {
   cellSize: number
   seaLevel: number
   heightfield: Heightfield
-  ridges: Ridge[]
+  mountains: Mountain[]
   rivers: River[]
   lakes: Lake[]
+  districts: District[]
+  /** Row-major district code (`DISTRICT_*`) for every cell. */
+  districtOf: Uint8Array
 }

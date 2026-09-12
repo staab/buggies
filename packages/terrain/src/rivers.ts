@@ -1,36 +1,57 @@
 import type { FlowRouting } from './flow.ts'
-import { distanceToSegment, ridgeSegment } from './ridge.ts'
-import type { Heightfield, Ridge, River, RiverPoint } from './types.ts'
+import { orientedTriangle, triangleCentroid, triangleInradius } from './mountain.ts'
+import type { Heightfield, Mountain, River, RiverPoint } from './types.ts'
 
-const MIN_WIDTH = 1.5
+/** Headwaters start almost thread-thin and widen as the river descends. */
+const MIN_WIDTH = 0.4
 const MAX_WIDTH = 6.5
-/** How far off a crest line a spring may sit, as a multiple of ridge width. */
-const SOURCE_MARGIN = 2.5
+/** Springs sit this fraction of the mountain's rise below the summit. */
+const SOURCE_DROP = 0.5
 
-/** Highest cell on a crest line, restricted to cells a predicate accepts. */
-function searchCrest(
-  field: Heightfield,
-  ridge: Ridge,
-  accept: (along: number) => boolean,
-): number {
+/**
+ * A spring partway down a mountain rather than at its summit. The cell nearest
+ * to half the mountain's rise is chosen, so the upper slopes stay riverless.
+ */
+function findSource(field: Heightfield, mountain: Mountain, seaLevel: number, used: Set<number>): number {
   const { width, depth, cellSize, heights } = field
-  const segment = ridgeSegment(ridge)
-  const margin = ridge.width * SOURCE_MARGIN
-  const minCol = Math.max(Math.floor((Math.min(segment.ax, segment.bx) - margin) / cellSize), 0)
-  const maxCol = Math.min(Math.ceil((Math.max(segment.ax, segment.bx) + margin) / cellSize), width - 1)
-  const minRow = Math.max(Math.floor((Math.min(segment.az, segment.bz) - margin) / cellSize), 0)
-  const maxRow = Math.min(Math.ceil((Math.max(segment.az, segment.bz) + margin) / cellSize), depth - 1)
+  const triangle = orientedTriangle(mountain)
+  const center = triangleCentroid(triangle)
+  const coreRadius = Math.max(triangleInradius(triangle), 15)
+  const searchRadius = coreRadius + Math.max(mountain.skirt, 20)
+  const minCol = Math.max(Math.floor((center.x - searchRadius) / cellSize), 0)
+  const maxCol = Math.min(Math.ceil((center.x + searchRadius) / cellSize), width - 1)
+  const minRow = Math.max(Math.floor((center.z - searchRadius) / cellSize), 0)
+  const maxRow = Math.min(Math.ceil((center.z + searchRadius) / cellSize), depth - 1)
 
-  let best = -1
-  let bestHeight = -Infinity
+  const within = (col: number, row: number, radius: number): boolean => {
+    const dx = col * cellSize - center.x
+    const dz = row * cellSize - center.z
+    return dx * dx + dz * dz <= radius * radius
+  }
+
+  // The summit is only needed to measure how far down to start.
+  let summitY = -Infinity
   for (let row = minRow; row <= maxRow; row++) {
     for (let col = minCol; col <= maxCol; col++) {
-      const { distance, along } = distanceToSegment(col * cellSize, row * cellSize, segment)
-      if (distance > margin || !accept(along)) continue
+      if (!within(col, row, coreRadius)) continue
       const cell = row * width + col
-      const height = heights[cell]!
-      if (height > bestHeight) {
-        bestHeight = height
+      if (used.has(cell) || heights[cell]! <= seaLevel) continue
+      summitY = Math.max(summitY, heights[cell]!)
+    }
+  }
+  if (summitY === -Infinity) return -1
+
+  const targetY = summitY - mountain.height * SOURCE_DROP
+  let best = -1
+  let bestScore = Infinity
+  for (let row = minRow; row <= maxRow; row++) {
+    for (let col = minCol; col <= maxCol; col++) {
+      if (!within(col, row, searchRadius)) continue
+      const cell = row * width + col
+      if (used.has(cell) || heights[cell]! <= seaLevel) continue
+      const score = Math.abs(heights[cell]! - targetY)
+      if (score < bestScore) {
+        bestScore = score
         best = cell
       }
     }
@@ -39,37 +60,28 @@ function searchCrest(
 }
 
 /**
- * Highest cell on a ridge crest, used as a spring. The ridges all cross at the
- * massif, so each spring is confined to one side of the crossing to keep the
- * rivers distinct.
- */
-function findSource(field: Heightfield, ridge: Ridge, side: number): number {
-  const source = searchCrest(field, ridge, (along) =>
-    side === 0 ? along >= 0.55 && along <= 0.95 : along >= 0.05 && along <= 0.45,
-  )
-  return source >= 0 ? source : searchCrest(field, ridge, () => true)
-}
-
-/**
  * Follow the routed downhill neighbours from a spring to the sea. The water
  * surface is `routing.filled`, which is flat across lakes and non-increasing
- * downhill, so the river always descends. Width grows with distance travelled.
+ * downhill, so the river always descends. Width tracks how far the river has
+ * dropped, keeping the headwaters thin at the top of the mountain.
  */
 function traceCourse(field: Heightfield, routing: FlowRouting, source: number, seaLevel: number): RiverPoint[] {
   const { width, cellSize, heights } = field
   const { filled, flow } = routing
   const points: RiverPoint[] = []
   const maxSteps = width * width
+  const sourceY = filled[source]!
+  const drop = Math.max(sourceY - seaLevel, 1e-3)
   let cell = source
-  let distance = 0
 
   for (let step = 0; step < maxSteps; step++) {
     const row = (cell / width) | 0
     const col = cell - row * width
-    const progress = Math.min(1, distance / (width * cellSize * 0.6))
+    const y = filled[cell]!
+    const progress = Math.min(Math.max((sourceY - y) / drop, 0), 1)
     points.push({
       x: col * cellSize,
-      y: filled[cell]!,
+      y,
       z: row * cellSize,
       width: (MIN_WIDTH + (MAX_WIDTH - MIN_WIDTH) * progress) * cellSize,
     })
@@ -78,29 +90,27 @@ function traceCourse(field: Heightfield, routing: FlowRouting, source: number, s
 
     const next = flow[cell]!
     if (next < 0 || next === cell) break
-
-    const nextRow = (next / width) | 0
-    const nextCol = next - nextRow * width
-    distance += Math.hypot(nextCol - col, nextRow - row) * cellSize
     cell = next
   }
 
   return points
 }
 
-/** One river per ridge, capped at `count`. */
+/** One river per mountain, capped at `count`. */
 export function traceRivers(
   field: Heightfield,
   routing: FlowRouting,
-  ridges: Ridge[],
+  mountains: Mountain[],
   count: number,
   seaLevel: number,
 ): River[] {
   const rivers: River[] = []
-  for (let i = 0; i < ridges.length; i++) {
+  const used = new Set<number>()
+  for (const mountain of mountains) {
     if (rivers.length >= count) break
-    const source = findSource(field, ridges[i]!, i % 2)
+    const source = findSource(field, mountain, seaLevel, used)
     if (source < 0) continue
+    used.add(source)
     const points = traceCourse(field, routing, source, seaLevel)
     if (points.length > 1) rivers.push({ id: rivers.length, points })
   }

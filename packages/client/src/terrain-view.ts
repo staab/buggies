@@ -1,4 +1,11 @@
-import type { Heightfield, Lake, River, TerrainMap } from '@buggies/terrain'
+import {
+  DISTRICT_CITY,
+  DISTRICT_SUBURB,
+  type Heightfield,
+  type Lake,
+  type River,
+  type TerrainMap,
+} from '@buggies/terrain'
 import * as THREE from 'three'
 
 interface ColorStop {
@@ -17,6 +24,8 @@ const LAND_STOPS: ColorStop[] = [
 
 const SEABED_DEEP = new THREE.Color('#1c3a4a')
 const SEABED_SHALLOW = new THREE.Color('#4a7f86')
+const CITY_TINT = new THREE.Color('#8c8f93')
+const SUBURB_TINT = new THREE.Color('#a3a271')
 
 function sampleRamp(t: number, stops: ColorStop[], out: THREE.Color): THREE.Color {
   if (t <= stops[0]!.t) return out.copy(stops[0]!.color)
@@ -31,16 +40,26 @@ function sampleRamp(t: number, stops: ColorStop[], out: THREE.Color): THREE.Colo
   return out.copy(stops[stops.length - 1]!.color)
 }
 
-function terrainColor(height: number, min: number, max: number, seaLevel: number, out: THREE.Color): THREE.Color {
+function terrainColor(
+  height: number,
+  min: number,
+  max: number,
+  seaLevel: number,
+  district: number,
+  out: THREE.Color,
+): THREE.Color {
   if (height <= seaLevel) {
     const depth = (seaLevel - height) / Math.max(seaLevel - min, 1e-3)
     return out.copy(SEABED_SHALLOW).lerp(SEABED_DEEP, Math.min(1, depth))
   }
   const t = (height - seaLevel) / Math.max(max - seaLevel, 1e-3)
-  return sampleRamp(t, LAND_STOPS, out)
+  sampleRamp(t, LAND_STOPS, out)
+  if (district === DISTRICT_CITY) out.lerp(CITY_TINT, 0.55)
+  else if (district === DISTRICT_SUBURB) out.lerp(SUBURB_TINT, 0.35)
+  return out
 }
 
-function buildTerrainMesh(field: Heightfield, seaLevel: number): THREE.Mesh {
+function buildTerrainMesh(field: Heightfield, seaLevel: number, districtOf: Uint8Array): THREE.Mesh {
   const { width, depth, cellSize, heights } = field
   const count = width * depth
   const positions = new Float32Array(count * 3)
@@ -62,7 +81,7 @@ function buildTerrainMesh(field: Heightfield, seaLevel: number): THREE.Mesh {
       positions[offset] = col * cellSize
       positions[offset + 1] = height
       positions[offset + 2] = row * cellSize
-      terrainColor(height, min, max, seaLevel, color)
+      terrainColor(height, min, max, seaLevel, districtOf[cell]!, color)
       colors[offset] = color.r
       colors[offset + 1] = color.g
       colors[offset + 2] = color.b
@@ -172,7 +191,7 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     side: THREE.DoubleSide,
   })
 
-  group.add(buildTerrainMesh(map.heightfield, map.seaLevel))
+  group.add(buildTerrainMesh(map.heightfield, map.seaLevel, map.districtOf))
 
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
   sea.rotation.x = -Math.PI / 2
