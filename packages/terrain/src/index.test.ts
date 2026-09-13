@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ARTERIAL_BRIDGE_GRADE,
+  ARTERIAL_WIDTH,
   CROSS_WIDTH,
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
   DISTRICT_SUBURB,
+  MAX_ARTERIAL_GRADE,
   MAX_RAMP_GRADE,
   MAX_ROAD_GRADE,
   RAMP_WIDTH,
@@ -354,6 +357,7 @@ describe('roads', () => {
     const road = generateRoads(field, 0, districts, [], [])[0]!
 
     let tunnels = 0
+    let buried = false
     for (let i = 0; i < road.points.length; i++) {
       if (road.structure[i] !== ROAD_TUNNEL) continue
       tunnels++
@@ -361,10 +365,12 @@ describe('roads', () => {
       const b = road.points[(i + 1) % road.points.length]!
       const groundA = field.heights[Math.round(a.z) * size + Math.round(a.x)]!
       const groundB = field.heights[Math.round(b.z) * size + Math.round(b.x)]!
-      // At least one end is buried below ground; that is what makes it a tunnel.
-      expect(Math.max(groundA - a.y, groundB - b.y)).toBeGreaterThan(0)
+      // Some part of the run stays below ground; that is what makes it a tunnel.
+      // The portals may be cut down to meet the road, so not every sample is buried.
+      if (Math.max(groundA - a.y, groundB - b.y) > 0) buried = true
     }
     expect(tunnels).toBeGreaterThan(0)
+    expect(buried).toBe(true)
   })
 
   it('lifts the at-grade highway into an embankment above the ground', () => {
@@ -415,7 +421,9 @@ describe('roads', () => {
   it('branches one-lane ramps and a cross road off the highway', () => {
     const map = generateTerrain(1)
     const highway = map.roads.find((road) => road.closed)!
-    const access = map.roads.filter((road) => !road.closed)
+    const access = map.roads.filter(
+      (road) => !road.closed && (road.width === CROSS_WIDTH || road.width === RAMP_WIDTH),
+    )
 
     expect(access.length).toBeGreaterThan(0)
     expect(highway.width).toBeGreaterThan(RAMP_WIDTH)
@@ -477,6 +485,225 @@ describe('roads', () => {
           )
           expect(ground - point.y).toBeLessThan(1)
         }
+      }
+    }
+  }, 20_000)
+
+  it('grows arterials from the cross roads that bridge but never tunnel', () => {
+    let arterials = 0
+    for (let seed = 1; seed <= 3; seed++) {
+      const map = generateTerrain(seed)
+      const crossRoads = map.roads.filter((road) => !road.closed && road.width === CROSS_WIDTH)
+      const grown = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+      const starts = grown.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
+      arterials += grown.length
+
+      // Arterials grow out of the cross road ends (some cross roads may be left
+      // unconnected once dangling branches are pruned).
+      const crossEnds = crossRoads.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
+      expect(
+        crossEnds.some((end) => starts.some((start) => Math.hypot(start.x - end.x, start.z - end.z) < 1)),
+      ).toBe(true)
+
+      for (const road of grown) {
+        expect(road.closed).toBe(false)
+        expect(road.structure).toHaveLength(road.points.length - 1)
+
+        for (let i = 0; i < road.points.length - 1; i++) {
+          const a = road.points[i]!
+          const b = road.points[i + 1]!
+          const run = Math.hypot(b.x - a.x, b.z - a.z)
+          const grade = run > 1e-6 ? Math.abs(b.y - a.y) / run : 0
+          const structure = road.structure[i]!
+          // Arterials never tunnel; they climb over or around a mountain.
+          expect(structure).not.toBe(ROAD_TUNNEL)
+          const limit = structure === ROAD_BRIDGE ? ARTERIAL_BRIDGE_GRADE : MAX_ARTERIAL_GRADE
+          expect(grade).toBeLessThanOrEqual(limit + 1e-3)
+        }
+      }
+    }
+    expect(arterials).toBeGreaterThan(0)
+  }, 20_000)
+
+  it('keeps arterials off the highway except at an interchange', () => {
+    const map = generateTerrain(1)
+    const highway = map.roads.find((road) => road.closed)!
+    const crossRoads = map.roads.filter((road) => !road.closed && road.width === CROSS_WIDTH)
+    const centres = crossRoads.map((road) => road.points[Math.floor(road.points.length / 2)]!)
+    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    expect(arterials.length).toBeGreaterThan(0)
+
+    const straddles = (
+      ax: number,
+      az: number,
+      bx: number,
+      bz: number,
+      cx: number,
+      cz: number,
+      dx: number,
+      dz: number,
+    ): boolean => {
+      const d1 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax)
+      const d2 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax)
+      const d3 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx)
+      const d4 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx)
+      return d1 * d2 < 0 && d3 * d4 < 0
+    }
+
+    for (const road of arterials) {
+      for (let i = 0; i + 1 < road.points.length; i++) {
+        const a = road.points[i]!
+        const b = road.points[i + 1]!
+        for (let j = 0; j + 1 < highway.points.length; j++) {
+          const h = highway.points[j]!
+          const h2 = highway.points[j + 1]!
+          if (!straddles(a.x, a.z, b.x, b.z, h.x, h.z, h2.x, h2.z)) continue
+          const mx = (a.x + b.x + h.x + h2.x) / 4
+          const mz = (a.z + b.z + h.z + h2.z) / 4
+          const near = Math.min(...centres.map((centre) => Math.hypot(centre.x - mx, centre.z - mz)))
+          // It may only cross where a cross road already passes underneath.
+          expect(near).toBeLessThan(180)
+        }
+      }
+    }
+  }, 20_000)
+
+  it('keeps arterials from crossing any other road', () => {
+    const map = generateTerrain(1)
+    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    expect(arterials.length).toBeGreaterThan(0)
+
+    const straddles = (
+      ax: number,
+      az: number,
+      bx: number,
+      bz: number,
+      cx: number,
+      cz: number,
+      dx: number,
+      dz: number,
+    ): boolean => {
+      const d1 = (bx - ax) * (cz - az) - (bz - az) * (cx - ax)
+      const d2 = (bx - ax) * (dz - az) - (bz - az) * (dx - ax)
+      const d3 = (dx - cx) * (az - cz) - (dz - cz) * (ax - cx)
+      const d4 = (dx - cx) * (bz - cz) - (dz - cz) * (bx - cx)
+      return d1 * d2 < 0 && d3 * d4 < 0
+    }
+
+    let crossings = 0
+    for (const road of arterials) {
+      for (const other of map.roads) {
+        if (other === road) continue
+        for (let p = 0; p + 1 < road.points.length; p++) {
+          const p1 = road.points[p]!
+          const p2 = road.points[p + 1]!
+          for (let q = 0; q + 1 < other.points.length; q++) {
+            const q1 = other.points[q]!
+            const q2 = other.points[q + 1]!
+            if (straddles(p1.x, p1.z, p2.x, p2.z, q1.x, q1.z, q2.x, q2.z)) crossings++
+          }
+        }
+      }
+    }
+    expect(crossings).toBe(0)
+  }, 20_000)
+
+  it('meets other roads at a straight (180 degree) angle', () => {
+    const map = generateTerrain(1)
+    const ends: { road: Road; start: boolean }[] = []
+    for (const road of map.roads) {
+      if (road.closed || road.points.length < 2) continue
+      ends.push({ road, start: true }, { road, start: false })
+    }
+    const direction = (road: Road, start: boolean): { x: number; z: number; px: number; pz: number } => {
+      const points = road.points
+      const a = start ? points[0]! : points[points.length - 1]!
+      const b = start ? points[1]! : points[points.length - 2]!
+      const dx = b.x - a.x
+      const dz = b.z - a.z
+      const length = Math.hypot(dx, dz) || 1
+      return { x: dx / length, z: dz / length, px: a.x, pz: a.z }
+    }
+
+    let nodes = 0
+    let aligned = 0
+    const used = new Array<boolean>(ends.length).fill(false)
+    for (let i = 0; i < ends.length; i++) {
+      if (used[i]) continue
+      const cluster = [i]
+      used[i] = true
+      const origin = direction(ends[i]!.road, ends[i]!.start)
+      for (let j = i + 1; j < ends.length; j++) {
+        if (used[j]) continue
+        const point = direction(ends[j]!.road, ends[j]!.start)
+        if (Math.hypot(point.px - origin.px, point.pz - origin.pz) < 1.5) {
+          cluster.push(j)
+          used[j] = true
+        }
+      }
+      if (cluster.length < 2) continue
+      nodes++
+      const directions = cluster.map((k) => direction(ends[k]!.road, ends[k]!.start))
+      let opposite = 0
+      for (let a = 0; a < directions.length; a++) {
+        for (let b = a + 1; b < directions.length; b++) {
+          const dot = directions[a]!.x * directions[b]!.x + directions[a]!.z * directions[b]!.z
+          opposite = Math.max(opposite, (Math.acos(Math.min(Math.max(dot, -1), 1)) * 180) / Math.PI)
+        }
+      }
+      if (Math.abs(opposite - 180) < 10) aligned++
+    }
+    expect(nodes).toBeGreaterThan(0)
+    expect(aligned / nodes).toBeGreaterThan(0.7)
+  }, 20_000)
+
+  it('rounds arterial corners instead of leaving sharp bends', () => {
+    const map = generateTerrain(1)
+    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    expect(arterials.length).toBeGreaterThan(0)
+
+    let sharpest = 0
+    for (const road of arterials) {
+      for (let i = 1; i + 1 < road.points.length; i++) {
+        const a = road.points[i - 1]!
+        const b = road.points[i]!
+        const c = road.points[i + 1]!
+        const inX = b.x - a.x
+        const inZ = b.z - a.z
+        const outX = c.x - b.x
+        const outZ = c.z - b.z
+        const inLength = Math.hypot(inX, inZ)
+        const outLength = Math.hypot(outX, outZ)
+        if (inLength < 1e-6 || outLength < 1e-6) continue
+        const dot = (inX * outX + inZ * outZ) / (inLength * outLength)
+        sharpest = Math.max(sharpest, (Math.acos(Math.min(Math.max(dot, -1), 1)) * 180) / Math.PI)
+      }
+    }
+    expect(sharpest).toBeLessThan(20)
+  }, 20_000)
+
+  it('leaves no arterial dead ends', () => {
+    const map = generateTerrain(1)
+    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    const ends = arterials.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
+    const distanceToSegment = (x: number, z: number, a: RoadPoint, b: RoadPoint): number => {
+      const vx = b.x - a.x
+      const vz = b.z - a.z
+      const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / (vx * vx + vz * vz || 1), 0), 1)
+      return Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
+    }
+
+    for (const road of arterials) {
+      for (const end of [road.points[0]!, road.points[road.points.length - 1]!]) {
+        if (ends.some((p) => p !== end && Math.hypot(p.x - end.x, p.z - end.z) < 2)) continue
+        const meets = map.roads.some((other) => {
+          if (other === road) return false
+          for (let i = 0; i + 1 < other.points.length; i++) {
+            if (distanceToSegment(end.x, end.z, other.points[i]!, other.points[i + 1]!) < 3) return true
+          }
+          return false
+        })
+        expect(meets).toBe(true)
       }
     }
   }, 20_000)

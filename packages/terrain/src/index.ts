@@ -15,7 +15,10 @@ export { computeFlowRouting, findLakes, type FlowRouting } from './flow.ts'
 export { WORLD_SCALE, generateTerrain } from './generate.ts'
 export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
 export {
+  ARTERIAL_BRIDGE_GRADE,
+  ARTERIAL_WIDTH,
   CROSS_WIDTH,
+  MAX_ARTERIAL_GRADE,
   MAX_RAMP_GRADE,
   MAX_ROAD_GRADE,
   RAMP_WIDTH,

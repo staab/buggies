@@ -1,4 +1,5 @@
 import {
+  ARTERIAL_WIDTH,
   CROSS_WIDTH,
   DISTRICT_CITY,
   DISTRICT_SUBURB,
@@ -141,7 +142,13 @@ for (const road of roads) {
     if (structure === ROAD_BRIDGE) bridges++
     else if (structure === ROAD_TUNNEL) tunnels++
   }
-  const label = road.closed ? 'highway' : road.width === CROSS_WIDTH ? 'cross' : 'ramp'
+  const label = road.closed
+    ? 'highway'
+    : road.width === CROSS_WIDTH
+      ? 'cross'
+      : road.width === ARTERIAL_WIDTH
+        ? 'arterial'
+        : 'ramp'
   console.log(
     `  ${label} ${road.id}: ${road.points.length} points, ${road.closed ? 'closed' : 'open'}, width ${road.width}, length ${length.toFixed(0)}, grade ${segmentCount - bridges - tunnels} bridge ${bridges} tunnel ${tunnels}`,
   )
