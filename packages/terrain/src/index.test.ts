@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  CROSS_WIDTH,
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
   DISTRICT_SUBURB,
+  MAX_RAMP_GRADE,
   MAX_ROAD_GRADE,
+  RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
@@ -20,7 +23,7 @@ import {
   triangleInradius,
 } from './index.ts'
 import { generateTerrain } from './generate.ts'
-import type { District, Heightfield, River, Road } from './types.ts'
+import type { District, Heightfield, River, Road, RoadPoint } from './types.ts'
 
 describe('generateTerrain', () => {
   it(
@@ -300,7 +303,7 @@ describe('roads', () => {
   it('loops through every city with no dead ends', () => {
     const field = flatHeightfield(101, 101, 1, 5)
     const districts = [city(0, 25, 50), city(1, 75, 50), city(2, 50, 80)]
-    const roads = generateRoads(field, 0, districts, [], [])
+    const roads = generateRoads(field, 0, districts, [], []).filter((road) => road.closed)
 
     expect(roads).toHaveLength(1)
     const road = roads[0]!
@@ -396,8 +399,9 @@ describe('roads', () => {
       const map = generateTerrain(seed, { size: 513 })
       if (map.districts.length === 0) continue
 
-      expect(map.roads.length).toBeGreaterThanOrEqual(1)
-      for (const road of map.roads) {
+      const highways = map.roads.filter((road) => road.closed)
+      expect(highways.length).toBeGreaterThanOrEqual(1)
+      for (const road of highways) {
         expect(road.closed).toBe(true)
         expect(road.structure).toHaveLength(road.points.length)
         expect(steepestGrade(road)).toBeLessThanOrEqual(MAX_ROAD_GRADE + 1e-3)
@@ -407,6 +411,114 @@ describe('roads', () => {
       }
     }
   }, 20_000)
+
+  it('branches one-lane ramps and a cross road off the highway', () => {
+    const map = generateTerrain(1)
+    const highway = map.roads.find((road) => road.closed)!
+    const access = map.roads.filter((road) => !road.closed)
+
+    expect(access.length).toBeGreaterThan(0)
+    expect(highway.width).toBeGreaterThan(RAMP_WIDTH)
+    for (const road of access) {
+      expect(road.width).toBeLessThan(highway.width)
+      expect(road.points.length).toBeGreaterThan(1)
+      expect(road.structure).toHaveLength(road.points.length - 1)
+      const limit = road.width === RAMP_WIDTH ? MAX_RAMP_GRADE : MAX_ROAD_GRADE
+      expect(steepestGrade(road)).toBeLessThanOrEqual(limit + 1e-3)
+    }
+
+    // Interchanges come in quads: one cross road and four ramps each.
+    expect(access.length % 5).toBe(0)
+  })
+
+  it('drives the cross road through an underpass beneath the highway', () => {
+    const map = generateTerrain(1)
+    const highway = map.roads.find((road) => road.closed)!
+    const crossRoads = map.roads.filter((road) => !road.closed && road.width === CROSS_WIDTH)
+
+    expect(crossRoads.length).toBeGreaterThan(0)
+    for (const road of crossRoads) {
+      const middle = road.points[Math.floor(road.points.length / 2)]!
+
+      // The crossing sits beneath a bridge span of the highway, and the
+      // highway there is drawn as bridge deck rather than an embankment.
+      let nearest = Infinity
+      let structure = ROAD_GRADE
+      for (let i = 0; i < highway.points.length; i++) {
+        const point = highway.points[i]!
+        const distance = Math.hypot(point.x - middle.x, point.z - middle.z)
+        if (distance < nearest) {
+          nearest = distance
+          structure = highway.structure[i]!
+        }
+      }
+      expect(nearest).toBeLessThan(CROSS_WIDTH)
+      expect(structure).toBe(ROAD_BRIDGE)
+    }
+  })
+
+  it('cuts the ground so at-grade roads are never buried', () => {
+    for (let seed = 1; seed <= 4; seed++) {
+      const map = generateTerrain(seed, { size: 513 })
+      for (const road of map.roads) {
+        const count = road.points.length
+        const segmentCount = road.closed ? count : count - 1
+        for (let i = 0; i < count; i++) {
+          const atGrade = road.closed
+            ? road.structure[i] === ROAD_GRADE || road.structure[(i - 1 + count) % count] === ROAD_GRADE
+            : (i > 0 && road.structure[i - 1] === ROAD_GRADE) ||
+              (i < segmentCount && road.structure[i] === ROAD_GRADE)
+          if (!atGrade) continue
+          const point = road.points[i]!
+          const ground = heightAt(
+            map.heightfield,
+            Math.floor(point.x / map.cellSize),
+            Math.floor(point.z / map.cellSize),
+          )
+          expect(ground - point.y).toBeLessThan(1)
+        }
+      }
+    }
+  }, 20_000)
+
+  it('meets the cross road perpendicularly, one ramp per diamond arm', () => {
+    const map = generateTerrain(1)
+    const crossRoads = map.roads.filter((road) => !road.closed && road.width === CROSS_WIDTH)
+    const ramps = map.roads.filter((road) => !road.closed && road.width === RAMP_WIDTH)
+    expect(ramps.length).toBe(crossRoads.length * 4)
+
+    const distanceToSegment = (x: number, z: number, a: RoadPoint, b: RoadPoint): number => {
+      const vx = b.x - a.x
+      const vz = b.z - a.z
+      const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / (vx * vx + vz * vz || 1), 0), 1)
+      return Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
+    }
+
+    let arms = 0
+    for (const cross of crossRoads) {
+      const a = cross.points[0]!
+      const b = cross.points[cross.points.length - 1]!
+      const crossX = b.x - a.x
+      const crossZ = b.z - a.z
+      const crossLength = Math.hypot(crossX, crossZ) || 1
+
+      for (const ramp of ramps) {
+        const tip = ramp.points[ramp.points.length - 1]!
+        const offset = distanceToSegment(tip.x, tip.z, a, b)
+        if (offset > CROSS_WIDTH) continue
+        // The tip touches the near edge, not the centreline of the cross road.
+        expect(offset).toBeGreaterThan(CROSS_WIDTH * 0.25)
+        const before = ramp.points[ramp.points.length - 2]!
+        const heading = Math.atan2(tip.z - before.z, tip.x - before.x)
+        const along = Math.atan2(crossZ, crossX)
+        // Perpendicular to the cross road: the headings differ by a right angle.
+        const dot = Math.cos(heading - along)
+        expect(Math.abs(dot)).toBeLessThan(0.1)
+        arms++
+      }
+    }
+    expect(arms).toBe(crossRoads.length * 4)
+  })
 })
 
 describe('findLakes', () => {

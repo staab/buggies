@@ -1,4 +1,5 @@
 import {
+  CROSS_WIDTH,
   DISTRICT_CITY,
   DISTRICT_SUBURB,
   ROAD_BRIDGE,
@@ -34,8 +35,8 @@ for (const road of roads) {
     const a = road.points[i]!
     const b = road.points[(i + 1) % road.points.length]!
     const structure = road.structure[i]!
-    const char = structure === ROAD_BRIDGE ? 'B' : structure === ROAD_TUNNEL ? 'T' : '#'
-    const rank = structure === ROAD_TUNNEL ? 11 : structure === ROAD_BRIDGE ? 9 : 10
+    const char = structure === ROAD_BRIDGE ? 'B' : structure === ROAD_TUNNEL ? 'T' : road.closed ? '#' : '+'
+    const rank = structure === ROAD_TUNNEL ? 11 : structure === ROAD_BRIDGE ? 9 : road.closed ? 10 : 8
     const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / map.cellSize))
     for (let k = 0; k <= steps; k++) {
       const x = a.x + ((b.x - a.x) * k) / steps
@@ -64,19 +65,21 @@ const rank = (char: string): number =>
       ? 10
       : char === '#'
         ? 9
-        : char === 'o'
-          ? 6
-          : char === '*'
-            ? 5
-            : char === '~'
-              ? 4
-              : char === 'C'
-                ? 3
-                : char === 's'
-                  ? 2
-                  : char === ' '
-                    ? 0
-                    : 1
+        : char === '+'
+          ? 8
+          : char === 'o'
+            ? 6
+            : char === '*'
+              ? 5
+              : char === '~'
+                ? 4
+                : char === 'C'
+                  ? 3
+                  : char === 's'
+                    ? 2
+                    : char === ' '
+                      ? 0
+                      : 1
 
 for (let row = 0; row < depth; row++) {
   for (let col = 0; col < width; col++) {
@@ -138,8 +141,9 @@ for (const road of roads) {
     if (structure === ROAD_BRIDGE) bridges++
     else if (structure === ROAD_TUNNEL) tunnels++
   }
+  const label = road.closed ? 'highway' : road.width === CROSS_WIDTH ? 'cross' : 'ramp'
   console.log(
-    `  highway ${road.id}: ${road.points.length} points, ${road.closed ? 'closed' : 'open'}, length ${length.toFixed(0)}, grade ${segmentCount - bridges - tunnels} bridge ${bridges} tunnel ${tunnels}`,
+    `  ${label} ${road.id}: ${road.points.length} points, ${road.closed ? 'closed' : 'open'}, width ${road.width}, length ${length.toFixed(0)}, grade ${segmentCount - bridges - tunnels} bridge ${bridges} tunnel ${tunnels}`,
   )
 }
 for (const river of rivers) {
@@ -150,6 +154,6 @@ for (const river of rivers) {
   )
 }
 console.log(
-  'legend: ~ sea  . plains  - foothills  ^ mountains  A summit  * river  o lake  C city  s suburb  # highway  B bridge  T tunnel',
+  'legend: ~ sea  . plains  - foothills  ^ mountains  A summit  * river  o lake  C city  s suburb  # highway  B bridge  T tunnel  + ramp',
 )
 console.log(lines.join('\n'))
