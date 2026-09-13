@@ -72,14 +72,16 @@ export interface RoadPoint {
 }
 
 /**
- * A carriageway. Highways form closed loops through every city; later phases
- * add open arterials and streets. `structure` holds one `ROAD_*` code per
- * segment: segment `i` runs from `points[i]` to the next point, wrapping for a
- * closed road, so it is one shorter than `points` when open.
+ * A carriageway. Highways form closed loops through every city; interchanges
+ * add open cross roads and one-lane ramps. `structure` holds one `ROAD_*`
+ * code per segment: segment `i` runs from `points[i]` to the next point,
+ * wrapping for a closed road, so it is one shorter than `points` when open.
  */
 export interface Road {
   id: number
   closed: boolean
+  /** Full carriageway width, in world units. */
+  width: number
   points: RoadPoint[]
   structure: Uint8Array
 }

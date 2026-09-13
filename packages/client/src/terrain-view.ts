@@ -4,7 +4,6 @@ import {
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
-  ROAD_WIDTH,
   heightAt,
   type Heightfield,
   type Lake,
@@ -38,8 +37,6 @@ const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
 /** How far the embankment skirt reaches out from the deck edge, in world units. */
 const ROAD_SKIRT_SPREAD = 3
-/** A tunnel is a full circle of this radius around the road. */
-const TUNNEL_ARCH_RADIUS = ROAD_WIDTH / 2
 const TUNNEL_SEGMENTS = 16
 /** Wall thickness, so the shell buries itself in the land it cuts through. */
 const TUNNEL_WALL_THICKNESS = 3
@@ -247,7 +244,7 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
   const segmentCount = road.closed ? count : count - 1
   const positions: number[] = []
   const colors: number[] = []
-  const half = ROAD_WIDTH / 2
+  const half = road.width / 2
   const skirt = half + ROAD_SKIRT_SPREAD
   const { cellSize } = field
 
@@ -351,6 +348,8 @@ interface BoreSegment {
   bz: number
   ay: number
   by: number
+  /** Half the tunnel road's width. */
+  radius: number
 }
 
 function tunnelSegments(roads: Road[]): BoreSegment[] {
@@ -362,7 +361,7 @@ function tunnelSegments(roads: Road[]): BoreSegment[] {
       if (road.structure[i] !== ROAD_TUNNEL) continue
       const a = road.points[i]!
       const b = road.points[(i + 1) % count]!
-      segments.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, ay: a.y, by: b.y })
+      segments.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z, ay: a.y, by: b.y, radius: road.width / 2 })
     }
   }
   return segments
@@ -372,6 +371,7 @@ function tunnelSegments(roads: Road[]): BoreSegment[] {
 function boreClearance(segments: BoreSegment[], x: number, z: number, height: number): number {
   let bestDistanceSq = Infinity
   let floor = 0
+  let radius = 0
   for (const segment of segments) {
     const vx = segment.bx - segment.ax
     const vz = segment.bz - segment.az
@@ -383,11 +383,12 @@ function boreClearance(segments: BoreSegment[], x: number, z: number, height: nu
     if (distanceSq < bestDistanceSq) {
       bestDistanceSq = distanceSq
       floor = segment.ay + (segment.by - segment.ay) * t
+      radius = segment.radius
     }
   }
   const distance = Math.sqrt(bestDistanceSq)
-  if (distance > TUNNEL_ARCH_RADIUS) return Infinity
-  const arch = Math.sqrt(Math.max(TUNNEL_ARCH_RADIUS ** 2 - distance * distance, 0))
+  if (distance > radius) return Infinity
+  const arch = Math.sqrt(Math.max(radius ** 2 - distance * distance, 0))
   return height - (floor + arch)
 }
 
@@ -396,7 +397,9 @@ function buildTunnelHoles(field: Heightfield, segments: BoreSegment[]): Uint8Arr
   const { width, depth, cellSize, heights } = field
   const bestDistanceSq = new Float32Array(width * depth).fill(Infinity)
   const boreFloor = new Float32Array(width * depth)
-  const reach = TUNNEL_ARCH_RADIUS + cellSize
+  const boreRadius = new Float32Array(width * depth)
+  let reach = cellSize
+  for (const segment of segments) reach = Math.max(reach, segment.radius + cellSize)
   const margin = cellSize * 0.5
 
   for (const segment of segments) {
@@ -420,6 +423,7 @@ function buildTunnelHoles(field: Heightfield, segments: BoreSegment[]): Uint8Arr
         if (distanceSq < bestDistanceSq[cell]!) {
           bestDistanceSq[cell] = distanceSq
           boreFloor[cell] = segment.ay + (segment.by - segment.ay) * t
+          boreRadius[cell] = segment.radius
         }
       }
     }
@@ -430,8 +434,9 @@ function buildTunnelHoles(field: Heightfield, segments: BoreSegment[]): Uint8Arr
     const distanceSq = bestDistanceSq[cell]!
     if (distanceSq === Infinity) continue
     const distance = Math.sqrt(distanceSq)
-    if (distance > TUNNEL_ARCH_RADIUS) continue
-    const arch = Math.sqrt(Math.max(TUNNEL_ARCH_RADIUS ** 2 - distance * distance, 0))
+    const radius = boreRadius[cell]!
+    if (distance > radius) continue
+    const arch = Math.sqrt(Math.max(radius ** 2 - distance * distance, 0))
     if (heights[cell]! < boreFloor[cell]! + arch + margin) hole[cell] = 1
   }
   return hole
@@ -480,7 +485,8 @@ function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
   const indices: number[] = []
   const arc = TUNNEL_SEGMENTS
   const width = arc + 1
-  const outerRadius = TUNNEL_ARCH_RADIUS + TUNNEL_WALL_THICKNESS
+  const archRadius = road.width / 2
+  const outerRadius = archRadius + TUNNEL_WALL_THICKNESS
 
   for (const run of runs) {
     // Overhang a sample into the hillside at each portal so the shell meets the
@@ -503,7 +509,7 @@ function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
       const nx = -dz
       const nz = dx
 
-      for (const radius of [TUNNEL_ARCH_RADIUS, outerRadius]) {
+      for (const radius of [archRadius, outerRadius]) {
         for (let j = 0; j <= arc; j++) {
           const angle = (Math.PI * 2 * j) / arc
           const cos = Math.cos(angle)

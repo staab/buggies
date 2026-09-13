@@ -5,6 +5,10 @@ export const ROAD_GRADE = 0
 export const ROAD_BRIDGE = 1
 export const ROAD_TUNNEL = 2
 
+/** Internal classification of a highway sample before it becomes a structure code. */
+const KIND_BRIDGE = 1
+const KIND_TUNNEL = 2
+
 /** Highway centreline width, in world units. */
 export const ROAD_WIDTH = 8
 
@@ -12,6 +16,8 @@ export const ROAD_WIDTH = 8
 const SAMPLE_STEP = 6
 /** Steepest the finished surface may be, vertical units per horizontal unit. */
 export const MAX_ROAD_GRADE = 0.06
+/** Ramps are short and may climb more steeply than the highway they serve. */
+export const MAX_RAMP_GRADE = 0.15
 /** The deck rides this far above the ground on an embankment. */
 const DECK_HEIGHT = 3
 /** Bridges clear the water surface by this much. */
@@ -30,6 +36,35 @@ const BOW_FRACTION = 0.3
 const TURN_RADIUS_FRACTION = 0.8
 /** Points used to trace each stadium end. */
 const STADIUM_SEGMENTS = 8
+
+/** One-lane ramp width, in world units. */
+export const RAMP_WIDTH = 4
+/** Cross road width at an interchange, in world units. */
+export const CROSS_WIDTH = 6
+/** Distance along the highway between interchanges, in world units. */
+const INTERCHANGE_SPACING = 800
+/** How far either way a candidate may slide to find dry, water-free ground. */
+const INTERCHANGE_SEARCH = 150
+/** Most the ground may rise or fall across a crossing before it is rejected. */
+const CROSS_RELIEF = 10
+/** Distance along the highway from the underpass to each ramp's highway end. */
+const RAMP_ALONG = 50
+/** Distance along the cross road from the underpass to each ramp's far end. */
+const RAMP_REACH = 50
+/** Half-length of the cross road either side of the underpass. */
+const CROSS_REACH = 90
+/** Highway length either side of an underpass drawn as bridge deck. */
+const UNDERPASS_SPAN = 30
+/** The bridge deck clears the cross road by at least this much. */
+const UNDERPASS_CLEARANCE = 2.5
+/** Most a ramp may drop from the deck to the cross road, so it stays drivable. */
+const RAMP_DROP = 7
+/** Terrain is cut this far below an at-grade road so the ribbon stays clear. */
+const CUT_CLEARANCE = 0.3
+/** A cut slope rises this much per horizontal unit away from the road edge. */
+const CUT_SLOPE = 0.4
+/** Points used to trace each ramp curve. */
+const RAMP_SEGMENTS = 24
 
 interface Vec2 {
   x: number
@@ -482,11 +517,309 @@ function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: number): vo
   }
 }
 
+/** Cumulative arc length from the first point to each point along a polyline. */
+function cumulativeLengths(points: Vec2[]): Float32Array {
+  const count = points.length
+  const cum = new Float32Array(count)
+  for (let i = 1; i < count; i++) {
+    cum[i] =
+      cum[i - 1]! + Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+  }
+  return cum
+}
+
+/** Index of the sample nearest a given arc length. */
+function indexAtDistance(cum: Float32Array, distance: number): number {
+  let best = 0
+  let bestGap = Infinity
+  for (let i = 0; i < cum.length; i++) {
+    const gap = Math.abs(cum[i]! - distance)
+    if (gap < bestGap) {
+      bestGap = gap
+      best = i
+    }
+  }
+  return best
+}
+
+/**
+ * Nearest sample to `index` whose crossing sits on dry land clear of water, or
+ * `-1` if none is found within `maxOffset`. Interchanges need solid ground
+ * under them, so this nudges a candidate off a river or coastline rather than
+ * dropping it.
+ */
+function findDryCrossing(
+  field: Heightfield,
+  seaLevel: number,
+  samples: Vec2[],
+  wet: Uint8Array,
+  index: number,
+  maxOffset: number,
+): number {
+  const count = samples.length
+  for (let offset = 0; offset <= maxOffset; offset++) {
+    for (const c of [(index + offset) % count, (index - offset + count) % count]) {
+      if (wet[c]) continue
+      const frame = frameAt(samples, c)
+      const centre = sampleTerrain(field, frame.x, frame.z)
+      if (centre <= seaLevel) continue
+      const left = sampleTerrain(field, frame.x - frame.nx * CROSS_REACH, frame.z - frame.nz * CROSS_REACH)
+      const right = sampleTerrain(field, frame.x + frame.nx * CROSS_REACH, frame.z + frame.nz * CROSS_REACH)
+      if (left <= seaLevel || right <= seaLevel) continue
+      // Keep the crossing fairly level, or the ramps have to descend a valley.
+      const nearLeft = sampleTerrain(field, frame.x - frame.nx * RAMP_REACH, frame.z - frame.nz * RAMP_REACH)
+      const nearRight = sampleTerrain(field, frame.x + frame.nx * RAMP_REACH, frame.z + frame.nz * RAMP_REACH)
+      const high = Math.max(centre, nearLeft, nearRight, left, right)
+      const low = Math.min(centre, nearLeft, nearRight, left, right)
+      if (high - low > CROSS_RELIEF) continue
+      return c
+    }
+  }
+  return -1
+}
+
+/** Interchange crossings spaced evenly around the highway loop. */
+function interchangeCenters(
+  field: Heightfield,
+  seaLevel: number,
+  samples: Vec2[],
+  wet: Uint8Array,
+  cum: Float32Array,
+  total: number,
+): number[] {
+  const count = samples.length
+  const step = total / count
+  const search = Math.max(1, Math.round(INTERCHANGE_SEARCH / step))
+  const minGap = Math.round((INTERCHANGE_SPACING * 0.6) / step)
+  const centers: number[] = []
+  for (let distance = 0; distance < total; distance += INTERCHANGE_SPACING) {
+    const index = indexAtDistance(cum, distance)
+    const c = findDryCrossing(field, seaLevel, samples, wet, index, search)
+    if (c < 0) continue
+    // A candidate near the end of the loop can slide onto the first one across
+    // the wrap, so keep a minimum cyclic gap between crossings.
+    const gap = Math.min(...centers.map((other) => Math.min(Math.abs(other - c), count - Math.abs(other - c))))
+    if (centers.length > 0 && gap < minGap) continue
+    centers.push(c)
+  }
+  return centers
+}
+
+/** Position and unit frame (tangent `d`, normal `n`) at a sample of a closed loop. */
+function frameAt(
+  points: Vec2[],
+  index: number,
+): { x: number; z: number; dx: number; dz: number; nx: number; nz: number } {
+  const count = points.length
+  const point = points[index]!
+  const prev = points[(index - 1 + count) % count]!
+  const next = points[(index + 1) % count]!
+  let dx = next.x - prev.x
+  let dz = next.z - prev.z
+  const length = Math.hypot(dx, dz) || 1
+  dx /= length
+  dz /= length
+  return { x: point.x, z: point.z, dx, dz, nx: dz, nz: -dx }
+}
+
+/** Relax an open profile until no segment exceeds `maxGrade`. */
+function limitOpenGrade(heights: Float32Array, points: Vec2[], maxGrade: number): void {
+  const count = heights.length
+  for (let pass = 0; pass < count * 20; pass++) {
+    let moved = false
+    for (let i = 0; i + 1 < count; i++) {
+      const run = Math.hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
+      const diff = heights[i + 1]! - heights[i]!
+      const excess = Math.abs(diff) - maxGrade * run
+      if (excess <= 1e-4) continue
+      const direction = diff > 0 ? 1 : -1
+      heights[i] = heights[i]! + (direction * excess) / 2
+      heights[i + 1] = heights[i + 1]! - (direction * excess) / 2
+      moved = true
+    }
+    if (!moved) break
+  }
+}
+
+/** Linearly interpolate an open road's profile at a signed offset from its centre. */
+function sampleOpen(heights: Float32Array, offset: number): number {
+  const steps = heights.length - 1
+  const position = ((offset + CROSS_REACH) / (2 * CROSS_REACH)) * steps
+  const index = Math.min(Math.max(Math.floor(position), 0), steps)
+  const next = Math.min(index + 1, steps)
+  const fraction = Math.min(Math.max(position - index, 0), 1)
+  return heights[index]! * (1 - fraction) + heights[next]! * fraction
+}
+
+/** A cross road across an interchange, with its smoothed ground profile. */
+interface CrossRoad {
+  points: Vec2[]
+  heights: Float32Array
+  /** Sample at the crossing, where the highway passes overhead. */
+  centerIndex: number
+}
+
+/** Cross road straight across a crossing, following the ground. */
+function crossRoad(field: Heightfield, samples: Vec2[], c: number): CrossRoad {
+  const frame = frameAt(samples, c)
+  const n = { x: frame.nx, z: frame.nz }
+  const steps = Math.max(2, Math.round((CROSS_REACH * 2) / SAMPLE_STEP))
+  const points: Vec2[] = []
+  const heights = new Float32Array(steps + 1)
+  for (let k = 0; k <= steps; k++) {
+    const t = -CROSS_REACH + (2 * CROSS_REACH * k) / steps
+    const x = frame.x + n.x * t
+    const z = frame.z + n.z * t
+    points.push({ x, z })
+    heights[k] = sampleTerrain(field, x, z)
+  }
+  limitOpenGrade(heights, points, MAX_ROAD_GRADE)
+  return { points, heights, centerIndex: Math.round(steps / 2) }
+}
+
+/**
+ * Simplified diamond interchanges at the chosen crossings. At each, a cross
+ * road passes beneath the highway through an underpass, and four one-lane ramps
+ * connect the highway deck down to it, one per quadrant. The highway is drawn
+ * as bridge deck across the crossing so the cross road shows through
+ * underneath; ramps are added after the cross road so they render on top.
+ */
+function buildInterchanges(
+  samples: Vec2[],
+  profile: Float32Array,
+  crossings: { index: number; cross: CrossRoad }[],
+  bridgeSteps: number,
+  structure: Uint8Array,
+  nextId: number,
+): Road[] {
+  const count = samples.length
+  const cum = cumulativeLengths(samples)
+  const total =
+    cum[count - 1]! +
+    Math.hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
+  const roads: Road[] = []
+  let id = nextId
+
+  for (const { index: c, cross } of crossings) {
+    const frame = frameAt(samples, c)
+    const n = { x: frame.nx, z: frame.nz }
+
+    for (let j = -bridgeSteps; j <= bridgeSteps; j++) {
+      structure[(c + j + count) % count] = ROAD_BRIDGE
+    }
+
+    const crossPoints = cross.points
+    const crossHeights = cross.heights
+
+    roads.push({
+      id: id++,
+      closed: false,
+      width: CROSS_WIDTH,
+      points: crossPoints.map((point, k) => ({ x: point.x, y: crossHeights[k]!, z: point.z })),
+      structure: new Uint8Array(Math.max(0, crossPoints.length - 1)),
+    })
+
+    // Four ramps, one per diamond arm. Each leaves the highway edge heading
+    // with traffic toward the crossing, sweeps out and down, and arrives at the
+    // cross road at a right angle. The two arms on a side mirror each other and
+    // land at the same corner.
+    for (const sn of [1, -1]) {
+      const mergeOffset = sn * RAMP_REACH
+      const centerX = frame.x + n.x * mergeOffset
+      const centerZ = frame.z + n.z * mergeOffset
+      // Stop at the near edge of the cross road, not its centreline, so the
+      // ramp does not pave over the far carriageway.
+      const mergeY = sampleOpen(crossHeights, mergeOffset)
+      for (const sd of [1, -1]) {
+        const edgeOffset = sd * (CROSS_WIDTH / 2)
+        const mergeX = centerX + frame.dx * edgeOffset
+        const mergeZ = centerZ + frame.dz * edgeOffset
+        const attach = indexAtDistance(cum, (cum[c]! + sd * RAMP_ALONG + total) % total)
+        const start = frameAt(samples, attach)
+        const startX = start.x + start.nx * sn * (ROAD_WIDTH / 2)
+        const startZ = start.z + start.nz * sn * (ROAD_WIDTH / 2)
+        const startY = profile[attach]!
+
+        const reach = Math.hypot(mergeX - startX, mergeZ - startZ)
+        const handle = reach * 0.45
+        // Depart toward the crossing and arrive toward it, so the ramp sweeps
+        // down in one smooth motion and ends perpendicular to the cross road.
+        const p1x = startX - sd * start.dx * handle
+        const p1z = startZ - sd * start.dz * handle
+        const p2x = mergeX + sd * frame.dx * handle
+        const p2z = mergeZ + sd * frame.dz * handle
+
+        // Linear fall from the deck to the cross road so the ramp always
+        // reaches it; a grade limit here would strand the tip above the road.
+        const points: Vec2[] = []
+        const heights = new Float32Array(RAMP_SEGMENTS + 1)
+        for (let k = 0; k <= RAMP_SEGMENTS; k++) {
+          const t = k / RAMP_SEGMENTS
+          const u = 1 - t
+          points.push({
+            x: u * u * u * startX + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * mergeX,
+            z: u * u * u * startZ + 3 * u * u * t * p1z + 3 * u * t * t * p2z + t * t * t * mergeZ,
+          })
+          heights[k] = startY + (mergeY - startY) * t
+        }
+
+        roads.push({
+          id: id++,
+          closed: false,
+          width: RAMP_WIDTH,
+          points: points.map((point, k) => ({ x: point.x, y: heights[k]!, z: point.z })),
+          structure: new Uint8Array(Math.max(0, points.length - 1)),
+        })
+      }
+    }
+  }
+
+  return roads
+}
+
+/**
+ * Cut the ground down along at-grade roads so rising terrain never buries the
+ * ribbon, just as river channels are carved so the water is not covered. Only
+ * cuts are made, never fills, so embankments and bridges keep their profile.
+ */
+function carveRoadBeds(field: Heightfield, roads: Road[]): void {
+  const { width, depth, cellSize, heights } = field
+  for (const road of roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    const flat = road.width / 2
+    const reach = flat + cellSize * 4
+    for (let i = 0; i < count; i++) {
+      const atGrade = road.closed
+        ? road.structure[i] === ROAD_GRADE || road.structure[(i - 1 + count) % count] === ROAD_GRADE
+        : (i > 0 && road.structure[i - 1] === ROAD_GRADE) ||
+          (i < segmentCount && road.structure[i] === ROAD_GRADE)
+      if (!atGrade) continue
+
+      const point = road.points[i]!
+      const minCol = Math.max(Math.floor((point.x - reach) / cellSize), 0)
+      const maxCol = Math.min(Math.ceil((point.x + reach) / cellSize), width - 1)
+      const minRow = Math.max(Math.floor((point.z - reach) / cellSize), 0)
+      const maxRow = Math.min(Math.ceil((point.z + reach) / cellSize), depth - 1)
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          const distance = Math.hypot(col * cellSize - point.x, row * cellSize - point.z)
+          if (distance > reach) continue
+          const target = point.y - CUT_CLEARANCE + Math.max(0, distance - flat) * CUT_SLOPE
+          const cell = row * width + col
+          if (heights[cell]! > target) heights[cell] = target
+        }
+      }
+    }
+  }
+}
+
 /**
  * Build the highway network: a single closed loop that visits every city, so
  * no road ends in a dead end. The horizontal route is shaped by `routeLoop`;
  * the vertical route is grade-limited, which forces a bridge where it crosses
- * water and a tunnel where it passes beneath a mountain.
+ * water and a tunnel where it passes beneath a mountain. Interchanges branch
+ * off the finished loop as open cross roads and ramps.
  */
 export function generateRoads(
   field: Heightfield,
@@ -560,12 +893,38 @@ export function generateRoads(
       : ground[i]! + DECK_HEIGHT
   }
 
+  const cum = cumulativeLengths(samples)
+  const total =
+    cum[count - 1]! +
+    Math.hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
+  const crossings = interchangeCenters(field, seaLevel, samples, wet, cum, total).map((c) => ({
+    index: c,
+    cross: crossRoad(field, samples, c),
+  }))
+
+  // Raise the deck over each crossing until it clears the cross road below;
+  // the grade limit spreads each lift into approach ramps. Crossings where the
+  // two constraints cannot both hold are dropped after a final grade pass.
+  const bridgeSteps = Math.max(1, Math.round(UNDERPASS_SPAN / (total / count)))
+  for (let pass = 0; pass < 20; pass++) {
+    let raised = false
+    for (const { index: c, cross } of crossings) {
+      const required = cross.heights[cross.centerIndex]! + UNDERPASS_CLEARANCE
+      for (let j = -bridgeSteps; j <= bridgeSteps; j++) {
+        const k = (c + j + count) % count
+        if (profile[k]! < required) {
+          profile[k] = required
+          raised = true
+        }
+      }
+    }
+    if (!raised) break
+    limitGrade(profile, samples, MAX_ROAD_GRADE)
+  }
   limitGrade(profile, samples, MAX_ROAD_GRADE)
 
   // A sample that stayed near its water is a bridge deck; one the grade limit
   // pushed deep beneath the bed is a tunnel, even with a river overhead.
-  const KIND_BRIDGE = 1
-  const KIND_TUNNEL = 2
   const kind = new Uint8Array(count)
   for (let i = 0; i < count; i++) {
     const buried = ground[i]! - profile[i]! > TUNNEL_DEPTH
@@ -581,6 +940,15 @@ export function generateRoads(
     else structure[i] = ROAD_GRADE
   }
 
+  const built = crossings.filter(({ index, cross }) => {
+    if (kind[index] === KIND_TUNNEL) return false
+    if (profile[index]! - cross.heights[cross.centerIndex]! < UNDERPASS_CLEARANCE - 0.5) return false
+    const drop = profile[index]! - Math.min(sampleOpen(cross.heights, -RAMP_REACH), sampleOpen(cross.heights, RAMP_REACH))
+    return drop <= RAMP_DROP
+  })
   const points: RoadPoint[] = samples.map((point, i) => ({ x: point.x, y: profile[i]!, z: point.z }))
-  return [{ id: 0, closed: true, points, structure }]
+  const highway: Road = { id: 0, closed: true, width: ROAD_WIDTH, points, structure }
+  const roads = [highway, ...buildInterchanges(samples, profile, built, bridgeSteps, structure, 1)]
+  carveRoadBeds(field, roads)
+  return roads
 }

@@ -9,18 +9,20 @@ export const DISTRICT_CITY = 2
 
 /** Local slope is averaged over this many cells to judge a neighbourhood. */
 const RELIEF_RADIUS = 12
-/** Neighbourhoods gentler than this average grade count as level ground. */
-const MAX_GRADE = 0.08
+/** Ground is level when both its own and its neighbourhood's grade are below this. */
+const MAX_GRADE = 0.12
 /** Land must clear the sea by this much before it can be built on. */
 const COAST_MARGIN = 1.5
 /** Cities to place, when the island has room for them. */
 const CITY_COUNT = 3
-const CITY_RADIUS = { min: 22, max: 34 } as const
-const SUBURB_WIDTH = { min: 16, max: 26 } as const
+const CITY_RADIUS = { min: 95, max: 135 } as const
+const SUBURB_WIDTH = { min: 45, max: 70 } as const
 /** A candidate needs this much level ground around it to become a city. */
 const MIN_LEVEL_FRACTION = 0.4
 /** Cities keep at least this much space between their centres. */
-const MIN_CITY_SPACING = 160
+const MIN_CITY_SPACING = 380
+/** The triangle search only needs city cores not to overlap. */
+const MIN_TRIANGLE_SIDE = CITY_RADIUS.max * 2
 /** A city triangle may have each corner off a perfect equilateral by this much. */
 const MAX_ANGLE_DEVIATION = 20
 /** Candidate sites are thinned onto this coarse grid before the triangle search. */
@@ -144,7 +146,7 @@ function triangleScore(
   const ab = Math.hypot(a.x - b.x, a.z - b.z)
   const bc = Math.hypot(b.x - c.x, b.z - c.z)
   const ca = Math.hypot(c.x - a.x, c.z - a.z)
-  if (Math.min(ab, bc, ca) < MIN_CITY_SPACING) return -Infinity
+  if (Math.min(ab, bc, ca) < MIN_TRIANGLE_SIDE) return -Infinity
   const deviation = Math.max(...triangleAngles(bc, ca, ab).map((angle) => Math.abs(angle - 60)))
   if (deviation > MAX_ANGLE_DEVIATION) return -Infinity
   return level[cells[0]]! + level[cells[1]]! + level[cells[2]]!
@@ -193,13 +195,16 @@ export function generateDistricts(
 ): DistrictMap {
   const { width, depth, cellSize, heights } = field
   const count = width * depth
-  const grade = boxBlur(neighbourSlope(field), width, depth, RELIEF_RADIUS)
+  const slope = neighbourSlope(field)
+  const grade = boxBlur(slope, width, depth, RELIEF_RADIUS)
 
   const buildable = new Uint8Array(count)
   const candidates: number[] = []
   for (let cell = 0; cell < count; cell++) {
     if (heights[cell]! <= seaLevel + COAST_MARGIN) continue
-    if (grade[cell]! > MAX_GRADE) continue
+    // Gentle both locally and over the neighbourhood, so a city never straddles
+    // a single sharp step even when the surrounding terrain is otherwise even.
+    if (slope[cell]! > MAX_GRADE || grade[cell]! > MAX_GRADE) continue
     if (water.has(cell)) continue
     buildable[cell] = 1
     candidates.push(cell)
