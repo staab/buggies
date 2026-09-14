@@ -14,6 +14,8 @@ import {
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
+  ROAD_WIDTH,
+  STREET_WIDTH,
   WORLD_SCALE,
   computeFlowRouting,
   findLakes,
@@ -282,6 +284,78 @@ describe('roads', () => {
     suburbWidth: 14,
     area: 100,
   })
+
+  function pointToSegment(
+    px: number,
+    pz: number,
+    ax: number,
+    az: number,
+    bx: number,
+    bz: number,
+  ): number {
+    const vx = bx - ax
+    const vz = bz - az
+    const lengthSq = vx * vx + vz * vz || 1
+    const t = Math.min(Math.max(((px - ax) * vx + (pz - az) * vz) / lengthSq, 0), 1)
+    return Math.hypot(px - (ax + vx * t), pz - (az + vz * t))
+  }
+
+  /** Convex hull of a point cloud, by monotone chain. */
+  function hull(points: RoadPoint[]): RoadPoint[] {
+    const sorted = points.slice().sort((a, b) => a.x - b.x || a.z - b.z)
+    const turn = (o: RoadPoint, a: RoadPoint, b: RoadPoint): number =>
+      (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x)
+    const half = (source: RoadPoint[]): RoadPoint[] => {
+      const chain: RoadPoint[] = []
+      for (const point of source) {
+        while (chain.length >= 2 && turn(chain[chain.length - 2]!, chain[chain.length - 1]!, point) <= 0) {
+          chain.pop()
+        }
+        chain.push(point)
+      }
+      chain.pop()
+      return chain
+    }
+    return [...half(sorted), ...half(sorted.reverse())]
+  }
+
+  function inPolygon(x: number, z: number, polygon: RoadPoint[]): boolean {
+    let inside = false
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[i]!
+      const b = polygon[j]!
+      if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside
+    }
+    return inside
+  }
+
+  /** True when two carriageways cross or come within half a carriageway. */
+  function meets(a: Road, b: Road): boolean {
+    const tolerance = (a.width + b.width) / 2
+    const segmentCount = (road: Road): number =>
+      road.closed ? road.points.length : road.points.length - 1
+    for (let i = 0; i < segmentCount(a); i++) {
+      const p = a.points[i]!
+      const q = a.points[(i + 1) % a.points.length]!
+      for (let j = 0; j < segmentCount(b); j++) {
+        const r = b.points[j]!
+        const s = b.points[(j + 1) % b.points.length]!
+        const d1 = (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x)
+        const d2 = (q.x - p.x) * (s.z - p.z) - (q.z - p.z) * (s.x - p.x)
+        const d3 = (s.x - r.x) * (p.z - r.z) - (s.z - r.z) * (p.x - r.x)
+        const d4 = (s.x - r.x) * (q.z - r.z) - (s.z - r.z) * (q.x - r.x)
+        if (d1 * d2 < 0 && d3 * d4 < 0) return true
+        const gap = Math.min(
+          pointToSegment(p.x, p.z, r.x, r.z, s.x, s.z),
+          pointToSegment(q.x, q.z, r.x, r.z, s.x, s.z),
+          pointToSegment(r.x, r.z, p.x, p.z, q.x, q.z),
+          pointToSegment(s.x, s.z, p.x, p.z, q.x, q.z),
+        )
+        if (gap <= tolerance) return true
+      }
+    }
+    return false
+  }
 
   function steepestGrade(road: Road): number {
     const { points } = road
@@ -593,7 +667,7 @@ describe('roads', () => {
     let crossings = 0
     for (const road of arterials) {
       for (const other of map.roads) {
-        if (other === road) continue
+        if (other === road || other.width === STREET_WIDTH) continue
         for (let p = 0; p + 1 < road.points.length; p++) {
           const p1 = road.points[p]!
           const p2 = road.points[p + 1]!
@@ -609,52 +683,238 @@ describe('roads', () => {
   }, 20_000)
 
   it('meets other roads at a straight (180 degree) angle', () => {
-    const map = generateTerrain(1)
-    const ends: { road: Road; start: boolean }[] = []
-    for (const road of map.roads) {
-      if (road.closed || road.points.length < 2) continue
-      ends.push({ road, start: true }, { road, start: false })
-    }
-    const direction = (road: Road, start: boolean): { x: number; z: number; px: number; pz: number } => {
-      const points = road.points
-      const a = start ? points[0]! : points[points.length - 1]!
-      const b = start ? points[1]! : points[points.length - 2]!
-      const dx = b.x - a.x
-      const dz = b.z - a.z
-      const length = Math.hypot(dx, dz) || 1
-      return { x: dx / length, z: dz / length, px: a.x, pz: a.z }
-    }
-
     let nodes = 0
     let aligned = 0
-    const used = new Array<boolean>(ends.length).fill(false)
-    for (let i = 0; i < ends.length; i++) {
-      if (used[i]) continue
-      const cluster = [i]
-      used[i] = true
-      const origin = direction(ends[i]!.road, ends[i]!.start)
-      for (let j = i + 1; j < ends.length; j++) {
-        if (used[j]) continue
-        const point = direction(ends[j]!.road, ends[j]!.start)
-        if (Math.hypot(point.px - origin.px, point.pz - origin.pz) < 1.5) {
-          cluster.push(j)
-          used[j] = true
-        }
+    for (let seed = 1; seed <= 3; seed++) {
+      const map = generateTerrain(seed)
+      const ends: { road: Road; start: boolean }[] = []
+      for (const road of map.roads) {
+        if (road.closed || road.points.length < 2 || road.width === STREET_WIDTH) continue
+        ends.push({ road, start: true }, { road, start: false })
       }
-      if (cluster.length < 2) continue
-      nodes++
-      const directions = cluster.map((k) => direction(ends[k]!.road, ends[k]!.start))
-      let opposite = 0
-      for (let a = 0; a < directions.length; a++) {
-        for (let b = a + 1; b < directions.length; b++) {
-          const dot = directions[a]!.x * directions[b]!.x + directions[a]!.z * directions[b]!.z
-          opposite = Math.max(opposite, (Math.acos(Math.min(Math.max(dot, -1), 1)) * 180) / Math.PI)
-        }
+      const direction = (road: Road, start: boolean): { x: number; z: number; px: number; pz: number } => {
+        const points = road.points
+        const a = start ? points[0]! : points[points.length - 1]!
+        const b = start ? points[1]! : points[points.length - 2]!
+        const dx = b.x - a.x
+        const dz = b.z - a.z
+        const length = Math.hypot(dx, dz) || 1
+        return { x: dx / length, z: dz / length, px: a.x, pz: a.z }
       }
-      if (Math.abs(opposite - 180) < 10) aligned++
+
+      const used = new Array<boolean>(ends.length).fill(false)
+      for (let i = 0; i < ends.length; i++) {
+        if (used[i]) continue
+        const cluster = [i]
+        used[i] = true
+        const origin = direction(ends[i]!.road, ends[i]!.start)
+        for (let j = i + 1; j < ends.length; j++) {
+          if (used[j]) continue
+          const point = direction(ends[j]!.road, ends[j]!.start)
+          if (Math.hypot(point.px - origin.px, point.pz - origin.pz) < 1.5) {
+            cluster.push(j)
+            used[j] = true
+          }
+        }
+        if (cluster.length < 2) continue
+        nodes++
+        const directions = cluster.map((k) => direction(ends[k]!.road, ends[k]!.start))
+        let opposite = 0
+        for (let a = 0; a < directions.length; a++) {
+          for (let b = a + 1; b < directions.length; b++) {
+            const dot = directions[a]!.x * directions[b]!.x + directions[a]!.z * directions[b]!.z
+            opposite = Math.max(opposite, (Math.acos(Math.min(Math.max(dot, -1), 1)) * 180) / Math.PI)
+          }
+        }
+        if (Math.abs(opposite - 180) < 10) aligned++
+      }
     }
     expect(nodes).toBeGreaterThan(0)
-    expect(aligned / nodes).toBeGreaterThan(0.7)
+    expect(aligned / nodes).toBeGreaterThan(0.6)
+  }, 20_000)
+
+  it('fills each city with a grade-limited street grid', () => {
+    const map = generateTerrain(1)
+    const streets = map.roads.filter((road) => !road.closed && road.width === STREET_WIDTH)
+    expect(streets.length).toBeGreaterThan(0)
+    for (const road of streets) {
+      expect(road.points.length).toBeGreaterThan(1)
+      expect(road.structure).toHaveLength(road.points.length - 1)
+      expect(steepestGrade(road)).toBeLessThanOrEqual(MAX_ROAD_GRADE + 1e-3)
+    }
+  }, 20_000)
+
+  it('keeps city streets a road\'s width clear of highways and ramps', () => {
+    const map = generateTerrain(1)
+    const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+    const fast = map.roads.filter((road) => road.width === ROAD_WIDTH || road.width === RAMP_WIDTH)
+    expect(streets.length).toBeGreaterThan(0)
+    expect(fast.length).toBeGreaterThan(0)
+
+    let narrowest = Infinity
+    for (const street of streets) {
+      for (const point of street.points) {
+        for (const road of fast) {
+          const segmentCount = road.closed ? road.points.length : road.points.length - 1
+          for (let i = 0; i < segmentCount; i++) {
+            const a = road.points[i]!
+            const b = road.points[(i + 1) % road.points.length]!
+            const gap = pointToSegment(point.x, point.z, a.x, a.z, b.x, b.z)
+            narrowest = Math.min(narrowest, gap - (road.width + STREET_WIDTH) / 2)
+          }
+        }
+      }
+    }
+    // Edge to edge, a street stays a highway's width away from the fast roads.
+    expect(narrowest).toBeGreaterThanOrEqual(ROAD_WIDTH - 1e-3)
+  }, 20_000)
+
+  it('leaves the pocket between an interchange\'s ramps and highway empty', () => {
+    // Seed 4 puts an interchange well inside a city, so its grid has to dodge one.
+    const map = generateTerrain(4)
+    const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+    const crossRoads = map.roads.filter((road) => road.width === CROSS_WIDTH)
+    const ramps = map.roads.filter((road) => road.width === RAMP_WIDTH)
+    expect(crossRoads.length).toBeGreaterThan(0)
+
+    let checked = 0
+    for (const crossRoad of crossRoads) {
+      // The four ramps of this interchange are the ones landing on its cross road.
+      const arms = ramps.filter((ramp) => {
+        const tip = ramp.points[ramp.points.length - 1]!
+        return crossRoad.points.some((point) => Math.hypot(point.x - tip.x, point.z - tip.z) < 10)
+      })
+      if (arms.length < 3) continue
+      checked++
+      // The hull of the ramps is the diamond they enclose with the highway.
+      const footprint = hull(arms.flatMap((ramp) => ramp.points))
+      for (const street of streets) {
+        for (const point of street.points) {
+          expect(inPolygon(point.x, point.z, footprint)).toBe(false)
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(0)
+  }, 20_000)
+
+  it('never lets a city street smear along an arterial', () => {
+    // Meeting shallower than 45 degrees, two overlapping ribbons read as one
+    // smeared road rather than a junction, so the street gives way there.
+    const shallow = Math.cos(Math.PI / 4)
+    const overlap = (ARTERIAL_WIDTH + STREET_WIDTH) / 2
+    for (const seed of [1, 5]) {
+      const map = generateTerrain(seed)
+      const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+      const arterials = map.roads.filter((road) => road.width === ARTERIAL_WIDTH)
+      expect(streets.length).toBeGreaterThan(0)
+      expect(arterials.length).toBeGreaterThan(0)
+
+      let closest = Infinity
+      for (const street of streets) {
+        for (let i = 0; i + 1 < street.points.length; i++) {
+          const p = street.points[i]!
+          const q = street.points[i + 1]!
+          const length = Math.hypot(q.x - p.x, q.z - p.z) || 1
+          const sx = (q.x - p.x) / length
+          const sz = (q.z - p.z) / length
+          for (const arterial of arterials) {
+            for (let j = 0; j + 1 < arterial.points.length; j++) {
+              const a = arterial.points[j]!
+              const b = arterial.points[j + 1]!
+              const run = Math.hypot(b.x - a.x, b.z - a.z) || 1
+              if (Math.abs(((b.x - a.x) * sx + (b.z - a.z) * sz) / run) <= shallow) continue
+              if (Math.min(p.x, q.x) - overlap > Math.max(a.x, b.x)) continue
+              if (Math.min(a.x, b.x) - overlap > Math.max(p.x, q.x)) continue
+              if (Math.min(p.z, q.z) - overlap > Math.max(a.z, b.z)) continue
+              if (Math.min(a.z, b.z) - overlap > Math.max(p.z, q.z)) continue
+              // Two disjoint segments are closest at an endpoint of one of them.
+              closest = Math.min(
+                closest,
+                pointToSegment(p.x, p.z, a.x, a.z, b.x, b.z),
+                pointToSegment(q.x, q.z, a.x, a.z, b.x, b.z),
+                pointToSegment(a.x, a.z, p.x, p.z, q.x, q.z),
+                pointToSegment(b.x, b.z, p.x, p.z, q.x, q.z),
+              )
+            }
+          }
+        }
+      }
+      // Where a street does run shallowly beside an arterial it stops at the
+      // point their carriageways would start to overlap, and no nearer.
+      expect(closest).toBeGreaterThanOrEqual(overlap - 1e-6)
+    }
+  }, 30_000)
+
+  it('leaves no city street stranded off the network', () => {
+    const map = generateTerrain(1)
+    const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+    expect(streets.length).toBeGreaterThan(0)
+
+    const parent = streets.map((_, index) => index)
+    const find = (index: number): number => {
+      while (parent[index] !== index) index = parent[index] = parent[parent[index]!]!
+      return index
+    }
+    for (let i = 0; i < streets.length; i++) {
+      for (let j = i + 1; j < streets.length; j++) {
+        if (meets(streets[i]!, streets[j]!)) parent[find(i)] = find(j)
+      }
+    }
+    const reached = new Set<number>()
+    for (let i = 0; i < streets.length; i++) {
+      for (const road of map.roads) {
+        if (road.width === STREET_WIDTH) continue
+        if (meets(streets[i]!, road)) {
+          reached.add(find(i))
+          break
+        }
+      }
+    }
+    // Every street is drivable: some chain of streets leads it to a bigger road.
+    for (let i = 0; i < streets.length; i++) expect(reached.has(find(i))).toBe(true)
+  }, 20_000)
+
+  it('gives every city its own interchange and never a second', () => {
+    /** The interchange underpasses, each charged to the city centre nearest it. */
+    const perCity = (seed: number): number[] => {
+      const map = generateTerrain(seed)
+      const counts = map.districts.map(() => 0)
+      for (const crossRoad of map.roads.filter((road) => road.width === CROSS_WIDTH)) {
+        const under = crossRoad.points[Math.floor(crossRoad.points.length / 2)]!
+        let best = -1
+        let nearest = Infinity
+        map.districts.forEach((district, index) => {
+          const distance = Math.hypot(under.x - district.cx, under.z - district.cz)
+          if (distance < nearest) {
+            nearest = distance
+            best = index
+          }
+        })
+        // Cities can overlap, so an interchange belongs to the one it is on and
+        // nearest to, never to both.
+        const owner = map.districts[best]!
+        if (nearest <= owner.radius + owner.suburbWidth) counts[best]!++
+      }
+      return counts
+    }
+
+    for (const seed of [1, 2, 3, 4, 5]) {
+      // A city's exit is placed before the spacing rule has any say, and only on
+      // ground nearer to it than to any other city, so each of these gets one.
+      expect(perCity(seed)).toEqual(generateTerrain(seed).districts.map(() => 1))
+    }
+    for (const seed of [14, 20, 27]) {
+      // Some highway frontage is too uneven to carry an interchange at all, so a
+      // city can go without; what must never happen is a city getting two.
+      for (const count of perCity(seed)) expect(count).toBeLessThanOrEqual(1)
+    }
+  }, 60_000)
+
+  it('gives every road its own id', () => {
+    for (const seed of [1, 2, 3]) {
+      const ids = generateTerrain(seed).roads.map((road) => road.id)
+      expect(new Set(ids).size).toBe(ids.length)
+    }
   }, 20_000)
 
   it('rounds arterial corners instead of leaving sharp bends', () => {

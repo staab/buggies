@@ -11,11 +11,13 @@ export const DISTRICT_CITY = 2
 const RELIEF_RADIUS = 12
 /** Ground is level when both its own and its neighbourhood's grade are below this. */
 const MAX_GRADE = 0.12
+/** A city may spread onto ground this steep, so it fills gently rolling land. */
+const MAX_CITY_SLOPE = 0.18
 /** Land must clear the sea by this much before it can be built on. */
 const COAST_MARGIN = 1.5
 /** Cities to place, when the island has room for them. */
 const CITY_COUNT = 3
-const CITY_RADIUS = { min: 95, max: 135 } as const
+const CITY_RADIUS = { min: 57, max: 82 } as const
 const SUBURB_WIDTH = { min: 45, max: 70 } as const
 /** A candidate needs this much level ground around it to become a city. */
 const MIN_LEVEL_FRACTION = 0.4
@@ -199,6 +201,7 @@ export function generateDistricts(
   const grade = boxBlur(slope, width, depth, RELIEF_RADIUS)
 
   const buildable = new Uint8Array(count)
+  const cityGround = new Uint8Array(count)
   const candidates: number[] = []
   for (let cell = 0; cell < count; cell++) {
     if (heights[cell]! <= seaLevel + COAST_MARGIN) continue
@@ -208,6 +211,15 @@ export function generateDistricts(
     if (water.has(cell)) continue
     buildable[cell] = 1
     candidates.push(cell)
+  }
+
+  // A city's footprint may spread onto gently rolling ground, but never onto
+  // steep terrain or water, so it fills the land around its flat core.
+  for (let cell = 0; cell < count; cell++) {
+    if (heights[cell]! <= seaLevel + COAST_MARGIN) continue
+    if (slope[cell]! > MAX_CITY_SLOPE || grade[cell]! > MAX_CITY_SLOPE) continue
+    if (water.has(cell)) continue
+    cityGround[cell] = 1
   }
 
   // Fraction of buildable land in a window the size of a city, blurred once so
@@ -291,8 +303,9 @@ export function generateDistricts(
   }
 
   const districtOf = new Uint8Array(count)
+  const owner = new Int16Array(count).fill(-1)
   for (let cell = 0; cell < count; cell++) {
-    if (!buildable[cell]) continue
+    if (!cityGround[cell]) continue
 
     const x = ((cell % width) + 0.5) * cellSize
     const z = (((cell / width) | 0) + 0.5) * cellSize
@@ -313,10 +326,62 @@ export function generateDistricts(
     const distance = Math.sqrt(nearestSq)
     if (distance <= district.radius) {
       districtOf[cell] = DISTRICT_CITY
+      owner[cell] = nearest
       district.area++
     } else if (distance <= district.radius + district.suburbWidth) {
       districtOf[cell] = DISTRICT_SUBURB
+      owner[cell] = nearest
       district.area++
+    }
+  }
+
+  // Keep only the largest contiguous piece of each city, so a city reads as one
+  // blob rather than a core with scattered specks around it.
+  for (const district of districts) {
+    const cells: number[] = []
+    for (let cell = 0; cell < count; cell++) {
+      if (districtOf[cell] === DISTRICT_CITY && owner[cell] === district.id) cells.push(cell)
+    }
+    if (cells.length === 0) continue
+
+    const inCity = new Set(cells)
+    const visited = new Set<number>()
+    let largest: number[] = []
+    for (const start of cells) {
+      if (visited.has(start)) continue
+      const component: number[] = []
+      const stack = [start]
+      visited.add(start)
+      while (stack.length > 0) {
+        const cell = stack.pop()!
+        component.push(cell)
+        const col = cell % width
+        const row = (cell / width) | 0
+        for (const [dc, dr] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nc = col + dc
+          const nr = row + dr
+          if (nc < 0 || nc >= width || nr < 0 || nr >= depth) continue
+          const next = nr * width + nc
+          if (inCity.has(next) && !visited.has(next)) {
+            visited.add(next)
+            stack.push(next)
+          }
+        }
+      }
+      if (component.length > largest.length) largest = component
+    }
+
+    if (largest.length === cells.length) continue
+    const keep = new Set(largest)
+    for (const cell of cells) {
+      if (keep.has(cell)) continue
+      districtOf[cell] = DISTRICT_COUNTRY
+      district.area--
     }
   }
 

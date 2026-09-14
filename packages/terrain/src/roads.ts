@@ -1,5 +1,6 @@
 import { createRng, type Rng } from '@buggies/physics'
 
+import { DISTRICT_CITY } from './districts.ts'
 import type { District, Heightfield, Lake, River, Road, RoadPoint } from './types.ts'
 
 /** Road structure codes stored in a road's `structure` array. */
@@ -57,10 +58,22 @@ const RAMP_REACH = 50
 const CROSS_REACH = RAMP_REACH + 2
 /** Highway length either side of an underpass drawn as bridge deck. */
 const UNDERPASS_SPAN = 30
+/**
+ * Two interchanges closer than this along the highway would run their ramps and
+ * bridge decks into each other, so no two are ever placed within it.
+ */
+const INTERCHANGE_CLEAR = 2 * (RAMP_ALONG + UNDERPASS_SPAN)
 /** The bridge deck clears the cross road by at least this much. */
 const UNDERPASS_CLEARANCE = 2.5
 /** Most a ramp may drop from the deck to the cross road, so it stays drivable. */
 const RAMP_DROP = 7
+/**
+ * Headroom a site is chosen with. The deck a site is judged against is the one
+ * the highway comes to before any crossing has had a say; raising a neighbour
+ * for its own underpass can lift this one a little further through the grade
+ * limit, and a site picked right on the limit would then fail to be built.
+ */
+const RAMP_DROP_HEADROOM = 0.5
 /** Terrain is cut this far below an at-grade road so the ribbon stays clear. */
 const CUT_CLEARANCE = 0.6
 /** A cut slope rises this much per horizontal unit away from the road edge. */
@@ -130,6 +143,81 @@ function centroid(points: Vec2[]): Vec2 {
     z += point.z
   }
   return { x: x / points.length, z: z / points.length }
+}
+
+/** Distance from a point to a segment, in the XZ plane. */
+function distanceToSegment(
+  px: number,
+  pz: number,
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+): number {
+  const vx = bx - ax
+  const vz = bz - az
+  const lengthSq = vx * vx + vz * vz || 1
+  const t = Math.min(Math.max(((px - ax) * vx + (pz - az) * vz) / lengthSq, 0), 1)
+  return Math.hypot(px - (ax + vx * t), pz - (az + vz * t))
+}
+
+/**
+ * Distance between two segments in the XZ plane, zero where they cross. Two
+ * segments that do not cross are closest at an endpoint of one of them, so the
+ * four point-to-segment distances cover every case.
+ */
+function segmentGap(
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+  cx: number,
+  cz: number,
+  dx: number,
+  dz: number,
+): number {
+  if (segmentsCross(ax, az, bx, bz, cx, cz, dx, dz)) return 0
+  return Math.min(
+    distanceToSegment(ax, az, cx, cz, dx, dz),
+    distanceToSegment(bx, bz, cx, cz, dx, dz),
+    distanceToSegment(cx, cz, ax, az, bx, bz),
+    distanceToSegment(dx, dz, ax, az, bx, bz),
+  )
+}
+
+/**
+ * Convex hull of a point cloud, counter-clockwise, by monotone chain. Fewer
+ * than three points come back unchanged, which `pointInPolygon` reads as empty.
+ */
+function convexHull(points: Vec2[]): Vec2[] {
+  if (points.length < 3) return points.slice()
+  const sorted = points.slice().sort((a, b) => a.x - b.x || a.z - b.z)
+  const cross = (o: Vec2, a: Vec2, b: Vec2): number =>
+    (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x)
+
+  const half = (source: Vec2[]): Vec2[] => {
+    const chain: Vec2[] = []
+    for (const point of source) {
+      while (chain.length >= 2 && cross(chain[chain.length - 2]!, chain[chain.length - 1]!, point) <= 0) {
+        chain.pop()
+      }
+      chain.push(point)
+    }
+    chain.pop()
+    return chain
+  }
+  return [...half(sorted), ...half(sorted.reverse())]
+}
+
+/** True when a point lies inside a polygon, by ray casting. */
+function pointInPolygon(x: number, z: number, polygon: Vec2[]): boolean {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i]!
+    const b = polygon[j]!
+    if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside
+  }
+  return inside
 }
 
 /** Bilinear ground height at a world-space point. */
@@ -593,22 +681,26 @@ function indexAtDistance(cum: Float32Array, distance: number): number {
 }
 
 /**
- * Nearest sample to `index` whose crossing sits on dry land clear of water, or
- * `-1` if none is found within `maxOffset`. Interchanges need solid ground
- * under them, so this nudges a candidate off a river or coastline rather than
- * dropping it.
+ * Nearest sample to `index` that `permits` and whose crossing sits on dry land
+ * clear of water, or `-1` if none is found within `maxOffset`. Interchanges
+ * need solid ground under them, so this nudges a candidate off a river or
+ * coastline rather than dropping it — and past ground already spoken for,
+ * rather than giving up on the first site that happens to be taken.
  */
 function findDryCrossing(
   field: Heightfield,
   seaLevel: number,
   samples: Vec2[],
   wet: Uint8Array,
+  deck: Float32Array,
   index: number,
   maxOffset: number,
+  permits: (c: number) => boolean,
 ): number {
   const count = samples.length
   for (let offset = 0; offset <= maxOffset; offset++) {
     for (const c of [(index + offset) % count, (index - offset + count) % count]) {
+      if (!permits(c)) continue
       if (wet[c]) continue
       const frame = frameAt(samples, c)
       const centre = sampleTerrain(field, frame.x, frame.z)
@@ -622,13 +714,35 @@ function findDryCrossing(
       const high = Math.max(centre, nearLeft, nearRight, left, right)
       const low = Math.min(centre, nearLeft, nearRight, left, right)
       if (high - low > CROSS_RELIEF) continue
+      // The deck rides where the grade limit puts it, not where the ground is,
+      // so a site in a dip can sit far too high for the ramps to reach the
+      // cross road however level the ground across it looks. Judge the drop the
+      // ramps would really have to make, against the deck raised just enough to
+      // clear the underpass, which is what the finished highway does here.
+      if (centre - deck[c]! > TUNNEL_DEPTH) continue
+      const cross = crossRoad(field, samples, c)
+      const roof = Math.max(deck[c]!, cross.heights[cross.centerIndex]! + UNDERPASS_CLEARANCE)
+      const landing = Math.min(
+        sampleOpen(cross.heights, -RAMP_REACH),
+        sampleOpen(cross.heights, RAMP_REACH),
+      )
+      if (roof - landing > RAMP_DROP - RAMP_DROP_HEADROOM) continue
       return c
     }
   }
   return -1
 }
 
-/** Interchange crossings spaced evenly around the highway loop. */
+/**
+ * Interchange crossings around the highway loop: one serving each city, then
+ * periodic ones along the country between them.
+ *
+ * Cities are served first and from as near their centre as the ground allows,
+ * so a city gets its exit before the spacing rule has any say. The periodic pass
+ * then skips any candidate standing on a city, which is what holds a city to one
+ * and never two. A city whose highway frontage is too steep or too broken to
+ * carry a crossing at all goes without: no site there could be driven.
+ */
 function interchangeCenters(
   field: Heightfield,
   seaLevel: number,
@@ -636,21 +750,86 @@ function interchangeCenters(
   wet: Uint8Array,
   cum: Float32Array,
   total: number,
+  districts: District[],
+  deck: Float32Array,
 ): number[] {
   const count = samples.length
   const step = total / count
   const search = Math.max(1, Math.round(INTERCHANGE_SEARCH / step))
   const minGap = Math.round((INTERCHANGE_SPACING * 0.6) / step)
   const centers: number[] = []
+
+  /** Shortest way round the loop from `c` to the nearest crossing already placed. */
+  const gapTo = (c: number): number => {
+    let gap = Infinity
+    for (const other of centers) {
+      const apart = Math.abs(other - c)
+      gap = Math.min(gap, Math.min(apart, count - apart))
+    }
+    return gap
+  }
+
+  /** The city a crossing at `c` belongs to: whichever centre is nearest it. */
+  const nearestCity = (c: number): District | null => {
+    let best: District | null = null
+    let nearest = Infinity
+    for (const district of districts) {
+      const distance = Math.hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz)
+      if (distance < nearest) {
+        nearest = distance
+        best = district
+      }
+    }
+    return best
+  }
+
+  /** True when a crossing at `c` stands clear of every city. */
+  const rural = (c: number): boolean =>
+    districts.every(
+      (district) =>
+        Math.hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz) >
+        district.radius + district.suburbWidth,
+    )
+
+  const touching = Math.max(1, Math.round(INTERCHANGE_CLEAR / step))
+  for (const district of districts) {
+    let seed = 0
+    let nearest = Infinity
+    for (let i = 0; i < count; i++) {
+      const distance = Math.hypot(samples[i]!.x - district.cx, samples[i]!.z - district.cz)
+      if (distance < nearest) {
+        nearest = distance
+        seed = i
+      }
+    }
+    // Search out as far as the city reaches, then a little further, rather than
+    // give up on a city whose own ground will not take a crossing. Ground
+    // nearer to another city is that city's to use: without that, a neighbour
+    // standing on better land takes the exits and this city is left with none.
+    const reach = Math.round((district.radius + district.suburbWidth) / step) + search
+    const c = findDryCrossing(
+      field,
+      seaLevel,
+      samples,
+      wet,
+      deck,
+      seed,
+      reach,
+      (candidate) => nearestCity(candidate) === district && gapTo(candidate) >= touching,
+    )
+    if (c >= 0) centers.push(c)
+  }
+
   for (let distance = 0; distance < total; distance += INTERCHANGE_SPACING) {
     const index = indexAtDistance(cum, distance)
-    const c = findDryCrossing(field, seaLevel, samples, wet, index, search)
-    if (c < 0) continue
+    // Every city is served by now, so a periodic exit belongs only in the
+    // country between them; one landing on a city would give it a second.
     // A candidate near the end of the loop can slide onto the first one across
     // the wrap, so keep a minimum cyclic gap between crossings.
-    const gap = Math.min(...centers.map((other) => Math.min(Math.abs(other - c), count - Math.abs(other - c))))
-    if (centers.length > 0 && gap < minGap) continue
-    centers.push(c)
+    const c = findDryCrossing(field, seaLevel, samples, wet, deck, index, search, (candidate) =>
+      rural(candidate) && gapTo(candidate) >= minGap,
+    )
+    if (c >= 0) centers.push(c)
   }
   return centers
 }
@@ -733,6 +912,10 @@ function crossRoad(field: Heightfield, samples: Vec2[], c: number): CrossRoad {
  * connect the highway deck down to it, one per quadrant. The highway is drawn
  * as bridge deck across the crossing so the cross road shows through
  * underneath; ramps are added after the cross road so they render on top.
+ *
+ * Alongside the roads this returns each interchange's footprint: the hull of
+ * its four ramps, which is the diamond they enclose together with the highway
+ * and the cross road. Nothing else may be built inside it.
  */
 function buildInterchanges(
   samples: Vec2[],
@@ -741,18 +924,20 @@ function buildInterchanges(
   bridgeSteps: number,
   structure: Uint8Array,
   nextId: number,
-): Road[] {
+): { roads: Road[]; footprints: Vec2[][] } {
   const count = samples.length
   const cum = cumulativeLengths(samples)
   const total =
     cum[count - 1]! +
     Math.hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
   const roads: Road[] = []
+  const footprints: Vec2[][] = []
   let id = nextId
 
   for (const { index: c, cross } of crossings) {
     const frame = frameAt(samples, c)
     const n = { x: frame.nx, z: frame.nz }
+    const arms: Vec2[] = []
 
     for (let j = -bridgeSteps; j <= bridgeSteps; j++) {
       structure[(c + j + count) % count] = ROAD_BRIDGE
@@ -820,11 +1005,14 @@ function buildInterchanges(
           points: points.map((point, k) => ({ x: point.x, y: heights[k]!, z: point.z })),
           structure: new Uint8Array(Math.max(0, points.length - 1)),
         })
+        arms.push(...points)
       }
     }
+
+    footprints.push(convexHull(arms))
   }
 
-  return roads
+  return { roads, footprints }
 }
 
 /**
@@ -1711,6 +1899,503 @@ function buildArterials(
   return roads.filter((_, index) => alive[index]!)
 }
 
+/** City street width, in world units. */
+export const STREET_WIDTH = 3
+/** Spacing between city streets and the step along them, in world units. */
+const STREET_SPACING = 48
+const STREET_STEP = 12
+/** Clear ground kept between a street and the edge of a highway or ramp. */
+const STREET_CLEARANCE = ROAD_WIDTH
+/** A street has to span a block to be worth drawing, so runs are this long. */
+const STREET_MIN_POINTS = Math.round(STREET_SPACING / STREET_STEP) + 1
+/**
+ * A street that runs into an arterial shallower than this does not read as a
+ * junction: the two ribbons overlap along their length and smear into a single
+ * road. Anything squarer than this is a normal crossing and is left alone.
+ */
+const STREET_ARTERIAL_ANGLE = Math.PI / 4
+/**
+ * How close a street may come to an arterial's centreline: any nearer and the
+ * two carriageways overlap, which is the smear itself. Trimming back to exactly
+ * here leaves the street touching the arterial, so a shallow meeting still
+ * reads — and still counts — as a junction onto it.
+ */
+const STREET_ARTERIAL_TOUCH = (ARTERIAL_WIDTH + STREET_WIDTH) / 2
+/** Cell size of the grid road segments are bucketed into, in world units. */
+const SEGMENT_CELL = 32
+
+/** One stretch of road, with the ground either side of it that it claims. */
+interface ClaimedSegment {
+  ax: number
+  az: number
+  bx: number
+  bz: number
+  /** Ground within this distance of the segment belongs to it. */
+  reach: number
+  /** Unit heading along the segment. */
+  dx: number
+  dz: number
+}
+
+/** Every segment of a road, each claiming `reach` of ground either side. */
+function claimedSegments(road: Road, reach: number): ClaimedSegment[] {
+  const points = road.points
+  const count = road.closed ? points.length : points.length - 1
+  const segments: ClaimedSegment[] = []
+  for (let i = 0; i < count; i++) {
+    const a = points[i]!
+    const b = points[(i + 1) % points.length]!
+    const length = Math.hypot(b.x - a.x, b.z - a.z) || 1
+    segments.push({
+      ax: a.x,
+      az: a.z,
+      bx: b.x,
+      bz: b.z,
+      reach,
+      dx: (b.x - a.x) / length,
+      dz: (b.z - a.z) / length,
+    })
+  }
+  return segments
+}
+
+/**
+ * Calls `visit` for every indexed segment that could claim ground inside the
+ * box, stopping at the first one `visit` accepts. A segment spanning several
+ * cells of the box is offered more than once, which costs a repeated test and
+ * nothing else.
+ */
+type SegmentLookup = (
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  visit: (segment: ClaimedSegment) => boolean,
+) => boolean
+
+/**
+ * Bucket segments into a uniform grid by the ground they claim, so a lookup only
+ * tests the few that could be in range. A segment goes in every cell its reach
+ * can touch, so a box only ever looks in the cells it covers. The roads hold
+ * thousands of samples between them, far too many to walk once per street span.
+ */
+function indexSegments(segments: ClaimedSegment[]): SegmentLookup {
+  const cellOf = (value: number): number => Math.max(0, Math.floor(value / SEGMENT_CELL))
+  const key = (col: number, row: number): number => col * 0x10000 + row
+  const buckets = new Map<number, ClaimedSegment[]>()
+  for (const segment of segments) {
+    const minCol = cellOf(Math.min(segment.ax, segment.bx) - segment.reach)
+    const maxCol = cellOf(Math.max(segment.ax, segment.bx) + segment.reach)
+    const minRow = cellOf(Math.min(segment.az, segment.bz) - segment.reach)
+    const maxRow = cellOf(Math.max(segment.az, segment.bz) + segment.reach)
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        const bucket = buckets.get(key(col, row))
+        if (bucket) bucket.push(segment)
+        else buckets.set(key(col, row), [segment])
+      }
+    }
+  }
+
+  return (minX, minZ, maxX, maxZ, visit) => {
+    const maxCol = cellOf(maxX)
+    const maxRow = cellOf(maxZ)
+    for (let row = cellOf(minZ); row <= maxRow; row++) {
+      for (let col = cellOf(minX); col <= maxCol; col++) {
+        const bucket = buckets.get(key(col, row))
+        if (!bucket) continue
+        for (const segment of bucket) if (visit(segment)) return true
+      }
+    }
+    return false
+  }
+}
+
+/**
+ * The ground city streets have to leave alone: a band a highway's width clear
+ * of every highway and ramp edge, and the whole footprint of each interchange,
+ * so no street threads the pockets its ramps enclose against the highway.
+ */
+function streetKeepOut(roads: Road[], footprints: Vec2[][]): (x: number, z: number) => boolean {
+  const near = indexSegments(
+    roads
+      .filter((road) => road.width === ROAD_WIDTH || road.width === RAMP_WIDTH)
+      .flatMap((road) => claimedSegments(road, (road.width + STREET_WIDTH) / 2 + STREET_CLEARANCE)),
+  )
+
+  return (x, z) => {
+    for (const footprint of footprints) {
+      if (pointInPolygon(x, z, footprint)) return true
+    }
+    return near(
+      x,
+      z,
+      x,
+      z,
+      (segment) =>
+        distanceToSegment(x, z, segment.ax, segment.az, segment.bx, segment.bz) < segment.reach,
+    )
+  }
+}
+
+/**
+ * Fill each city with a street grid. The grid is aligned to the city polygon's
+ * principal axes, so every street runs edge to edge across the polygon and the
+ * cells between them are simple rectangles. Streets follow the ground and are
+ * grade-limited like any other road. A grid line is cut wherever it leaves the
+ * city, meets water or enters `blocked`, and each surviving run long enough to
+ * span a block becomes its own street.
+ */
+function buildCityGrids(
+  field: Heightfield,
+  seaLevel: number,
+  districts: District[],
+  districtOf: Uint8Array,
+  blocked: (x: number, z: number) => boolean,
+  nextId: number,
+): Road[] {
+  const { width, depth, cellSize } = field
+
+  const inside = (x: number, z: number): boolean => {
+    const col = Math.floor(x / cellSize)
+    const row = Math.floor(z / cellSize)
+    if (col < 0 || col >= width || row < 0 || row >= depth) return false
+    return districtOf[row * width + col] === DISTRICT_CITY
+  }
+
+  // Every city cell, once; then each district takes the ones inside its radius.
+  const cityCells: { x: number; z: number }[] = []
+  for (let cell = 0; cell < districtOf.length; cell++) {
+    if (districtOf[cell] !== DISTRICT_CITY) continue
+    const col = cell % width
+    const row = (cell / width) | 0
+    cityCells.push({ x: (col + 0.5) * cellSize, z: (row + 0.5) * cellSize })
+  }
+
+  const roads: Road[] = []
+  let id = nextId
+
+  const addStreet = (samples: { x: number; z: number }[]): void => {
+    if (samples.length < 2) return
+    const points: RoadPoint[] = samples.map((point) => ({
+      x: point.x,
+      y: sampleTerrain(field, point.x, point.z),
+      z: point.z,
+    }))
+    const heights = Float32Array.from(points.map((point) => point.y))
+    limitSweepGrade(heights, points, MAX_ROAD_GRADE)
+    for (let i = 0; i < points.length; i++) points[i]!.y = heights[i]!
+    roads.push({
+      id: id++,
+      closed: false,
+      width: STREET_WIDTH,
+      points,
+      structure: new Uint8Array(points.length - 1),
+    })
+  }
+
+  const addRuns = (samples: { x: number; z: number }[]): void => {
+    let run: { x: number; z: number }[] = []
+    const flush = (): void => {
+      if (run.length >= STREET_MIN_POINTS) addStreet(run)
+      run = []
+    }
+    for (const sample of samples) {
+      const open =
+        inside(sample.x, sample.z) &&
+        sampleTerrain(field, sample.x, sample.z) > seaLevel &&
+        !blocked(sample.x, sample.z)
+      if (open) run.push(sample)
+      else flush()
+    }
+    flush()
+  }
+
+  for (const district of districts) {
+    const local = cityCells.filter(
+      (point) => Math.hypot(point.x - district.cx, point.z - district.cz) <= district.radius,
+    )
+    if (local.length < 8) continue
+
+    let cx = 0
+    let cz = 0
+    for (const point of local) {
+      cx += point.x
+      cz += point.z
+    }
+    cx /= local.length
+    cz /= local.length
+
+    let sxx = 0
+    let szz = 0
+    let sxz = 0
+    for (const point of local) {
+      const dx = point.x - cx
+      const dz = point.z - cz
+      sxx += dx * dx
+      szz += dz * dz
+      sxz += dx * dz
+    }
+    const angle = 0.5 * Math.atan2(2 * sxz, sxx - szz)
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+
+    let uMin = Infinity
+    let uMax = -Infinity
+    let vMin = Infinity
+    let vMax = -Infinity
+    for (const point of local) {
+      const dx = point.x - cx
+      const dz = point.z - cz
+      const u = dx * cos + dz * sin
+      const v = -dx * sin + dz * cos
+      uMin = Math.min(uMin, u)
+      uMax = Math.max(uMax, u)
+      vMin = Math.min(vMin, v)
+      vMax = Math.max(vMax, v)
+    }
+
+    // Streets parallel to the major axis, then parallel to the minor axis, each
+    // run spanning the polygon edge to edge.
+    for (let v = Math.ceil(vMin / STREET_SPACING) * STREET_SPACING; v <= vMax; v += STREET_SPACING) {
+      const samples: { x: number; z: number }[] = []
+      for (let u = uMin; u <= uMax; u += STREET_STEP) {
+        samples.push({ x: cx + u * cos - v * sin, z: cz + u * sin + v * cos })
+      }
+      addRuns(samples)
+    }
+    for (let u = Math.ceil(uMin / STREET_SPACING) * STREET_SPACING; u <= uMax; u += STREET_SPACING) {
+      const samples: { x: number; z: number }[] = []
+      for (let v = vMin; v <= vMax; v += STREET_STEP) {
+        samples.push({ x: cx + u * cos - v * sin, z: cz + u * sin + v * cos })
+      }
+      addRuns(samples)
+    }
+  }
+
+  return roads
+}
+
+/**
+ * Cut out every stretch where a city street runs alongside an arterial instead
+ * of crossing it. Meeting shallower than `STREET_ARTERIAL_ANGLE` the two
+ * ribbons overlap along their length and smear into one road, so the street
+ * gives way there and whatever is left of it either side carries on as its own
+ * street. Runs too short to span a block are dropped outright.
+ *
+ * Each cut end is walked back up to the last of the ground it can hold rather
+ * than to the last whole sample, so the street stops flush against the arterial
+ * instead of a street step short of it. That is what keeps the grid attached:
+ * the streets running into an arterial are often a city's only way onto the
+ * network, and a cut that stopped short would strand everything behind it.
+ *
+ * This works on finished geometry rather than on the grid as it is laid out,
+ * because junction alignment re-smooths arterials afterwards and can walk one
+ * into a street that was clear when it was drawn.
+ */
+function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[] {
+  const arterials = roads.filter((road) => road.width === ARTERIAL_WIDTH)
+  if (arterials.length === 0) return roads
+
+  const near = indexSegments(
+    arterials.flatMap((road) => claimedSegments(road, STREET_ARTERIAL_TOUCH)),
+  )
+  const square = Math.cos(STREET_ARTERIAL_ANGLE)
+
+  /**
+   * True where the span `a`-`b` would overlap an arterial it meets too shallowly.
+   * The span is tested whole, not sampled along: an arterial can graze between
+   * two samples, and the sliver of smear that leaves is exactly what this is for.
+   */
+  const clashes = (ax: number, az: number, bx: number, bz: number): boolean => {
+    const length = Math.hypot(bx - ax, bz - az) || 1
+    const dx = (bx - ax) / length
+    const dz = (bz - az) / length
+    return near(
+      Math.min(ax, bx) - STREET_ARTERIAL_TOUCH,
+      Math.min(az, bz) - STREET_ARTERIAL_TOUCH,
+      Math.max(ax, bx) + STREET_ARTERIAL_TOUCH,
+      Math.max(az, bz) + STREET_ARTERIAL_TOUCH,
+      (segment) =>
+        Math.abs(segment.dx * dx + segment.dz * dz) > square &&
+        segmentGap(ax, az, bx, bz, segment.ax, segment.az, segment.bx, segment.bz) < segment.reach,
+    )
+  }
+
+  /**
+   * The point furthest from `from` toward `to` that the street can still reach
+   * without the span it adds overlapping an arterial, or `null` when there is no
+   * room to give at all. Found by bisection on the same whole-span test, so what
+   * is drawn is exactly what was checked.
+   */
+  const advance = (from: RoadPoint, to: RoadPoint): RoadPoint | null => {
+    let clearT = 0
+    let blockedT = 1
+    for (let step = 0; step < 8; step++) {
+      const t = (clearT + blockedT) / 2
+      if (clashes(from.x, from.z, from.x + (to.x - from.x) * t, from.z + (to.z - from.z) * t)) {
+        blockedT = t
+      } else {
+        clearT = t
+      }
+    }
+    if (clearT < 1e-3) return null
+    return {
+      x: from.x + (to.x - from.x) * clearT,
+      y: from.y + (to.y - from.y) * clearT,
+      z: from.z + (to.z - from.z) * clearT,
+    }
+  }
+
+  let id = nextId
+  const trimmed: Road[] = []
+
+  for (const road of roads) {
+    if (road.width !== STREET_WIDTH) {
+      trimmed.push(road)
+      continue
+    }
+
+    // A span that clashes takes both its ends with it, so a run is a stretch of
+    // samples with nothing but clear spans between them.
+    const points = road.points
+    const clear = points.map(() => true)
+    for (let i = 0; i + 1 < points.length; i++) {
+      const a = points[i]!
+      const b = points[i + 1]!
+      if (clashes(a.x, a.z, b.x, b.z)) {
+        clear[i] = false
+        clear[i + 1] = false
+      }
+    }
+
+    if (clear.every(Boolean)) {
+      trimmed.push(road)
+      continue
+    }
+
+    for (let start = 0; start < points.length; ) {
+      if (!clear[start]) {
+        start++
+        continue
+      }
+      let end = start
+      while (end + 1 < points.length && clear[end + 1]) end++
+      if (end - start + 1 >= STREET_MIN_POINTS) {
+        const run = points.slice(start, end + 1)
+        const structure: number[] = []
+        for (let i = start; i < end; i++) structure.push(road.structure[i]!)
+        const head = start > 0 ? advance(points[start]!, points[start - 1]!) : null
+        if (head) {
+          run.unshift(head)
+          structure.unshift(road.structure[start - 1]!)
+        }
+        const tail = end + 1 < points.length ? advance(points[end]!, points[end + 1]!) : null
+        if (tail) {
+          run.push(tail)
+          structure.push(road.structure[end]!)
+        }
+        trimmed.push({
+          id: id++,
+          closed: false,
+          width: STREET_WIDTH,
+          points: run,
+          structure: Uint8Array.from(structure),
+        })
+      }
+      start = end + 1
+    }
+  }
+  return trimmed
+}
+
+/** Axis-aligned bounds of a road's centreline, grown by `margin`. */
+function roadBounds(road: Road, margin: number): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const point of road.points) {
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  return { minX: minX - margin, maxX: maxX + margin, minZ: minZ - margin, maxZ: maxZ + margin }
+}
+
+/**
+ * True when two roads meet: their carriageways cross, or their centrelines come
+ * within half a carriageway of each other.
+ */
+function roadsMeet(a: Road, b: Road): boolean {
+  const tolerance = (a.width + b.width) / 2
+  const boundsA = roadBounds(a, tolerance)
+  const boundsB = roadBounds(b, 0)
+  if (
+    boundsA.maxX < boundsB.minX ||
+    boundsB.maxX < boundsA.minX ||
+    boundsA.maxZ < boundsB.minZ ||
+    boundsB.maxZ < boundsA.minZ
+  ) {
+    return false
+  }
+
+  const segmentsOf = (road: Road): number =>
+    road.closed ? road.points.length : road.points.length - 1
+  for (let i = 0; i < segmentsOf(a); i++) {
+    const p = a.points[i]!
+    const q = a.points[(i + 1) % a.points.length]!
+    for (let j = 0; j < segmentsOf(b); j++) {
+      const r = b.points[j]!
+      const s = b.points[(j + 1) % b.points.length]!
+      if (Math.min(p.x, q.x) - tolerance > Math.max(r.x, s.x)) continue
+      if (Math.min(r.x, s.x) - tolerance > Math.max(p.x, q.x)) continue
+      if (Math.min(p.z, q.z) - tolerance > Math.max(r.z, s.z)) continue
+      if (Math.min(r.z, s.z) - tolerance > Math.max(p.z, q.z)) continue
+      if (segmentGap(p.x, p.z, q.x, q.z, r.x, r.z, s.x, s.z) <= tolerance) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Drop every street no one can drive to. Grid lines are laid out blind to each
+ * other and then cut around water and the interchanges, which can strand a run
+ * with nothing to join it to; a street survives only if some chain of streets
+ * leads from it to an arterial, a cross road or the highway itself.
+ */
+function pruneStrandedStreets(roads: Road[]): Road[] {
+  const streets = roads.filter((road) => road.width === STREET_WIDTH)
+  if (streets.length === 0) return roads
+
+  // Union-find over the streets alone; every other road is the one network they
+  // all have to reach, so linking those to each other would tell us nothing.
+  const parent = streets.map((_, index) => index)
+  const find = (index: number): number => {
+    while (parent[index] !== index) index = parent[index] = parent[parent[index]!]!
+    return index
+  }
+  const linked = new Set<number>()
+  for (let i = 0; i < streets.length; i++) {
+    for (let j = i + 1; j < streets.length; j++) {
+      if (roadsMeet(streets[i]!, streets[j]!)) parent[find(i)] = find(j)
+    }
+  }
+  for (let i = 0; i < streets.length; i++) {
+    for (const other of roads) {
+      if (other.width === STREET_WIDTH) continue
+      if (roadsMeet(streets[i]!, other)) {
+        linked.add(find(i))
+        break
+      }
+    }
+  }
+
+  const stranded = new Set(streets.filter((_, index) => !linked.has(find(index))))
+  return roads.filter((road) => !stranded.has(road))
+}
+
 interface RoadEnd {
   road: Road
   start: boolean
@@ -1772,7 +2457,7 @@ function smoothRoad(points: RoadPoint[], passes: number): void {
 /** True when `road` properly crosses any other road. */
 function crossesAny(road: Road, roads: Road[]): boolean {
   for (const other of roads) {
-    if (other === road) continue
+    if (other === road || other.width === STREET_WIDTH) continue
     for (let i = 0; i + 1 < road.points.length; i++) {
       const a = road.points[i]!
       const b = road.points[i + 1]!
@@ -1797,7 +2482,7 @@ function crossesAny(road: Road, roads: Road[]): boolean {
 function alignJunctions(roads: Road[]): void {
   const ends: RoadEnd[] = []
   for (const road of roads) {
-    if (road.closed || road.points.length < 2) continue
+    if (road.closed || road.points.length < 2 || road.width === STREET_WIDTH) continue
     ends.push({ road, start: true })
     ends.push({ road, start: false })
   }
@@ -1905,6 +2590,7 @@ export function generateRoads(
   rivers: River[],
   lakes: Lake[],
   seed = 0,
+  districtOf?: Uint8Array,
 ): Road[] {
   const samples = routeLoop(districts, field, seaLevel)
   const count = samples.length
@@ -1975,10 +2661,21 @@ export function generateRoads(
   const total =
     cum[count - 1]! +
     Math.hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
-  const crossings = interchangeCenters(field, seaLevel, samples, wet, cum, total).map((c) => ({
-    index: c,
-    cross: crossRoad(field, samples, c),
-  }))
+  // What the deck comes to before any crossing has had a say. Sites are judged
+  // against this rather than against the raw aim above, which ignores the grade
+  // limit and so says nothing about how high the highway really stands.
+  const deck = Float32Array.from(profile)
+  limitGrade(deck, samples, MAX_ROAD_GRADE)
+  const crossings = interchangeCenters(
+    field,
+    seaLevel,
+    samples,
+    wet,
+    cum,
+    total,
+    districts,
+    deck,
+  ).map((c) => ({ index: c, cross: crossRoad(field, samples, c) }))
 
   // Raise the deck over each crossing until it clears the cross road below;
   // the grade limit spreads each lift into approach ramps. Crossings where the
@@ -2026,7 +2723,14 @@ export function generateRoads(
   })
   const points: RoadPoint[] = samples.map((point, i) => ({ x: point.x, y: profile[i]!, z: point.z }))
   const highway: Road = { id: 0, closed: true, width: ROAD_WIDTH, points, structure }
-  const access = buildInterchanges(samples, profile, built, bridgeSteps, structure, 1)
+  const { roads: access, footprints } = buildInterchanges(
+    samples,
+    profile,
+    built,
+    bridgeSteps,
+    structure,
+    1,
+  )
   const crossRoads = access.filter((road) => road.width === CROSS_WIDTH)
   const arterials = buildArterials(
     field,
@@ -2037,8 +2741,25 @@ export function generateRoads(
     (seed ^ ARTERIAL_SALT) >>> 0,
     access.length + 1,
   )
-  const roads = [highway, ...access, ...arterials]
-  alignJunctions(roads)
+  // Arterials are numbered before pruning, so their count is not their last id.
+  const nextId = Math.max(...arterials.map((road) => road.id), access.length) + 1
+  const streets = districtOf
+    ? buildCityGrids(
+        field,
+        seaLevel,
+        districts,
+        districtOf,
+        streetKeepOut([highway, ...access], footprints),
+        nextId,
+      )
+    : []
+  const network = [highway, ...access, ...arterials, ...streets]
+  alignJunctions(network)
+  // Junction alignment moves roads, so only once every road is where it will
+  // finally be drawn is it worth asking what a street runs into and reaches.
+  const roads = pruneStrandedStreets(
+    trimStreetsAlongArterials(network, nextId + streets.length),
+  )
   carveRoadBeds(field, roads)
   return roads
 }

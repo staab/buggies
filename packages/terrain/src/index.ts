@@ -26,6 +26,7 @@ export {
   ROAD_GRADE,
   ROAD_TUNNEL,
   ROAD_WIDTH,
+  STREET_WIDTH,
   generateRoads,
 } from './roads.ts'
 export {

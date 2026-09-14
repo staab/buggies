@@ -338,6 +338,14 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     roads: [],
   }
   scaleWorld(map, WORLD_SCALE)
-  map.roads = generateRoads(map.heightfield, map.seaLevel, map.districts, map.rivers, map.lakes, seed)
+  map.roads = generateRoads(
+    map.heightfield,
+    map.seaLevel,
+    map.districts,
+    map.rivers,
+    map.lakes,
+    seed,
+    map.districtOf,
+  )
   return map
 }
