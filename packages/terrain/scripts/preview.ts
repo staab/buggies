@@ -5,6 +5,7 @@ import {
   DISTRICT_SUBURB,
   ROAD_BRIDGE,
   ROAD_TUNNEL,
+  STREET_WIDTH,
   generateTerrain,
   orientedTriangle,
   triangleCentroid,
@@ -148,7 +149,9 @@ for (const road of roads) {
       ? 'cross'
       : road.width === ARTERIAL_WIDTH
         ? 'arterial'
-        : 'ramp'
+        : road.width === STREET_WIDTH
+          ? 'street'
+          : 'ramp'
   console.log(
     `  ${label} ${road.id}: ${road.points.length} points, ${road.closed ? 'closed' : 'open'}, width ${road.width}, length ${length.toFixed(0)}, grade ${segmentCount - bridges - tunnels} bridge ${bridges} tunnel ${tunnels}`,
   )
