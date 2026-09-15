@@ -4,6 +4,20 @@ import { DISTRICT_CITY } from './districts.ts'
 import { RIVER_BANK_LAP } from './rivers.ts'
 import type { District, Heightfield, Lake, River, Road, RoadPoint } from './types.ts'
 
+/**
+ * How far the carriageway sits above the centreline a road is recorded on.
+ * Both the mesh that gets drawn and the surface that gets driven on have to
+ * agree about this, or vehicles ride buried in the road or float over it.
+ */
+export const ROAD_SURFACE = 0.2
+
+/**
+ * How far past the carriageway the shoulder reaches as it falls back to the
+ * ground. Shared for the same reason: an edge the mesh ramps over and the
+ * surface treats as a step is a step vehicles get thrown off.
+ */
+export const ROAD_SKIRT = 3
+
 /** Road structure codes stored in a road's `structure` array. */
 export const ROAD_GRADE = 0
 export const ROAD_BRIDGE = 1

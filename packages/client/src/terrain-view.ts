@@ -4,6 +4,8 @@ import {
   RIVER_BANK_LAP,
   ROAD_BRIDGE,
   ROAD_GRADE,
+  ROAD_SKIRT,
+  ROAD_SURFACE,
   ROAD_TUNNEL,
   heightAt,
   type Heightfield,
@@ -37,7 +39,6 @@ const ROAD_BRIDGE_COLOR = new THREE.Color('#a8adb3')
 const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
 /** How far the embankment skirt reaches out from the deck edge, in world units. */
-const ROAD_SKIRT_SPREAD = 3
 const TUNNEL_SEGMENTS = 16
 /** Wall thickness, so the shell buries itself in the land it cuts through. */
 const TUNNEL_WALL_THICKNESS = 3
@@ -251,7 +252,7 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
   const positions: number[] = []
   const colors: number[] = []
   const half = road.width / 2
-  const skirt = half + ROAD_SKIRT_SPREAD
+  const skirt = half + ROAD_SKIRT
   const { cellSize } = field
 
   const groundUnder = (x: number, z: number): number =>
@@ -277,7 +278,7 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
     const nz = dx
 
     // Lift the deck clear of the ground so it never z-fights the terrain.
-    const y = point.y + 0.2
+    const y = point.y + ROAD_SURFACE
     const leftGround = Math.min(groundUnder(point.x + nx * skirt, point.z + nz * skirt), y)
     const rightGround = Math.min(groundUnder(point.x - nx * skirt, point.z - nz * skirt), y)
 
@@ -522,7 +523,7 @@ function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
           const sin = Math.sin(angle)
           positions.push(
             point.x + nx * radius * cos,
-            point.y + 0.2 + radius * sin,
+            point.y + ROAD_SURFACE + radius * sin,
             point.z + nz * radius * cos,
           )
         }
@@ -603,8 +604,7 @@ export function createScaleCar(map: TerrainMap): THREE.Group {
     const index = Math.floor(road.points.length * 0.25)
     const point = road.points[index]!
     const next = road.points[(index + 1) % road.points.length]!
-    // Match the road ribbon, which sits 0.2 above the centreline.
-    car.position.set(point.x, point.y + 0.2, point.z)
+    car.position.set(point.x, point.y + ROAD_SURFACE, point.z)
     car.rotation.y = Math.atan2(next.x - point.x, next.z - point.z)
     return car
   }
