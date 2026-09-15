@@ -1,4 +1,4 @@
-import { VEHICLE_LABELS, VEHICLE_PROFILE_IDS, type VehicleProfileId } from '@buggies/game'
+import { VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
 
 export type Mode = 'preview' | 'drive'
 
@@ -23,9 +23,9 @@ const MODE_NOTES: Record<Mode, { name: string; note: string; go: string }> = {
 }
 
 const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
-  buggy: 'Quick, grippy, happy in the air.',
-  truck: 'Heavy and slow to turn. Ploughs on.',
-  racer: 'Fast and sharp. Lets go without much warning.',
+  pickup: 'Heavy and slow to turn. Slides rather than rolls.',
+  mustang: 'The balanced one. Start here.',
+  raceCar: 'Fast and unforgiving. Spins out if you ask too much.',
 }
 
 function card(name: string, note: string): HTMLButtonElement {
@@ -106,7 +106,7 @@ export class Menu {
     const [vehicleGroup, vehicleCards] = group('Vehicle')
     this.vehicleGroup = vehicleGroup
     for (const vehicle of VEHICLE_PROFILE_IDS) {
-      const button = card(VEHICLE_LABELS[vehicle], VEHICLE_NOTES[vehicle])
+      const button = card(VEHICLE_PROFILE_LABELS[vehicle], VEHICLE_NOTES[vehicle])
       button.addEventListener('click', () => this.pick({ vehicle }))
       this.vehicleButtons.set(vehicle, button)
       vehicleCards.append(button)

@@ -39,6 +39,13 @@ export {
   triangleInradius,
 } from './mountain.ts'
 export { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
+export {
+  boreClearance,
+  boreFloorAt,
+  buildTunnelHoles,
+  tunnelSegments,
+  type BoreSegment,
+} from './tunnels.ts'
 export { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
 export type {
   District,

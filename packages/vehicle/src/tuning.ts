@@ -1,186 +1,378 @@
-/**
- * Every dial that gives a vehicle its character. Distances are world units
- * (roughly metres), speeds are units per second and accelerations are units
- * per second squared, so a value can be read against gravity at a glance.
- *
- * This is deliberately a short list. It is enough to tell a wallowing truck
- * from a darty buggy, and stops well short of the per-wheel loads, slip ratios
- * and load transfer a simulator needs.
- */
-export interface VehicleTuning {
-  /** Body box, drawn by the view and used to place the wheels. */
-  length: number
-  width: number
-  height: number
-  wheelBase: number
-  trackWidth: number
-  wheelRadius: number
-  /** Clearance under the body, above the contact patch. */
-  rideHeight: number
+// Ported from the seattle project (src/physics/tuning.ts). Kept in its original
+// shape and formatting so the two can be compared and resynced.
 
-  /** Acceleration at a standstill, falling to nothing at `maxSpeed`. */
-  enginePower: number
+import {createRng} from '@buggies/physics'
+
+export interface VehicleTuning {
+  chassisHalfWidth: number
+  chassisHalfHeight: number
+  chassisHalfLength: number
+  mass: number
+  centerOfMassOffsetY: number
+  centerOfMassOffsetZ: number
+
+  halfTrackWidth: number
+  frontAxleZ: number
+  rearAxleZ: number
+  suspensionMountY: number
+  wheelRadius: number
+
+  suspensionRestLength: number
+  suspensionStiffness: number
+  suspensionDamping: number
+  maxSuspensionForce: number
+  bumpStopStiffness: number
+  antiRollStiffnessFront: number
+  antiRollStiffnessRear: number
+
+  maxSteerAngle: number
+  steerRate: number
+  steerReturnRate: number
+  steerAtHighSpeed: number
+  steerFalloffMinSpeed: number
+  steerFalloffMaxSpeed: number
+  counterSteerSlipMin: number
+  counterSteerAuthority: number
+
+  engineForce: number
+  driveSplit: number
   maxSpeed: number
-  /** Share of engine power available in reverse. */
-  reversePower: number
-  reverseMaxSpeed: number
-  brakePower: number
-  /** Coasting losses: linear in speed, then quadratic with it. */
+  brakeForce: number
+  handbrakeForce: number
+  reverseForceScale: number
+  reverseSpeedThreshold: number
   rollingResistance: number
   dragCoefficient: number
 
-  maxSteerAngle: number
-  /** How fast the rack travels, in radians per second. */
-  steerRate: number
-  /** Share of the steering lock still available at `steerFalloffSpeed`. */
-  steerAtMaxSpeed: number
-  steerFalloffSpeed: number
-  /** How sharply the nose answers the wheel. Higher is twitchier. */
-  yawResponse: number
+  lateralPeakSlip: number
+  lateralPeakGrip: number
+  lateralPlateauEndSlip: number
+  lateralFalloffRange: number
+  lateralTailGrip: number
+  longitudinalGrip: number
+  frictionCircleGrip: number
+  handbrakeRearGripFraction: number
+  rearLateralGripScale: number
 
-  /** Sideways acceleration the tyres hold before they let go. */
-  gripLimit: number
-  /** What is left once they have, which is what a slide feels like. */
-  driftGrip: number
-  /** Sideways speed the tyres tolerate before grip starts to fade. */
-  slipTolerance: number
-  /** How much more slip it takes to fade all the way to `driftGrip`. */
-  slipRange: number
-  /** Share of grip the rear keeps with the handbrake down. */
-  handbrakeGrip: number
+  downforce: number
+  yawAssistTorque: number
+  yawAssistMinSpeed: number
+  yawAssistFullSpeed: number
+  yawAssistSlipCutoff: number
 
-  /** Steering authority in the air, in radians per second. */
-  airSteer: number
-  /** How far the ground can fall away before the wheels leave it. */
-  groundStick: number
-  /** Visual suspension travel. */
-  suspensionTravel: number
-  /** Visual body lean at the limit of grip, in radians. */
-  bodyLean: number
+  airPitchTorque: number
+  airYawTorque: number
+  airRollTorque: number
+
+  airLevelTorque: number
+  airLevelEngageDelay: number
+  airLevelSpinFadeStart: number
+  airLevelSpinFadeEnd: number
+  airLevelInputYield: number
+  airLevelLandingCastDistance: number
+  airLevelLandingLookahead: number
+  airLevelLandingBoostMax: number
+
+  selfRightUprightDot: number
+  selfRightRecoveredDot: number
+  selfRightRestLinearSpeed: number
+  selfRightRestAngularSpeed: number
+  selfRightDelay: number
+  selfRightTorque: number
+  selfRightMaxDuration: number
+  selfRightLiftSpeed: number
+  selfRightSnapLift: number
+
+  linearDamping: number
+  angularDampingGrounded: number
+  angularDampingAirborne: number
 }
 
-const BUGGY: Readonly<VehicleTuning> = Object.freeze({
-  length: 4.0,
-  width: 2.0,
-  height: 1.1,
-  wheelBase: 2.7,
-  trackWidth: 1.8,
-  wheelRadius: 0.52,
-  rideHeight: 0.45,
+const SHARED_SELF_RIGHT_TUNING = {
+  selfRightUprightDot: 0.35,
+  selfRightRecoveredDot: 0.7,
+  selfRightRestLinearSpeed: 0.5,
+  selfRightRestAngularSpeed: 0.3,
+  selfRightDelay: 1.2,
+  selfRightTorque: 12000,
+  selfRightMaxDuration: 3.0,
+  selfRightLiftSpeed: 3.0,
+  selfRightSnapLift: 0.6,
+}
 
-  enginePower: 14,
-  maxSpeed: 45,
-  reversePower: 0.45,
-  reverseMaxSpeed: 12,
-  brakePower: 22,
-  rollingResistance: 0.02,
-  dragCoefficient: 0.0006,
+const SHARED_DAMPING_TUNING = {
+  linearDamping: 0.02,
+  angularDampingGrounded: 1.8,
+  angularDampingAirborne: 1.4,
+}
+
+const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
+  chassisHalfWidth: 0.9,
+  chassisHalfHeight: 0.3,
+  chassisHalfLength: 2.1,
+  mass: 1200,
+  centerOfMassOffsetY: -0.3,
+  centerOfMassOffsetZ: -0.1,
+
+  halfTrackWidth: 0.85,
+  frontAxleZ: -1.45,
+  rearAxleZ: 1.45,
+  suspensionMountY: -0.2,
+  wheelRadius: 0.35,
+
+  suspensionRestLength: 0.3,
+  suspensionStiffness: 30000,
+  suspensionDamping: 3000,
+  maxSuspensionForce: 60000,
+  bumpStopStiffness: 240000,
+  antiRollStiffnessFront: 18000,
+  antiRollStiffnessRear: 15000,
 
   maxSteerAngle: 0.62,
-  steerRate: 5,
-  steerAtMaxSpeed: 0.35,
-  steerFalloffSpeed: 40,
-  yawResponse: 9,
+  steerRate: 4.0,
+  steerReturnRate: 6.0,
+  steerAtHighSpeed: 0.35,
+  steerFalloffMinSpeed: 8,
+  steerFalloffMaxSpeed: 45,
+  counterSteerSlipMin: 0.2,
+  counterSteerAuthority: 0.9,
 
-  gripLimit: 13,
-  driftGrip: 7,
-  slipTolerance: 3.5,
-  slipRange: 7,
-  handbrakeGrip: 0.35,
+  engineForce: 14000,
+  driveSplit: 0.0,
+  maxSpeed: 70,
+  brakeForce: 25000,
+  handbrakeForce: 9000,
+  reverseForceScale: 0.45,
+  reverseSpeedThreshold: 0.5,
+  rollingResistance: 12,
+  dragCoefficient: 2.6,
 
-  airSteer: 1.6,
-  groundStick: 0.35,
-  suspensionTravel: 0.35,
-  bodyLean: 0.1,
+  lateralPeakSlip: 2.5,
+  lateralPeakGrip: 1.8,
+  lateralPlateauEndSlip: 6.0,
+  lateralFalloffRange: 12.0,
+  lateralTailGrip: 1.15,
+  longitudinalGrip: 2.0,
+  frictionCircleGrip: 2.2,
+  handbrakeRearGripFraction: 0.35,
+  rearLateralGripScale: 0.95,
+
+  downforce: 3.0,
+  yawAssistTorque: 6000,
+  yawAssistMinSpeed: 1.5,
+  yawAssistFullSpeed: 12,
+  yawAssistSlipCutoff: 0.9,
+
+  airPitchTorque: 4000,
+  airYawTorque: 3000,
+  airRollTorque: 900,
+
+  airLevelTorque: 13000,
+  airLevelEngageDelay: 0.08,
+  airLevelSpinFadeStart: 1.0,
+  airLevelSpinFadeEnd: 7.0,
+  airLevelInputYield: 0.35,
+  airLevelLandingCastDistance: 20,
+  airLevelLandingLookahead: 0.4,
+  airLevelLandingBoostMax: 2.5,
+
+  ...SHARED_SELF_RIGHT_TUNING,
+  ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 
-const TRUCK: Readonly<VehicleTuning> = Object.freeze({
-  length: 5.6,
-  width: 2.4,
-  height: 1.7,
-  wheelBase: 3.6,
-  trackWidth: 2.1,
-  wheelRadius: 0.62,
-  rideHeight: 0.55,
+const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
+  chassisHalfWidth: 1.05,
+  chassisHalfHeight: 0.5,
+  chassisHalfLength: 2.6,
+  mass: 2200,
+  centerOfMassOffsetY: -0.42,
+  centerOfMassOffsetZ: -0.15,
 
-  enginePower: 8.5,
-  maxSpeed: 32,
-  reversePower: 0.5,
-  reverseMaxSpeed: 10,
-  brakePower: 15,
-  rollingResistance: 0.05,
-  dragCoefficient: 0.0011,
+  halfTrackWidth: 1.0,
+  frontAxleZ: -2.0,
+  rearAxleZ: 1.9,
+  suspensionMountY: -0.48,
+  wheelRadius: 0.42,
+
+  suspensionRestLength: 0.42,
+  suspensionStiffness: 42000,
+  suspensionDamping: 4200,
+  maxSuspensionForce: 95000,
+  bumpStopStiffness: 190000,
+  antiRollStiffnessFront: 32000,
+  antiRollStiffnessRear: 26000,
 
   maxSteerAngle: 0.5,
-  steerRate: 2.8,
-  steerAtMaxSpeed: 0.3,
-  steerFalloffSpeed: 30,
-  yawResponse: 4.5,
+  steerRate: 2.6,
+  steerReturnRate: 3.6,
+  steerAtHighSpeed: 0.3,
+  steerFalloffMinSpeed: 8,
+  steerFalloffMaxSpeed: 40,
+  counterSteerSlipMin: 0.2,
+  counterSteerAuthority: 0.9,
 
-  gripLimit: 8,
-  driftGrip: 4.5,
-  slipTolerance: 3,
-  slipRange: 9,
-  handbrakeGrip: 0.4,
+  engineForce: 14000,
+  driveSplit: 0.4,
+  maxSpeed: 34,
+  brakeForce: 32000,
+  handbrakeForce: 11000,
+  reverseForceScale: 0.47,
+  reverseSpeedThreshold: 0.5,
+  rollingResistance: 18,
+  dragCoefficient: 3.6,
 
-  airSteer: 0.9,
-  groundStick: 0.45,
-  suspensionTravel: 0.45,
-  bodyLean: 0.16,
+  lateralPeakSlip: 2.6,
+  lateralPeakGrip: 1.15,
+  lateralPlateauEndSlip: 7.5,
+  lateralFalloffRange: 14,
+  lateralTailGrip: 0.75,
+  longitudinalGrip: 1.9,
+  frictionCircleGrip: 2.0,
+  handbrakeRearGripFraction: 0.4,
+  rearLateralGripScale: 0.92,
+
+  downforce: 1.0,
+  yawAssistTorque: 4000,
+  yawAssistMinSpeed: 2.0,
+  yawAssistFullSpeed: 14,
+  yawAssistSlipCutoff: 0.7,
+
+  airPitchTorque: 3000,
+  airYawTorque: 2200,
+  airRollTorque: 700,
+
+  airLevelTorque: 11000,
+  airLevelEngageDelay: 0.08,
+  airLevelSpinFadeStart: 0.8,
+  airLevelSpinFadeEnd: 6.0,
+  airLevelInputYield: 0.4,
+  airLevelLandingCastDistance: 20,
+  airLevelLandingLookahead: 0.45,
+  airLevelLandingBoostMax: 2.0,
+
+  ...SHARED_SELF_RIGHT_TUNING,
+  ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 
-const RACER: Readonly<VehicleTuning> = Object.freeze({
-  length: 4.3,
-  width: 1.9,
-  height: 0.85,
-  wheelBase: 2.6,
-  trackWidth: 1.75,
-  wheelRadius: 0.4,
-  rideHeight: 0.22,
+const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
+  chassisHalfWidth: 0.82,
+  chassisHalfHeight: 0.22,
+  chassisHalfLength: 1.95,
+  mass: 900,
+  centerOfMassOffsetY: -0.45,
+  centerOfMassOffsetZ: 0.0,
 
-  enginePower: 18,
-  maxSpeed: 62,
-  reversePower: 0.35,
-  reverseMaxSpeed: 10,
-  brakePower: 28,
-  rollingResistance: 0.015,
-  dragCoefficient: 0.0005,
+  halfTrackWidth: 0.95,
+  frontAxleZ: -1.3,
+  rearAxleZ: 1.3,
+  suspensionMountY: -0.16,
+  wheelRadius: 0.3,
 
-  maxSteerAngle: 0.55,
-  steerRate: 7,
-  steerAtMaxSpeed: 0.4,
-  steerFalloffSpeed: 55,
-  yawResponse: 12,
+  suspensionRestLength: 0.16,
+  suspensionStiffness: 58000,
+  suspensionDamping: 6000,
+  maxSuspensionForce: 60000,
+  bumpStopStiffness: 460000,
+  antiRollStiffnessFront: 22000,
+  antiRollStiffnessRear: 26000,
 
-  gripLimit: 17,
-  // Well short of `gripLimit`, and reached quickly: the back steps out hard
-  // and it takes a lift to get it back.
-  driftGrip: 6.5,
-  slipTolerance: 2.2,
-  slipRange: 4,
-  handbrakeGrip: 0.3,
+  maxSteerAngle: 0.58,
+  steerRate: 7.0,
+  steerReturnRate: 9.0,
+  steerAtHighSpeed: 0.42,
+  steerFalloffMinSpeed: 10,
+  steerFalloffMaxSpeed: 55,
+  counterSteerSlipMin: 0.25,
+  counterSteerAuthority: 0.5,
 
-  airSteer: 2,
-  groundStick: 0.22,
-  suspensionTravel: 0.15,
-  bodyLean: 0.06,
+  engineForce: 15500,
+  driveSplit: 0.0,
+  maxSpeed: 92,
+  brakeForce: 34000,
+  handbrakeForce: 8000,
+  reverseForceScale: 0.5,
+  reverseSpeedThreshold: 0.5,
+  rollingResistance: 9,
+  dragCoefficient: 2.3,
+
+  lateralPeakSlip: 1.8,
+  lateralPeakGrip: 2.6,
+  lateralPlateauEndSlip: 3.2,
+  lateralFalloffRange: 5.5,
+  lateralTailGrip: 0.85,
+  longitudinalGrip: 2.0,
+  frictionCircleGrip: 2.4,
+  handbrakeRearGripFraction: 0.3,
+  rearLateralGripScale: 0.82,
+
+  downforce: 6.5,
+  yawAssistTorque: 3500,
+  yawAssistMinSpeed: 1.0,
+  yawAssistFullSpeed: 10,
+  yawAssistSlipCutoff: 0.5,
+
+  airPitchTorque: 5500,
+  airYawTorque: 4500,
+  airRollTorque: 1200,
+
+  airLevelTorque: 15000,
+  airLevelEngageDelay: 0.06,
+  airLevelSpinFadeStart: 1.3,
+  airLevelSpinFadeEnd: 8.0,
+  airLevelInputYield: 0.35,
+  airLevelLandingCastDistance: 20,
+  airLevelLandingLookahead: 0.35,
+  airLevelLandingBoostMax: 3.2,
+
+  ...SHARED_SELF_RIGHT_TUNING,
+  ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 
-export type VehicleProfileId = 'buggy' | 'truck' | 'racer'
+export type VehicleProfileId = 'pickup' | 'mustang' | 'raceCar'
 
-export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = ['buggy', 'truck', 'racer']
+export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = ['pickup', 'mustang', 'raceCar']
 
-export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<VehicleTuning>>> =
-  Object.freeze({ buggy: BUGGY, truck: TRUCK, racer: RACER })
-
-export const VEHICLE_LABELS: Readonly<Record<VehicleProfileId, string>> = Object.freeze({
-  buggy: 'Buggy',
-  truck: 'Truck',
-  racer: 'Racer',
+export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> = Object.freeze({
+  pickup: 'Heavy pickup',
+  mustang: 'Mustang',
+  raceCar: 'Race car',
 })
 
-export const DEFAULT_VEHICLE: VehicleProfileId = 'buggy'
+export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<VehicleTuning>>> =
+  Object.freeze({
+    pickup: PICKUP_TUNING,
+    mustang: MUSTANG_TUNING,
+    raceCar: RACE_CAR_TUNING,
+  })
 
-export function vehicleTuning(profile: VehicleProfileId = DEFAULT_VEHICLE): VehicleTuning {
-  return { ...VEHICLE_PROFILES[profile] }
+export const DEFAULT_VEHICLE_PROFILE: VehicleProfileId = 'mustang'
+
+export function createVehicleTuning(profile: VehicleProfileId = DEFAULT_VEHICLE_PROFILE): VehicleTuning {
+  return {...VEHICLE_PROFILES[profile]}
+}
+
+export function createVehicleTuningByProfile(): Record<VehicleProfileId, VehicleTuning> {
+  const result = {} as Record<VehicleProfileId, VehicleTuning>
+
+  for (const profile of VEHICLE_PROFILE_IDS) result[profile] = createVehicleTuning(profile)
+
+  return result
+}
+
+export function resetVehicleTuning(tuning: VehicleTuning, profile: VehicleProfileId): void {
+  Object.assign(tuning, VEHICLE_PROFILES[profile])
+}
+
+export function nextVehicleProfile(profile: VehicleProfileId): VehicleProfileId {
+  const index = VEHICLE_PROFILE_IDS.indexOf(profile)
+  const next = (index + 1) % VEHICLE_PROFILE_IDS.length
+
+  return VEHICLE_PROFILE_IDS[next] ?? DEFAULT_VEHICLE_PROFILE
+}
+
+export function profileForSeed(seed: number): VehicleProfileId {
+  const roll = createRng(seed)()
+  const index = Math.floor(roll * VEHICLE_PROFILE_IDS.length)
+
+  return VEHICLE_PROFILE_IDS[index] ?? DEFAULT_VEHICLE_PROFILE
 }

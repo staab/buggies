@@ -5,5 +5,5 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "references": [{ "path": "../game" }]
+  "references": [{ "path": "../game" }, { "path": "../terrain" }]
 }
