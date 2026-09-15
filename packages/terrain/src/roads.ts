@@ -121,6 +121,13 @@ const ARTERIAL_WAYPOINT_STRIDE = 4
 /** Sharpest corner left in a finished arterial, and the fillet used to round it. */
 const ARTERIAL_MAX_TURN = (12 * Math.PI) / 180
 const ARTERIAL_MIN_RADIUS = 40
+/**
+ * Two arterials leaving one junction closer together than this run side by side
+ * instead of parting, and their carriageways smear into a single blob.
+ */
+const ARTERIAL_MIN_JUNCTION_ANGLE = Math.PI / 4
+/** Within this of its own ends an arterial is joining a junction and may touch it. */
+const ARTERIAL_MERGE_REACH = CROSS_REACH
 /** A road still turning sharper than this after smoothing is dropped entirely. */
 const ARTERIAL_PRUNE_TURN = (30 * Math.PI) / 180
 /** Junction alignment is reverted if it leaves a bend sharper than this. */
@@ -1675,16 +1682,65 @@ function segmentsCross(
   return d1 * d2 < 0 && d3 * d4 < 0
 }
 
-/** True when a would-be road crosses one already built. */
-function crossesBuilt(points: RoadPoint[], roads: Road[]): boolean {
+/**
+ * True when a would-be arterial runs into a road already built: it crosses one,
+ * or its carriageway laps over one. Testing only for a crossing lets an arterial
+ * lie along a highway without ever cutting across it, which reads as the two
+ * roads merged into one.
+ *
+ * Its own two ends are exempt within `mergeReach`, since an arterial starts and
+ * finishes on a cross road and has to reach the carriageway to join it. The
+ * highway itself is never exempt: an arterial reaches the highway network
+ * through an interchange's cross road, so it has no business touching the
+ * carriageway anywhere.
+ */
+function clashesWithBuilt(points: RoadPoint[], roads: Road[], mergeReach: number): boolean {
+  const head = points[0]!
+  const tail = points[points.length - 1]!
+  // Both roads carry hundreds of samples, so reject whole roads, then whole
+  // segments, on their bounds before measuring anything.
+  let minX = Infinity
+  let maxX = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  for (const point of points) {
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  const near: Road[] = []
   for (const road of roads) {
-    for (let i = 0; i + 1 < points.length; i++) {
-      const a = points[i]!
-      const b = points[i + 1]!
-      for (let j = 0; j + 1 < road.points.length; j++) {
+    const reach = (ARTERIAL_WIDTH + road.width) / 2
+    const theirs = roadBounds(road, reach)
+    if (maxX < theirs.minX || theirs.maxX < minX || maxZ < theirs.minZ || theirs.maxZ < minZ) {
+      continue
+    }
+    near.push(road)
+  }
+  if (near.length === 0) return false
+
+  for (let i = 0; i + 1 < points.length; i++) {
+    const a = points[i]!
+    const b = points[i + 1]!
+    const midX = (a.x + b.x) / 2
+    const midZ = (a.z + b.z) / 2
+    const merging =
+      Math.hypot(midX - head.x, midZ - head.z) < mergeReach ||
+      Math.hypot(midX - tail.x, midZ - tail.z) < mergeReach
+    for (const road of near) {
+      const count = road.closed ? road.points.length : road.points.length - 1
+      const clear = merging && !road.closed ? 0 : (ARTERIAL_WIDTH + road.width) / 2
+      const margin = Math.max(clear, 0)
+      for (let j = 0; j < count; j++) {
         const c = road.points[j]!
-        const d = road.points[j + 1]!
+        const d = road.points[(j + 1) % road.points.length]!
+        if (Math.min(a.x, b.x) - margin > Math.max(c.x, d.x)) continue
+        if (Math.min(c.x, d.x) - margin > Math.max(a.x, b.x)) continue
+        if (Math.min(a.z, b.z) - margin > Math.max(c.z, d.z)) continue
+        if (Math.min(c.z, d.z) - margin > Math.max(a.z, b.z)) continue
         if (segmentsCross(a.x, a.z, b.x, b.z, c.x, c.z, d.x, d.z)) return true
+        if (clear > 0 && segmentGap(a.x, a.z, b.x, b.z, c.x, c.z, d.x, d.z) < clear) return true
       }
     }
   }
@@ -1793,7 +1849,21 @@ function buildArterials(
       path = dedupePath(path, 0.05)
       if (path.length < 2) return null
 
-      const heights = Float32Array.from(path.map((point) => point.y))
+      // The spline and the corner fillets move the path in plan while carrying
+      // the nav grid's coarse cell heights along with them, so by here `y` is a
+      // smoothed average of ground the road no longer runs over: it sails
+      // across a dip instead of dropping through it. Take the height from the
+      // ground under the finished path, the way a city street does, so the two
+      // sit at the same level where they meet. Only the pinned ends keep their
+      // height, since those have to meet the cross road where it stands.
+      const heights = Float32Array.from(
+        path.map((point, index) => {
+          if (index === 0 || index === path.length - 1) return point.y
+          const ground = sampleTerrain(field, point.x, point.z)
+          const water = surfaceAt(point.x, point.z)
+          return water.wet ? Math.max(water.level + ARTERIAL_BRIDGE_CLEARANCE, ground) : ground
+        }),
+      )
       limitSweepGrade(heights, path, MAX_ARTERIAL_GRADE)
 
       const structure = new Uint8Array(path.length - 1)
@@ -1810,6 +1880,30 @@ function buildArterials(
       return { points, structure }
     }
 
+    /**
+     * True when this road would leave `node` too close to the heading of one
+     * already joined there. Two arterials parting at a sliver of an angle run
+     * along each other rather than making a junction anyone can read.
+     */
+    const sharpAt = (node: number, points: RoadPoint[], fromStart: boolean): boolean => {
+      const heading = leavingDirection(points, fromStart)
+      for (let k = 0; k < roads.length; k++) {
+        const [from, to] = endpoints[k]!
+        if (from !== node && to !== node) continue
+        const other = leavingDirection(roads[k]!.points, from === node)
+        const apart = Math.acos(
+          Math.min(Math.max(heading.x * other.x + heading.z * other.z, -1), 1),
+        )
+        if (apart < ARTERIAL_MIN_JUNCTION_ANGLE) return true
+      }
+      return false
+    }
+
+    const unusable = (candidate: { points: RoadPoint[] }): boolean =>
+      clashesWithBuilt(candidate.points, obstacles, ARTERIAL_MERGE_REACH) ||
+      sharpAt(a, candidate.points, true) ||
+      sharpAt(b, candidate.points, false)
+
     const startCell = cellAt(grid, start.x, start.z)
     const goalCell = cellAt(grid, goal.x, goal.z)
     let cells = routeCells(grid, buffers, startCell, goalCell, label, density, block, !relaxed, a, b)
@@ -1817,10 +1911,10 @@ function buildArterials(
     let road = makeRoad(cells)
     if (road === null) return false
 
-    // A route that crosses any road already on the map is retried with those
+    // A route that runs into a road already on the map is retried with those
     // cells blocked, so arterials merge into junctions instead of colliding.
     const touched: number[] = []
-    for (let attempt = 0; attempt < 4 && road !== null && crossesBuilt(road.points, obstacles); attempt++) {
+    for (let attempt = 0; attempt < 4 && road !== null && unusable(road); attempt++) {
       for (const index of cells) {
         if (block[index] === 0) touched.push(index)
         block[index] = 1
@@ -1834,7 +1928,7 @@ function buildArterials(
       road = makeRoad(cells)
     }
     for (const index of touched) block[index] = 0
-    if (road === null || crossesBuilt(road.points, obstacles)) return false
+    if (road === null || unusable(road)) return false
 
     for (const index of cells) density[index] = density[index]! + 1
     const built: Road = {
@@ -1852,7 +1946,6 @@ function buildArterials(
     return true
   }
 
-  let dbg=0
   for (const [a, b] of edges) {
     tried.add(a < b ? a * nodes.length + b : b * nodes.length + a)
     buildRoad(a, b)
@@ -2407,15 +2500,19 @@ function endPoint(end: RoadEnd): RoadPoint {
   return end.start ? points[0]! : points[points.length - 1]!
 }
 
-/** Unit direction leading away from the node into the road. */
-function endDirection(end: RoadEnd): { x: number; z: number } {
-  const points = end.road.points
-  const a = end.start ? points[0]! : points[points.length - 1]!
-  const b = end.start ? points[1]! : points[points.length - 2]!
+/** Unit direction a polyline leaves one of its ends by. */
+function leavingDirection(points: RoadPoint[], fromStart: boolean): { x: number; z: number } {
+  const a = fromStart ? points[0]! : points[points.length - 1]!
+  const b = fromStart ? points[1]! : points[points.length - 2]!
   const dx = b.x - a.x
   const dz = b.z - a.z
   const length = Math.hypot(dx, dz) || 1
   return { x: dx / length, z: dz / length }
+}
+
+/** Unit direction leading away from the node into the road. */
+function endDirection(end: RoadEnd): { x: number; z: number } {
+  return leavingDirection(end.road.points, end.start)
 }
 
 /** Bend the first few samples of a road end so it leaves along `(tx, tz)`. */
@@ -2510,6 +2607,10 @@ function alignJunctions(roads: Road[]): void {
     if (cluster.length < 2) continue
 
     const directions = cluster.map((index) => endDirection(ends[index]!))
+    // Work out where every end would point before moving any of them, so the
+    // junction can be judged as a whole.
+    const planned = directions.map((direction) => ({ ...direction }))
+    const pairs: { ia: number; ib: number; axisX: number; axisZ: number }[] = []
     const remaining = cluster.map((_, index) => index)
     while (remaining.length >= 2) {
       let bestA = 0
@@ -2536,12 +2637,33 @@ function alignJunctions(roads: Road[]): void {
       const axis = Math.hypot(axisX, axisZ) || 1
       axisX /= axis
       axisZ /= axis
+      pairs.push({ ia, ib, axisX, axisZ })
+      planned[ia] = { x: axisX, z: axisZ }
+      planned[ib] = { x: -axisX, z: -axisZ }
+      remaining.splice(bestB, 1)
+      remaining.splice(bestA, 1)
+    }
+
+    // Straightening a pair swings both ends round, which can bring one of them
+    // alongside a third road left at the node. A kink is better than two roads
+    // leaving together, so a junction that would end up that way is left alone.
+    let crowded = false
+    for (let a = 0; a < planned.length && !crowded; a++) {
+      for (let b = a + 1; b < planned.length; b++) {
+        const dot = planned[a]!.x * planned[b]!.x + planned[a]!.z * planned[b]!.z
+        if (Math.acos(Math.min(Math.max(dot, -1), 1)) < ARTERIAL_MIN_JUNCTION_ANGLE) {
+          crowded = true
+          break
+        }
+      }
+    }
+    if (crowded) continue
+
+    for (const { ia, ib, axisX, axisZ } of pairs) {
       rotateEnd(ends[cluster[ia]!]!, axisX, axisZ)
       rotateEnd(ends[cluster[ib]!]!, -axisX, -axisZ)
       changed.add(ends[cluster[ia]!]!.road)
       changed.add(ends[cluster[ib]!]!.road)
-      remaining.splice(bestB, 1)
-      remaining.splice(bestA, 1)
     }
   }
 
