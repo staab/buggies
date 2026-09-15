@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.20.0
+        version: 0.20.0
     devDependencies:
       '@types/node':
         specifier: ^22.20.2
@@ -32,9 +36,15 @@ importers:
       '@buggies/game':
         specifier: workspace:*
         version: link:../game
+      '@buggies/physics':
+        specifier: workspace:*
+        version: link:../physics
       '@buggies/terrain':
         specifier: workspace:*
         version: link:../terrain
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.20.0
+        version: 0.20.0
       three:
         specifier: ^0.186.0
         version: 0.186.0
@@ -62,6 +72,9 @@ importers:
       '@buggies/game':
         specifier: workspace:*
         version: link:../game
+      '@buggies/terrain':
+        specifier: workspace:*
+        version: link:../terrain
 
   packages/terrain:
     dependencies:
@@ -77,11 +90,17 @@ importers:
       '@buggies/terrain':
         specifier: workspace:*
         version: link:../terrain
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.20.0
+        version: 0.20.0
 
 packages:
 
   '@dimforge/rapier3d-compat@0.12.0':
     resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
+
+  '@dimforge/rapier3d-compat@0.20.0':
+    resolution: {integrity: sha512-X4W9pJBdGRX5CO3c/gUNjBFEFG2fn4nYxp9k8STdBDaLa0/w5XTW2ArpayS+9jGFojTi3uFSOWAElCd4rkpekA==}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -1265,6 +1284,8 @@ packages:
 snapshots:
 
   '@dimforge/rapier3d-compat@0.12.0': {}
+
+  '@dimforge/rapier3d-compat@0.20.0': {}
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true

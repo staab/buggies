@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@buggies/game": "workspace:*"
+    "@buggies/game": "workspace:*",
+    "@buggies/terrain": "workspace:*"
   }
 }

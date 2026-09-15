@@ -1,4 +1,9 @@
-import { DEFAULT_VEHICLE, VEHICLE_PROFILE_IDS, type VehicleProfileId } from '@buggies/game'
+import {
+  DEFAULT_VEHICLE_PROFILE,
+  VEHICLE_PROFILE_IDS,
+  initPhysics,
+  type VehicleProfileId,
+} from '@buggies/game'
 import { generateTerrain, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -66,7 +71,7 @@ function readChoice(): Choice {
     seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
     vehicle: VEHICLE_PROFILE_IDS.includes(vehicle as VehicleProfileId)
       ? (vehicle as VehicleProfileId)
-      : DEFAULT_VEHICLE,
+      : DEFAULT_VEHICLE_PROFILE,
   }
 }
 
@@ -97,6 +102,10 @@ function apply(next: Choice): void {
 const menu = new Menu(menuElement, choice)
 menu.onCommit(apply)
 
+// The physics engine is a wasm module, so it has to be ready before anything
+// can be driven. It loads in well under a frame, and getting it out of the way
+// up front beats a loading state in the middle of a session.
+await initPhysics()
 apply(choice)
 menu.show(choice)
 

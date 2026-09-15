@@ -1,122 +1,137 @@
-import type { VehicleState, VehicleTuning } from '@buggies/game'
+// Ported from the seattle project (src/game/carView.ts). Kept in its original shape
+// and formatting so the two can be compared and resynced.
+
 import * as THREE from 'three'
 
-const CABIN_COLOR = '#1f2933'
-const WHEEL_COLOR = '#181818'
+import {v3, type Vec3} from '@buggies/physics'
+import type {VehicleTuning} from '@buggies/game'
+import {
+  wheelMountLocal,
+  WHEEL_CORNERS,
+  WHEEL_COUNT,
+  type WheelState,
+} from '@buggies/game'
 
-const CABIN_WIDTH = 0.78
-const CABIN_LENGTH = 0.44
-const CABIN_HEIGHT = 0.62
-const CABIN_SETBACK = 0.12
-const WHEEL_WIDTH = 0.34
+export const PLAYER_BODY_COLOR = 0xd8452f
+export const REMOTE_BODY_COLOR = 0x3f6fb5
+export const BOT_BODY_COLOR = 0x3f8f5c
 
-/** Downward speed that fully compresses the springs, for the landing squat. */
-const HARD_LANDING = 18
+const CABIN_COLOR = 0x1f2933
+const WHEEL_COLOR = 0x14181d
 
-/**
- * A vehicle, drawn from its own tuning so the three profiles do not all look
- * the same. Its origin is the contact patch, which is where the simulation
- * puts the vehicle.
- */
+const CABIN_WIDTH_FRACTION = 0.78
+const CABIN_HEIGHT_FRACTION = 0.85
+const CABIN_LENGTH_FRACTION = 0.42
+const CABIN_LIFT_FRACTION = 0.9
+const CABIN_SETBACK_FRACTION = 0.06
+const WHEEL_WIDTH_PER_RADIUS = 0.75
+const LOADED_SUSPENSION_FRACTION = 0.7
+
+const unitBoxGeometry = new THREE.BoxGeometry(1, 1, 1)
+const unitWheelGeometry = new THREE.CylinderGeometry(1, 1, 1, 20).rotateZ(Math.PI / 2)
+
 export class CarView {
-  readonly object = new THREE.Group()
+  readonly object: THREE.Group
 
-  private readonly body = new THREE.Group()
-  private readonly wheels: THREE.Mesh[] = []
+  private readonly chassisMesh: THREE.Mesh
+  private readonly cabinMesh: THREE.Mesh
+  private readonly wheelMeshes: THREE.Mesh[] = []
   private readonly materials: THREE.Material[] = []
-  private readonly tuning: VehicleTuning
-  private readonly restingHeight: number
+  private readonly mountLocal: Vec3 = v3()
 
-  constructor(tuning: VehicleTuning, color: string) {
-    this.tuning = tuning
-    this.object.rotation.order = 'YXZ'
+  constructor(bodyColor: number) {
+    this.object = new THREE.Group()
 
     const bodyMaterial = new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.4,
-      metalness: 0.25,
+      color: bodyColor,
+      roughness: 0.45,
+      metalness: 0.1,
     })
     const cabinMaterial = new THREE.MeshStandardMaterial({
       color: CABIN_COLOR,
       roughness: 0.3,
       metalness: 0.2,
     })
-    const wheelMaterial = new THREE.MeshStandardMaterial({ color: WHEEL_COLOR, roughness: 0.85 })
+    const wheelMaterial = new THREE.MeshStandardMaterial({color: WHEEL_COLOR, roughness: 0.85})
+
     this.materials.push(bodyMaterial, cabinMaterial, wheelMaterial)
 
-    const shell = new THREE.Mesh(
-      new THREE.BoxGeometry(tuning.width, tuning.height, tuning.length),
-      bodyMaterial,
-    )
-    shell.position.y = tuning.height / 2
-    this.body.add(shell)
+    this.chassisMesh = new THREE.Mesh(unitBoxGeometry, bodyMaterial)
+    this.chassisMesh.castShadow = true
+    this.chassisMesh.receiveShadow = true
+    this.object.add(this.chassisMesh)
 
-    const cabin = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        tuning.width * CABIN_WIDTH,
-        tuning.height * CABIN_HEIGHT,
-        tuning.length * CABIN_LENGTH,
-      ),
-      cabinMaterial,
-    )
-    cabin.position.set(
-      0,
-      tuning.height * (1 + CABIN_HEIGHT / 2),
-      -tuning.length * CABIN_SETBACK,
-    )
-    this.body.add(cabin)
+    this.cabinMesh = new THREE.Mesh(unitBoxGeometry, cabinMaterial)
+    this.cabinMesh.castShadow = true
+    this.object.add(this.cabinMesh)
 
-    this.restingHeight = tuning.rideHeight
-    this.body.position.y = this.restingHeight
-    this.object.add(this.body)
+    for (let index = 0; index < WHEEL_COUNT; index += 1) {
+      const mesh = new THREE.Mesh(unitWheelGeometry, wheelMaterial)
 
-    const wheel = new THREE.CylinderGeometry(
-      tuning.wheelRadius,
-      tuning.wheelRadius,
-      tuning.wheelRadius * 2 * WHEEL_WIDTH,
-      16,
-    ).rotateZ(Math.PI / 2)
-    for (const [x, z] of [
-      [-1, 1],
-      [1, 1],
-      [-1, -1],
-      [1, -1],
-    ] as const) {
-      const mesh = new THREE.Mesh(wheel, wheelMaterial)
+      mesh.castShadow = true
       mesh.rotation.order = 'YXZ'
-      mesh.position.set(
-        (x * tuning.trackWidth) / 2,
-        tuning.wheelRadius,
-        (z * tuning.wheelBase) / 2,
-      )
-      this.wheels.push(mesh)
+      this.wheelMeshes.push(mesh)
       this.object.add(mesh)
     }
   }
 
-  sync(state: VehicleState): void {
-    const { position, pitch, heading, roll } = state
-    this.object.position.set(position.x, position.y, position.z)
-    this.object.rotation.set(pitch, heading, roll)
+  syncDimensions(tuning: VehicleTuning): void {
+    const width = tuning.chassisHalfWidth * 2
+    const height = tuning.chassisHalfHeight * 2
+    const length = tuning.chassisHalfLength * 2
 
-    // The springs only show themselves on the way down, which is the one time
-    // a body that never moves on its wheels looks wrong.
-    const squat = state.grounded
-      ? Math.min(Math.max(-state.velocity.y / HARD_LANDING, 0), 1) * this.tuning.suspensionTravel
-      : 0
-    this.body.position.y = this.restingHeight - squat
+    this.chassisMesh.scale.set(width, height, length)
+    this.cabinMesh.scale.set(
+      width * CABIN_WIDTH_FRACTION,
+      height * CABIN_HEIGHT_FRACTION,
+      length * CABIN_LENGTH_FRACTION,
+    )
+    this.cabinMesh.position.set(0, height * CABIN_LIFT_FRACTION, -length * CABIN_SETBACK_FRACTION)
 
-    for (const [index, mesh] of this.wheels.entries()) {
-      mesh.rotation.x = state.wheelSpin
-      mesh.rotation.y = index < 2 ? state.steerAngle : 0
+    const wheelWidth = tuning.wheelRadius * WHEEL_WIDTH_PER_RADIUS
+
+    for (const mesh of this.wheelMeshes) {
+      mesh.scale.set(wheelWidth, tuning.wheelRadius, tuning.wheelRadius)
+    }
+  }
+
+  applySimulatedWheels(wheels: readonly WheelState[], tuning: VehicleTuning): void {
+    for (const [index, wheel] of wheels.entries()) {
+      const mesh = this.wheelMeshes[index]
+
+      if (mesh === undefined) continue
+
+      wheelMountLocal(this.mountLocal, wheel, tuning)
+      mesh.position.set(
+        this.mountLocal.x,
+        this.mountLocal.y - wheel.suspensionLength,
+        this.mountLocal.z,
+      )
+      mesh.rotation.set(-wheel.spin, -wheel.steerAngle, 0)
+    }
+  }
+
+  applyRollingWheels(tuning: VehicleTuning, spin: number): void {
+    const suspensionLength = tuning.suspensionRestLength * LOADED_SUSPENSION_FRACTION
+
+    for (const [index, corner] of WHEEL_CORNERS.entries()) {
+      const mesh = this.wheelMeshes[index]
+
+      if (mesh === undefined) continue
+
+      wheelMountLocal(this.mountLocal, corner, tuning)
+      mesh.position.set(this.mountLocal.x, this.mountLocal.y - suspensionLength, this.mountLocal.z)
+      mesh.rotation.set(-spin, 0, 0)
     }
   }
 
   dispose(): void {
     this.object.removeFromParent()
-    this.object.traverse((node) => {
-      if (node instanceof THREE.Mesh) node.geometry.dispose()
-    })
+    this.object.clear()
+
     for (const material of this.materials) material.dispose()
+
+    this.materials.length = 0
+    this.wheelMeshes.length = 0
   }
 }
