@@ -1,0 +1,174 @@
+import { VEHICLE_LABELS, VEHICLE_PROFILE_IDS, type VehicleProfileId } from '@buggies/game'
+
+export type Mode = 'preview' | 'drive'
+
+/** What the player has chosen. Everything the app needs to build a session. */
+export interface Choice {
+  mode: Mode
+  seed: number
+  vehicle: VehicleProfileId
+}
+
+const MODE_NOTES: Record<Mode, { name: string; note: string; go: string }> = {
+  preview: {
+    name: 'Terrain preview',
+    note: 'Orbit a whole island and see how it was put together.',
+    go: 'Explore',
+  },
+  drive: {
+    name: 'Free drive',
+    note: 'Take a vehicle out on the roads, or off them.',
+    go: 'Drive',
+  },
+}
+
+const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
+  buggy: 'Quick, grippy, happy in the air.',
+  truck: 'Heavy and slow to turn. Ploughs on.',
+  racer: 'Fast and sharp. Lets go without much warning.',
+}
+
+function card(name: string, note: string): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.innerHTML = `<span class="name"></span><span class="note"></span>`
+  button.querySelector('.name')!.textContent = name
+  button.querySelector('.note')!.textContent = note
+  return button
+}
+
+function group(label: string): [HTMLFieldSetElement, HTMLDivElement] {
+  const fieldset = document.createElement('fieldset')
+  const legend = document.createElement('legend')
+  legend.textContent = label
+  const cards = document.createElement('div')
+  cards.className = 'cards'
+  fieldset.append(legend, cards)
+  return [fieldset, cards]
+}
+
+function randomSeed(): number {
+  return Math.floor(Math.random() * 100000)
+}
+
+/**
+ * The one place a player picks anything. It is reachable from every mode, so
+ * the map can be changed without first going back to wherever you started.
+ */
+export class Menu {
+  private readonly root: HTMLElement
+  private readonly seedField = document.createElement('input')
+  private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
+  private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
+  private readonly vehicleGroup: HTMLFieldSetElement
+  private readonly go = document.createElement('button')
+  private choice: Choice
+  private commit: (choice: Choice) => void = () => {}
+
+  constructor(root: HTMLElement, choice: Choice) {
+    this.root = root
+    this.choice = { ...choice }
+
+    const panel = document.createElement('div')
+    panel.className = 'panel'
+
+    const title = document.createElement('h1')
+    title.textContent = 'Buggies'
+    const blurb = document.createElement('p')
+    blurb.className = 'blurb'
+    blurb.textContent = 'Procedurally generated islands, with roads worth driving.'
+
+    const [modeGroup, modeCards] = group('Mode')
+    for (const mode of ['preview', 'drive'] as const) {
+      const button = card(MODE_NOTES[mode].name, MODE_NOTES[mode].note)
+      button.addEventListener('click', () => this.pick({ mode }))
+      this.modeButtons.set(mode, button)
+      modeCards.append(button)
+    }
+
+    const [mapGroup, mapRow] = group('Map')
+    mapRow.className = 'map'
+    this.seedField.type = 'text'
+    this.seedField.inputMode = 'numeric'
+    this.seedField.setAttribute('aria-label', 'Map seed')
+    this.seedField.addEventListener('keydown', (event) => {
+      event.stopPropagation()
+      if (event.key === 'Enter') this.confirm()
+    })
+    const shuffle = document.createElement('button')
+    shuffle.type = 'button'
+    shuffle.textContent = 'Random'
+    shuffle.addEventListener('click', () => {
+      this.seedField.value = String(randomSeed())
+    })
+    mapRow.append(this.seedField, shuffle)
+
+    const [vehicleGroup, vehicleCards] = group('Vehicle')
+    this.vehicleGroup = vehicleGroup
+    for (const vehicle of VEHICLE_PROFILE_IDS) {
+      const button = card(VEHICLE_LABELS[vehicle], VEHICLE_NOTES[vehicle])
+      button.addEventListener('click', () => this.pick({ vehicle }))
+      this.vehicleButtons.set(vehicle, button)
+      vehicleCards.append(button)
+    }
+
+    this.go.type = 'button'
+    this.go.className = 'go'
+    this.go.addEventListener('click', () => this.confirm())
+
+    const keys = document.createElement('p')
+    keys.className = 'keys'
+    keys.innerHTML =
+      '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive &nbsp; ' +
+      '<kbd>Space</kbd> handbrake &nbsp; <kbd>Enter</kbd> back to the road<br />' +
+      '<kbd>R</kbd> a different map &nbsp; <kbd>Esc</kbd> this menu'
+
+    panel.append(title, blurb, modeGroup, mapGroup, vehicleGroup, this.go, keys)
+    this.root.append(panel)
+    this.render()
+  }
+
+  get open(): boolean {
+    return !this.root.hidden
+  }
+
+  onCommit(commit: (choice: Choice) => void): void {
+    this.commit = commit
+  }
+
+  show(choice: Choice): void {
+    this.choice = { ...choice }
+    this.render()
+    this.root.hidden = false
+  }
+
+  hide(): void {
+    this.root.hidden = true
+  }
+
+  private pick(change: Partial<Choice>): void {
+    this.choice = { ...this.choice, ...change }
+    this.render()
+  }
+
+  private confirm(): void {
+    const typed = Number(this.seedField.value.trim())
+    const seed = Number.isFinite(typed) && typed !== 0 ? Math.floor(Math.abs(typed)) : randomSeed()
+    this.hide()
+    this.commit({ ...this.choice, seed })
+  }
+
+  private render(): void {
+    if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
+    for (const [mode, button] of this.modeButtons) {
+      button.setAttribute('aria-pressed', String(mode === this.choice.mode))
+    }
+    for (const [vehicle, button] of this.vehicleButtons) {
+      button.setAttribute('aria-pressed', String(vehicle === this.choice.vehicle))
+    }
+    // The vehicle only matters to one of the modes, and saying so is kinder
+    // than letting a player wonder why their pick changed nothing.
+    this.vehicleGroup.disabled = this.choice.mode !== 'drive'
+    this.go.textContent = MODE_NOTES[this.choice.mode].go
+  }
+}

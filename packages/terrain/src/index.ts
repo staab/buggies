@@ -3,6 +3,7 @@ export {
   groundHeight,
   heightAt,
   onGround,
+  sampleHeight,
 } from './heightfield.ts'
 export {
   DISTRICT_CITY,
@@ -24,6 +25,8 @@ export {
   RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_GRADE,
+  ROAD_SKIRT,
+  ROAD_SURFACE,
   ROAD_TUNNEL,
   ROAD_WIDTH,
   STREET_WIDTH,
@@ -36,6 +39,7 @@ export {
   triangleInradius,
 } from './mountain.ts'
 export { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
+export { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
 export type {
   District,
   Heightfield,
