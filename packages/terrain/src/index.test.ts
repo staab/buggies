@@ -845,6 +845,122 @@ describe('roads', () => {
     }
   }, 30_000)
 
+  it('never lets an arterial run onto the highway', () => {
+    // An arterial reaches the highway network through an interchange's cross
+    // road, so its carriageway has no business lapping the carriageway itself.
+    for (const seed of [1, 4, 6]) {
+      const map = generateTerrain(seed)
+      const highway = map.roads.find((road) => road.closed && road.width === ROAD_WIDTH)!
+      const arterials = map.roads.filter((road) => road.width === ARTERIAL_WIDTH)
+      expect(arterials.length).toBeGreaterThan(0)
+      const clear = (ARTERIAL_WIDTH + ROAD_WIDTH) / 2
+
+      let closest = Infinity
+      for (const arterial of arterials) {
+        for (let i = 0; i + 1 < arterial.points.length; i++) {
+          const p = arterial.points[i]!
+          const q = arterial.points[i + 1]!
+          for (let j = 0; j < highway.points.length; j++) {
+            const r = highway.points[j]!
+            const s = highway.points[(j + 1) % highway.points.length]!
+            closest = Math.min(
+              closest,
+              pointToSegment(p.x, p.z, r.x, r.z, s.x, s.z),
+              pointToSegment(q.x, q.z, r.x, r.z, s.x, s.z),
+              pointToSegment(r.x, r.z, p.x, p.z, q.x, q.z),
+              pointToSegment(s.x, s.z, p.x, p.z, q.x, q.z),
+            )
+          }
+        }
+      }
+      expect(closest).toBeGreaterThanOrEqual(clear)
+    }
+  }, 30_000)
+
+  it('parts arterials at a junction wide enough to read as a fork', () => {
+    // Two arterials leaving one node within a sliver of each other run side by
+    // side instead of parting, and their carriageways smear into one blob.
+    for (const seed of [1, 2, 5]) {
+      const map = generateTerrain(seed)
+      const arterials = map.roads.filter(
+        (road) => road.width === ARTERIAL_WIDTH && road.points.length >= 2,
+      )
+      expect(arterials.length).toBeGreaterThan(0)
+
+      const heading = (road: Road, fromStart: boolean): { x: number; z: number } => {
+        const a = fromStart ? road.points[0]! : road.points[road.points.length - 1]!
+        const b = fromStart ? road.points[1]! : road.points[road.points.length - 2]!
+        const length = Math.hypot(b.x - a.x, b.z - a.z) || 1
+        return { x: (b.x - a.x) / length, z: (b.z - a.z) / length }
+      }
+      const ends = arterials.flatMap((road) => [
+        { road, start: true },
+        { road, start: false },
+      ])
+      let sharpest = 180
+      for (let i = 0; i < ends.length; i++) {
+        const a = ends[i]!
+        const at = a.start ? a.road.points[0]! : a.road.points[a.road.points.length - 1]!
+        for (let j = i + 1; j < ends.length; j++) {
+          const b = ends[j]!
+          const to = b.start ? b.road.points[0]! : b.road.points[b.road.points.length - 1]!
+          if (Math.hypot(to.x - at.x, to.z - at.z) >= 2) continue
+          const da = heading(a.road, a.start)
+          const db = heading(b.road, b.start)
+          const dot = Math.min(Math.max(da.x * db.x + da.z * db.z, -1), 1)
+          sharpest = Math.min(sharpest, (Math.acos(dot) * 180) / Math.PI)
+        }
+      }
+      expect(sharpest).toBeGreaterThanOrEqual(45)
+    }
+  }, 30_000)
+
+  it('carries arterials at the level of the streets they cross', () => {
+    // Arterial heights come off a coarse routing grid and are then smoothed
+    // along with the path, which used to leave the road sailing over dips
+    // instead of dropping through them. Taking the height from the ground under
+    // the finished path is what brings it back down to meet the grid.
+    const steps: number[] = []
+    for (const seed of [1, 2, 3]) {
+      const map = generateTerrain(seed)
+      const arterials = map.roads.filter((road) => road.width === ARTERIAL_WIDTH)
+      const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+      expect(arterials.length).toBeGreaterThan(0)
+      expect(streets.length).toBeGreaterThan(0)
+
+      for (const arterial of arterials) {
+        for (let i = 0; i + 1 < arterial.points.length; i++) {
+          const p = arterial.points[i]!
+          const q = arterial.points[i + 1]!
+          for (const street of streets) {
+            for (let j = 0; j + 1 < street.points.length; j++) {
+              const r = street.points[j]!
+              const s = street.points[j + 1]!
+              const d1 = (q.x - p.x) * (r.z - p.z) - (q.z - p.z) * (r.x - p.x)
+              const d2 = (q.x - p.x) * (s.z - p.z) - (q.z - p.z) * (s.x - p.x)
+              const d3 = (s.x - r.x) * (p.z - r.z) - (s.z - r.z) * (p.x - r.x)
+              const d4 = (s.x - r.x) * (q.z - r.z) - (s.z - r.z) * (q.x - r.x)
+              if (!(d1 * d2 < 0 && d3 * d4 < 0)) continue
+              // Height of each road where they cross, interpolated along both.
+              const t = d3 / (d3 - d4)
+              const u = d1 / (d1 - d2)
+              steps.push(Math.abs(p.y + (q.y - p.y) * t - (r.y + (s.y - r.y) * u)))
+            }
+          }
+        }
+      }
+    }
+
+    expect(steps.length).toBeGreaterThan(50)
+    const mean = steps.reduce((sum, step) => sum + step, 0) / steps.length
+    steps.sort((a, b) => a - b)
+    const p90 = steps[Math.floor(steps.length * 0.9)]!
+    // What is left is mostly an arterial climbing to meet a raised interchange,
+    // which is a real change in level rather than a mismatch.
+    expect(mean).toBeLessThan(0.9)
+    expect(p90).toBeLessThan(2)
+  }, 30_000)
+
   it('leaves no city street stranded off the network', () => {
     const map = generateTerrain(1)
     const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
