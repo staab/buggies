@@ -97,6 +97,14 @@ function traceCourse(field: Heightfield, routing: FlowRouting, source: number, s
 }
 
 /** One river per mountain, capped at `count`. */
+/**
+ * The water ribbon is drawn this much wider than the channel, as a fraction of
+ * its half width, so it laps into the banks. A ribbon drawn to exactly the
+ * river's width leaves the cut bank showing along the outside of every bend,
+ * where the channel is swept wider than the flat quads that represent it.
+ */
+export const RIVER_BANK_LAP = 0.35
+
 export function traceRivers(
   field: Heightfield,
   routing: FlowRouting,

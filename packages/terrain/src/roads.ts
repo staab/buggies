@@ -1,6 +1,7 @@
 import { createRng, type Rng } from '@buggies/physics'
 
 import { DISTRICT_CITY } from './districts.ts'
+import { RIVER_BANK_LAP } from './rivers.ts'
 import type { District, Heightfield, Lake, River, Road, RoadPoint } from './types.ts'
 
 /** Road structure codes stored in a road's `structure` array. */
@@ -2719,12 +2720,26 @@ export function generateRoads(
   if (count < 3) return []
 
   const { width, depth, cellSize } = field
+  // Every cell the water is drawn over, at the highest level drawn there. A
+  // sample's own cell is not enough: a road can cross a wide river far from any
+  // centreline cell and read the ground as dry, and a deck built to clear one
+  // sample can still finish under the sample beside it.
   const riverLevels = new Map<number, number>()
   for (const river of rivers) {
     for (const point of river.points) {
-      const col = Math.min(Math.max(Math.round(point.x / cellSize), 0), width - 1)
-      const row = Math.min(Math.max(Math.round(point.z / cellSize), 0), depth - 1)
-      riverLevels.set(row * width + col, point.y)
+      const reach = (point.width / 2) * (1 + RIVER_BANK_LAP)
+      const minCol = Math.max(Math.floor((point.x - reach) / cellSize), 0)
+      const maxCol = Math.min(Math.ceil((point.x + reach) / cellSize), width - 1)
+      const minRow = Math.max(Math.floor((point.z - reach) / cellSize), 0)
+      const maxRow = Math.min(Math.ceil((point.z + reach) / cellSize), depth - 1)
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          if (Math.hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
+          const cell = row * width + col
+          const known = riverLevels.get(cell)
+          if (known === undefined || point.y > known) riverLevels.set(cell, point.y)
+        }
+      }
     }
   }
   const lakeLevels = new Map<number, number>()
