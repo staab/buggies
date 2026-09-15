@@ -35,7 +35,7 @@ export {
   triangleCentroid,
   triangleInradius,
 } from './mountain.ts'
-export { traceRivers } from './rivers.ts'
+export { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 export type {
   District,
   Heightfield,

@@ -11,6 +11,7 @@ import {
   MAX_RAMP_GRADE,
   MAX_ROAD_GRADE,
   RAMP_WIDTH,
+  RIVER_BANK_LAP,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
@@ -842,6 +843,116 @@ describe('roads', () => {
       // Where a street does run shallowly beside an arterial it stops at the
       // point their carriageways would start to overlap, and no nearer.
       expect(closest).toBeGreaterThanOrEqual(overlap - 1e-6)
+    }
+  }, 30_000)
+
+  it('seats every river in the channel cut for it', () => {
+    // The ribbon is flat and only as wide as the river, so the land has to come
+    // up to meet its edges; where it does not, the water hangs with daylight
+    // under it and reads as floating above the ground.
+    const hanging: number[] = []
+    const wetted: number[] = []
+    for (const seed of [1, 2, 3]) {
+      const map = generateTerrain(seed)
+      expect(map.rivers.length).toBeGreaterThan(0)
+      const { width, depth, cellSize, heights } = map.heightfield
+      // Bilinear, because the ground is drawn as an interpolated mesh: what the
+      // water has to clear is the surface between the samples, not the samples.
+      const groundAt = (x: number, z: number): number => {
+        const gx = Math.min(Math.max(x / cellSize, 0), width - 1)
+        const gz = Math.min(Math.max(z / cellSize, 0), depth - 1)
+        const col = Math.floor(gx)
+        const row = Math.floor(gz)
+        const col1 = Math.min(col + 1, width - 1)
+        const row1 = Math.min(row + 1, depth - 1)
+        const tx = gx - col
+        const tz = gz - row
+        const top = heights[row * width + col]! * (1 - tx) + heights[row * width + col1]! * tx
+        const bottom = heights[row1 * width + col]! * (1 - tx) + heights[row1 * width + col1]! * tx
+        return top * (1 - tz) + bottom * tz
+      }
+
+      for (const river of map.rivers) {
+        for (let i = 0; i < river.points.length; i++) {
+          const point = river.points[i]!
+          const prev = river.points[Math.max(0, i - 1)]!
+          const next = river.points[Math.min(river.points.length - 1, i + 1)]!
+          let dx = next.x - prev.x
+          let dz = next.z - prev.z
+          const length = Math.hypot(dx, dz) || 1
+          dx /= length
+          dz /= length
+          // The edge that is drawn, which is wider than the river itself.
+          const half = (point.width / 2) * (1 + RIVER_BANK_LAP)
+          for (const side of [1, -1]) {
+            hanging.push(point.y - groundAt(point.x - dz * half * side, point.z + dx * half * side))
+          }
+          // The ribbon still has to read as a river, not a thread in a trench.
+          let wet = 0
+          const steps = 21
+          for (let k = 0; k < steps; k++) {
+            const offset = -half + (2 * half * k) / (steps - 1)
+            if (groundAt(point.x - dz * offset, point.z + dx * offset) < point.y) wet++
+          }
+          wetted.push(wet / steps)
+        }
+      }
+    }
+
+    // Most edges are buried in a bank, and the water still covers most of its bed.
+    // Some hang: the water is only let a little way off the traced surface, and
+    // following every dip in the ground would step the banks into a staircase.
+    const hangs = hanging.filter((gap) => gap > 0).length / hanging.length
+    expect(hangs).toBeLessThan(0.35)
+    const covered = wetted.reduce((sum, part) => sum + part, 0) / wetted.length
+    expect(covered).toBeGreaterThan(0.6)
+  }, 30_000)
+
+  it('holds rivers and lakes to one water level where they meet', () => {
+    for (const seed of [2, 3, 4, 6]) {
+      const map = generateTerrain(seed)
+      if (map.lakes.length === 0) continue
+      const { width, depth, cellSize } = map.heightfield
+      const surface: { x: number; z: number; level: number }[] = []
+      for (const lake of map.lakes) {
+        for (const cell of lake.cells) {
+          surface.push({
+            x: ((cell % width) + 0.5) * cellSize,
+            z: (Math.floor(cell / width) + 0.5) * cellSize,
+            level: lake.level,
+          })
+        }
+      }
+      expect(surface.length).toBeGreaterThan(0)
+      expect(depth).toBeGreaterThan(0)
+
+      for (const river of map.rivers) {
+        for (const point of river.points) {
+          for (const flooded of surface) {
+            if (Math.hypot(flooded.x - point.x, flooded.z - point.z) > point.width / 2 + 12) continue
+            // A river crossing a lake, or running up to its shore, is that lake:
+            // it may run out of it downstream but never stand below its surface.
+            expect(point.y).toBeGreaterThanOrEqual(flooded.level - 1e-6)
+            break
+          }
+        }
+      }
+    }
+  }, 30_000)
+
+  it('never lets a river surface stand over a road deck', () => {
+    for (const seed of [1, 2, 3]) {
+      const map = generateTerrain(seed)
+      for (const road of map.roads) {
+        for (const point of road.points) {
+          for (const river of map.rivers) {
+            for (const sample of river.points) {
+              if (Math.hypot(sample.x - point.x, sample.z - point.z) > sample.width / 2) continue
+              expect(point.y).toBeGreaterThanOrEqual(sample.y)
+            }
+          }
+        }
+      }
     }
   }, 30_000)
 

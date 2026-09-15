@@ -1,6 +1,7 @@
 import {
   DISTRICT_CITY,
   DISTRICT_SUBURB,
+  RIVER_BANK_LAP,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
@@ -215,8 +216,13 @@ function buildRiverGeometry(river: River): THREE.BufferGeometry {
     const length = Math.hypot(dx, dz) || 1
     dx /= length
     dz /= length
-    const halfWidth = point.width / 2
-    const y = point.y + 0.1
+    // Drawn wider than the river so the ribbon laps into its banks: the channel
+    // is swept round bends, while these quads cut the corner, and the cut bank
+    // shows through any daylight left between them.
+    const halfWidth = (point.width / 2) * (1 + RIVER_BANK_LAP)
+    // The channel is cut to meet the water line at the ribbon's edge, so the
+    // surface is drawn where it actually sits rather than lifted clear of it.
+    const y = point.y
     positions.push(point.x - dz * halfWidth, y, point.z + dx * halfWidth)
     positions.push(point.x + dz * halfWidth, y, point.z - dx * halfWidth)
   }
