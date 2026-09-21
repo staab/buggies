@@ -24,7 +24,7 @@ import {
   roadClearance,
   type Footprint,
 } from './roads.ts'
-import type { Building, District, Heightfield, Lake, Mountain, River, Road, Tree } from './types.ts'
+import type {Building, District, Heightfield, Lake, Mountain, Ramp, River, Road, Tree} from './types.ts'
 
 const BUILDING_SALT = 0x6b1d
 
@@ -73,6 +73,17 @@ const HOUSE_SETBACK = { min: 5, max: 9 } as const
 const HOUSE_WIDTH = { min: 8, max: 12 } as const
 const HOUSE_DEPTH = { min: 7, max: 10 } as const
 const HOUSE_HEIGHT = { min: 3.5, max: 6.5 } as const
+/** One house in this many gets a ramp up onto its roof. */
+const RAMP_ODDS = 8
+/** A ramped house stands this far back from the road's edge, to give the ramp its run. */
+const RAMP_SETBACK = 12
+/** The ramp's foot stands this far out from the road's edge, on the shoulder. */
+const RAMP_FOOT = 1.5
+const HOUSE_RAMP_WIDTH = 6
+/** A ramped house is kept low, so the ramp up to it can be taken flat out. */
+const RAMP_HOUSE_HEIGHT = { min: 3.5, max: 4.5 } as const
+/** A ramp steeper or shallower than this is not built, and the house keeps its pitched roof. */
+const RAMP_GRADE = { min: 0.25, max: 0.65 } as const
 
 /** Country: trees this far apart along the arterial, standing this far off it, and this big. */
 const TREE_SPACING = { min: 4, max: 9 } as const
@@ -407,6 +418,7 @@ function fillCities(
             placed.add(footprint)
             buildings.push({
               kind: 'block',
+      roof: 'flat',
               ...footprint,
               bottom: ground.low - BURY,
               top: ground.high + height,
@@ -446,6 +458,7 @@ function lineArterials(
   wet: (x: number, z: number) => boolean,
   placed: Placed,
   buildings: Building[],
+  ramps: Ramp[],
   plant: Planter,
 ): void {
   const { width, cellSize } = field
@@ -463,11 +476,15 @@ function lineArterials(
   const placeHouse = (road: Road, index: number, side: number, zone: number): boolean => {
     const point = road.points[index]!
     const { dx, dz, nx, nz } = frameAlong(road, index)
+    const ramped = randomInt(rng, 1, RAMP_ODDS) === 1
     const houseWidth = randomRange(rng, HOUSE_WIDTH.min, HOUSE_WIDTH.max)
     const houseDepth = randomRange(rng, HOUSE_DEPTH.min, HOUSE_DEPTH.max)
-    const height = randomRange(rng, HOUSE_HEIGHT.min, HOUSE_HEIGHT.max)
+    const height = ramped
+      ? randomRange(rng, RAMP_HOUSE_HEIGHT.min, RAMP_HOUSE_HEIGHT.max)
+      : randomRange(rng, HOUSE_HEIGHT.min, HOUSE_HEIGHT.max)
     const tone = rng()
-    const setback = road.width / 2 + randomRange(rng, HOUSE_SETBACK.min, HOUSE_SETBACK.max) + houseDepth / 2
+    const gap = ramped ? RAMP_SETBACK : randomRange(rng, HOUSE_SETBACK.min, HOUSE_SETBACK.max)
+    const setback = road.width / 2 + gap + houseDepth / 2
     const footprint: Footprint = {
       x: point.x + nx * side * setback,
       z: point.z + nz * side * setback,
@@ -482,19 +499,61 @@ function lineArterials(
     if (ground.wet || ground.high - ground.low > HOUSE_RELIEF) return false
     if (placed.meets(footprint, BUILDING_GAP)) return false
     placed.add(footprint)
-    buildings.push({
+    const house: Building = {
       kind: 'house',
       ...footprint,
       bottom: ground.low - BURY,
       top: ground.high + height,
       tone,
-    })
+      roof: 'pitched',
+    }
+    buildings.push(house)
+    // The ramp: from the road's shoulder straight up to the front eave. It
+    // has to have a grade a car can take, and its own clear ground; failing
+    // either, the house keeps its pitched roof and does without.
+    let rampWidth = 0
+    if (ramped) {
+      const footOut = road.width / 2 + RAMP_FOOT
+      const length = gap - RAMP_FOOT
+      const foot = { x: point.x + nx * side * footOut, z: point.z + nz * side * footOut }
+      const bottom = sampleHeight(field, foot.x, foot.z)
+      const grade = (house.top - bottom) / length
+      const run: Footprint = {
+        x: point.x + nx * side * (footOut + length / 2 - 0.2),
+        z: point.z + nz * side * (footOut + length / 2 - 0.2),
+        yaw: footprint.yaw,
+        width: HOUSE_RAMP_WIDTH,
+        depth: length - 0.4,
+      }
+      if (
+        grade >= RAMP_GRADE.min &&
+        grade <= RAMP_GRADE.max &&
+        clear(run, 0) &&
+        !placed.meets(run, 0) &&
+        !wet(foot.x, foot.z)
+      ) {
+        placed.add(run)
+        house.roof = 'flat'
+        rampWidth = HOUSE_RAMP_WIDTH
+        ramps.push({
+          x: foot.x,
+          z: foot.z,
+          dx: nx * side,
+          dz: nz * side,
+          width: HOUSE_RAMP_WIDTH,
+          length,
+          bottom,
+          top: house.top,
+        })
+      }
+    }
     // A garden: shrubs along the front, between the house and the road, and
     // a tree or two behind it, within its own width so the house next door
-    // is not crowded out of its lot.
+    // is not crowded out of its lot. Nothing is planted in the ramp's run.
     const front = side * (houseDepth / 2 + 1.5)
     for (let k = randomInt(rng, GARDEN_SHRUBS.min, GARDEN_SHRUBS.max); k > 0; k--) {
       const along = randomRange(rng, -houseWidth / 2, houseWidth / 2)
+      if (Math.abs(along) < rampWidth / 2 + 1) continue
       plant(
         footprint.x + dx * along - nx * front,
         footprint.z + dz * along - nz * front,
@@ -657,16 +716,17 @@ export function generateBuildings(
   lakes: Lake[],
   mountains: Mountain[],
   seed: number,
-): { buildings: Building[]; trees: Tree[] } {
+): { buildings: Building[]; trees: Tree[]; ramps: Ramp[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
   const clear = roadClearance(roads)
   const wet = wetTest(field, seaLevel, rivers, lakes, roads)
   const placed = new Placed()
   const buildings: Building[] = []
   const trees: Tree[] = []
+  const ramps: Ramp[] = []
   const plant = planter(rng, field, placed, trees)
   fillCities(rng, field, districts, districtOf, clear, wet, placed, buildings, plant)
-  lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
+  lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, ramps, plant)
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
-  return { buildings, trees }
+  return { buildings, trees, ramps }
 }

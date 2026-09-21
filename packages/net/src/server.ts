@@ -249,6 +249,8 @@ export class GameServer implements TransportHandlers {
         rotation: quat(),
         linearVelocity: v3(),
         angularVelocity: v3(),
+        damage: 0,
+        wrecked: false,
         appliedInput: createVehicleInput(),
       })
       vehicle.seat = seat.id
@@ -258,6 +260,8 @@ export class GameServer implements TransportHandlers {
       body.rotation(vehicle.rotation)
       body.linvel(vehicle.linearVelocity)
       body.angvel(vehicle.angularVelocity)
+      vehicle.damage = seat.vehicle.damage
+      vehicle.wrecked = seat.vehicle.wrecked
       Object.assign(vehicle.appliedInput, this.playerIn(seat)?.timeline.appliedInput ?? this.scratchInput)
       count += 1
     }

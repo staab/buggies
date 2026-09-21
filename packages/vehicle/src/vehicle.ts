@@ -22,13 +22,14 @@ import {
   vnormalize,
   vprojectOntoPlane,
   vscale,
+  vset,
   type Vec3,
 } from '@buggies/physics'
 import {applyAirControl, applyAirStabilization} from './airControl.ts'
 import {addForceAlong, addTorqueAbout} from './bodyForces.ts'
 import {readChassisFrame, velocityAtPoint, type ChassisFrame} from './chassisFrame.ts'
 import {WHEEL_RAY_GROUPS, isGround} from './groups.ts'
-import {readDriverCommand, type VehicleInput} from './input.ts'
+import {NEUTRAL_INPUT, readDriverCommand, type VehicleInput} from './input.ts'
 import {updateSelfRighting} from './selfRighting.ts'
 import type {VehicleTuning} from './tuning.ts'
 import {createTyreDriveContext, solveTyreForces} from './tyreModel.ts'
@@ -68,19 +69,70 @@ function noteImpacts(
   dt: number,
 ): void {
   let impulse = 0
+  let blow = 0
   world.contactPairsWith(vehicle.collider, other => {
     if (isGround(other)) return
     world.contactPair(vehicle.collider, other, manifold => {
+      const normal = manifold.normal()
+      const sideways = Math.hypot(normal.x, normal.z)
       for (let i = 0; i < manifold.numContacts(); i++) {
-        impulse += Math.hypot(
+        const hit = Math.hypot(
           manifold.contactImpulse(i),
           manifold.contactTangentImpulseX(i),
           manifold.contactTangentImpulseY(i),
         )
+        impulse += hit
+        // Only a hit from the side can blow the car up: coming down hard on
+        // a roof is a landing, however hard.
+        blow += hit * sideways
       }
     })
   })
-  vehicle.impactTime = impulse > tuning.impactSpeedChange * tuning.mass ? 0 : vehicle.impactTime + dt
+  const knock = impulse / tuning.mass
+  vehicle.impactTime = knock > tuning.impactSpeedChange ? 0 : vehicle.impactTime + dt
+  // Damage adds up hit by hit, scrapes and taps aside, until the car is
+  // done. An impact lasts as long as the car is being knocked, and counts
+  // once, by its hardest step; a car that bounces off a wall is not hit
+  // again by every step of the bounce.
+  const hit = blow / tuning.mass
+  if (hit > tuning.damageFloor) {
+    vehicle.impactPeak = Math.max(vehicle.impactPeak, hit)
+  } else if (vehicle.impactPeak > 0) {
+    vehicle.damage = Math.min(vehicle.damage + vehicle.impactPeak / tuning.damageToWreck, 1)
+    vehicle.impactPeak = 0
+  }
+  const done = vehicle.damage + vehicle.impactPeak / tuning.damageToWreck >= 1
+  if (done && !vehicle.wrecked) {
+    vehicle.damage = 1
+    vehicle.impactPeak = 0
+    wreck(vehicle, tuning)
+  }
+}
+
+/** Buggies addition. Past this much damage the car is smoking. */
+export const DAMAGE_SMOKING = 0.5
+
+/** How fast a wreck is thrown up, in m/s. */
+const WRECK_LIFT = 7
+/** How fast a wreck is set turning, end over end and rolling, in rad/s. */
+const WRECK_TUMBLE = 6
+const WRECK_ROLL = 2.5
+const blast = v3()
+
+/**
+ * Buggies addition. A hit hard enough blows the car up: it is thrown into
+ * the air end over end, takes no more driving, and is put back on its spawn
+ * by whoever runs the arena. Nothing here is random, so every copy of the
+ * simulation blows it up the same way.
+ */
+function wreck(vehicle: Vehicle, tuning: VehicleTuning): void {
+  const {body, frame} = vehicle
+  vehicle.wrecked = true
+  vset(blast, 0, WRECK_LIFT * tuning.mass, 0)
+  body.applyImpulse(blast, true)
+  vscale(blast, frame.right, WRECK_TUMBLE)
+  vaddScaled(blast, blast, frame.forward, WRECK_ROLL)
+  body.setAngvel(blast, true)
 }
 
 function updateMotionState(vehicle: Vehicle): void {
@@ -405,7 +457,8 @@ export function stepVehicle(
   body.resetForces(false)
   body.resetTorques(false)
 
-  readDriverCommand(vehicle.command, input)
+  // A wreck takes no more driving.
+  readDriverCommand(vehicle.command, vehicle.wrecked ? NEUTRAL_INPUT : input)
   readChassisFrame(vehicle.frame, body)
   noteImpacts(world, vehicle, tuning, dt)
 
@@ -418,7 +471,7 @@ export function stepVehicle(
   applyAerodynamics(vehicle, tuning)
 
   const grounded = vehicle.groundedCount > 0
-  const selfRighting = updateSelfRighting(world, vehicle, tuning, dt, grounded)
+  const selfRighting = vehicle.wrecked ? false : updateSelfRighting(world, vehicle, tuning, dt, grounded)
 
   if (grounded) {
     vehicle.airborneTime = 0

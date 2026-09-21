@@ -35,7 +35,7 @@ export {
   type VehicleTuning,
 } from './tuning.ts'
 export { lateralGripCurve, solveTyreForces } from './tyreModel.ts'
-export { stepVehicle } from './vehicle.ts'
+export { DAMAGE_SMOKING, stepVehicle } from './vehicle.ts'
 export {
   WHEEL_CORNERS,
   WHEEL_COUNT,
@@ -61,17 +61,18 @@ export {
 } from './vehicleStepState.ts'
 export { applyWaterResponse, submersionFraction } from './water.ts'
 export {
-  DEFAULT_WORLD_TUNING,
-  FIXED_TIMESTEP,
-  WORLD_UP,
   addDynamicBox,
   addRamp,
   addStaticBox,
+  addStaticWall,
   applyWorldTuning,
   createPhysicsWorld,
   createWorldTuning,
+  DEFAULT_WORLD_TUNING,
+  FIXED_TIMESTEP,
   initPhysics,
   resetWorldTuning,
-  worldGravity,
   type WorldTuning,
+  WORLD_UP,
+  worldGravity,
 } from './world.ts'

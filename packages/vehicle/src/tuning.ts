@@ -80,6 +80,10 @@ export interface VehicleTuning {
    */
   impactSpeedChange: number
   impactTumbleTime: number
+  /** A sideways knock that changes the car's speed by less than this, in one step, does no damage. */
+  damageFloor: number
+  /** How much sideways speed change, in m/s over all its knocks, wrecks the car. */
+  damageToWreck: number
   airLevelInputYield: number
   airLevelLandingCastDistance: number
   airLevelLandingLookahead: number
@@ -188,6 +192,8 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.08,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
+  damageFloor: 4,
+  damageToWreck: 40,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.4,
@@ -267,6 +273,8 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.08,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
+  damageFloor: 4,
+  damageToWreck: 52,
   airLevelInputYield: 0.4,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.45,
@@ -348,6 +356,8 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.06,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
+  damageFloor: 4,
+  damageToWreck: 32,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.35,

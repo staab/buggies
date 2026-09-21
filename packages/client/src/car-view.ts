@@ -91,6 +91,11 @@ export class CarView {
     }
   }
 
+  /** Buggies addition: a blown-up car is gone, nothing left to draw, until it is put back. */
+  setWrecked(wrecked: boolean): void {
+    this.object.visible = !wrecked
+  }
+
   syncDimensions(tuning: VehicleTuning): void {
     const width = tuning.chassisHalfWidth * 2
     const height = tuning.chassisHalfHeight * 2

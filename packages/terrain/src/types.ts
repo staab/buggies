@@ -102,6 +102,8 @@ export interface Road {
  */
 export interface Building {
   kind: 'block' | 'house'
+  /** A house is pitched unless a ramp leads up onto it, when it is flat-topped to be driven over. */
+  roof: 'pitched' | 'flat'
   x: number
   z: number
   yaw: number
@@ -111,6 +113,26 @@ export interface Building {
   top: number
   /** A shade for whoever draws it, 0 to 1. */
   tone: number
+}
+
+/**
+ * A wedge from the ground up to the roof of a house, square to the road in
+ * front of it, for a car to take at speed: up it, over the house and off the
+ * far side.
+ */
+export interface Ramp {
+  /** The middle of the foot, where the wedge meets the ground. */
+  x: number
+  z: number
+  /** Unit direction it climbs in, in plan. */
+  dx: number
+  dz: number
+  width: number
+  /** From the foot to the top edge, in plan. */
+  length: number
+  /** Ground height at the foot, and the roof height at the top edge. */
+  bottom: number
+  top: number
 }
 
 /**
@@ -164,4 +186,5 @@ export interface TerrainMap {
   roads: Road[]
   buildings: Building[]
   trees: Tree[]
+  ramps: Ramp[]
 }

@@ -24,6 +24,8 @@ export interface VehicleRenderState {
   rotation: Quat
   linearVelocity: Vec3
   speed: number
+  damage: number
+  wrecked: boolean
 }
 
 interface BufferedSnapshot {
@@ -41,6 +43,8 @@ function createRenderState(source: VehicleSnapshot): VehicleRenderState {
     rotation: quat(),
     linearVelocity: v3(),
     speed: 0,
+    damage: 0,
+    wrecked: false,
   }
 }
 
@@ -57,6 +61,8 @@ function writeFrom(out: VehicleRenderState, source: VehicleSnapshot): void {
   out.linearVelocity.y = source.linearVelocity.y
   out.linearVelocity.z = source.linearVelocity.z
   out.speed = vlength(out.linearVelocity)
+  out.damage = source.damage
+  out.wrecked = source.wrecked
 }
 
 function writeBlend(
@@ -74,6 +80,8 @@ function writeBlend(
   out.linearVelocity.y = lerp(older.linearVelocity.y, newer.linearVelocity.y, t)
   out.linearVelocity.z = lerp(older.linearVelocity.z, newer.linearVelocity.z, t)
   out.speed = vlength(out.linearVelocity)
+  out.damage = newer.damage
+  out.wrecked = newer.wrecked
 }
 
 /**

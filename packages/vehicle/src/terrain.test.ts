@@ -188,6 +188,18 @@ describe('terrain colliders', () => {
       expect(open).toBe(shrubs.length)
     })
 
+    it('stands a solid wedge under every ramp, from its foot to the roof it climbs to', () => {
+      expect(map.ramps.length).toBeGreaterThan(0)
+      let sound = 0
+      for (const ramp of map.ramps) {
+        const midX = ramp.x + ramp.dx * ramp.length * 0.5
+        const midZ = ramp.z + ramp.dz * ramp.length * 0.5
+        const found = castDown(world, midX, midZ, ramp.top + 5)
+        if (found !== null && Math.abs(found - (ramp.bottom + ramp.top) / 2) < 0.05) sound++
+      }
+      expect(sound).toBe(map.ramps.length)
+    })
+
     it('carries a bridge over the gap it spans', () => {
       let spans = 0
       let carried = 0

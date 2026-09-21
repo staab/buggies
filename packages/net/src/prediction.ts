@@ -187,6 +187,11 @@ export class LocalPrediction {
 
     this.writeSnapshotBodies(snapshot)
     writeVehicleStepState(this.seat.vehicle, predicted.step)
+    // How beaten up the car is, and whether it is a wreck, is the server's
+    // word, not the prediction's: a wreck predicted that the server never
+    // saw would otherwise never be driven again.
+    this.seat.vehicle.damage = own.damage
+    this.seat.vehicle.wrecked = own.wrecked
     this.mirror.tick = snapshot.tick
     while (this.mirror.tick < predictedThroughTick) {
       const recorded = this.history.frameAt(this.mirror.tick)
@@ -274,6 +279,8 @@ export class LocalPrediction {
       body.setRotation(vehicle.rotation, true)
       body.setLinvel(vehicle.linearVelocity, true)
       body.setAngvel(vehicle.angularVelocity, true)
+      seat.vehicle.damage = vehicle.damage
+      seat.vehicle.wrecked = vehicle.wrecked
     }
   }
 

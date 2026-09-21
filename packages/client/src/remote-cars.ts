@@ -5,16 +5,19 @@ import {
   type VehicleTuning,
 } from '@buggies/game'
 import type { VehicleRenderState } from '@buggies/net'
-import { qrotate, v3, vdot } from '@buggies/physics'
+import { qrotate, v3, vdot, type Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import { CarView, seatColor } from './car-view.ts'
+import { smokeAmount } from './damage.ts'
+import type { Smoke } from './smoke.ts'
 
 interface Entry {
   profile: VehicleProfileId
   view: CarView
   tuning: VehicleTuning
   spin: number
+  wrecked: boolean
 }
 
 const forward = v3()
@@ -28,7 +31,13 @@ export class RemoteCars {
 
   private readonly entries = new Map<number, Entry>()
 
-  constructor(private readonly ownSeat: number) {}
+  constructor(
+    private readonly ownSeat: number,
+    /** Called where a car blows up, the moment the server first says it has. */
+    private readonly onWreck: (at: Vec3) => void = () => {},
+    /** Where a damaged car's smoke goes. */
+    private readonly smoke: Smoke | null = null,
+  ) {}
 
   update(states: readonly VehicleRenderState[], dt: number): void {
     const seen = new Set<number>()
@@ -39,6 +48,10 @@ export class RemoteCars {
       const { object } = entry.view
       object.position.set(state.position.x, state.position.y, state.position.z)
       object.quaternion.set(state.rotation.x, state.rotation.y, state.rotation.z, state.rotation.w)
+      if (state.wrecked && !entry.wrecked) this.onWreck(state.position)
+      entry.wrecked = state.wrecked
+      entry.view.setWrecked(state.wrecked)
+      if (!state.wrecked) this.smoke?.trail(state.position, state.linearVelocity, smokeAmount(state.damage), dt)
 
       qrotate(forward, state.rotation, CHASSIS_FORWARD)
       entry.spin += (vdot(forward, state.linearVelocity) * dt) / entry.tuning.wheelRadius
@@ -67,7 +80,7 @@ export class RemoteCars {
     const view = new CarView(seatColor(seat))
     view.syncDimensions(tuning)
     this.object.add(view.object)
-    const created = { profile, view, tuning, spin: 0 }
+    const created = { profile, view, tuning, spin: 0, wrecked: false }
     this.entries.set(seat, created)
     return created
   }

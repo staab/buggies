@@ -3,6 +3,8 @@ import {
   ROAD_SURFACE,
   boreClearance,
   boreFloorAt,
+  deckSpans,
+  lowestDeckOver,
   sampleHeight,
   tunnelSegments,
   type TerrainMap,
@@ -26,14 +28,21 @@ export function tunnelTest(map: TerrainMap): (position: { x: number; y: number; 
   return ({ x, y, z }) => boreClearance(bores, x, z, y) < 0
 }
 
+/** A deck has to clear the car's centre by this much to count as over it rather than under it. */
+const DECK_HEADROOM = 1.5
+/** How far below a deck's surface its underside is taken to be. */
+const DECK_UNDERSIDE = 0.4
+
 /**
  * What the chase camera must stay between: the ground, or inside a tunnel
- * the road and the arch over it. Read from the map rather than the physics
- * world so the camera never has to ask the simulation anything.
+ * the road and the arch over it, or under a bridge the deck overhead. Read
+ * from the map rather than the physics world so the camera never has to ask
+ * the simulation anything.
  */
 export function cameraBounds(map: TerrainMap): CameraBoundsAt {
   const bores = tunnelSegments(map.roads)
-  return (x, z, out) => {
+  const decks = deckSpans(map.roads)
+  return (x, z, out, above) => {
     const floor = boreFloorAt(bores, x, z)
     if (floor === null) {
       out.floor = sampleHeight(map.heightfield, x, z)
@@ -42,6 +51,7 @@ export function cameraBounds(map: TerrainMap): CameraBoundsAt {
       out.floor = floor + ROAD_SURFACE
       out.ceiling = -boreClearance(bores, x, z, 0)
     }
+    out.ceiling = Math.min(out.ceiling, lowestDeckOver(decks, x, z, above + DECK_HEADROOM) - DECK_UNDERSIDE)
     return out
   }
 }
@@ -49,8 +59,9 @@ export function cameraBounds(map: TerrainMap): CameraBoundsAt {
 /** The speed line of the HUD: how fast, and what the car is up to. */
 export function driverLine(vehicle: Vehicle, submersion: number, inTunnel: boolean): string {
   const speed = Math.round(vehicle.speed * TO_KPH)
-  const state =
-    submersion > 0.2
+  const state = vehicle.wrecked
+    ? 'wrecked'
+    : submersion > 0.2
       ? 'in the water'
       : vehicle.selfRighting
         ? 'righting itself'
@@ -61,5 +72,6 @@ export function driverLine(vehicle: Vehicle, submersion: number, inTunnel: boole
             : Math.abs(vehicle.slipAngle) > SLIDE_ANGLE
               ? 'sliding'
               : 'on the road'
-  return `${String(speed).padStart(3)} km/h  ${state}`
+  const hurt = vehicle.damage > 0 && !vehicle.wrecked ? `  damage ${Math.round(vehicle.damage * 100)}%` : ''
+  return `${String(speed).padStart(3)} km/h  ${state}${hurt}`
 }

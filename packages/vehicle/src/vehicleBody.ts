@@ -77,6 +77,12 @@ export interface Vehicle {
   airborneTime: number
   /** Seconds since the chassis last took a hard knock. */
   impactTime: number
+  /** How beaten up the car is, 0 untouched to 1 wrecked. */
+  damage: number
+  /** The hardest sideways knock of the impact under way, in m/s, or 0 between impacts. */
+  impactPeak: number
+  /** Blown up: past driving, and waiting to be put back on its spawn. */
+  wrecked: boolean
   invertedRestTime: number
   selfRighting: boolean
   selfRightElapsed: number
@@ -159,6 +165,9 @@ const NEUTRAL_VEHICLE_MOTION: Readonly<VehicleMotion> = Object.freeze({
   groundedCount: 0,
   airborneTime: 0,
   impactTime: Number.POSITIVE_INFINITY,
+  damage: 0,
+  impactPeak: 0,
+  wrecked: false,
   invertedRestTime: 0,
   selfRighting: false,
   selfRightElapsed: 0,

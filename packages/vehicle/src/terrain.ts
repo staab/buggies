@@ -18,6 +18,7 @@ import {
   tunnelShellMesh,
   type Heightfield,
   type Road,
+  type Ramp,
   type TerrainMap,
 } from '@buggies/terrain'
 
@@ -339,4 +340,39 @@ export function addTerrain(world: RAPIER.World, map: TerrainMap): void {
   addTunnelShells(world, map)
   addRails(world, map)
   addBuildings(world, map)
+  addRamps(world, map.ramps)
+}
+
+/**
+ * The ramps up onto the houses: solid wedges, ground to the wheels like a
+ * road, from the foot on the shoulder to the eave they meet.
+ */
+export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
+  if (ramps.length === 0) return
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
+  for (const ramp of ramps) {
+    const sx = -ramp.dz * (ramp.width / 2)
+    const sz = ramp.dx * (ramp.width / 2)
+    const tx = ramp.x + ramp.dx * ramp.length
+    const tz = ramp.z + ramp.dz * ramp.length
+    const under = ramp.bottom - 1
+    const wedge = RAPIER.ColliderDesc.convexHull(
+      new Float32Array([
+        ramp.x + sx, ramp.bottom, ramp.z + sz,
+        ramp.x - sx, ramp.bottom, ramp.z - sz,
+        tx + sx, ramp.top, tz + sz,
+        tx - sx, ramp.top, tz - sz,
+        tx + sx, under, tz + sz,
+        tx - sx, under, tz - sz,
+      ]),
+    )
+    if (wedge === null) continue
+    world.createCollider(
+      wedge
+        .setCollisionGroups(GROUND_GROUPS)
+        .setFriction(ROAD_FRICTION)
+        .setRestitution(GROUND_RESTITUTION),
+      body,
+    )
+  }
 }
