@@ -2,17 +2,19 @@ import {
   FIXED_TIMESTEP,
   VEHICLE_PROFILE_LABELS,
   advance,
-  createGame,
+  createArena,
   respawn,
-  type GameState,
+  respawnLost,
+  takeSeat,
   type VehicleProfileId,
 } from '@buggies/game'
-import { boreClearance, sampleHeight, tunnelSegments, type TerrainMap } from '@buggies/terrain'
+import { sampleHeight, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { BodyView } from './body-view.ts'
 import { CarView } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
+import { driverLine, tunnelTest } from './driver-hud.ts'
 import { Keyboard } from './input.ts'
 import type { ModeView } from './mode.ts'
 
@@ -22,11 +24,6 @@ import type { ModeView } from './mode.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-const TO_KPH = 3.6
-
-/** Slip angle past which the HUD starts calling it a slide, in radians. */
-const SLIDE_ANGLE = 0.35
-
 /** A colour each, so the three are told apart at a glance. */
 const COLORS: Record<VehicleProfileId, number> = {
   pickup: 0x3f6fb5,
@@ -34,56 +31,51 @@ const COLORS: Record<VehicleProfileId, number> = {
   raceCar: 0xe8a33a,
 }
 
+/** Alone on the island, in a one-seat arena. */
 export function createDriveMode(
   map: TerrainMap,
   scene: THREE.Scene,
   profile: VehicleProfileId,
 ): ModeView {
-  const game: GameState = createGame({ map, profile })
+  const arena = createArena(map, 1)
+  const seat = takeSeat(arena, 0, profile)
+  const { vehicle } = seat
   const keyboard = new Keyboard()
   const car = new CarView(COLORS[profile])
-  car.syncDimensions(game.tuning)
+  car.syncDimensions(seat.tuning)
   scene.add(car.object)
 
-  const body = new BodyView(game.vehicle.body, car.object)
+  const body = new BodyView(vehicle.body, car.object)
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
   const chase = new ChaseCamera(cameraTuning)
   chase.setGroundAt((x, z) => sampleHeight(map.heightfield, x, z))
   const target = createChaseTarget()
-
-  // Tunnels are the one place a chase camera cannot work: the arm would sit
-  // inside the hill, and the ground it holds itself above is the mountain
-  // overhead. Inside a bore the view moves into the cabin instead.
-  const bores = tunnelSegments(map.roads)
-  const inTunnel = (): boolean => {
-    if (bores.length === 0) return false
-    const { x, y, z } = game.vehicle.frame.position
-    return boreClearance(bores, x, z, y) < 0
-  }
+  const inTunnel = tunnelTest(map)
 
   const aimCamera = (): void => {
-    const { body: rigid, speed } = game.vehicle
-    rigid.translation(target.position)
-    rigid.rotation(target.rotation)
-    rigid.linvel(target.velocity)
-    target.speed = speed
+    vehicle.body.translation(target.position)
+    vehicle.body.rotation(target.rotation)
+    vehicle.body.linvel(target.velocity)
+    target.speed = vehicle.speed
   }
 
-  const onKey = (event: KeyboardEvent): void => {
-    if (event.key !== 'Enter') return
-    respawn(game)
-    keyboard.release()
+  const snap = (): void => {
     body.reset()
     aimCamera()
     chase.snapTo(target)
   }
+
+  const onKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter') return
+    respawn(seat)
+    keyboard.release()
+    snap()
+  }
   window.addEventListener('keydown', onKey)
 
   let owed = 0
-  body.reset()
-  aimCamera()
-  chase.snapTo(target)
+  snap()
 
   return {
     camera: chase.camera,
@@ -91,46 +83,37 @@ export function createDriveMode(
       chase.camera.aspect = aspect
       chase.camera.updateProjectionMatrix()
     },
-    update(dt) {
+    update(dt, active) {
+      // A menu over the top pauses the world rather than letting it run on
+      // unattended behind the panel.
+      if (!active) return
       const input = keyboard.read()
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
-        advance(game, input)
+        advance(arena, () => input)
+        if (respawnLost(arena).length > 0) snap()
         body.capture()
         owed -= FIXED_TIMESTEP
       }
       // Render between the last two steps rather than on the newest one, or a
       // 60Hz simulation shown at any other rate stutters.
       body.apply(owed / FIXED_TIMESTEP)
-      car.applySimulatedWheels(game.vehicle.wheels, game.tuning)
+      car.applySimulatedWheels(vehicle.wheels, seat.tuning)
       aimCamera()
-      chase.setSeated(inTunnel())
+      chase.setSeated(inTunnel(vehicle.frame.position))
       chase.update(dt, target)
     },
     hud() {
-      const { vehicle } = game
-      const speed = Math.round(vehicle.speed * TO_KPH)
-      const state = game.submersion > 0.2
-        ? 'in the water'
-        : vehicle.selfRighting
-          ? 'righting itself'
-          : inTunnel()
-            ? 'in a tunnel'
-            : vehicle.groundedCount === 0
-              ? 'airborne'
-              : Math.abs(vehicle.slipAngle) > SLIDE_ANGLE
-                ? 'sliding'
-                : 'on the road'
       return (
         `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed}\n` +
-        `${String(speed).padStart(3)} km/h  ${state}`
+        driverLine(vehicle, seat.submersion, inTunnel(vehicle.frame.position))
       )
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       car.dispose()
-      game.world.free()
+      arena.world.free()
     },
   }
 }

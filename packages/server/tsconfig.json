@@ -2,8 +2,22 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src"],
-  "references": [{ "path": "../game" }, { "path": "../terrain" }]
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../game"
+    },
+    {
+      "path": "../net"
+    },
+    {
+      "path": "../terrain"
+    }
+  ]
 }

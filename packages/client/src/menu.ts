@@ -1,12 +1,13 @@
 import { VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
 
-export type Mode = 'preview' | 'drive'
+export type Mode = 'preview' | 'drive' | 'online'
 
 /** What the player has chosen. Everything the app needs to build a session. */
 export interface Choice {
   mode: Mode
   seed: number
   vehicle: VehicleProfileId
+  server: string
 }
 
 const MODE_NOTES: Record<Mode, { name: string; note: string; go: string }> = {
@@ -19,6 +20,11 @@ const MODE_NOTES: Record<Mode, { name: string; note: string; go: string }> = {
     name: 'Free drive',
     note: 'Take a vehicle out on the roads, or off them.',
     go: 'Drive',
+  },
+  online: {
+    name: 'Online',
+    note: 'Join a server and share its island with whoever else is on it.',
+    go: 'Connect',
   },
 }
 
@@ -47,6 +53,15 @@ function group(label: string): [HTMLFieldSetElement, HTMLDivElement] {
   return [fieldset, cards]
 }
 
+/** A text field that keeps its keystrokes to itself: the game is listening too. */
+function field(label: string): HTMLInputElement {
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.setAttribute('aria-label', label)
+  input.addEventListener('keydown', (event) => event.stopPropagation())
+  return input
+}
+
 function randomSeed(): number {
   return Math.floor(Math.random() * 100000)
 }
@@ -57,9 +72,12 @@ function randomSeed(): number {
  */
 export class Menu {
   private readonly root: HTMLElement
-  private readonly seedField = document.createElement('input')
+  private readonly seedField = field('Map seed')
+  private readonly serverField = field('Server')
   private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
+  private readonly mapGroup: HTMLFieldSetElement
+  private readonly serverGroup: HTMLFieldSetElement
   private readonly vehicleGroup: HTMLFieldSetElement
   private readonly go = document.createElement('button')
   private choice: Choice
@@ -79,7 +97,7 @@ export class Menu {
     blurb.textContent = 'Procedurally generated islands, with roads worth driving.'
 
     const [modeGroup, modeCards] = group('Mode')
-    for (const mode of ['preview', 'drive'] as const) {
+    for (const mode of ['preview', 'drive', 'online'] as const) {
       const button = card(MODE_NOTES[mode].name, MODE_NOTES[mode].note)
       button.addEventListener('click', () => this.pick({ mode }))
       this.modeButtons.set(mode, button)
@@ -87,12 +105,10 @@ export class Menu {
     }
 
     const [mapGroup, mapRow] = group('Map')
+    this.mapGroup = mapGroup
     mapRow.className = 'map'
-    this.seedField.type = 'text'
     this.seedField.inputMode = 'numeric'
-    this.seedField.setAttribute('aria-label', 'Map seed')
     this.seedField.addEventListener('keydown', (event) => {
-      event.stopPropagation()
       if (event.key === 'Enter') this.confirm()
     })
     const shuffle = document.createElement('button')
@@ -102,6 +118,14 @@ export class Menu {
       this.seedField.value = String(randomSeed())
     })
     mapRow.append(this.seedField, shuffle)
+
+    const [serverGroup, serverRow] = group('Server')
+    this.serverGroup = serverGroup
+    serverRow.className = 'map'
+    this.serverField.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') this.confirm()
+    })
+    serverRow.append(this.serverField)
 
     const [vehicleGroup, vehicleCards] = group('Vehicle')
     this.vehicleGroup = vehicleGroup
@@ -123,7 +147,7 @@ export class Menu {
       '<kbd>Space</kbd> handbrake &nbsp; <kbd>Enter</kbd> back to the road<br />' +
       '<kbd>R</kbd> a different map &nbsp; <kbd>Esc</kbd> this menu'
 
-    panel.append(title, blurb, modeGroup, mapGroup, vehicleGroup, this.go, keys)
+    panel.append(title, blurb, modeGroup, mapGroup, serverGroup, vehicleGroup, this.go, keys)
     this.root.append(panel)
     this.render()
   }
@@ -154,21 +178,27 @@ export class Menu {
   private confirm(): void {
     const typed = Number(this.seedField.value.trim())
     const seed = Number.isFinite(typed) && typed !== 0 ? Math.floor(Math.abs(typed)) : randomSeed()
+    const server = this.serverField.value.trim() || this.choice.server
     this.hide()
-    this.commit({ ...this.choice, seed })
+    this.commit({ ...this.choice, seed, server })
   }
 
   private render(): void {
     if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
+    if (document.activeElement !== this.serverField) this.serverField.value = this.choice.server
     for (const [mode, button] of this.modeButtons) {
       button.setAttribute('aria-pressed', String(mode === this.choice.mode))
     }
     for (const [vehicle, button] of this.vehicleButtons) {
       button.setAttribute('aria-pressed', String(vehicle === this.choice.vehicle))
     }
-    // The vehicle only matters to one of the modes, and saying so is kinder
-    // than letting a player wonder why their pick changed nothing.
-    this.vehicleGroup.disabled = this.choice.mode !== 'drive'
+    // Each choice only matters to some of the modes, and saying so is kinder
+    // than letting a player wonder why their pick changed nothing: online, the
+    // server picks the map; looking at one, nobody is driving.
+    const online = this.choice.mode === 'online'
+    this.mapGroup.disabled = online
+    this.serverGroup.disabled = !online
+    this.vehicleGroup.disabled = this.choice.mode === 'preview'
     this.go.textContent = MODE_NOTES[this.choice.mode].go
   }
 }

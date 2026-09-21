@@ -16,6 +16,22 @@ export const PLAYER_BODY_COLOR = 0xd8452f
 export const REMOTE_BODY_COLOR = 0x3f6fb5
 export const BOT_BODY_COLOR = 0x3f8f5c
 
+/** Buggies addition: one colour per seat, so everyone sees the same cars. */
+const SEAT_COLORS = [
+  PLAYER_BODY_COLOR,
+  REMOTE_BODY_COLOR,
+  0xe8a33a,
+  BOT_BODY_COLOR,
+  0x9b59b6,
+  0x1abc9c,
+  0xf06292,
+  0xecf0f1,
+]
+
+export function seatColor(seat: number): number {
+  return SEAT_COLORS[seat % SEAT_COLORS.length]!
+}
+
 const CABIN_COLOR = 0x1f2933
 const WHEEL_COLOR = 0x14181d
 

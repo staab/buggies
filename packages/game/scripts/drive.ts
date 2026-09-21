@@ -4,9 +4,11 @@ import {
   VEHICLE_PROFILE_IDS,
   VEHICLE_PROFILE_LABELS,
   advance,
-  createGame,
+  createArena,
   initPhysics,
-  type GameState,
+  respawn,
+  takeSeat,
+  type Seat,
 } from '@buggies/game'
 
 await initPhysics()
@@ -14,8 +16,8 @@ await initPhysics()
 const LOOK_AHEAD = 22
 
 /** Steer toward a point ahead, the way a driver following a road would. */
-function pursue(game: GameState, target: { x: number; z: number }): number {
-  const { position, forward } = game.vehicle.frame
+function pursue(seat: Seat, target: { x: number; z: number }): number {
+  const { position, forward } = seat.vehicle.frame
   const wanted = Math.atan2(target.x - position.x, target.z - position.z)
   const facing = Math.atan2(forward.x, forward.z)
   let error = wanted - facing
@@ -64,21 +66,20 @@ for (const seed of [3, 7, 21]) {
 
   for (const profile of VEHICLE_PROFILE_IDS) {
     const built = Date.now()
-    const game = createGame({
-      map,
-      profile,
-      spawn: {
-        position: {
-          x: road.points[from]!.x,
-          y: road.points[from]!.y + ROAD_SURFACE,
-          z: road.points[from]!.z,
-        },
-        yaw: Math.atan2(
-          -(road.points[from + 3]!.x - road.points[from]!.x),
-          -(road.points[from + 3]!.z - road.points[from]!.z),
-        ),
+    const arena = createArena(map, 1)
+    const seat = takeSeat(arena, 0, profile)
+    Object.assign(seat.spawn, {
+      position: {
+        x: road.points[from]!.x,
+        y: road.points[from]!.y + ROAD_SURFACE,
+        z: road.points[from]!.z,
       },
+      yaw: Math.atan2(
+        -(road.points[from + 3]!.x - road.points[from]!.x),
+        -(road.points[from + 3]!.z - road.points[from]!.z),
+      ),
     })
+    respawn(seat)
     const buildMs = Date.now() - built
 
     let at = from
@@ -89,18 +90,18 @@ for (const seed of [3, 7, 21]) {
     const steps = 45 * 60
     const started = Date.now()
     for (let i = 0; i < steps; i++) {
-      const { position } = game.vehicle.frame
+      const { position } = seat.vehicle.frame
       while (at < road.points.length - 1) {
         const point = road.points[at]!
         if (Math.hypot(point.x - position.x, point.z - position.z) > LOOK_AHEAD) break
         at++
       }
-      const throttle = game.vehicle.speed < 25 ? 1 : 0
-      advance(game, { ...NEUTRAL_INPUT, throttle, steer: pursue(game, road.points[at]!) })
-      if (game.vehicle.groundedCount === 4) grounded++
-      if (game.vehicle.groundedCount === 0) airborne++
-      if (game.submersion > 0.2) wet++
-      top = Math.max(top, game.vehicle.speed)
+      const throttle = seat.vehicle.speed < 25 ? 1 : 0
+      advance(arena, () => ({ ...NEUTRAL_INPUT, throttle, steer: pursue(seat, road.points[at]!) }))
+      if (seat.vehicle.groundedCount === 4) grounded++
+      if (seat.vehicle.groundedCount === 0) airborne++
+      if (seat.submersion > 0.2) wet++
+      top = Math.max(top, seat.vehicle.speed)
     }
     const stepUs = ((Date.now() - started) * 1000) / steps
 
@@ -110,7 +111,7 @@ for (const seed of [3, 7, 21]) {
         `${stepUs.toFixed(0).padStart(6)}   ${String(at - from).padStart(5)} pts   ${pct(grounded)}   ${pct(airborne)}   ` +
         `${pct(wet)}   ${(top * 3.6).toFixed(0).padStart(6)}`,
     )
-    game.world.free()
+    arena.world.free()
   }
 }
 

@@ -7,7 +7,8 @@ import type * as THREE from 'three'
 export interface ModeView {
   readonly camera: THREE.PerspectiveCamera
   resize(aspect: number): void
-  update(dt: number): void
+  /** `active` is false while a menu is over the top and the player is not driving. */
+  update(dt: number, active: boolean): void
   hud(): string
   dispose(): void
 }

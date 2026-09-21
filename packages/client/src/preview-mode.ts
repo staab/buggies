@@ -34,8 +34,8 @@ export function createPreviewMode(
       camera.aspect = aspect
       camera.updateProjectionMatrix()
     },
-    update() {
-      controls.update()
+    update(_dt, active) {
+      if (active) controls.update()
     },
     hud() {
       return summary

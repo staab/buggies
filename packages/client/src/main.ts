@@ -8,8 +8,9 @@ import { generateTerrain, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { createDriveMode } from './drive-mode.ts'
-import { Menu, type Choice } from './menu.ts'
+import { Menu, type Choice, type Mode } from './menu.ts'
 import type { ModeView } from './mode.ts'
+import { createOnlineMode } from './online-mode.ts'
 import { createPreviewMode } from './preview-mode.ts'
 import { createTerrainView } from './terrain-view.ts'
 
@@ -47,7 +48,13 @@ function disposeView(group: THREE.Group): void {
   scene.remove(group)
 }
 
-function loadMap(seed: number): void {
+/**
+ * The map with this seed, generated only if it is not already the one on
+ * show: switching modes on one island should not cost seconds of terrain
+ * generation.
+ */
+function mapFor(seed: number): TerrainMap {
+  if (map !== null && map.seed === seed) return map
   if (view) disposeView(view)
   map = generateTerrain(seed)
   view = createTerrainView(map)
@@ -56,47 +63,92 @@ function loadMap(seed: number): void {
   // View distances ride the world scale so the framing stays the same.
   const worldSize = map.size * map.cellSize
   scene.fog = new THREE.Fog('#a9cbe6', worldSize * 0.65, worldSize * 2.34)
+  return map
 }
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 100000)
 }
 
+/** The game server this page was served next to, unless told otherwise. */
+function defaultServer(): string {
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${scheme}://${location.hostname || 'localhost'}:8787`
+}
+
 function readChoice(): Choice {
   const params = new URLSearchParams(location.search)
   const seed = Number(params.get('seed'))
   const vehicle = params.get('vehicle')
+  const requested = params.get('mode')
+  const mode: Mode = requested === 'drive' || requested === 'online' ? requested : 'preview'
   return {
-    mode: params.get('mode') === 'drive' ? 'drive' : 'preview',
+    mode,
     seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
     vehicle: VEHICLE_PROFILE_IDS.includes(vehicle as VehicleProfileId)
       ? (vehicle as VehicleProfileId)
       : DEFAULT_VEHICLE_PROFILE,
+    server: params.get('server') ?? defaultServer(),
   }
 }
 
 let choice = readChoice()
 
-/**
- * Put the player on the map they asked for, in the mode they asked for. The
- * map is only regenerated when it actually changed: switching between modes
- * on one island should not cost seconds of terrain generation.
- */
-function apply(next: Choice): void {
-  const changed = map === null || next.seed !== map.seed
-  choice = next
-  if (changed) loadMap(next.seed)
+/** Each apply outranks the one before: a slow connection that lands late is let go. */
+let generation = 0
 
-  mode?.dispose()
-  mode =
-    choice.mode === 'drive'
-      ? createDriveMode(map!, scene, choice.vehicle)
-      : createPreviewMode(map!, scene, renderer.domElement)
-  resize()
-
-  const url = `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}`
+/** Reflect what is on show in the address bar and the footer. */
+function settle(): void {
+  const online = choice.mode === 'online'
+  const url = online
+    ? `?mode=online&server=${encodeURIComponent(choice.server)}&vehicle=${choice.vehicle}`
+    : `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}`
   history.replaceState(null, '', url)
-  footerElement.textContent = 'R  a different map      Esc  menu'
+  footerElement.textContent = online
+    ? 'Enter  back to the road      Esc  menu'
+    : 'R  a different map      Esc  menu'
+}
+
+/** Put the player on the map they asked for, in the mode they asked for. */
+function apply(next: Choice): void {
+  const stamp = ++generation
+  choice = next
+  mode?.dispose()
+  mode = null
+
+  if (next.mode === 'online') {
+    hudElement.textContent = `connecting to ${next.server}...`
+    footerElement.textContent = 'Esc  menu'
+    createOnlineMode(scene, next.server, next.vehicle, (seed) => {
+      choice = { ...choice, seed }
+      return mapFor(seed)
+    }).then(
+      (online) => {
+        if (stamp !== generation) {
+          online.dispose()
+          return
+        }
+        mode = online
+        resize()
+        settle()
+      },
+      (error: unknown) => {
+        if (stamp !== generation) return
+        const why = error instanceof Error ? error.message : String(error)
+        hudElement.textContent = `could not join ${next.server}: ${why}`
+        menu.show(choice)
+      },
+    )
+    return
+  }
+
+  const island = mapFor(next.seed)
+  mode =
+    next.mode === 'drive'
+      ? createDriveMode(island, scene, next.vehicle)
+      : createPreviewMode(island, scene, renderer.domElement)
+  resize()
+  settle()
 }
 
 const menu = new Menu(menuElement, choice)
@@ -115,7 +167,8 @@ window.addEventListener('keydown', (event) => {
     else menu.show(choice)
     return
   }
-  if (menu.open || event.key.toLowerCase() !== 'r') return
+  // Online, the server decides the map.
+  if (menu.open || choice.mode === 'online' || event.key.toLowerCase() !== 'r') return
   apply({ ...choice, seed: randomSeed() })
 })
 
@@ -133,9 +186,7 @@ function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.1)
   last = now
   if (mode) {
-    // A menu over the top pauses the world rather than letting it run on
-    // unattended behind the panel.
-    if (!menu.open) mode.update(dt)
+    mode.update(dt, !menu.open)
     renderer.render(scene, mode.camera)
     hudElement.textContent = mode.hud()
   }
