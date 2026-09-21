@@ -2,9 +2,20 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "files": [],
   "references": [
-    { "path": "packages/physics" },
-    { "path": "packages/terrain" },
-    { "path": "packages/vehicle" },
-    { "path": "packages/game" }
+    {
+      "path": "packages/physics"
+    },
+    {
+      "path": "packages/terrain"
+    },
+    {
+      "path": "packages/vehicle"
+    },
+    {
+      "path": "packages/game"
+    },
+    {
+      "path": "packages/net"
+    }
   ]
 }

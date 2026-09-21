@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@buggies/game": "workspace:*",
+    "@buggies/net": "workspace:*",
     "@buggies/physics": "workspace:*",
     "@buggies/terrain": "workspace:*",
     "@dimforge/rapier3d-compat": "^0.20.0",

@@ -11,6 +11,11 @@
   },
   "dependencies": {
     "@buggies/game": "workspace:*",
-    "@buggies/terrain": "workspace:*"
+    "@buggies/net": "workspace:*",
+    "@buggies/terrain": "workspace:*",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
   }
 }
