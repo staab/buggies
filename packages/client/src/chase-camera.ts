@@ -15,6 +15,14 @@ export interface CameraTuning {
   /** Buggies addition: the height the camera drops to with something overhead, under a bridge or in a tunnel. */
   lowHeight: number
   distanceSpeedGain: number
+  /**
+   * Buggies addition: how far back and up the camera pulls from the spot
+   * where the car blew up, and how quickly. It stops following the car
+   * there, and watches the wreck fly from where it stood.
+   */
+  wreckDistance: number
+  wreckHeight: number
+  wreckLambda: number
 
   positionLambda: number
   lookLambda: number
@@ -42,6 +50,9 @@ export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   height: 5.2,
   lowHeight: 1.9,
   distanceSpeedGain: 2.5,
+  wreckDistance: 102,
+  wreckHeight: 66,
+  wreckLambda: 1.2,
 
   positionLambda: 6,
   lookLambda: 9,
@@ -76,6 +87,8 @@ export interface ChaseTarget {
   rotation: Quat
   velocity: Vec3
   speed: number
+  /** Buggies addition: blown up, and being watched from well back until it is put back. */
+  wrecked: boolean
 }
 
 export function createChaseTarget(): ChaseTarget {
@@ -84,6 +97,7 @@ export function createChaseTarget(): ChaseTarget {
     rotation: {x: 0, y: 0, z: 0, w: 1},
     velocity: {x: 0, y: 0, z: 0},
     speed: 0,
+    wrecked: false,
   }
 }
 
@@ -132,6 +146,10 @@ export class ChaseCamera {
   private readonly desiredLookAt = new THREE.Vector3()
 
   private settled = false
+  private wrecked = false
+  /** Buggies addition: where the car blew up, and which way it was going, for the camera to pull away from. */
+  private readonly wreckAnchor = new THREE.Vector3()
+  private readonly wreckArm = new THREE.Vector3()
   private boundsAt: CameraBoundsAt | null = null
   private readonly bounds: CameraBounds = {floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY}
 
@@ -183,6 +201,11 @@ export class ChaseCamera {
 
     this.readTarget(target)
     this.updateArmDirection(target.speed)
+    if (target.wrecked && !this.wrecked) {
+      this.wreckAnchor.copy(this.targetPosition)
+      this.wreckArm.copy(this.armDirection)
+    }
+    this.wrecked = target.wrecked
     this.updateDesiredPose(target.speed, speedFractionOfReference)
     this.settleOrDamp(dt, speedFractionOfReference)
     this.applyToCamera()
@@ -230,6 +253,22 @@ export class ChaseCamera {
 
   private updateDesiredPose(speed: number, speedFractionOfReference: number): void {
     const tuning = this.tuning
+    // Buggies addition: a wreck is watched from well back and well up. The
+    // camera stops following the car the moment it blows up, pulls away from
+    // that spot, and turns to keep the wreck in view as it flies.
+    if (this.wrecked) {
+      this.desiredPosition
+        .copy(this.wreckAnchor)
+        .addScaledVector(this.wreckArm, -tuning.wreckDistance)
+        .addScaledVector(WORLD_UP, tuning.wreckHeight)
+      this.desiredPosition.y = this.confine(
+        this.desiredPosition.x,
+        this.desiredPosition.y,
+        this.desiredPosition.z,
+      )
+      this.desiredLookAt.copy(this.targetPosition)
+      return
+    }
     const armLength = tuning.distance + tuning.distanceSpeedGain * speedFractionOfReference
     const lookAheadDistance = Math.min(speed * tuning.lookAheadTime, tuning.lookAheadMax)
     // Buggies addition: under a bridge the camera drops to a low chase, and
@@ -264,7 +303,9 @@ export class ChaseCamera {
       return
     }
 
-    dampVector3Toward(this.position, this.desiredPosition, tuning.positionLambda, dt)
+    // Buggies addition: the pull-out from a wreck is slower than the chase.
+    const positionLambda = this.wrecked ? tuning.wreckLambda : tuning.positionLambda
+    dampVector3Toward(this.position, this.desiredPosition, positionLambda, dt)
     dampVector3Toward(this.lookAt, this.desiredLookAt, tuning.lookLambda, dt)
 
     this.camera.fov = dampToward(

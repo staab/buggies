@@ -163,7 +163,7 @@ describe('game', () => {
     run(arena, FLAT_OUT, 2)
     expect(respawnLost(arena)).toHaveLength(0)
     expect(seat.vehicle.wrecked).toBe(true)
-    for (let i = 0; i < 60 * 4 && seat.epoch === epoch; i++) {
+    for (let i = 0; i < 60 * 6 && seat.epoch === epoch; i++) {
       advance(arena, () => FLAT_OUT)
       respawnLost(arena)
     }

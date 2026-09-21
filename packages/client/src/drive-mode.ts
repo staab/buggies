@@ -66,6 +66,7 @@ export function createDriveMode(
     vehicle.body.rotation(target.rotation)
     vehicle.body.linvel(target.velocity)
     target.speed = vehicle.speed
+    target.wrecked = vehicle.wrecked
   }
 
   const snap = (): void => {

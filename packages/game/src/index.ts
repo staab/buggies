@@ -383,6 +383,8 @@ const ABYSS = 5
 
 /** How long a vehicle stays lost before it is put back, in steps. */
 const LOST_PATIENCE = 180
+/** A wreck lies a little longer, to be watched burning. */
+const WRECK_PATIENCE = 270
 
 /**
  * Whether a vehicle is done driving for now: blown up, deep in the water,
@@ -413,7 +415,7 @@ export function respawnLost(arena: Arena): Seat[] {
   for (const seat of arena.seats) {
     if (!seat.occupied) continue
     seat.lostTicks = isLost(arena, seat) ? seat.lostTicks + 1 : 0
-    if (seat.lostTicks < LOST_PATIENCE) continue
+    if (seat.lostTicks < (seat.vehicle.wrecked ? WRECK_PATIENCE : LOST_PATIENCE)) continue
     respawnNearby(arena, seat)
     respawned.push(seat)
   }
