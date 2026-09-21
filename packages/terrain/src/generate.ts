@@ -1,5 +1,6 @@
 import { createRng, randomRange, type Rng } from '@buggies/physics'
 
+import { generateBuildings } from './buildings.ts'
 import { generateDistricts } from './districts.ts'
 import { computeFlowRouting, findLakes } from './flow.ts'
 import {
@@ -558,6 +559,8 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     districts,
     districtOf,
     roads: [],
+    buildings: [],
+    trees: [],
   }
   scaleWorld(map, WORLD_SCALE)
   map.roads = generateRoads(
@@ -568,6 +571,20 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     map.lakes,
     seed,
     map.districtOf,
+  )
+  Object.assign(
+    map,
+    generateBuildings(
+      map.heightfield,
+      map.seaLevel,
+      map.districts,
+      map.districtOf,
+      map.roads,
+      map.rivers,
+      map.lakes,
+      map.mountains,
+      seed,
+    ),
   )
   return map
 }

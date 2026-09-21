@@ -2307,7 +2307,7 @@ function buildArterials(
 /** City street width, in world units. */
 export const STREET_WIDTH = 6
 /** Spacing between city streets and the step along them, in world units. */
-const STREET_SPACING = 48
+export const STREET_SPACING = 48
 const STREET_STEP = 12
 /** Clear ground kept between a street and the edge of a highway or ramp. */
 const STREET_CLEARANCE = ROAD_WIDTH
@@ -2444,6 +2444,80 @@ function streetKeepOut(roads: Road[], footprints: Vec2[][]): (x: number, z: numb
 }
 
 /**
+ * The frame a city's street grid is laid out in: the centroid of the city's
+ * cells, the unit vector of its principal axis, and how far the city reaches
+ * along that axis (`u`) and across it (`v`). Streets run at every multiple of
+ * `STREET_SPACING` in `u` and in `v`, so the blocks between them are found
+ * from the same frame.
+ */
+export interface CityFrame {
+  cx: number
+  cz: number
+  cos: number
+  sin: number
+  uMin: number
+  uMax: number
+  vMin: number
+  vMax: number
+}
+
+/** The grid frame of a city, or `null` for one too small to have a grid. */
+export function cityFrame(
+  field: Heightfield,
+  districtOf: Uint8Array,
+  district: District,
+): CityFrame | null {
+  const { width, cellSize } = field
+  const local: { x: number; z: number }[] = []
+  for (let cell = 0; cell < districtOf.length; cell++) {
+    if (districtOf[cell] !== DISTRICT_CITY) continue
+    const x = ((cell % width) + 0.5) * cellSize
+    const z = (((cell / width) | 0) + 0.5) * cellSize
+    if (Math.hypot(x - district.cx, z - district.cz) <= district.radius) local.push({ x, z })
+  }
+  if (local.length < 8) return null
+
+  let cx = 0
+  let cz = 0
+  for (const point of local) {
+    cx += point.x
+    cz += point.z
+  }
+  cx /= local.length
+  cz /= local.length
+
+  let sxx = 0
+  let szz = 0
+  let sxz = 0
+  for (const point of local) {
+    const dx = point.x - cx
+    const dz = point.z - cz
+    sxx += dx * dx
+    szz += dz * dz
+    sxz += dx * dz
+  }
+  const angle = 0.5 * Math.atan2(2 * sxz, sxx - szz)
+  const cos = Math.cos(angle)
+  const sin = Math.sin(angle)
+
+  let uMin = Infinity
+  let uMax = -Infinity
+  let vMin = Infinity
+  let vMax = -Infinity
+  for (const point of local) {
+    const dx = point.x - cx
+    const dz = point.z - cz
+    const u = dx * cos + dz * sin
+    const v = -dx * sin + dz * cos
+    uMin = Math.min(uMin, u)
+    uMax = Math.max(uMax, u)
+    vMin = Math.min(vMin, v)
+    vMax = Math.max(vMax, v)
+  }
+  return { cx, cz, cos, sin, uMin, uMax, vMin, vMax }
+}
+
+/**
  * Fill each city with a street grid. The grid is aligned to the city polygon's
  * principal axes, so every street runs edge to edge across the polygon and the
  * cells between them are simple rectangles. Streets follow the ground and are
@@ -2466,15 +2540,6 @@ function buildCityGrids(
     const row = Math.floor(z / cellSize)
     if (col < 0 || col >= width || row < 0 || row >= depth) return false
     return districtOf[row * width + col] === DISTRICT_CITY
-  }
-
-  // Every city cell, once; then each district takes the ones inside its radius.
-  const cityCells: { x: number; z: number }[] = []
-  for (let cell = 0; cell < districtOf.length; cell++) {
-    if (districtOf[cell] !== DISTRICT_CITY) continue
-    const col = cell % width
-    const row = (cell / width) | 0
-    cityCells.push({ x: (col + 0.5) * cellSize, z: (row + 0.5) * cellSize })
   }
 
   const roads: Road[] = []
@@ -2518,48 +2583,9 @@ function buildCityGrids(
   }
 
   for (const district of districts) {
-    const local = cityCells.filter(
-      (point) => Math.hypot(point.x - district.cx, point.z - district.cz) <= district.radius,
-    )
-    if (local.length < 8) continue
-
-    let cx = 0
-    let cz = 0
-    for (const point of local) {
-      cx += point.x
-      cz += point.z
-    }
-    cx /= local.length
-    cz /= local.length
-
-    let sxx = 0
-    let szz = 0
-    let sxz = 0
-    for (const point of local) {
-      const dx = point.x - cx
-      const dz = point.z - cz
-      sxx += dx * dx
-      szz += dz * dz
-      sxz += dx * dz
-    }
-    const angle = 0.5 * Math.atan2(2 * sxz, sxx - szz)
-    const cos = Math.cos(angle)
-    const sin = Math.sin(angle)
-
-    let uMin = Infinity
-    let uMax = -Infinity
-    let vMin = Infinity
-    let vMax = -Infinity
-    for (const point of local) {
-      const dx = point.x - cx
-      const dz = point.z - cz
-      const u = dx * cos + dz * sin
-      const v = -dx * sin + dz * cos
-      uMin = Math.min(uMin, u)
-      uMax = Math.max(uMax, u)
-      vMin = Math.min(vMin, v)
-      vMax = Math.max(vMax, v)
-    }
+    const frame = cityFrame(field, districtOf, district)
+    if (frame === null) continue
+    const { cx, cz, cos, sin, uMin, uMax, vMin, vMax } = frame
 
     // Streets parallel to the major axis, then parallel to the minor axis, each
     // run spanning the polygon edge to edge.
@@ -2580,6 +2606,120 @@ function buildCityGrids(
   }
 
   return roads
+}
+
+/** A rectangle on the ground, turned by `yaw` about its centre: `width` runs along its local X, `depth` along its local Z. */
+export interface Footprint {
+  x: number
+  z: number
+  yaw: number
+  width: number
+  depth: number
+}
+
+/** The four corners of a footprint. */
+function footprintCorners(footprint: Footprint): Vec2[] {
+  const cos = Math.cos(footprint.yaw)
+  const sin = Math.sin(footprint.yaw)
+  const corners: Vec2[] = []
+  for (const su of [-1, 1]) {
+    for (const sv of [-1, 1]) {
+      const u = (su * footprint.width) / 2
+      const v = (sv * footprint.depth) / 2
+      corners.push({ x: footprint.x + u * cos + v * sin, z: footprint.z - u * sin + v * cos })
+    }
+  }
+  return corners
+}
+
+/** Whether two footprints overlap in plan, or come within `gap` of it: the separating axis test. */
+export function footprintsOverlap(a: Footprint, b: Footprint, gap = 0): boolean {
+  const cornersA = footprintCorners(a)
+  const cornersB = footprintCorners(b)
+  for (const footprint of [a, b]) {
+    const cos = Math.cos(footprint.yaw)
+    const sin = Math.sin(footprint.yaw)
+    for (const axis of [
+      { x: cos, z: -sin },
+      { x: sin, z: cos },
+    ]) {
+      const span = (corners: Vec2[]): [number, number] => {
+        let low = Infinity
+        let high = -Infinity
+        for (const corner of corners) {
+          const value = corner.x * axis.x + corner.z * axis.z
+          low = Math.min(low, value)
+          high = Math.max(high, value)
+        }
+        return [low, high]
+      }
+      const [lowA, highA] = span(cornersA)
+      const [lowB, highB] = span(cornersB)
+      if (highA + gap <= lowB || highB + gap <= lowA) return false
+    }
+  }
+  return true
+}
+
+/** Distance from a point to the nearest point of a footprint, zero inside it. */
+function footprintDistance(footprint: Footprint, px: number, pz: number): number {
+  const cos = Math.cos(footprint.yaw)
+  const sin = Math.sin(footprint.yaw)
+  const dx = px - footprint.x
+  const dz = pz - footprint.z
+  const u = dx * cos - dz * sin
+  const v = dx * sin + dz * cos
+  const outU = Math.max(Math.abs(u) - footprint.width / 2, 0)
+  const outV = Math.max(Math.abs(v) - footprint.depth / 2, 0)
+  return Math.hypot(outU, outV)
+}
+
+/**
+ * The distance from a segment to a footprint. The distance to a convex shape
+ * is convex along a line, so the closest point of the segment is found by
+ * ternary search.
+ */
+function segmentFootprintDistance(footprint: Footprint, segment: ClaimedSegment): number {
+  const at = (t: number): number =>
+    footprintDistance(
+      footprint,
+      segment.ax + (segment.bx - segment.ax) * t,
+      segment.az + (segment.bz - segment.az) * t,
+    )
+  let lo = 0
+  let hi = 1
+  for (let step = 0; step < 24; step++) {
+    const a = lo + (hi - lo) / 3
+    const b = hi - (hi - lo) / 3
+    if (at(a) < at(b)) hi = b
+    else lo = a
+  }
+  return Math.min(at(lo), at(hi), at(0), at(1))
+}
+
+/**
+ * A test of whether a footprint keeps `margin` clear of every road: its
+ * carriageway, and the embankment a built road carries down beside it.
+ */
+export function roadClearance(roads: Road[]): (footprint: Footprint, margin: number) => boolean {
+  let reachMost = 0
+  const segments: ClaimedSegment[] = []
+  for (const road of roads) {
+    const reach = road.width / 2 + (isSurfaceRoad(road) ? 0 : ROAD_SKIRT)
+    reachMost = Math.max(reachMost, reach)
+    segments.push(...claimedSegments(road, reach))
+  }
+  const near = indexSegments(segments)
+  return (footprint, margin) => {
+    const half = Math.hypot(footprint.width, footprint.depth) / 2 + margin + reachMost
+    return !near(
+      footprint.x - half,
+      footprint.z - half,
+      footprint.x + half,
+      footprint.z + half,
+      (segment) => segmentFootprintDistance(footprint, segment) < segment.reach + margin,
+    )
+  }
 }
 
 /**

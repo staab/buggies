@@ -159,6 +159,33 @@ describe('terrain colliders', () => {
       expect(tight).toBe(0)
     })
 
+    it('stands every building on the map as a solid to drive into, and every tree as a trunk', () => {
+      expect(map.buildings.length).toBeGreaterThan(100)
+      let roofed = 0
+      for (const building of map.buildings) {
+        const found = castDown(world, building.x, building.z, building.top + 5)
+        if (found !== null && Math.abs(found - building.top) < 0.01) roofed++
+      }
+      expect(roofed).toBe(map.buildings.length)
+      const trees = map.trees.filter((tree) => tree.kind === 'tree')
+      const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
+      expect(trees.length).toBeGreaterThan(50)
+      expect(shrubs.length).toBeGreaterThan(50)
+      let trunks = 0
+      for (const tree of trees) {
+        const found = castDown(world, tree.x, tree.z, tree.bottom + tree.height + 5)
+        if (found !== null && Math.abs(found - tree.bottom - tree.height) < 0.01) trunks++
+      }
+      expect(trunks).toBe(trees.length)
+      // A shrub is nothing to hit: the ground is what is under it.
+      let open = 0
+      for (const shrub of shrubs) {
+        const found = castDown(world, shrub.x, shrub.z, shrub.bottom + shrub.height + 5)
+        if (found !== null && found < shrub.bottom + 0.5) open++
+      }
+      expect(open).toBe(shrubs.length)
+    })
+
     it('carries a bridge over the gap it spans', () => {
       let spans = 0
       let carried = 0

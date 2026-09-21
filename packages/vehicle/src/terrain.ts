@@ -1,4 +1,5 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
+import { quatFromYaw } from '@buggies/physics'
 import {
   ROAD_GRADE,
   ROAD_SKIRT,
@@ -271,6 +272,53 @@ export function addRailRuns(world: RAPIER.World, runs: RailRun[]): void {
   addWall(world, mesh.positions, mesh.indices)
 }
 
+/** A trunk is this wide, whatever the crown; only the trunk is anything to hit. */
+const TRUNK_RADIUS = 0.35
+
+/**
+ * Everything standing beside the roads: every building as the box it is
+ * drawn as, every tree as its trunk, and nothing for a shrub, which a car
+ * drives through. Slick like a wall, so a car that clips a corner scrapes
+ * past rather than sticking to it.
+ */
+function addBuildings(world: RAPIER.World, map: TerrainMap): void {
+  if (map.buildings.length === 0 && map.trees.length === 0) return
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
+  const slick = (desc: RAPIER.ColliderDesc): RAPIER.ColliderDesc =>
+    desc
+      .setFriction(WALL_FRICTION)
+      .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+      .setRestitution(0)
+      .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+  for (const building of map.buildings) {
+    world.createCollider(
+      slick(
+        RAPIER.ColliderDesc.cuboid(
+          building.width / 2,
+          (building.top - building.bottom) / 2,
+          building.depth / 2,
+        )
+          .setTranslation(building.x, (building.top + building.bottom) / 2, building.z)
+          .setRotation(quatFromYaw(building.yaw)),
+      ),
+      body,
+    )
+  }
+  for (const tree of map.trees) {
+    if (tree.kind !== 'tree') continue
+    world.createCollider(
+      slick(
+        RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS).setTranslation(
+          tree.x,
+          tree.bottom + tree.height / 2,
+          tree.z,
+        ),
+      ),
+      body,
+    )
+  }
+}
+
 /** The guardrails of a map. */
 function addRails(world: RAPIER.World, map: TerrainMap): void {
   addRailRuns(world, railRuns(map.roads))
@@ -285,4 +333,5 @@ export function addTerrain(world: RAPIER.World, map: TerrainMap): void {
   addRoads(world, map)
   addTunnelShells(world, map)
   addRails(world, map)
+  addBuildings(world, map)
 }

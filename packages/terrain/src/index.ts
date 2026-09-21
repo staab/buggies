@@ -5,6 +5,7 @@ export {
   onGround,
   sampleHeight,
 } from './heightfield.ts'
+export { generateBuildings } from './buildings.ts'
 export {
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
@@ -29,11 +30,17 @@ export {
   ROAD_SURFACE,
   ROAD_TUNNEL,
   ROAD_WIDTH,
+  STREET_SPACING,
   STREET_WIDTH,
   SURFACE_SHOULDER,
+  cityFrame,
+  footprintsOverlap,
   generateRoads,
   isSurfaceRoad,
+  roadClearance,
   roadLift,
+  type CityFrame,
+  type Footprint,
 } from './roads.ts'
 export {
   orientedTriangle,
@@ -66,6 +73,7 @@ export {
 } from './tunnels.ts'
 export { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
 export type {
+  Building,
   District,
   Heightfield,
   Lake,
@@ -77,4 +85,5 @@ export type {
   RoadPoint,
   TerrainMap,
   TerrainOptions,
+  Tree,
 } from './types.ts'
