@@ -308,15 +308,16 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
       body,
     )
   }
+  // A trunk is a wall to the wheels as well: a wheel hanging past the chassis
+  // that comes to overlap one would otherwise land its ray inside it, and the
+  // suspension would jack the car up onto the tree and hold it there.
   for (const tree of map.trees) {
     if (tree.kind !== 'tree') continue
     world.createCollider(
       slick(
-        RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS).setTranslation(
-          tree.x,
-          tree.bottom + tree.height / 2,
-          tree.z,
-        ),
+        RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS)
+          .setTranslation(tree.x, tree.bottom + tree.height / 2, tree.z)
+          .setCollisionGroups(WALL_GROUPS),
       ),
       body,
     )
