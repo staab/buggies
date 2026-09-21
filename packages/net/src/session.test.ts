@@ -223,6 +223,23 @@ describe('a session', () => {
     session.dispose()
   })
 
+  it('keeps the fastest car in line at full speed, snapshot after snapshot', async () => {
+    const session = new Session()
+    const a = await session.join('raceCar')
+    a.input.throttle = 1
+    let worst = 0
+    for (let i = 0; i < 8 * TICKS_PER_SECOND; i++) {
+      session.step()
+      worst = Math.max(worst, a.prediction.stats.lastCorrectionMetres)
+    }
+    expect(a.prediction.vehicle.speed).toBeGreaterThan(40)
+    // Corrections at speed stay a small fraction of a car length: anything
+    // more shows as the car jumping about.
+    expect(worst).toBeLessThan(0.5)
+    expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(1)
+    session.dispose()
+  })
+
   it('puts a player back on request, and the prediction follows the new epoch', async () => {
     const session = new Session()
     const a = await session.join()

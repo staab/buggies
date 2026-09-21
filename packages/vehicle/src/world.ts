@@ -4,6 +4,7 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 
 import {FIXED_TIMESTEP, quatFromYaw, quatFromYawPitch, type Vec3} from '@buggies/physics'
+import {GROUND_GROUPS} from './groups.ts'
 
 export {FIXED_TIMESTEP} from '@buggies/physics'
 
@@ -96,6 +97,7 @@ export function addStaticBox(world: RAPIER.World, options: BoxOptions): RAPIER.R
 
   world.createCollider(
     RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
+      .setCollisionGroups(GROUND_GROUPS)
       .setFriction(friction)
       .setRestitution(restitution),
     body,
@@ -144,7 +146,9 @@ export function addRamp(world: RAPIER.World, options: RampOptions): RAPIER.Rigid
   )
 
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z).setFriction(1.0),
+    RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
+      .setCollisionGroups(GROUND_GROUPS)
+      .setFriction(1.0),
     body,
   )
 

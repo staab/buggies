@@ -34,7 +34,7 @@ export async function createOnlineMode(
   scene: THREE.Scene,
   url: string,
   profile: VehicleProfileId,
-  mapFor: (seed: number) => TerrainMap,
+  mapFor: (seed: number) => Promise<TerrainMap>,
 ): Promise<ModeView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
@@ -43,7 +43,7 @@ export async function createOnlineMode(
     },
   })
   const welcome = await client.connect(profile)
-  const map = mapFor(welcome.seed)
+  const map = await mapFor(welcome.seed)
 
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.

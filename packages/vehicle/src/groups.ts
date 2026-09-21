@@ -8,6 +8,7 @@
  * car over.
  */
 const ALL = 0xffff
+const GROUND = 0x0001
 const WALL = 0x0002
 
 function groups(membership: number, filter: number): number {
@@ -16,6 +17,17 @@ function groups(membership: number, filter: number): number {
 
 /** A wall: met by everything, and only ever as a wall. */
 export const WALL_GROUPS = groups(WALL, ALL)
+
+/**
+ * The ground: the land, road decks and whatever else a car drives on. Met
+ * by everything, and the one thing a chassis may scrape without it being a
+ * crash.
+ */
+export const GROUND_GROUPS = groups(GROUND, ALL)
+
+export function isGround(collider: {collisionGroups(): number}): boolean {
+  return collider.collisionGroups() >>> 16 === GROUND
+}
 
 /** What a wheel ray may land on: anything but a wall. */
 export const WHEEL_RAY_GROUPS = groups(ALL, ALL & ~WALL)

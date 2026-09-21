@@ -21,7 +21,7 @@ import {
   type TerrainMap,
 } from '@buggies/terrain'
 
-import { WALL_GROUPS } from './groups.ts'
+import {GROUND_GROUPS, WALL_GROUPS} from './groups.ts'
 
 const GROUND_FRICTION = 1.0
 const GROUND_RESTITUTION = 0
@@ -68,6 +68,7 @@ export function addHeightfield(
   )
   world.createCollider(
     RAPIER.ColliderDesc.heightfield(rows, columns, packed, { x: spanX, y: 1, z: spanZ })
+      .setCollisionGroups(GROUND_GROUPS)
       .setFriction(GROUND_FRICTION)
       .setRestitution(GROUND_RESTITUTION),
     body,
@@ -185,6 +186,7 @@ function addRoads(world: RAPIER.World, map: TerrainMap): void {
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   world.createCollider(
     RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices))
+      .setCollisionGroups(GROUND_GROUPS)
       .setFriction(ROAD_FRICTION)
       .setRestitution(GROUND_RESTITUTION),
     body,

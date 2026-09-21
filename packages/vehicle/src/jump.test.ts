@@ -1,3 +1,4 @@
+import type * as RAPIER from '@dimforge/rapier3d-compat'
 import { flatHeightfield, type Heightfield } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -6,7 +7,7 @@ import { addHeightfield } from './terrain.ts'
 import { createVehicleTuning, type VehicleTuning } from './tuning.ts'
 import { stepVehicle } from './vehicle.ts'
 import { createVehicle, type Vehicle } from './vehicleBody.ts'
-import { FIXED_TIMESTEP, createPhysicsWorld, initPhysics } from './world.ts'
+import { FIXED_TIMESTEP, addDynamicBox, createPhysicsWorld, initPhysics } from './world.ts'
 
 const CELL = 3
 const LENGTH = 400
@@ -40,7 +41,7 @@ function fly(
   field: Heightfield,
   tuning: VehicleTuning,
   targetSpeed: number,
-  disturb?: (vehicle: Vehicle) => void,
+  disturb?: (world: RAPIER.World, vehicle: Vehicle) => void,
 ): Flight {
   const world = createPhysicsWorld()
   addHeightfield(world, field)
@@ -66,7 +67,7 @@ function fly(
     if (airborne && z < 800) {
       airborneTicks++
       if (disturb && !disturbed && airborneTicks === 12) {
-        disturb(vehicle)
+        disturb(world, vehicle)
         disturbed = true
       }
       flying = true
@@ -99,14 +100,15 @@ describe('jumps', () => {
   })
 
   it('lets a car that is hit in the air tumble, and levels one that is not', () => {
-    // The same knock, as a sideways shove at roof height, the way a car
-    // coming across is met: once with the crash noticed, once with it not.
-    const shove = (vehicle: Vehicle): void => {
-      vehicle.body.applyImpulseAtPoint(
-        { x: vehicle.body.mass() * 6, y: 0, z: 0 },
-        { x: vehicle.frame.position.x, y: vehicle.frame.position.y + 0.6, z: vehicle.frame.position.z },
-        true,
-      )
+    // The same knock, a car's worth of mass coming across at roof height:
+    // once with the crash noticed, once with it not.
+    const shove = (world: RAPIER.World, vehicle: Vehicle): void => {
+      const { position, linearVelocity } = vehicle.frame
+      addDynamicBox(world, {
+        halfExtents: { x: 1, y: 0.5, z: 1 },
+        position: { x: position.x + 3, y: position.y + 0.6, z: position.z },
+        mass: 1200,
+      }).setLinvel({ x: linearVelocity.x - 12, y: linearVelocity.y, z: linearVelocity.z }, true)
     }
     const tuning = createVehicleTuning('mustang')
     const knocked = fly(runway(kicker), tuning, 40, shove)
