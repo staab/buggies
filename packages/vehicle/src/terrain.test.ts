@@ -3,7 +3,10 @@ import {
   ROAD_GRADE,
   ROAD_TUNNEL,
   flatHeightfield,
+  RAMP_FACETS,
   generateTerrain,
+  rampFacets,
+  rampRise,
   roadLift,
   sampleHeight,
   type Heightfield,
@@ -188,14 +191,17 @@ describe('terrain colliders', () => {
       expect(open).toBe(shrubs.length)
     })
 
-    it('stands a solid wedge under every ramp, from its foot to the roof it climbs to', () => {
+    it('stands a solid kicker under every ramp, curving from its foot up to its lip', () => {
       expect(map.ramps.length).toBeGreaterThan(0)
       let sound = 0
       for (const ramp of map.ramps) {
-        const midX = ramp.x + ramp.dx * ramp.length * 0.5
-        const midZ = ramp.z + ramp.dz * ramp.length * 0.5
-        const found = castDown(world, midX, midZ, ramp.top + 5)
-        if (found !== null && Math.abs(found - (ramp.bottom + ramp.top) / 2) < 0.05) sound++
+        let facetsFound = 0
+        for (const facet of rampFacets(ramp)) {
+          const along = Math.min(Math.max(facet.along, 0.3), ramp.length - 0.3)
+          const found = castDown(world, ramp.x + ramp.dx * along, ramp.z + ramp.dz * along, ramp.top + 5)
+          if (found !== null && Math.abs(found - (ramp.bottom + rampRise(ramp, along))) < 0.08) facetsFound++
+        }
+        if (facetsFound === RAMP_FACETS + 1) sound++
       }
       expect(sound).toBe(map.ramps.length)
     })

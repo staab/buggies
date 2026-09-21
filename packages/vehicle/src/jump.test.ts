@@ -34,6 +34,8 @@ interface Flight {
   /** Which way was up the instant it came back down. */
   landedUp: number
   farthest: number
+  /** What the whole flight, landing included, cost the car. */
+  damage: number
 }
 
 /** Drive at a kicker holding a target speed; watch the flight, and how it ends. */
@@ -80,7 +82,7 @@ function fly(
     if (z < 200) break
   }
   world.free()
-  return { airborneTicks, lowestUp, landedUp, farthest }
+  return { airborneTicks, lowestUp, landedUp, farthest, damage: vehicle.damage }
 }
 
 describe('jumps', () => {
@@ -96,6 +98,8 @@ describe('jumps', () => {
       expect(flight.lowestUp).toBeGreaterThan(0.7)
       expect(flight.landedUp).toBeGreaterThan(0.85)
       expect(flight.farthest).toBeLessThan(800)
+      // Coming down hard is a landing, not a crash.
+      expect(flight.damage).toBeLessThan(0.3)
     }
   })
 

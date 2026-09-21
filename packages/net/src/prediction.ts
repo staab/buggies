@@ -15,7 +15,7 @@ import {
   type VehicleStepState,
   type VehicleTuning,
 } from '@buggies/game'
-import { quat, v3, vlength, vsub, type Quat, type Vec3 } from '@buggies/physics'
+import { quat, v3, vcopy, vlength, vsub, type Quat, type Vec3 } from '@buggies/physics'
 
 import { INPUT_TIMELINE_TICKS } from './protocol.ts'
 import type { SnapshotMessage } from './wire.ts'
@@ -279,6 +279,9 @@ export class LocalPrediction {
       body.setRotation(vehicle.rotation, true)
       body.setLinvel(vehicle.linearVelocity, true)
       body.setAngvel(vehicle.angularVelocity, true)
+      // Being moved by the server is not being hit: the car reads its knocks
+      // against the velocity it has just been given.
+      vcopy(seat.vehicle.lastLinearVelocity, vehicle.linearVelocity)
       seat.vehicle.damage = vehicle.damage
       seat.vehicle.wrecked = vehicle.wrecked
     }

@@ -152,6 +152,17 @@ class Session {
   }
 }
 
+/** How far a position is from the nearest road point on a map. */
+function offRoad(map: TerrainMap, position: { x: number; z: number }): number {
+  let nearest = Infinity
+  for (const road of map.roads) {
+    for (const point of road.points) {
+      nearest = Math.min(nearest, Math.hypot(point.x - position.x, point.z - position.z))
+    }
+  }
+  return nearest
+}
+
 function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
   return Math.hypot(a.x - b.x, a.z - b.z)
 }
@@ -252,9 +263,10 @@ describe('a session', () => {
     a.client.requestRespawn()
     session.run(1)
     expect(session.events).toContain('respawned 0 asked')
-    expect(distance(session.serverPositionOf(a), session.arena.seats[0]!.spawn.position)).toBeLessThan(1)
+    // Back on the road nearest to where it was, not at its spawn, and the prediction there with it.
+    expect(offRoad(session.arena.map, session.serverPositionOf(a))).toBeLessThan(1)
     expect(a.prediction.stats.hardResyncs).toBe(resyncs + 1)
-    expect(distance(session.predictedPositionOf(a), session.arena.seats[0]!.spawn.position)).toBeLessThan(1)
+    expect(distance(session.predictedPositionOf(a), session.serverPositionOf(a))).toBeLessThan(1)
     session.dispose()
   })
 

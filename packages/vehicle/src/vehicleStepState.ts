@@ -11,7 +11,7 @@ export interface VehicleStepState {
   /** Buggies addition: how long since the last crash, and the wheels' travel the stick reads its lift speed from. */
   impactTime: number
   damage: number
-  impactPeak: number
+  lastLinearVelocity: Vec3
   wrecked: boolean
   wheelSuspensionLength: [number, number, number, number]
   invertedRestTime: number
@@ -28,7 +28,7 @@ export function createVehicleStepState(): VehicleStepState {
     airborneTime: 0,
     impactTime: Number.POSITIVE_INFINITY,
     damage: 0,
-    impactPeak: 0,
+    lastLinearVelocity: v3(),
     wrecked: false,
     wheelSuspensionLength: [0, 0, 0, 0],
     invertedRestTime: 0,
@@ -47,7 +47,7 @@ export function readVehicleStepState(out: VehicleStepState, vehicle: Vehicle): V
   out.airborneTime = vehicle.airborneTime
   out.impactTime = vehicle.impactTime
   out.damage = vehicle.damage
-  out.impactPeak = vehicle.impactPeak
+  vcopy(out.lastLinearVelocity, vehicle.lastLinearVelocity)
   out.wrecked = vehicle.wrecked
   for (let i = 0; i < 4; i++) out.wheelSuspensionLength[i] = vehicle.wheels[i]!.suspensionLength
   out.invertedRestTime = vehicle.invertedRestTime
@@ -72,7 +72,7 @@ export function writeVehicleStepState(vehicle: Vehicle, state: VehicleStepState)
   vehicle.airborneTime = state.airborneTime
   vehicle.impactTime = state.impactTime
   vehicle.damage = state.damage
-  vehicle.impactPeak = state.impactPeak
+  vcopy(vehicle.lastLinearVelocity, state.lastLinearVelocity)
   vehicle.wrecked = state.wrecked
   for (let i = 0; i < 4; i++) vehicle.wheels[i]!.suspensionLength = state.wheelSuspensionLength[i]!
   vehicle.invertedRestTime = state.invertedRestTime

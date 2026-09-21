@@ -69,44 +69,43 @@ function noteImpacts(
   dt: number,
 ): void {
   let impulse = 0
-  let blow = 0
   world.contactPairsWith(vehicle.collider, other => {
     if (isGround(other)) return
     world.contactPair(vehicle.collider, other, manifold => {
-      const normal = manifold.normal()
-      const sideways = Math.hypot(normal.x, normal.z)
       for (let i = 0; i < manifold.numContacts(); i++) {
-        const hit = Math.hypot(
+        impulse += Math.hypot(
           manifold.contactImpulse(i),
           manifold.contactTangentImpulseX(i),
           manifold.contactTangentImpulseY(i),
         )
-        impulse += hit
-        // Only a hit from the side can blow the car up: coming down hard on
-        // a roof is a landing, however hard.
-        blow += hit * sideways
       }
     })
   })
   const knock = impulse / tuning.mass
   vehicle.impactTime = knock > tuning.impactSpeedChange ? 0 : vehicle.impactTime + dt
-  // Damage adds up hit by hit, scrapes and taps aside, until the car is
-  // done. An impact lasts as long as the car is being knocked, and counts
-  // once, by its hardest step; a car that bounces off a wall is not hit
-  // again by every step of the bounce.
-  const hit = blow / tuning.mass
-  if (hit > tuning.damageFloor) {
-    vehicle.impactPeak = Math.max(vehicle.impactPeak, hit)
-  } else if (vehicle.impactPeak > 0) {
-    vehicle.damage = Math.min(vehicle.damage + vehicle.impactPeak / tuning.damageToWreck, 1)
-    vehicle.impactPeak = 0
-  }
-  const done = vehicle.damage + vehicle.impactPeak / tuning.damageToWreck >= 1
-  if (done && !vehicle.wrecked) {
-    vehicle.damage = 1
-    vehicle.impactPeak = 0
-    wreck(vehicle, tuning)
-  }
+  takeDamage(vehicle, tuning, dt)
+}
+
+/**
+ * Buggies addition. Damage is read off the car's own motion: how sharply
+ * its level speed changed over the step. The tyres can only pull so hard;
+ * anything sharper is a knock, from a wall, a rail, a tree or another car,
+ * and every bit of it past what the tyres could have done is damage. Only
+ * level motion counts, so coming down hard from a jump is a landing, not a
+ * hit, and a rail scraped along at a shallow angle costs little while one
+ * met square costs a lot.
+ */
+function takeDamage(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
+  const {frame, lastLinearVelocity} = vehicle
+  const jolt = Math.hypot(
+    frame.linearVelocity.x - lastLinearVelocity.x,
+    frame.linearVelocity.z - lastLinearVelocity.z,
+  )
+  vcopy(lastLinearVelocity, frame.linearVelocity)
+  const knock = jolt - tuning.damageAcceleration * dt
+  if (knock <= 0) return
+  vehicle.damage = Math.min(vehicle.damage + knock / tuning.damageToWreck, 1)
+  if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
 }
 
 /** Buggies addition. Past this much damage the car is smoking. */
