@@ -9,8 +9,12 @@
 import { RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, isSurfaceRoad, roadLift } from './roads.ts'
 import type { Road, RoadPoint } from './types.ts'
 
-/** Top of the rail above the road surface. */
-export const RAIL_HEIGHT = 0.9
+/**
+ * Top of the rail above the road's centreline, so a little less above its
+ * surface: well over the floor of the tallest car, which otherwise rides up
+ * onto the rail where it comes to straddle the rail line.
+ */
+export const RAIL_HEIGHT = 1.2
 /** The rail is a solid barrier from this height above the road surface up: none, so it meets the deck. */
 export const RAIL_BASE = 0
 /** How thick the barrier is, standing on the deck inside its edge. */
@@ -22,8 +26,9 @@ export const RAIL_THICKNESS = 0.4
  * tunnel the flare has to reach right into the wall, end and all, or a car
  * scraping along the wall meets the end square on as it leaves.
  */
-export const RAIL_FLARE = 6
-const RAIL_FLARE_ANGLE = (25 * Math.PI) / 180
+export const RAIL_FLARE = 8
+/** Shallow, so a car that meets a flare at speed is turned rather than stopped. */
+const RAIL_FLARE_ANGLE = (15 * Math.PI) / 180
 /** How far either side of a ramp's mouth the highway's rail stands back, flare included. */
 const RAMP_MOUTH = RAMP_WIDTH / 2 + RAIL_FLARE + 2
 

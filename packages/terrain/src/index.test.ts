@@ -7,6 +7,7 @@ import {
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
   DISTRICT_SUBURB,
+  INTERCHANGE_SEARCH,
   MAX_ARTERIAL_GRADE,
   MAX_RAMP_GRADE,
   MAX_ROAD_GRADE,
@@ -1146,9 +1147,10 @@ describe('roads', () => {
           }
         })
         // Cities can overlap, so an interchange belongs to the one it is on and
-        // nearest to, never to both.
+        // nearest to, never to both. A city's exit may stand a little beyond
+        // its suburbs, as far as the search for a site reaches.
         const owner = map.districts[best]!
-        if (nearest <= owner.radius + owner.suburbWidth) counts[best]!++
+        if (nearest <= owner.radius + owner.suburbWidth + INTERCHANGE_SEARCH) counts[best]!++
       }
       return counts
     }

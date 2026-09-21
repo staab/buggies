@@ -92,7 +92,7 @@ describe('guardrails', () => {
         const outZ = (dx / length) * side
         // The tip leans out from the rail line by the flare's lean, and out is away from the road.
         const lean = (tip.x - from.x) * outX + (tip.z - from.z) * outZ
-        expect(lean).toBeCloseTo(RAIL_FLARE * Math.sin((25 * Math.PI) / 180), 1)
+        expect(lean).toBeCloseTo(RAIL_FLARE * Math.sin((15 * Math.PI) / 180), 1)
         expect(distanceTo(road, from.x + outX, from.z + outZ)).toBeGreaterThan(distanceTo(road, from.x, from.z))
       }
     }
@@ -127,7 +127,8 @@ describe('guardrails', () => {
     }
     // The foot of the barrier is the deck's own edge: no gap between rail and road.
     const highway = map.roads.find((road) => road.kind === 'highway')!
-    const edge = runs[0]!.points[0]!
+    // The foot of a plain point, not a flare's, which leans out over the shoulder.
+    const edge = runs[0]!.points[runs[0]!.flaredStart ? 1 : 0]!
     let nearestDeck = Infinity
     let deckY = 0
     for (const point of highway.points) {

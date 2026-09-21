@@ -6,6 +6,7 @@ import {
   ROAD_TUNNEL,
   TUNNEL_CLEARANCE,
   TUNNEL_WALL,
+  deckShouldered,
   isSurfaceRoad,
   railMesh,
   railRuns,
@@ -88,8 +89,9 @@ type Shoulder = 'ground' | 'none' | 'verge'
  */
 const VERGE_UNDER_WALL = 1
 
-function shoulderOf(structure: number): Shoulder {
-  return structure === ROAD_GRADE ? 'ground' : structure === ROAD_TUNNEL ? 'verge' : 'none'
+function shoulderOf(road: Road, field: Heightfield, segment: number): Shoulder {
+  if (road.structure[segment] === ROAD_TUNNEL) return 'verge'
+  return deckShouldered(road, field, segment) ? 'ground' : 'none'
 }
 
 /** The four points across a road at one of its samples: shoulder, edge, edge, shoulder. */
@@ -157,7 +159,7 @@ function addRoads(world: RAPIER.World, map: TerrainMap): void {
     for (let i = 0; i < segmentCount; i++) {
       const structure = road.structure[i]!
       if (painted && structure === ROAD_GRADE) continue
-      const shoulder = shoulderOf(structure)
+      const shoulder = shoulderOf(road, field, i)
       const base = positions.length / 3
       crossSection(road, field, i, positions, shoulder, lift)
       crossSection(road, field, (i + 1) % count, positions, shoulder, lift)

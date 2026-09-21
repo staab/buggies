@@ -70,9 +70,16 @@ export interface VehicleTuning {
   airRollTorque: number
 
   airLevelTorque: number
+  /** Torque against pitch and roll rate in the air, per rad/s: the damping on the levelling. */
+  airLevelDamping: number
   airLevelEngageDelay: number
-  airLevelSpinFadeStart: number
-  airLevelSpinFadeEnd: number
+  /**
+   * A knock this hard, in horizontal speed lost or gained in one step, is a
+   * crash rather than a jump, and for `impactTumbleTime` after it the car is
+   * left to tumble as it will.
+   */
+  impactSpeedChange: number
+  impactTumbleTime: number
   airLevelInputYield: number
   airLevelLandingCastDistance: number
   airLevelLandingLookahead: number
@@ -133,9 +140,9 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   antiRollStiffnessFront: 18000,
   antiRollStiffnessRear: 15000,
 
-  groundStickRange: 0.25,
-  groundStickStiffness: 12000,
-  groundStickLiftSpeed: 3.0,
+  groundStickRange: 0.5,
+  groundStickStiffness: 14000,
+  groundStickLiftSpeed: 4.5,
 
   maxSteerAngle: 0.62,
   steerRate: 4.0,
@@ -146,9 +153,9 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   counterSteerSlipMin: 0.2,
   counterSteerAuthority: 0.9,
 
-  engineForce: 14000,
+  engineForce: 20000,
   driveSplit: 0.0,
-  maxSpeed: 70,
+  maxSpeed: 72,
   brakeForce: 25000,
   handbrakeForce: 9000,
   reverseForceScale: 0.45,
@@ -176,10 +183,11 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airYawTorque: 3000,
   airRollTorque: 900,
 
-  airLevelTorque: 13000,
+  airLevelTorque: 26000,
+  airLevelDamping: 9000,
   airLevelEngageDelay: 0.08,
-  airLevelSpinFadeStart: 1.0,
-  airLevelSpinFadeEnd: 7.0,
+  impactSpeedChange: 4,
+  impactTumbleTime: 2.5,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.4,
@@ -211,9 +219,9 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   antiRollStiffnessFront: 32000,
   antiRollStiffnessRear: 26000,
 
-  groundStickRange: 0.3,
-  groundStickStiffness: 16000,
-  groundStickLiftSpeed: 3.0,
+  groundStickRange: 0.55,
+  groundStickStiffness: 18000,
+  groundStickLiftSpeed: 4.5,
 
   maxSteerAngle: 0.5,
   steerRate: 2.6,
@@ -224,9 +232,9 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   counterSteerSlipMin: 0.2,
   counterSteerAuthority: 0.9,
 
-  engineForce: 14000,
+  engineForce: 26000,
   driveSplit: 0.4,
-  maxSpeed: 34,
+  maxSpeed: 44,
   brakeForce: 32000,
   handbrakeForce: 11000,
   reverseForceScale: 0.47,
@@ -254,10 +262,11 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airYawTorque: 2200,
   airRollTorque: 700,
 
-  airLevelTorque: 11000,
+  airLevelTorque: 34000,
+  airLevelDamping: 17000,
   airLevelEngageDelay: 0.08,
-  airLevelSpinFadeStart: 0.8,
-  airLevelSpinFadeEnd: 6.0,
+  impactSpeedChange: 4,
+  impactTumbleTime: 2.5,
   airLevelInputYield: 0.4,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.45,
@@ -289,9 +298,9 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   antiRollStiffnessFront: 22000,
   antiRollStiffnessRear: 26000,
 
-  groundStickRange: 0.15,
-  groundStickStiffness: 14000,
-  groundStickLiftSpeed: 3.0,
+  groundStickRange: 0.4,
+  groundStickStiffness: 18000,
+  groundStickLiftSpeed: 4.5,
 
   maxSteerAngle: 0.58,
   steerRate: 7.0,
@@ -302,15 +311,15 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   counterSteerSlipMin: 0.25,
   counterSteerAuthority: 0.5,
 
-  engineForce: 15500,
+  engineForce: 19000,
   driveSplit: 0.0,
-  maxSpeed: 92,
+  maxSpeed: 125,
   brakeForce: 34000,
   handbrakeForce: 8000,
   reverseForceScale: 0.5,
   reverseSpeedThreshold: 0.5,
   rollingResistance: 9,
-  dragCoefficient: 2.3,
+  dragCoefficient: 1.5,
 
   lateralPeakSlip: 1.8,
   lateralPeakGrip: 2.6,
@@ -332,10 +341,11 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airYawTorque: 4500,
   airRollTorque: 1200,
 
-  airLevelTorque: 15000,
+  airLevelTorque: 22000,
+  airLevelDamping: 7000,
   airLevelEngageDelay: 0.06,
-  airLevelSpinFadeStart: 1.3,
-  airLevelSpinFadeEnd: 8.0,
+  impactSpeedChange: 4,
+  impactTumbleTime: 2.5,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.35,

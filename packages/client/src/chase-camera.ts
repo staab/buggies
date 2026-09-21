@@ -36,8 +36,8 @@ export interface CameraTuning {
 
 export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   distance: 8.5,
-  // Raised from seattle's 3.2 on request. The rest of the rig is untouched.
-  height: 4.4,
+  // Raised from seattle's 3.2 on request, then a little more. The rest of the rig is untouched.
+  height: 5.2,
   distanceSpeedGain: 2.5,
 
   positionLambda: 6,

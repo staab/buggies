@@ -9,6 +9,7 @@ import {
   TUNNEL_CLEARANCE,
   boreClearance,
   buildTunnelHoles,
+  deckShouldered,
   heightAt,
   isSurfaceRoad,
   railMesh,
@@ -549,7 +550,7 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
         : ROAD_GRADE_COLOR
 
   const drawn = (segment: number): boolean => !painted || road.structure[segment] !== ROAD_GRADE
-  const isGrade = (segment: number): boolean => drawn(segment) && road.structure[segment] === ROAD_GRADE
+  const isGrade = (segment: number): boolean => drawn(segment) && deckShouldered(road, field, segment)
   const isTunnel = (segment: number): boolean => road.structure[segment] === ROAD_TUNNEL
 
   for (let i = 0; i < count; i++) {
