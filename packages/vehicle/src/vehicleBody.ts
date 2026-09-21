@@ -67,6 +67,8 @@ export interface Vehicle {
   readonly landingRay: RAPIER.Ray
   readonly frame: ChassisFrame
   readonly command: DriverCommand
+  /** The velocity at the end of the last step, to read the knocks the car takes. */
+  readonly lastLinearVelocity: Vec3
 
   rideHeight: number
   steerAngle: number
@@ -79,8 +81,6 @@ export interface Vehicle {
   impactTime: number
   /** How beaten up the car is, 0 untouched to 1 wrecked. */
   damage: number
-  /** The hardest sideways knock of the impact under way, in m/s, or 0 between impacts. */
-  impactPeak: number
   /** Blown up: past driving, and waiting to be put back on its spawn. */
   wrecked: boolean
   invertedRestTime: number
@@ -153,6 +153,7 @@ type VehicleRig =
   | 'landingRay'
   | 'frame'
   | 'command'
+  | 'lastLinearVelocity'
   | 'rideHeight'
 
 type VehicleMotion = Omit<Vehicle, VehicleRig>
@@ -166,7 +167,6 @@ const NEUTRAL_VEHICLE_MOTION: Readonly<VehicleMotion> = Object.freeze({
   airborneTime: 0,
   impactTime: Number.POSITIVE_INFINITY,
   damage: 0,
-  impactPeak: 0,
   wrecked: false,
   invertedRestTime: 0,
   selfRighting: false,
@@ -236,6 +236,7 @@ export function adoptVehicle(
     landingRay: new RAPIER.Ray(v3(), v3(0, -1, 0)),
     frame: readChassisFrame(createChassisFrame(), body),
     command: createDriverCommand(),
+    lastLinearVelocity: v3(),
     rideHeight: restingRideHeight(tuning, worldGravity(world)),
     ...NEUTRAL_VEHICLE_MOTION,
   }
@@ -334,6 +335,7 @@ export function resetVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
 
   readChassisFrame(vehicle.frame, body)
   readDriverCommand(vehicle.command, NEUTRAL_INPUT)
+  vset(vehicle.lastLinearVelocity, 0, 0, 0)
 
   Object.assign(vehicle, NEUTRAL_VEHICLE_MOTION)
 

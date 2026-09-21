@@ -20,6 +20,7 @@ import {
   leaveSeat,
   respawn,
   respawnLost,
+  respawnNearby,
   takeSeat,
   type Arena,
   type Seat,
@@ -40,6 +41,15 @@ function solo(arena: Arena, spawn?: VehicleSpawn): Seat {
     respawn(seat)
   }
   return seat
+}
+
+/** How far a point is from the nearest road point on the map. */
+function offRoad(x: number, z: number): number {
+  let nearest = Infinity
+  for (const road of map.roads) {
+    for (const point of road.points) nearest = Math.min(nearest, Math.hypot(point.x - x, point.z - z))
+  }
+  return nearest
 }
 
 function run(arena: Arena, input: VehicleInput, seconds: number): void {
@@ -143,7 +153,7 @@ describe('game', () => {
     expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
   })
 
-  it('puts a wreck back on its spawn once it has lain there long enough', () => {
+  it('puts a wreck back on the road once it has lain there long enough', () => {
     const arena = createArena(map)
     const seat = solo(arena)
     const epoch = seat.epoch
@@ -159,9 +169,29 @@ describe('game', () => {
     }
     expect(seat.epoch).not.toBe(epoch)
     expect(seat.vehicle.wrecked).toBe(false)
+    expect(seat.vehicle.damage).toBe(0)
+    // Put back on the nearest road, at rest.
     const { position } = seat.vehicle.frame
-    expect(position.x).toBeCloseTo(seat.spawn.position.x, 3)
-    expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
+    expect(offRoad(position.x, position.z)).toBeLessThan(1)
+    expect(seat.vehicle.speed).toBe(0)
+  })
+
+  it('puts a vehicle back on the nearest road, facing the way it was going', () => {
+    const arena = createArena(map)
+    const seat = solo(arena)
+    run(arena, FLAT_OUT, 6)
+    const { position, forward } = seat.vehicle.frame
+    const before = { x: position.x, z: position.z, fx: forward.x, fz: forward.z }
+    expect(Math.hypot(before.x - seat.spawn.position.x, before.z - seat.spawn.position.z)).toBeGreaterThan(60)
+
+    respawnNearby(arena, seat)
+    const after = seat.vehicle.frame
+    // Near where it was, not back at the start, on a road, still heading the same way.
+    expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(15)
+    expect(Math.hypot(after.position.x - seat.spawn.position.x, after.position.z - seat.spawn.position.z)).toBeGreaterThan(45)
+    expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.7)
+    expect(offRoad(after.position.x, after.position.z)).toBeLessThan(1)
+    expect(seat.vehicle.speed).toBe(0)
   })
 
   it('only drives the seats someone is in', () => {
@@ -203,8 +233,13 @@ describe('game', () => {
       if (back.length > 0) landed = { ...seat.vehicle.frame.position }
     }
     expect(brought).toBe(1)
-    expect(landed.x).toBeCloseTo(seat.spawn.position.x, 0)
-    expect(landed.z).toBeCloseTo(seat.spawn.position.z, 0)
+    // Back on the map, on the road nearest to where it went over the edge.
+    const worldSize = map.size * map.cellSize
+    expect(landed.x).toBeGreaterThan(0)
+    expect(landed.z).toBeGreaterThan(0)
+    expect(landed.x).toBeLessThan(worldSize)
+    expect(landed.z).toBeLessThan(worldSize)
+    expect(offRoad(landed.x, landed.z)).toBeLessThan(1)
   })
 
   it('turns the way it is steered', () => {

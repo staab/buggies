@@ -67,6 +67,9 @@ describe('guardrails', () => {
     // be had it never touched the rail.
     expect(slowest).toBeGreaterThan(entrySpeed * 0.5)
     expect(farthest).toBeLessThan(500)
+    // A scrape is not a crash: it costs the car a little, never the lot.
+    expect(vehicle.damage).toBeLessThan(0.3)
+    expect(vehicle.wrecked).toBe(false)
     world.free()
   })
 

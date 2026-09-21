@@ -40,9 +40,13 @@ function range(): Range {
  * car. The car is put back on its mark first, but what has already happened
  * to it is not undone.
  */
-function crash({ world, vehicle, tuning }: Range, speed: number): { liftedOff: boolean; drivenAfter: number } {
+function crash(
+  { world, vehicle, tuning }: Range,
+  speed: number,
+  runUp = START.z - WALL_Z,
+): { liftedOff: boolean; drivenAfter: number } {
   const { body } = vehicle
-  body.setTranslation({ x: START.x, y: START.y, z: START.z }, true)
+  body.setTranslation({ x: START.x, y: START.y, z: WALL_Z + runUp }, true)
   body.setRotation(quatFromYaw(0), true)
   body.setLinvel({ x: 0, y: 0, z: 0 }, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
@@ -74,24 +78,25 @@ describe('damage', () => {
     const track = range()
     const { vehicle } = track
 
-    // A nudge does nothing.
+    // A nudge does next to nothing.
     crash(track, 3)
-    expect(vehicle.damage).toBe(0)
+    expect(vehicle.damage).toBeLessThan(0.15)
     expect(vehicle.wrecked).toBe(false)
+    const nudged = vehicle.damage
 
-    crash(track, 14)
+    crash(track, 24)
     const dented = vehicle.damage
-    expect(dented).toBeGreaterThan(0.25)
-    expect(dented).toBeLessThan(0.5)
+    expect(dented - nudged).toBeGreaterThan(0.25)
+    expect(dented).toBeLessThan(0.6)
     expect(vehicle.wrecked).toBe(false)
 
-    crash(track, 14)
+    crash(track, 24)
     expect(vehicle.damage).toBeGreaterThan(dented)
     expect(vehicle.damage).toBeGreaterThanOrEqual(DAMAGE_SMOKING)
     expect(vehicle.damage).toBeLessThan(1)
     expect(vehicle.wrecked).toBe(false)
 
-    const last = crash(track, 14)
+    const last = crash(track, 24)
     expect(vehicle.damage).toBe(1)
     expect(vehicle.wrecked).toBe(true)
     // Thrown into the air, and not driven again however hard the throttle is held.
@@ -102,7 +107,8 @@ describe('damage', () => {
 
   it('blows a car up outright when it hits hard enough for that', () => {
     const track = range()
-    crash(track, 45)
+    // A long run at it, to be going fast enough to matter.
+    crash(track, 80, 440)
     expect(track.vehicle.damage).toBe(1)
     expect(track.vehicle.wrecked).toBe(true)
     track.world.free()

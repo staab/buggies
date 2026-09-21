@@ -3,8 +3,8 @@ import {
   VEHICLE_PROFILE_LABELS,
   advance,
   createArena,
-  respawn,
   respawnLost,
+  respawnNearby,
   takeSeat,
   type VehicleProfileId,
 } from '@buggies/game'
@@ -76,7 +76,7 @@ export function createDriveMode(
 
   const onKey = (event: KeyboardEvent): void => {
     if (event.key !== 'Enter') return
-    respawn(seat)
+    respawnNearby(arena, seat)
     keyboard.release()
     snap()
   }

@@ -102,8 +102,6 @@ export interface Road {
  */
 export interface Building {
   kind: 'block' | 'house'
-  /** A house is pitched unless a ramp leads up onto it, when it is flat-topped to be driven over. */
-  roof: 'pitched' | 'flat'
   x: number
   z: number
   yaw: number
@@ -116,21 +114,22 @@ export interface Building {
 }
 
 /**
- * A wedge from the ground up to the roof of a house, square to the road in
- * front of it, for a car to take at speed: up it, over the house and off the
- * far side.
+ * A kicker on the shoulder of a road, running along it, for a car to swerve
+ * onto at speed and fly off the lip of. Its top curves up from the ground in
+ * an arc, gently at the foot and steepest at the lip, so a car meets it with
+ * its wheels rather than its nose.
  */
 export interface Ramp {
   /** The middle of the foot, where the wedge meets the ground. */
   x: number
   z: number
-  /** Unit direction it climbs in, in plan. */
+  /** Unit direction it climbs in, in plan: along the road, one way or the other. */
   dx: number
   dz: number
   width: number
-  /** From the foot to the top edge, in plan. */
+  /** From the foot to the lip, in plan. */
   length: number
-  /** Ground height at the foot, and the roof height at the top edge. */
+  /** Ground height at the foot, and the height of the lip. */
   bottom: number
   top: number
 }

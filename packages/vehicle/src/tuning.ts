@@ -80,9 +80,13 @@ export interface VehicleTuning {
    */
   impactSpeedChange: number
   impactTumbleTime: number
-  /** A sideways knock that changes the car's speed by less than this, in one step, does no damage. */
-  damageFloor: number
-  /** How much sideways speed change, in m/s over all its knocks, wrecks the car. */
+  /**
+   * Level acceleration, in m/s², below which the car is only being driven:
+   * anything the tyres can do to it. Past it, the car is being knocked, and
+   * every bit of speed it gains or loses over that in a step is damage.
+   */
+  damageAcceleration: number
+  /** How much level speed change, in m/s over all its knocks, wrecks the car. */
   damageToWreck: number
   airLevelInputYield: number
   airLevelLandingCastDistance: number
@@ -192,8 +196,8 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.08,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
-  damageFloor: 4,
-  damageToWreck: 40,
+  damageAcceleration: 80,
+  damageToWreck: 80,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.4,
@@ -273,8 +277,8 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.08,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
-  damageFloor: 4,
-  damageToWreck: 52,
+  damageAcceleration: 80,
+  damageToWreck: 104,
   airLevelInputYield: 0.4,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.45,
@@ -356,8 +360,8 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.06,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
-  damageFloor: 4,
-  damageToWreck: 32,
+  damageAcceleration: 80,
+  damageToWreck: 64,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.35,

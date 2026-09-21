@@ -1,12 +1,12 @@
 import {
   advance,
+  takeSeat,
   createVehicleInput,
   freeSeat,
   leaveSeat,
   occupiedSeats,
-  respawn,
   respawnLost,
-  takeSeat,
+  respawnNearby,
   type Arena,
   type Seat,
   type VehicleInput,
@@ -149,7 +149,7 @@ export class GameServer implements TransportHandlers {
     if (isRespawn(payload)) {
       if (this.arena.tick - player.respawnedTick < RESPAWN_COOLDOWN_TICKS) return
       player.respawnedTick = this.arena.tick
-      respawn(player.seat)
+      respawnNearby(this.arena, player.seat)
       this.events.onRespawned?.(player.seat, 'asked')
       return
     }

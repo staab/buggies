@@ -1,11 +1,13 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 import {
+  buildWaterLevels,
   DRY,
   ROAD_GRADE,
-  buildWaterLevels,
+  ROAD_TUNNEL,
   roadLift,
   waterLevelAt,
   type Road,
+  type RoadPoint,
   type TerrainMap,
 } from '@buggies/terrain'
 import {
@@ -120,6 +122,47 @@ function spawnAt(spot: RoadSpot): VehicleSpawn {
     // A chassis faces its own -Z, so a yaw of zero looks down -Z too.
     yaw: Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z)),
   }
+}
+
+/** A spawn at a spot, facing whichever way along the road is nearer to `forward`. */
+function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): VehicleSpawn {
+  const { road, index } = spot
+  const count = road.points.length
+  const at = (i: number): RoadPoint =>
+    road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
+  const point = at(index)
+  const ahead = at(index + FACING_REACH)
+  const behind = at(index - FACING_REACH)
+  let dx = ahead.x - point.x
+  let dz = ahead.z - point.z
+  if (dx * forward.x + dz * forward.z < 0) {
+    dx = point.x - behind.x
+    dz = point.z - behind.z
+  }
+  if (Math.hypot(dx, dz) < 1e-6) return spawnAt(spot)
+  return {
+    position: { x: point.x, y: point.y + roadLift(road), z: point.z },
+    yaw: Math.atan2(-dx, -dz),
+  }
+}
+
+/** The road point nearest a position, on any road that is not a tunnel. */
+function nearestRoadSpotTo(map: TerrainMap, x: number, z: number): RoadSpot | null {
+  let best: RoadSpot | null = null
+  let bestDistance = Infinity
+  for (const road of map.roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    for (let i = 0; i < segmentCount; i++) {
+      if (road.structure[i] === ROAD_TUNNEL) continue
+      const point = road.points[i]!
+      const distance = Math.hypot(point.x - x, point.z - z)
+      if (distance >= bestDistance) continue
+      bestDistance = distance
+      best = { road, index: i }
+    }
+  }
+  return best
 }
 
 /**
@@ -256,12 +299,23 @@ function reshape(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
   seat.vehicle.rideHeight = restingRideHeight(seat.tuning, worldGravity(arena.world))
 }
 
-/** Put a vehicle back on its spawn, at rest, and count the reset. */
-export function respawn(seat: Seat): void {
-  resetVehicle(seat.vehicle, seat.spawn)
+/** Put a vehicle back on its spawn, or another, at rest, and count the reset. */
+export function respawn(seat: Seat, spawn: VehicleSpawn = seat.spawn): void {
+  resetVehicle(seat.vehicle, spawn)
   seat.epoch = nextEpoch(seat.epoch)
   seat.submersion = 0
   seat.lostTicks = 0
+}
+
+/**
+ * Put a vehicle back on the road nearest to where it is, facing the way it
+ * was going, rather than all the way back at its spawn: a car that has come
+ * to grief carries on from about where it did.
+ */
+export function respawnNearby(arena: Arena, seat: Seat): void {
+  const { position, forward } = seat.vehicle.frame
+  const spot = nearestRoadSpotTo(arena.map, position.x, position.z)
+  respawn(seat, spot === null ? seat.spawn : spawnFacing(spot, forward))
 }
 
 /** Put someone in a seat, in the vehicle they asked for, on the spawn. */
@@ -360,7 +414,7 @@ export function respawnLost(arena: Arena): Seat[] {
     if (!seat.occupied) continue
     seat.lostTicks = isLost(arena, seat) ? seat.lostTicks + 1 : 0
     if (seat.lostTicks < LOST_PATIENCE) continue
-    respawn(seat)
+    respawnNearby(arena, seat)
     respawned.push(seat)
   }
   return respawned

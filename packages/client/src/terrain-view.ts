@@ -14,6 +14,7 @@ import {
   isSurfaceRoad,
   railMesh,
   railRuns,
+  rampFacets,
   roadLift,
   tunnelSegments,
   tunnelShellMesh,
@@ -709,23 +710,17 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   ]
   const blocks = map.buildings.filter((building) => building.kind === 'block')
   const houses = map.buildings.filter((building) => building.kind === 'house')
-  // A house with a ramp up to it is flat-topped, to be driven over; the rest
-  // carry a pitched roof.
-  const pitched = houses.filter((house) => house.roof === 'pitched')
-  const flat = houses.filter((house) => house.roof === 'flat')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
-  const paintHouse = (building: Building, matrix: THREE.Matrix4, color: THREE.Color): void => {
-    boxAt(building, matrix)
-    color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length]!)
-  }
   meshes.push(
     instanced(box, walled(blockWall, flatRoof), blocks, (building, matrix, color) => {
       boxAt(building, matrix)
       sampleRamp(building.tone, BLOCK_STOPS, color)
     }),
-    instanced(box, walled(houseWall, houseWall), pitched, paintHouse),
-    instanced(box, walled(houseWall, flatRoof), flat, paintHouse),
+    instanced(box, walled(houseWall, houseWall), houses, (building, matrix, color) => {
+      boxAt(building, matrix)
+      color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length]!)
+    }),
   )
 
   // A pitched roof: a four-sided cone, turned so its base is square to the box.
@@ -734,7 +729,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   roof.translate(0, 0.5, 0)
   const roofing = new THREE.MeshStandardMaterial({ map: roofFacade().texture, roughness: 0.95, metalness: 0 })
   meshes.push(
-    instanced(roof, roofing, pitched, (house, matrix, color) => {
+    instanced(roof, roofing, houses, (house, matrix, color) => {
       const span = Math.min(house.width, house.depth)
       matrix.compose(
         new THREE.Vector3(house.x, house.top, house.z),
@@ -919,30 +914,32 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
 
 const RAMP_COLOR = new THREE.Color('#4a4a48')
 
-/** Every ramp as one mesh: a wedge with a top to drive on, two sides and a back against the house. */
+/** Every ramp as one mesh: a faceted arc to drive up, two sides, and a face under the lip. */
 function buildRampGeometry(ramps: Ramp[]): THREE.BufferGeometry {
   const positions: number[] = []
   const indices: number[] = []
   for (const ramp of ramps) {
     const sx = -ramp.dz * (ramp.width / 2)
     const sz = ramp.dx * (ramp.width / 2)
-    const tx = ramp.x + ramp.dx * ramp.length
-    const tz = ramp.z + ramp.dz * ramp.length
     const under = ramp.bottom - 1
+    const facets = rampFacets(ramp)
     const base = positions.length / 3
-    positions.push(
-      ramp.x + sx, ramp.bottom, ramp.z + sz,
-      ramp.x - sx, ramp.bottom, ramp.z - sz,
-      tx + sx, ramp.top, tz + sz,
-      tx - sx, ramp.top, tz - sz,
-      tx + sx, under, tz + sz,
-      tx - sx, under, tz - sz,
-    )
-    // Top, the two sides, and the back.
-    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2)
-    indices.push(base, base + 2, base + 4)
-    indices.push(base + 1, base + 5, base + 3)
-    indices.push(base + 2, base + 3, base + 4, base + 3, base + 5, base + 4)
+    // Four vertices per facet edge: the two top corners and the two under them.
+    for (const facet of facets) {
+      const x = ramp.x + ramp.dx * facet.along
+      const z = ramp.z + ramp.dz * facet.along
+      positions.push(x + sx, facet.height, z + sz, x - sx, facet.height, z - sz, x + sx, under, z + sz, x - sx, under, z - sz)
+    }
+    for (let i = 0; i + 1 < facets.length; i++) {
+      const here = base + i * 4
+      const next = here + 4
+      // Top, then the two sides.
+      indices.push(here, here + 1, next, here + 1, next + 1, next)
+      indices.push(here, next, here + 2, next, next + 2, here + 2)
+      indices.push(here + 1, here + 3, next + 1, next + 1, here + 3, next + 3)
+    }
+    const lip = base + (facets.length - 1) * 4
+    indices.push(lip, lip + 1, lip + 2, lip + 1, lip + 3, lip + 2)
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
