@@ -44,7 +44,10 @@ function disposeView(group: THREE.Group): void {
     else materials.add(object.material)
   })
   geometries.forEach((geometry) => geometry.dispose())
-  materials.forEach((material) => material.dispose())
+  materials.forEach((material) => {
+    if (material instanceof THREE.MeshStandardMaterial) material.map?.dispose()
+    material.dispose()
+  })
   scene.remove(group)
 }
 

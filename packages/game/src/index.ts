@@ -2,8 +2,8 @@ import { FIXED_TIMESTEP } from '@buggies/physics'
 import {
   DRY,
   ROAD_GRADE,
-  ROAD_SURFACE,
   buildWaterLevels,
+  roadLift,
   waterLevelAt,
   type Road,
   type TerrainMap,
@@ -115,7 +115,7 @@ function spawnAt(spot: RoadSpot): VehicleSpawn {
   const point = road.points[index]!
   const ahead = road.points[Math.min(index + FACING_REACH, count - 1)] ?? point
   return {
-    position: { x: point.x, y: point.y + ROAD_SURFACE, z: point.z },
+    position: { x: point.x, y: point.y + roadLift(road), z: point.z },
     // A chassis faces its own -Z, so a yaw of zero looks down -Z too.
     yaw: Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z)),
   }

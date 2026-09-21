@@ -146,11 +146,14 @@ function buildHeights(
 ): void {
   const { width, depth, cellSize, heights } = field
   const center = (width * cellSize) / 2
-  const plainsAmplitude = islandRadius * 0.02
+  // The plains are all but flat: what relief they keep is long and low, so a
+  // road across them needs no cutting and a car at speed feels nothing of it.
+  // The hills are the mountains' skirts.
+  const plainsAmplitude = islandRadius * 0.002
   const domeHeight = islandRadius * 0.032
 
   // Frequencies are in world units, so terrain detail does not grow with the map.
-  const baseFrequency = 0.018
+  const baseFrequency = 0.008
   const roughFrequency = 0.03
   const warpFrequency = 0.006
   const warpAmplitude = islandRadius * 0.45
@@ -171,11 +174,13 @@ function buildHeights(
       const distance = Math.hypot(x - center + warpX * warpAmplitude, z - center + warpZ * warpAmplitude)
       const mask = 1 - smoothstep(islandRadius * 0.55, islandRadius, distance)
 
-      const base = fbm2D(x * baseFrequency, z * baseFrequency, seed + 1, 5)
+      const base = fbm2D(x * baseFrequency, z * baseFrequency, seed + 1, 2)
       const roughness = ridged2D(x * roughFrequency, z * roughFrequency, seed + 2, 5)
       // A gentle central dome keeps water draining outward to the sea instead
-      // of pooling into giant interior basins.
-      const dome = 1 - smoothstep(0, islandRadius * 0.85, distance)
+      // of pooling into giant interior basins. It follows the plain distance
+      // from the centre, not the warped one the coast is cut by: warping it
+      // too would fold the coast's bays and headlands into slopes inland.
+      const dome = 1 - smoothstep(0, islandRadius * 0.85, Math.hypot(x - center, z - center))
       const land = base * plainsAmplitude + domeHeight * dome
 
       let mountain = 0

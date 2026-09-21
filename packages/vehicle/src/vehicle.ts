@@ -1,5 +1,7 @@
 // Ported from the seattle project (src/physics/vehicle.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// shape and formatting so the two can be compared and resynced. Buggies adds
+// the ground stick: a wheel that has run out of suspension travel but can
+// still see the ground holds on to it, unless the car is genuinely taking off.
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
@@ -25,6 +27,7 @@ import {
 import {applyAirControl, applyAirStabilization} from './airControl.ts'
 import {addForceAlong, addTorqueAbout} from './bodyForces.ts'
 import {readChassisFrame, velocityAtPoint, type ChassisFrame} from './chassisFrame.ts'
+import {WHEEL_RAY_GROUPS} from './groups.ts'
 import {readDriverCommand, type VehicleInput} from './input.ts'
 import {updateSelfRighting} from './selfRighting.ts'
 import type {VehicleTuning} from './tuning.ts'
@@ -126,6 +129,7 @@ function markWheelAirborne(
   wheel.suspensionExtensionRate = 0
   wheel.suspensionForce = 0
   wheel.bumpStopDepth = 0
+  wheel.stickDepth = 0
   wheel.forceLongitudinal = 0
   wheel.forceLateral = 0
   wheel.slipSpeedLongitudinal = 0
@@ -168,6 +172,7 @@ function settleWheelTravel(
   dt: number,
 ): void {
   const {body, frame} = vehicle
+  const droop = tuning.suspensionRestLength + tuning.wheelRadius
 
   aimWheelRay(vehicle, wheel, tuning, castDistance)
 
@@ -176,7 +181,7 @@ function settleWheelTravel(
     castDistance,
     true,
     undefined,
-    undefined,
+    WHEEL_RAY_GROUPS,
     undefined,
     body,
   )
@@ -190,6 +195,24 @@ function settleWheelTravel(
   wheel.grounded = true
 
   settleWheelOnContact(vehicle, wheel, tuning, hit.timeOfImpact, hit.normal)
+
+  const reach = hit.timeOfImpact - droop
+
+  if (reach <= 0) {
+    wheel.stickDepth = 0
+    return
+  }
+
+  // Buggies addition. The ground is past full droop but within reach: over a
+  // crest, or a bump, the car holds on to it rather than floating off. Only a
+  // corner rising faster than the lift speed is really leaving the ground.
+  if (wheel.suspensionExtensionRate > tuning.groundStickLiftSpeed) {
+    markWheelAirborne(wheel, tuning, frame)
+    advanceWheelSpin(wheel, vehicle.forwardSpeed, tuning, dt)
+    return
+  }
+
+  wheel.stickDepth = reach
 }
 
 function antiRollForceOnLeft(axle: Axle, tuning: VehicleTuning): number {
@@ -210,14 +233,24 @@ function applyWheelSuspensionForce(
 ): void {
   if (!wheel.grounded) return
 
-  wheel.suspensionForce = clamp(
-    tuning.suspensionStiffness * wheel.compression +
-      tuning.bumpStopStiffness * wheel.bumpStopDepth -
-      tuning.suspensionDamping * wheel.suspensionExtensionRate +
-      antiRoll,
-    0,
-    tuning.maxSuspensionForce,
-  )
+  // Buggies addition. Past full droop the spring and damper have nothing to
+  // push with; the stick pulls the corner down toward the ground instead, the
+  // harder the further it has got away.
+  wheel.suspensionForce =
+    wheel.stickDepth > 0
+      ? clamp(
+          antiRoll - tuning.groundStickStiffness * wheel.stickDepth,
+          -tuning.groundStickStiffness * tuning.groundStickRange,
+          0,
+        )
+      : clamp(
+          tuning.suspensionStiffness * wheel.compression +
+            tuning.bumpStopStiffness * wheel.bumpStopDepth -
+            tuning.suspensionDamping * wheel.suspensionExtensionRate +
+            antiRoll,
+          0,
+          tuning.maxSuspensionForce,
+        )
 
   vscale(contactForce, vehicle.frame.up, wheel.suspensionForce)
   vehicle.body.addForceAtPoint(contactForce, wheel.contactPoint, true)
@@ -230,7 +263,8 @@ function applySuspensionForces(
   dt: number,
 ): void {
   const {axles, frame, wheels} = vehicle
-  const castDistance = tuning.suspensionRestLength + tuning.wheelRadius
+  const castDistance =
+    tuning.suspensionRestLength + tuning.wheelRadius + tuning.groundStickRange
   let groundedCount = 0
 
   vcopy(vehicle.ray.dir, frame.down)

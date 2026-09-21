@@ -34,6 +34,15 @@ export function resetWorldTuning(tuning: WorldTuning): void {
   Object.assign(tuning, DEFAULT_WORLD_TUNING)
 }
 
+/**
+ * How far ahead of a body a contact is made, in metres. Rapier's own 2cm
+ * turns every seam of a wall a car scrapes along into a head-on collision:
+ * a chassis corner a few millimetres short of the next facet is held back
+ * from it as though it were about to hit it square. A couple of millimetres
+ * keeps resting contacts settled and lets the corner slide on.
+ */
+const CONTACT_PREDICTION = 0.002
+
 let wasmReady = false
 
 export async function initPhysics(): Promise<void> {
@@ -62,6 +71,7 @@ export function createPhysicsWorld(tuning: WorldTuning = DEFAULT_WORLD_TUNING): 
   world.timestep = FIXED_TIMESTEP
   world.numSolverIterations = SOLVER_ITERATIONS
   world.maxCcdSubsteps = CCD_SUBSTEPS
+  world.integrationParameters.normalizedPredictionDistance = CONTACT_PREDICTION
 
   return world
 }

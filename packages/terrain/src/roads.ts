@@ -27,8 +27,8 @@ export const ROAD_TUNNEL = 2
 const KIND_BRIDGE = 1
 const KIND_TUNNEL = 2
 
-/** Highway centreline width, in world units. */
-export const ROAD_WIDTH = 8
+/** Highway carriageway width, in world units. */
+export const ROAD_WIDTH = 16
 
 /** Control points are strung together with this spacing between samples. */
 const SAMPLE_STEP = 6
@@ -56,9 +56,9 @@ const TURN_RADIUS_FRACTION = 0.8
 const STADIUM_SEGMENTS = 8
 
 /** One-lane ramp width, in world units. */
-export const RAMP_WIDTH = 4
+export const RAMP_WIDTH = 8
 /** Cross road width at an interchange, in world units. */
-export const CROSS_WIDTH = 6
+export const CROSS_WIDTH = 12
 /** Distance along the highway between interchanges, in world units. */
 const INTERCHANGE_SPACING = 800
 /** How far either way a candidate may slide to find dry, water-free ground. */
@@ -69,8 +69,8 @@ const CROSS_RELIEF = 10
 const RAMP_ALONG = 50
 /** Distance along the cross road from the underpass to each ramp's far end. */
 const RAMP_REACH = 50
-/** Half-length of the cross road either side of the underpass; ends at the ramps. */
-const CROSS_REACH = RAMP_REACH + 2
+/** Half-length of the cross road either side of the underpass; ends just past the ramps. */
+const CROSS_REACH = RAMP_REACH + RAMP_WIDTH / 2 + 2
 /** Highway length either side of an underpass drawn as bridge deck. */
 const UNDERPASS_SPAN = 30
 /**
@@ -97,7 +97,7 @@ const CUT_SLOPE = 0.4
 const RAMP_SEGMENTS = 24
 
 /** Arterial road width, in world units. */
-export const ARTERIAL_WIDTH = 5
+export const ARTERIAL_WIDTH = 10
 /** Arterials climb more than highways but must never feel very steep. */
 export const MAX_ARTERIAL_GRADE = 0.08
 /** Water steps may rise a little faster than the road, as a bridge approach does. */
@@ -107,9 +107,9 @@ const ARTERIAL_BRIDGE_CLEARANCE = 2
 /** Spacing of the navigation grid arterials are routed on, in world units. */
 const ARTERIAL_GRID = 32
 /** How close a road may come before routing treats the cell as blocked. */
-const ARTERIAL_HIGHWAY_AVOID = 20
+const ARTERIAL_HIGHWAY_AVOID = 30
 /** Narrower berth for ramps and cross roads, so arterials can leave their ends. */
-const ARTERIAL_ACCESS_AVOID = 12
+const ARTERIAL_ACCESS_AVOID = 16
 /** Cost weights for the arterial routing search. */
 const ARTERIAL_SLOPE_COST = 24
 const ARTERIAL_WATER_COST = 8
@@ -145,8 +145,11 @@ const ARTERIAL_MIN_JUNCTION_ANGLE = Math.PI / 4
 const ARTERIAL_MERGE_REACH = CROSS_REACH
 /** A road still turning sharper than this after smoothing is dropped entirely. */
 const ARTERIAL_PRUNE_TURN = (30 * Math.PI) / 180
-/** Junction alignment is reverted if it leaves a bend sharper than this. */
-const ARTERIAL_JUNCTION_TURN = (20 * Math.PI) / 180
+/**
+ * Junction alignment is reverted if it leaves a bend sharper than this, over
+ * the window turns are judged in: as sharp as a road is allowed to be at all.
+ */
+const ARTERIAL_JUNCTION_TURN = (30 * Math.PI) / 180
 /** Cap on samples in one arterial, so fillets cannot explode the geometry. */
 const ARTERIAL_MAX_POINTS = 400
 const ARTERIAL_SALT = 0x51a2
@@ -714,10 +717,14 @@ function findDryCrossing(
   seaLevel: number,
   samples: Vec2[],
   wet: Uint8Array,
+  wetAt: (x: number, z: number) => boolean,
   deck: Float32Array,
+  cum: Float32Array,
+  total: number,
   index: number,
   maxOffset: number,
   permits: (c: number) => boolean,
+  strict = true,
 ): number {
   const count = samples.length
   for (let offset = 0; offset <= maxOffset; offset++) {
@@ -730,6 +737,15 @@ function findDryCrossing(
       const left = sampleTerrain(field, frame.x - frame.nx * CROSS_REACH, frame.z - frame.nz * CROSS_REACH)
       const right = sampleTerrain(field, frame.x + frame.nx * CROSS_REACH, frame.z + frame.nz * CROSS_REACH)
       if (left <= seaLevel || right <= seaLevel) continue
+      // The cross road is the ground, so its ends and the ramps' landings
+      // cannot stand in a river or a lake any more than in the sea.
+      if (
+        [-CROSS_REACH, -RAMP_REACH, RAMP_REACH, CROSS_REACH].some((offsetAcross) =>
+          wetAt(frame.x + frame.nx * offsetAcross, frame.z + frame.nz * offsetAcross),
+        )
+      ) {
+        continue
+      }
       // Keep the crossing fairly level, or the ramps have to descend a valley.
       const nearLeft = sampleTerrain(field, frame.x - frame.nx * RAMP_REACH, frame.z - frame.nz * RAMP_REACH)
       const nearRight = sampleTerrain(field, frame.x + frame.nx * RAMP_REACH, frame.z + frame.nz * RAMP_REACH)
@@ -748,7 +764,19 @@ function findDryCrossing(
         sampleOpen(cross.heights, -RAMP_REACH),
         sampleOpen(cross.heights, RAMP_REACH),
       )
-      if (roof - landing > RAMP_DROP - RAMP_DROP_HEADROOM) continue
+      // The ramps leave the deck RAMP_ALONG either side of the crossing, where
+      // the highway can stand higher than at the crossing itself: judge the
+      // drop from the higher of the deck there and the raised deck's descent.
+      // A city that has no site good enough is still given its exit, judged
+      // at the crossing alone, and its ramps come out steeper for it.
+      const attachDeck = strict
+        ? Math.max(
+            roof - MAX_ROAD_GRADE * RAMP_ALONG,
+            deck[indexAtDistance(cum, (cum[c]! - RAMP_ALONG + total) % total)]!,
+            deck[indexAtDistance(cum, (cum[c]! + RAMP_ALONG) % total)]!,
+          )
+        : roof
+      if (attachDeck + ROAD_SURFACE - landing > RAMP_DROP - RAMP_DROP_HEADROOM) continue
       return c
     }
   }
@@ -770,6 +798,7 @@ function interchangeCenters(
   seaLevel: number,
   samples: Vec2[],
   wet: Uint8Array,
+  wetAt: (x: number, z: number) => boolean,
   cum: Float32Array,
   total: number,
   districts: District[],
@@ -829,16 +858,12 @@ function interchangeCenters(
     // nearer to another city is that city's to use: without that, a neighbour
     // standing on better land takes the exits and this city is left with none.
     const reach = Math.round((district.radius + district.suburbWidth) / step) + search
-    const c = findDryCrossing(
-      field,
-      seaLevel,
-      samples,
-      wet,
-      deck,
-      seed,
-      reach,
-      (candidate) => nearestCity(candidate) === district && gapTo(candidate) >= touching,
-    )
+    const permits = (candidate: number): boolean =>
+      nearestCity(candidate) === district && gapTo(candidate) >= touching
+    let c = findDryCrossing(field, seaLevel, samples, wet, wetAt, deck, cum, total, seed, reach, permits)
+    if (c < 0) {
+      c = findDryCrossing(field, seaLevel, samples, wet, wetAt, deck, cum, total, seed, reach, permits, false)
+    }
     if (c >= 0) centers.push(c)
   }
 
@@ -848,8 +873,18 @@ function interchangeCenters(
     // country between them; one landing on a city would give it a second.
     // A candidate near the end of the loop can slide onto the first one across
     // the wrap, so keep a minimum cyclic gap between crossings.
-    const c = findDryCrossing(field, seaLevel, samples, wet, deck, index, search, (candidate) =>
-      rural(candidate) && gapTo(candidate) >= minGap,
+    const c = findDryCrossing(
+      field,
+      seaLevel,
+      samples,
+      wet,
+      wetAt,
+      deck,
+      cum,
+      total,
+      index,
+      search,
+      (candidate) => rural(candidate) && gapTo(candidate) >= minGap,
     )
     if (c >= 0) centers.push(c)
   }
@@ -970,6 +1005,7 @@ function buildInterchanges(
 
     roads.push({
       id: id++,
+      kind: 'cross',
       closed: false,
       width: CROSS_WIDTH,
       points: crossPoints.map((point, k) => ({ x: point.x, y: crossHeights[k]!, z: point.z })),
@@ -1008,6 +1044,9 @@ function buildInterchanges(
 
         // Linear fall from the deck to the cross road so the ramp always
         // reaches it; a grade limit here would strand the tip above the road.
+        // The ramp is the ground: it leaves the highway's own surface, which
+        // rides ROAD_SURFACE above its centreline, and lands on the cross road.
+        const topY = startY + ROAD_SURFACE
         const points: Vec2[] = []
         const heights = new Float32Array(RAMP_SEGMENTS + 1)
         for (let k = 0; k <= RAMP_SEGMENTS; k++) {
@@ -1017,11 +1056,12 @@ function buildInterchanges(
             x: u * u * u * startX + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * mergeX,
             z: u * u * u * startZ + 3 * u * u * t * p1z + 3 * u * t * t * p2z + t * t * t * mergeZ,
           })
-          heights[k] = startY + (mergeY - startY) * t
+          heights[k] = topY + (mergeY - topY) * t
         }
 
         roads.push({
           id: id++,
+          kind: 'ramp',
           closed: false,
           width: RAMP_WIDTH,
           points: points.map((point, k) => ({ x: point.x, y: heights[k]!, z: point.z })),
@@ -1038,13 +1078,29 @@ function buildInterchanges(
 }
 
 /**
- * Cut the ground down under every at-grade road so rising terrain never pokes
- * through the ribbon, just as river channels are carved so the water is not
- * covered. The bed is interpolated along each segment, so a road that climbs or
- * falls is followed exactly. Only cuts are made, never fills, so embankments and
- * bridges keep their profile.
+ * Roads that are the ground, shaped to them and painted on, rather than built
+ * over it: everything but the highway, which rides its own embankment.
  */
-function carveRoadBeds(field: Heightfield, roads: Road[]): void {
+export function isSurfaceRoad(road: Road): boolean {
+  return road.kind !== 'highway'
+}
+
+/** How far above a road's recorded centreline its drivable surface sits. */
+export function roadLift(road: Road): number {
+  return isSurfaceRoad(road) ? 0 : ROAD_SURFACE
+}
+
+/** The ground is shaped to a surface road over this much beyond its carriageway. */
+export const SURFACE_SHOULDER = 9
+
+/**
+ * Cut the ground down under every at-grade built road so rising terrain never
+ * pokes through the ribbon, just as river channels are carved so the water is
+ * not covered. The bed is interpolated along each segment, so a road that
+ * climbs or falls is followed exactly. Only cuts are made, never fills, so
+ * embankments and bridges keep their profile.
+ */
+function carveRoadBeds(field: Heightfield, roads: Road[], keep: Uint8Array): void {
   const { width, depth, cellSize, heights } = field
   for (const road of roads) {
     const count = road.points.length
@@ -1072,12 +1128,239 @@ function carveRoadBeds(field: Heightfield, roads: Road[]): void {
           const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
           const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
           if (distance > reach) continue
+          const cell = row * width + col
+          if (keep[cell] === 1) continue
           const bed = a.y + (b.y - a.y) * t
           const target = bed - CUT_CLEARANCE + Math.max(0, distance - flat) * CUT_SLOPE
-          const cell = row * width + col
           if (heights[cell]! > target) heights[cell] = target
         }
       }
+    }
+  }
+}
+
+/**
+ * The cells a surface road's carriageway lies over. The highway's bed must
+ * not be cut into them where it passes close, as it does where a ramp leaves
+ * it: that ground is a road, and a cut across it is a trench across a road.
+ */
+function surfaceRoadCells(field: Heightfield, roads: Road[]): Uint8Array {
+  const { width, depth, cellSize } = field
+  const cells = new Uint8Array(width * depth)
+  for (const road of roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    const flat = road.width / 2 + cellSize
+    for (let i = 0; i < segmentCount; i++) {
+      if (road.structure[i] !== ROAD_GRADE) continue
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % count]!
+      const vx = b.x - a.x
+      const vz = b.z - a.z
+      const lengthSq = vx * vx + vz * vz || 1
+      const minCol = Math.max(Math.floor((Math.min(a.x, b.x) - flat) / cellSize), 0)
+      const maxCol = Math.min(Math.ceil((Math.max(a.x, b.x) + flat) / cellSize), width - 1)
+      const minRow = Math.max(Math.floor((Math.min(a.z, b.z) - flat) / cellSize), 0)
+      const maxRow = Math.min(Math.ceil((Math.max(a.z, b.z) + flat) / cellSize), depth - 1)
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          const x = col * cellSize
+          const z = row * cellSize
+          const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
+          if (Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t)) <= flat) cells[row * width + col] = 1
+        }
+      }
+    }
+  }
+  return cells
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.min(Math.max((value - edge0) / (edge1 - edge0), 0), 1)
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * Shape the ground to every surface road. Across the carriageway the ground is
+ * the road's own profile, cut or filled to reach it; the shoulders blend back
+ * to the land beside it. Roads only compete with each other within their
+ * carriageways: where two cross, their profiles are averaged over the
+ * overlap, so a crossing is one level rather than a step from one deck to
+ * another, but a road's shoulder never reshapes the road beside it. Bridges
+ * are left alone: there is water under them, and a deck is built over it.
+ */
+function stampRoadBeds(field: Heightfield, roads: Road[]): void {
+  const { width, depth, cellSize, heights } = field
+  const original = Float32Array.from(heights)
+  const roadWeightSum = new Float32Array(width * depth)
+  const bedSum = new Float32Array(width * depth)
+  const landWeightMax = new Float32Array(width * depth)
+  // Within one road only its nearest stretch counts, or a tight bend would
+  // blend the height of the road coming in with the road going out.
+  const nearest = new Float32Array(width * depth).fill(Infinity)
+  const nearestBed = new Float32Array(width * depth)
+  const touched: number[] = []
+
+  for (const road of roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    const half = road.width / 2
+    const flat = half + cellSize
+    const reach = flat + SURFACE_SHOULDER
+
+    for (let i = 0; i < segmentCount; i++) {
+      if (road.structure[i] !== ROAD_GRADE) continue
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % count]!
+      const vx = b.x - a.x
+      const vz = b.z - a.z
+      const lengthSq = vx * vx + vz * vz || 1
+
+      const minCol = Math.max(Math.floor((Math.min(a.x, b.x) - reach) / cellSize), 0)
+      const maxCol = Math.min(Math.ceil((Math.max(a.x, b.x) + reach) / cellSize), width - 1)
+      const minRow = Math.max(Math.floor((Math.min(a.z, b.z) - reach) / cellSize), 0)
+      const maxRow = Math.min(Math.ceil((Math.max(a.z, b.z) + reach) / cellSize), depth - 1)
+
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          const x = col * cellSize
+          const z = row * cellSize
+          const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
+          const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
+          if (distance > reach) continue
+          const cell = row * width + col
+          if (distance >= nearest[cell]!) continue
+          if (nearest[cell] === Infinity) touched.push(cell)
+          nearest[cell] = distance
+          nearestBed[cell] = a.y + (b.y - a.y) * t
+        }
+      }
+    }
+
+    for (const cell of touched) {
+      const distance = nearest[cell]!
+      // A road's say over the ground beside it fades out over the shoulder;
+      // its say against another road ends at its own carriageway. The small
+      // share kept beyond that only decides whose profile a lone shoulder
+      // takes, never a contest with a carriageway.
+      const land = 1 - smoothstep(flat, reach, distance)
+      const contest = 1 - smoothstep(half, flat + cellSize, distance) + land * 0.01
+      roadWeightSum[cell] = roadWeightSum[cell]! + contest
+      bedSum[cell] = bedSum[cell]! + contest * nearestBed[cell]!
+      if (land > landWeightMax[cell]!) landWeightMax[cell] = land
+      nearest[cell] = Infinity
+    }
+    touched.length = 0
+  }
+
+  for (let cell = 0; cell < heights.length; cell++) {
+    const weight = landWeightMax[cell]!
+    if (weight <= 0) continue
+    const bed = bedSum[cell]! / roadWeightSum[cell]!
+    heights[cell] = original[cell]! + (bed - original[cell]!) * weight
+  }
+}
+
+/**
+ * Lay a surface road's samples out evenly, no further apart than the ground's
+ * own cells. Streets and arterials are sampled far more coarsely than that,
+ * and fillets far more finely; once the road is the ground, its grade is the
+ * ground's grade, and that is only worth reading at the ground's resolution.
+ * A new segment takes the structure of the old one its middle lies in.
+ */
+function resampleSurfaceRoad(road: Road, spacing: number): void {
+  const { points, structure } = road
+  if (road.closed || points.length < 2) return
+  const cumulative = [0]
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!
+    const b = points[i]!
+    cumulative.push(cumulative[i - 1]! + Math.hypot(b.x - a.x, b.z - a.z))
+  }
+  const total = cumulative[cumulative.length - 1]!
+  const steps = Math.max(1, Math.ceil(total / spacing))
+
+  const at = (distance: number): { point: RoadPoint; segment: number } => {
+    let i = 1
+    while (i < cumulative.length - 1 && cumulative[i]! < distance) i++
+    const a = points[i - 1]!
+    const b = points[i]!
+    const span = cumulative[i]! - cumulative[i - 1]! || 1
+    const t = Math.min(Math.max((distance - cumulative[i - 1]!) / span, 0), 1)
+    return {
+      point: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t },
+      segment: i - 1,
+    }
+  }
+
+  const resampled: RoadPoint[] = []
+  const codes: number[] = []
+  for (let k = 0; k <= steps; k++) {
+    const distance = (total * k) / steps
+    resampled.push(k === 0 ? points[0]! : k === steps ? points[points.length - 1]! : at(distance).point)
+    if (k < steps) codes.push(structure[at((total * (k + 0.5)) / steps).segment]!)
+  }
+  road.points = resampled
+  road.structure = Uint8Array.from(codes)
+}
+
+/**
+ * Hold a run of samples to a grade. One sweep from each end holds every
+ * sample within the limit of the one before it, and the profile kept is the
+ * mean of the two: itself within the limit, and leaving either end where it
+ * was unless the two are further apart than the run can join at that grade,
+ * in which case each gives up half the difference rather than one all of it.
+ */
+function limitRunGrade(points: RoadPoint[], from: number, to: number, maxGrade: number): void {
+  const forward = points.slice(from, to + 1).map((point) => point.y)
+  const backward = forward.slice()
+  const step = (i: number, j: number): number =>
+    maxGrade * Math.hypot(points[from + i]!.x - points[from + j]!.x, points[from + i]!.z - points[from + j]!.z)
+  for (let i = 1; i < forward.length; i++) {
+    const delta = step(i, i - 1)
+    forward[i] = Math.min(Math.max(forward[i]!, forward[i - 1]! - delta), forward[i - 1]! + delta)
+  }
+  for (let i = backward.length - 2; i >= 0; i--) {
+    const delta = step(i, i + 1)
+    backward[i] = Math.min(Math.max(backward[i]!, backward[i + 1]! - delta), backward[i + 1]! + delta)
+  }
+  for (let i = 0; i < forward.length; i++) points[from + i]!.y = (forward[i]! + backward[i]!) / 2
+}
+
+/** The grade a surface road of this kind is held to. */
+function surfaceGradeLimit(road: Road): number {
+  if (road.kind === 'ramp') return MAX_RAMP_GRADE
+  return road.kind === 'arterial' ? MAX_ARTERIAL_GRADE : MAX_ROAD_GRADE
+}
+
+/** Hold every at-grade run of a road to its limit, leaving bridges as they are. */
+function limitSurfaceRoadGrade(road: Road): void {
+  const { points, structure } = road
+  let start = 0
+  for (let i = 0; i <= structure.length; i++) {
+    const atGrade = i < structure.length && structure[i] === ROAD_GRADE
+    if (atGrade) continue
+    if (i > start) limitRunGrade(points, start, i, surfaceGradeLimit(road))
+    start = i + 1
+  }
+}
+
+/**
+ * Put every surface road's samples on the ground now shaped to them, so the
+ * road as recorded is the road as driven: where two roads were averaged
+ * across a crossing, both now say the height the ground actually has there.
+ * A sample on a bridge keeps its deck.
+ */
+function seatSurfaceRoads(field: Heightfield, roads: Road[]): void {
+  for (const road of roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    for (let i = 0; i < count; i++) {
+      const before = i > 0 ? road.structure[i - 1] : road.closed ? road.structure[count - 1] : ROAD_GRADE
+      const after = i < segmentCount ? road.structure[i] : ROAD_GRADE
+      if (before !== ROAD_GRADE || after !== ROAD_GRADE) continue
+      const point = road.points[i]!
+      point.y = sampleTerrain(field, point.x, point.z)
     }
   }
 }
@@ -1561,6 +1844,7 @@ function buildArterialNodes(
   seaLevel: number,
   crossRoads: Road[],
   rng: Rng,
+  wetAt: (x: number, z: number) => boolean,
 ): ArterialNode[] {
   const nodes: ArterialNode[] = []
   crossRoads.forEach((cross, id) => {
@@ -1576,7 +1860,7 @@ function buildArterialNodes(
       const x = gx + (rng() - 0.5) * ARTERIAL_FIELD_SPACING * 0.35
       const z = gz + (rng() - 0.5) * ARTERIAL_FIELD_SPACING * 0.35
       const ground = sampleTerrain(field, x, z)
-      if (ground <= seaLevel) continue
+      if (ground <= seaLevel || wetAt(x, z)) continue
       if (nodes.some((node) => Math.hypot(node.x - x, node.z - z) < ARTERIAL_FIELD_SPACING * 0.45)) continue
       nodes.push({ x, z, y: ground, cross: -1 })
     }
@@ -1778,13 +2062,25 @@ function nearestNode(nodes: ArterialNode[], index: number, exclude?: Set<number>
   return best
 }
 
-/** Sharpest heading change (radians) anywhere along a finished polyline. */
+/** Turn is judged between samples at least this far apart, so dense fillet samples cannot hide a hairpin. */
+const TURN_WINDOW = 3
+
+/**
+ * Sharpest heading change (radians) anywhere along a finished polyline,
+ * between headings taken over at least TURN_WINDOW of road either side.
+ */
 function sharpestTurn(points: RoadPoint[]): number {
+  const marks: number[] = [0]
+  for (let i = 1; i < points.length; i++) {
+    const last = points[marks[marks.length - 1]!]!
+    if (Math.hypot(points[i]!.x - last.x, points[i]!.z - last.z) >= TURN_WINDOW) marks.push(i)
+  }
+  if (marks.length < 3) return 0
   let sharpest = 0
-  for (let i = 1; i + 1 < points.length; i++) {
-    const a = points[i - 1]!
-    const b = points[i]!
-    const c = points[i + 1]!
+  for (let k = 1; k + 1 < marks.length; k++) {
+    const a = points[marks[k - 1]!]!
+    const b = points[marks[k]!]!
+    const c = points[marks[k + 1]!]!
     const inX = b.x - a.x
     const inZ = b.z - a.z
     const outX = c.x - b.x
@@ -1792,8 +2088,8 @@ function sharpestTurn(points: RoadPoint[]): number {
     const inLength = Math.hypot(inX, inZ)
     const outLength = Math.hypot(outX, outZ)
     if (inLength < 1e-6 || outLength < 1e-6) continue
-    const angle = Math.acos(Math.min(Math.max((inX * outX + inZ * outZ) / (inLength * outLength), -1), 1))
-    if (angle > sharpest) sharpest = angle
+    const dot = (inX * outX + inZ * outZ) / (inLength * outLength)
+    sharpest = Math.max(sharpest, Math.acos(Math.min(Math.max(dot, -1), 1)))
   }
   return sharpest
 }
@@ -1816,7 +2112,7 @@ function buildArterials(
   nextId: number,
 ): Road[] {
   const rng: Rng = createRng(seed)
-  const nodes = buildArterialNodes(field, seaLevel, crossRoads, rng)
+  const nodes = buildArterialNodes(field, seaLevel, crossRoads, rng, (x, z) => surfaceAt(x, z).wet)
   if (nodes.length < 2) return []
   const grid = buildNavGrid(field, seaLevel, surfaceAt, existing)
   const label = labelAnchors(grid, nodes)
@@ -1948,6 +2244,7 @@ function buildArterials(
     for (const index of cells) density[index] = density[index]! + 1
     const built: Road = {
       id: id++,
+      kind: 'arterial',
       closed: false,
       width: ARTERIAL_WIDTH,
       points: road.points,
@@ -2008,7 +2305,7 @@ function buildArterials(
 }
 
 /** City street width, in world units. */
-export const STREET_WIDTH = 3
+export const STREET_WIDTH = 6
 /** Spacing between city streets and the step along them, in world units. */
 const STREET_SPACING = 48
 const STREET_STEP = 12
@@ -2195,6 +2492,7 @@ function buildCityGrids(
     for (let i = 0; i < points.length; i++) points[i]!.y = heights[i]!
     roads.push({
       id: id++,
+      kind: 'street',
       closed: false,
       width: STREET_WIDTH,
       points,
@@ -2405,6 +2703,7 @@ function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[] {
         }
         trimmed.push({
           id: id++,
+          kind: 'street',
           closed: false,
           width: STREET_WIDTH,
           points: run,
@@ -2647,8 +2946,13 @@ function alignJunctions(roads: Road[]): void {
       const ib = remaining[bestB]!
       const da = directions[ia]!
       const db = directions[ib]!
-      let axisX = da.x - db.x
-      let axisZ = da.z - db.z
+      // A cross road is interchange geometry, with ramps landing on it where
+      // it was laid: it is never bent, so a road meeting its end takes its
+      // heading instead of the two meeting halfway.
+      const fixedA = ends[cluster[ia]!]!.road.kind === 'cross'
+      const fixedB = ends[cluster[ib]!]!.road.kind === 'cross'
+      let axisX = fixedA ? da.x : fixedB ? -db.x : da.x - db.x
+      let axisZ = fixedA ? da.z : fixedB ? -db.z : da.z - db.z
       const axis = Math.hypot(axisX, axisZ) || 1
       axisX /= axis
       axisZ /= axis
@@ -2675,10 +2979,15 @@ function alignJunctions(roads: Road[]): void {
     if (crowded) continue
 
     for (const { ia, ib, axisX, axisZ } of pairs) {
-      rotateEnd(ends[cluster[ia]!]!, axisX, axisZ)
-      rotateEnd(ends[cluster[ib]!]!, -axisX, -axisZ)
-      changed.add(ends[cluster[ia]!]!.road)
-      changed.add(ends[cluster[ib]!]!.road)
+      for (const [index, sign] of [
+        [ia, 1],
+        [ib, -1],
+      ] as const) {
+        const end = ends[cluster[index]!]!
+        if (end.road.kind === 'cross') continue
+        rotateEnd(end, axisX * sign, axisZ * sign)
+        changed.add(end.road)
+      }
     }
   }
 
@@ -2711,6 +3020,24 @@ function alignJunctions(roads: Road[]): void {
     }
     road.structure = structure
   }
+}
+
+/**
+ * Make the ground and the surface roads agree. The ground is shaped to the
+ * roads, the roads are read back off it, and their grade limits are imposed
+ * again: where two roads cross at different heights the ground takes the mean,
+ * and the limit then spreads the difference back along each road instead of
+ * leaving it as a step. Twice round is enough for the two to settle.
+ */
+function settleSurfaceRoads(field: Heightfield, roads: Road[]): void {
+  for (const road of roads) resampleSurfaceRoad(road, field.cellSize)
+  for (let pass = 0; pass < 2; pass++) {
+    stampRoadBeds(field, roads)
+    seatSurfaceRoads(field, roads)
+    for (const road of roads) limitSurfaceRoadGrade(road)
+  }
+  stampRoadBeds(field, roads)
+  seatSurfaceRoads(field, roads)
 }
 
 /**
@@ -2822,6 +3149,7 @@ export function generateRoads(
     seaLevel,
     samples,
     wet,
+    (x, z) => surfaceAt(x, z).wet,
     cum,
     total,
     districts,
@@ -2869,11 +3197,15 @@ export function generateRoads(
   const built = crossings.filter(({ index, cross }) => {
     if (kind[index] === KIND_TUNNEL) return false
     if (profile[index]! - cross.heights[cross.centerIndex]! < UNDERPASS_CLEARANCE - 0.5) return false
-    const drop = profile[index]! - Math.min(sampleOpen(cross.heights, -RAMP_REACH), sampleOpen(cross.heights, RAMP_REACH))
+    // A ramp lands ROAD_SURFACE below the cross road's centreline, on its ground.
+    const drop =
+      profile[index]! +
+      ROAD_SURFACE -
+      Math.min(sampleOpen(cross.heights, -RAMP_REACH), sampleOpen(cross.heights, RAMP_REACH))
     return drop <= RAMP_DROP
   })
   const points: RoadPoint[] = samples.map((point, i) => ({ x: point.x, y: profile[i]!, z: point.z }))
-  const highway: Road = { id: 0, closed: true, width: ROAD_WIDTH, points, structure }
+  const highway: Road = { id: 0, kind: 'highway', closed: true, width: ROAD_WIDTH, points, structure }
   const { roads: access, footprints } = buildInterchanges(
     samples,
     profile,
@@ -2911,6 +3243,10 @@ export function generateRoads(
   const roads = pruneStrandedStreets(
     trimStreetsAlongArterials(network, nextId + streets.length),
   )
-  carveRoadBeds(field, roads)
+  // The highway cuts its bed first, clear of any ground a surface road is;
+  // the surface roads are then settled into the ground.
+  const painted = roads.filter(isSurfaceRoad)
+  carveRoadBeds(field, roads.filter((road) => !isSurfaceRoad(road)), surfaceRoadCells(field, painted))
+  settleSurfaceRoads(field, painted)
   return roads
 }

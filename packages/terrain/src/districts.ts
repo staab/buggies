@@ -11,8 +11,12 @@ export const DISTRICT_CITY = 2
 const RELIEF_RADIUS = 12
 /** Ground is level when both its own and its neighbourhood's grade are below this. */
 const MAX_GRADE = 0.12
-/** A city may spread onto ground this steep, so it fills gently rolling land. */
-const MAX_CITY_SLOPE = 0.18
+/**
+ * A city may spread onto ground this steep, so it fills gently rolling land.
+ * No steeper: its streets are the ground, held to a grade, and a grid of them
+ * on a hillside cannot both keep that grade and meet at shared heights.
+ */
+const MAX_CITY_SLOPE = 0.1
 /** Land must clear the sea by this much before it can be built on. */
 const COAST_MARGIN = 1.5
 /** Cities to place, when the island has room for them. */
@@ -21,6 +25,12 @@ const CITY_RADIUS = { min: 57, max: 82 } as const
 const SUBURB_WIDTH = { min: 45, max: 70 } as const
 /** A candidate needs this much level ground around it to become a city. */
 const MIN_LEVEL_FRACTION = 0.4
+/**
+ * Relief is judged over a city's whole reach as well, and a site scores
+ * lower the more the land around it rises and falls: level ground at the
+ * foot of a mountain is not away from significant elevation changes.
+ */
+const REGION_RELIEF_WEIGHT = 4
 /** Cities keep at least this much space between their centres. */
 const MIN_CITY_SPACING = 380
 /** The triangle search only needs city cores not to overlap. */
@@ -223,12 +233,19 @@ export function generateDistricts(
   }
 
   // Fraction of buildable land in a window the size of a city, blurred once so
-  // scoring a candidate is a lookup rather than a scan over its footprint.
+  // scoring a candidate is a lookup rather than a scan over its footprint,
+  // less the relief over the city's whole reach.
   const levelWindow = Math.max(1, Math.round((CITY_RADIUS.max * 0.7) / cellSize))
+  const regionWindow = Math.max(1, Math.round((CITY_RADIUS.max + SUBURB_WIDTH.max) / cellSize))
+  const region = boxBlur(slope, width, depth, regionWindow)
   const level = boxBlur(Float32Array.from(buildable), width, depth, levelWindow)
+  for (let cell = 0; cell < count; cell++) {
+    level[cell] = level[cell]! - REGION_RELIEF_WEIGHT * region[cell]!
+  }
 
-  // Flattest first, with row-major order as a stable tie-break.
-  candidates.sort((a, b) => grade[a]! - grade[b]! || a - b)
+  // Best sites first: the most level, least relief, with row-major order as a
+  // stable tie-break.
+  candidates.sort((a, b) => level[b]! - level[a]! || grade[a]! - grade[b]! || a - b)
 
   const rng: Rng = createRng(seed ^ DISTRICT_SALT)
   const centers: Point[] = []

@@ -1,10 +1,10 @@
 import {
   ROAD_GRADE,
-  ROAD_SURFACE,
   ROAD_TUNNEL,
   boreClearance,
   boreFloorAt,
   generateTerrain,
+  roadLift,
   tunnelSegments,
   type TerrainMap,
 } from '@buggies/terrain'
@@ -55,16 +55,21 @@ describe('game', () => {
 
   it('spawns on a road, facing along it', () => {
     const spawn = findSpawns(map, 1)[0]!
-    const nearest = map.roads
-      .flatMap((road) => road.points)
-      .reduce((best, point) =>
-        Math.hypot(point.x - spawn.position.x, point.z - spawn.position.z) <
-        Math.hypot(best.x - spawn.position.x, best.z - spawn.position.z)
-          ? point
-          : best,
-      )
-    expect(Math.hypot(nearest.x - spawn.position.x, nearest.z - spawn.position.z)).toBeLessThan(1)
-    expect(spawn.position.y).toBeCloseTo(nearest.y + ROAD_SURFACE, 5)
+    // The nearest road surface in three dimensions: under a bridge, the deck
+    // overhead is as near in plan as the road the spawn is on.
+    let nearest = { road: map.roads[0]!, point: map.roads[0]!.points[0]!, distance: Infinity }
+    for (const road of map.roads) {
+      for (const point of road.points) {
+        const distance = Math.hypot(
+          point.x - spawn.position.x,
+          point.y + roadLift(road) - spawn.position.y,
+          point.z - spawn.position.z,
+        )
+        if (distance < nearest.distance) nearest = { road, point, distance }
+      }
+    }
+    expect(nearest.distance).toBeLessThan(1)
+    expect(spawn.position.y).toBeCloseTo(nearest.point.y + roadLift(nearest.road), 5)
   })
 
   it('lines a full field up along the road without overlapping', () => {
@@ -133,8 +138,9 @@ describe('game', () => {
     expect(seat.epoch).not.toBe(epoch)
     expect(seat.vehicle.speed).toBe(0)
     const { position } = seat.vehicle.frame
-    expect(position.x).toBeCloseTo(seat.spawn.position.x, 5)
-    expect(position.z).toBeCloseTo(seat.spawn.position.z, 5)
+    // The body keeps single-precision coordinates, so a kilometre in is only good to a few tens of microns.
+    expect(position.x).toBeCloseTo(seat.spawn.position.x, 3)
+    expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
   })
 
   it('only drives the seats someone is in', () => {
@@ -249,14 +255,35 @@ describe('game', () => {
     const b = road.points[Math.min(start + 3, road.points.length - 1)]!
     const arena = createArena(island, 1)
     const seat = solo(arena, {
-      position: { x: a.x, y: a.y + ROAD_SURFACE, z: a.z },
+      position: { x: a.x, y: a.y + roadLift(road), z: a.z },
       yaw: Math.atan2(-(b.x - a.x), -(b.z - a.z)),
     })
+
+    // Driven like a driver would: aimed at the road ahead, flat out.
+    const LOOK_AHEAD = 22
+    let at = start
+    const follow = (): VehicleInput => {
+      const { position, forward } = seat.vehicle.frame
+      while (at < road.points.length - 1) {
+        const point = road.points[at]!
+        if (Math.hypot(point.x - position.x, point.z - position.z) > LOOK_AHEAD) break
+        at++
+      }
+      const target = road.points[at]!
+      const wanted = Math.atan2(target.x - position.x, target.z - position.z)
+      const facing = Math.atan2(forward.x, forward.z)
+      let error = wanted - facing
+      while (error > Math.PI) error -= 2 * Math.PI
+      while (error < -Math.PI) error += 2 * Math.PI
+      // Headings grow from +Z toward +X, and a chassis facing -Z has +X on its
+      // right, so a target at a greater heading is off to the left.
+      return { ...FLAT_OUT, steer: Math.max(-1, Math.min(1, -error * 2.5)) }
+    }
 
     let inside = 0
     let onTheRoad = 0
     for (let i = 0; i < 20 * 60; i++) {
-      advance(arena, () => FLAT_OUT)
+      advance(arena, follow)
       const { x, y, z } = seat.vehicle.frame.position
       if (boreClearance(bores, x, z, y) >= 0) continue
       inside++

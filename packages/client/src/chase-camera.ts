@@ -1,11 +1,11 @@
 // Ported from the seattle project (src/render/chaseCamera.ts), kept in its
 // original shape and formatting so the two can be compared and resynced.
-// Buggies adds one thing seattle has no need of: a view that moves inside the
-// car, for driving through tunnels. Every part of it is marked below.
+// Buggies adds one thing seattle has no need of: a roof, for driving through
+// tunnels. Every part of it is marked below.
 
 import * as THREE from 'three'
 
-import {clamp, lerp, type Quat, type Vec3} from '@buggies/physics'
+import {clamp, type Quat, type Vec3} from '@buggies/physics'
 import {CHASSIS_FORWARD as CHASSIS_FORWARD_VEC3} from '@buggies/game'
 import {dampToward, dampVector3Toward} from './damping.ts'
 
@@ -84,6 +84,17 @@ export function createChaseTarget(): ChaseTarget {
   }
 }
 
+/**
+ * Buggies addition. What the camera may not pass through at a point: the
+ * ground under it, and whatever roof there is over it.
+ */
+export interface CameraBounds {
+  floor: number
+  ceiling: number
+}
+
+export type CameraBoundsAt = (x: number, z: number, out: CameraBounds) => CameraBounds
+
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const CHASSIS_FORWARD = new THREE.Vector3(
   CHASSIS_FORWARD_VEC3.x,
@@ -94,21 +105,8 @@ const MIN_SPEED_FOR_VELOCITY_BLEND = 1
 const MIN_FOV_SPEED_REFERENCE = 1e-3
 const MIN_ARM_LENGTH_SQUARED = 1e-6
 
-/** Buggies addition. How quickly the view moves in and back out again. */
-const FIRST_PERSON_RATE = 3
-
-/**
- * Buggies addition. Seated, the camera is part of the car rather than trailing
- * it, so it is damped hard enough to stay put in the cabin at speed.
- */
-const SEATED_LAMBDA = 28
-
-/** Buggies addition. Where the driver's head is, in the chassis' own frame. */
-const EYE_UP = 0.5
-const EYE_FORWARD = 0.2
-const EYE_LOOK_AHEAD = 12
-
-const CHASSIS_UP = new THREE.Vector3(0, 1, 0)
+/** Buggies addition. How far the camera keeps below a roof. */
+const ROOF_CLEARANCE = 0.6
 
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera
@@ -126,14 +124,8 @@ export class ChaseCamera {
   private readonly desiredLookAt = new THREE.Vector3()
 
   private settled = false
-  private groundAt: ((x: number, z: number) => number) | null = null
-
-  /** Buggies addition: how far into the cabin the view has moved, 0 to 1. */
-  private seated = 0
-  private wantSeated = 0
-  private readonly eye = new THREE.Vector3()
-  private readonly eyeLookAt = new THREE.Vector3()
-  private readonly eyeForward = new THREE.Vector3()
+  private boundsAt: CameraBoundsAt | null = null
+  private readonly bounds: CameraBounds = {floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY}
 
   constructor(tuning: CameraTuning) {
     this.tuning = tuning
@@ -141,23 +133,32 @@ export class ChaseCamera {
   }
 
   setGroundAt(groundAt: (x: number, z: number) => number): void {
-    this.groundAt = groundAt
+    this.setBoundsAt((x, z, out) => {
+      out.floor = groundAt(x, z)
+      out.ceiling = Number.POSITIVE_INFINITY
+      return out
+    })
+  }
+
+  /** Buggies addition. Where the camera is kept: above the floor, under the roof. */
+  setBoundsAt(boundsAt: CameraBoundsAt): void {
+    this.boundsAt = boundsAt
   }
 
   /**
-   * Buggies addition. Move the view into the cabin, or back out behind the
-   * car. It eases across rather than cutting, and takes the ground with it:
-   * inside a tunnel the ground overhead is the hill, and a camera held above
-   * it is a camera outside the mountain looking at nothing.
+   * Buggies addition. Keep a height between the floor and the roof at a point,
+   * held clear of the ground and, where there is a roof, clear of that too. A
+   * bore too low for both leaves the camera under the roof: better a view
+   * skimming the road than one looking through the hill.
    */
-  setSeated(seated: boolean): void {
-    this.wantSeated = seated ? 1 : 0
-  }
+  private confine(x: number, y: number, z: number): number {
+    if (this.boundsAt === null) return y
 
-  private groundFloor(x: number, z: number): number {
-    return this.groundAt === null
-      ? Number.NEGATIVE_INFINITY
-      : this.groundAt(x, z) + this.tuning.groundClearance
+    const {floor, ceiling} = this.boundsAt(x, z, this.bounds)
+    const lowest = floor + this.tuning.groundClearance
+    const highest = ceiling - ROOF_CLEARANCE
+
+    return Math.min(Math.max(y, lowest), Math.max(highest, floor + ROOF_CLEARANCE))
   }
 
   snapTo(target: ChaseTarget): void {
@@ -172,7 +173,6 @@ export class ChaseCamera {
       1,
     )
 
-    this.seated = dampToward(this.seated, this.wantSeated, FIRST_PERSON_RATE, dt)
     this.readTarget(target)
     this.updateArmDirection(target.speed)
     this.updateDesiredPose(target.speed, speedFractionOfReference)
@@ -222,36 +222,16 @@ export class ChaseCamera {
       .copy(this.targetPosition)
       .addScaledVector(this.armDirection, -armLength)
       .addScaledVector(WORLD_UP, tuning.height)
-    this.desiredPosition.y = lerp(
-      Math.max(
-        this.desiredPosition.y,
-        this.groundFloor(this.desiredPosition.x, this.desiredPosition.z),
-      ),
+    this.desiredPosition.y = this.confine(
+      this.desiredPosition.x,
       this.desiredPosition.y,
-      this.seated,
+      this.desiredPosition.z,
     )
 
     this.desiredLookAt
       .copy(this.targetPosition)
       .addScaledVector(WORLD_UP, tuning.lookHeight)
       .addScaledVector(this.armDirection, lookAheadDistance)
-
-    if (this.seated <= 0) return
-
-    // Buggies addition. The seat rides with the chassis, so it is placed off
-    // the car's own axes rather than the world's, and looks along the same arm
-    // the chase view uses: the nose, eased toward where the car is going.
-    this.eyeForward.copy(CHASSIS_FORWARD).applyQuaternion(this.targetRotation)
-    this.eye
-      .copy(CHASSIS_UP)
-      .applyQuaternion(this.targetRotation)
-      .multiplyScalar(EYE_UP)
-      .addScaledVector(this.eyeForward, EYE_FORWARD)
-      .add(this.targetPosition)
-    this.eyeLookAt.copy(this.eye).addScaledVector(this.armDirection, EYE_LOOK_AHEAD)
-
-    this.desiredPosition.lerp(this.eye, this.seated)
-    this.desiredLookAt.lerp(this.eyeLookAt, this.seated)
   }
 
   private settleOrDamp(dt: number, speedFractionOfReference: number): void {
@@ -266,12 +246,8 @@ export class ChaseCamera {
       return
     }
 
-    // Buggies addition: a trailing arm may lag, a seat may not.
-    const positionLambda = lerp(tuning.positionLambda, SEATED_LAMBDA, this.seated)
-    const lookLambda = lerp(tuning.lookLambda, SEATED_LAMBDA, this.seated)
-
-    dampVector3Toward(this.position, this.desiredPosition, positionLambda, dt)
-    dampVector3Toward(this.lookAt, this.desiredLookAt, lookLambda, dt)
+    dampVector3Toward(this.position, this.desiredPosition, tuning.positionLambda, dt)
+    dampVector3Toward(this.lookAt, this.desiredLookAt, tuning.lookLambda, dt)
 
     this.camera.fov = dampToward(
       this.camera.fov,
@@ -286,12 +262,7 @@ export class ChaseCamera {
 
     this.camera.near = tuning.near
     this.camera.far = tuning.far
-    // Buggies addition: the floor is let go of as the view moves inside.
-    this.position.y = lerp(
-      Math.max(this.position.y, this.groundFloor(this.position.x, this.position.z)),
-      this.position.y,
-      this.seated,
-    )
+    this.position.y = this.confine(this.position.x, this.position.y, this.position.z)
     this.camera.position.copy(this.position)
     this.camera.up.copy(WORLD_UP)
     this.camera.lookAt(this.lookAt)

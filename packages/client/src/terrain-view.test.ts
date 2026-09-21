@@ -50,9 +50,7 @@ describe('createTerrainView', () => {
 
     const terrain = view.children.find(
       (child) =>
-        child instanceof THREE.Mesh &&
-        (child.material as THREE.MeshStandardMaterial).vertexColors &&
-        (child.material as THREE.MeshStandardMaterial).side !== THREE.DoubleSide,
+        child instanceof THREE.Mesh && (child.material as THREE.MeshStandardMaterial).map !== null,
     ) as THREE.Mesh | undefined
     const tunnel = view.children.find(
       (child) =>

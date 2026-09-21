@@ -1,5 +1,14 @@
 import type { Vehicle } from '@buggies/game'
-import { boreClearance, tunnelSegments, type TerrainMap } from '@buggies/terrain'
+import {
+  ROAD_SURFACE,
+  boreClearance,
+  boreFloorAt,
+  sampleHeight,
+  tunnelSegments,
+  type TerrainMap,
+} from '@buggies/terrain'
+
+import type { CameraBoundsAt } from './chase-camera.ts'
 
 const TO_KPH = 3.6
 
@@ -15,6 +24,26 @@ export function tunnelTest(map: TerrainMap): (position: { x: number; y: number; 
   const bores = tunnelSegments(map.roads)
   if (bores.length === 0) return () => false
   return ({ x, y, z }) => boreClearance(bores, x, z, y) < 0
+}
+
+/**
+ * What the chase camera must stay between: the ground, or inside a tunnel
+ * the road and the arch over it. Read from the map rather than the physics
+ * world so the camera never has to ask the simulation anything.
+ */
+export function cameraBounds(map: TerrainMap): CameraBoundsAt {
+  const bores = tunnelSegments(map.roads)
+  return (x, z, out) => {
+    const floor = boreFloorAt(bores, x, z)
+    if (floor === null) {
+      out.floor = sampleHeight(map.heightfield, x, z)
+      out.ceiling = Number.POSITIVE_INFINITY
+    } else {
+      out.floor = floor + ROAD_SURFACE
+      out.ceiling = -boreClearance(bores, x, z, 0)
+    }
+    return out
+  }
 }
 
 /** The speed line of the HUD: how fast, and what the car is up to. */

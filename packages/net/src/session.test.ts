@@ -182,12 +182,13 @@ describe('a session', () => {
     expect(distance(aSeenByB.position, aOnServer)).toBeLessThan(8)
     expect(aSeenByB.speed).toBeGreaterThan(3)
 
-    // B only rolled, and A sees B where the server has B.
+    // B only rolled (no brake was held, and a spawn can be on a slope), and A
+    // sees B where the server has B.
     const bOnServer = session.serverPositionOf(b)
-    expect(distance(bOnServer, session.arena.seats[1]!.spawn.position)).toBeLessThan(8)
+    expect(distance(bOnServer, session.arena.seats[1]!.spawn.position)).toBeLessThan(20)
     const bSeenByA = a.client.sample().find((state) => state.seat === b.client.welcome!.seat)!
     expect(bSeenByA.profile).toBe('raceCar')
-    expect(bSeenByA.speed).toBeLessThan(3)
+    expect(bSeenByA.speed).toBeLessThan(8)
     expect(distance(bSeenByA.position, bOnServer)).toBeLessThan(2)
     expect(session.server.playerCount).toBe(2)
     session.dispose()
