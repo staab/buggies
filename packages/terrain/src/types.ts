@@ -94,6 +94,41 @@ export interface Road {
   structure: Uint8Array
 }
 
+/**
+ * A box standing on the ground: a city block's building, or a house. It is
+ * turned by `yaw` about its centre, `width` along its local X and `depth`
+ * along its local Z, and stands from `bottom`, buried below the lowest ground
+ * under it, up to `top`.
+ */
+export interface Building {
+  kind: 'block' | 'house'
+  x: number
+  z: number
+  yaw: number
+  width: number
+  depth: number
+  bottom: number
+  top: number
+  /** A shade for whoever draws it, 0 to 1. */
+  tone: number
+}
+
+/**
+ * A tree, or a shrub: on the ground at `bottom`, `radius` wide and `height`
+ * tall in all. A tree has a trunk to run into; a shrub is only something to
+ * drive through.
+ */
+export interface Tree {
+  kind: 'tree' | 'shrub'
+  x: number
+  z: number
+  bottom: number
+  height: number
+  radius: number
+  /** A shade for whoever draws it, 0 to 1. */
+  tone: number
+}
+
 export interface TerrainOptions {
   size?: number
   cellSize?: number
@@ -127,4 +162,6 @@ export interface TerrainMap {
   /** Row-major district code (`DISTRICT_*`) for every cell. */
   districtOf: Uint8Array
   roads: Road[]
+  buildings: Building[]
+  trees: Tree[]
 }

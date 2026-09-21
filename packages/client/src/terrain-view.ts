@@ -17,11 +17,13 @@ import {
   tunnelSegments,
   tunnelShellMesh,
   type BoreSegment,
+  type Building,
   type Heightfield,
   type Lake,
   type River,
   type Road,
   type TerrainMap,
+  type Tree,
 } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -48,6 +50,166 @@ const ROAD_BRIDGE_COLOR = new THREE.Color('#a8adb3')
 const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
 const RAIL_COLOR = new THREE.Color('#c9cdd2')
+/** City buildings run from warm stone to cool concrete and glass. */
+const BLOCK_STOPS: ColorStop[] = [
+  { t: 0, color: new THREE.Color('#b9a58c') },
+  { t: 0.35, color: new THREE.Color('#d8d3c8') },
+  { t: 0.7, color: new THREE.Color('#8f979f') },
+  { t: 1, color: new THREE.Color('#5d6f80') },
+]
+/** Houses come in a few colours of render and brick, each a plain box under a pitched roof. */
+const HOUSE_COLORS = [
+  new THREE.Color('#e8dcc0'),
+  new THREE.Color('#d9c9a3'),
+  new THREE.Color('#b8624a'),
+  new THREE.Color('#c9d3d8'),
+  new THREE.Color('#e3c9b0'),
+]
+const ROOF_COLORS = [
+  new THREE.Color('#6b3f34'),
+  new THREE.Color('#4d4a48'),
+  new THREE.Color('#7a5230'),
+]
+/** The pitch of a house's roof, as a fraction of its width. */
+const ROOF_PITCH = 0.3
+const TRUNK_COLOR = new THREE.Color('#5a4030')
+const CROWN_STOPS: ColorStop[] = [
+  { t: 0, color: new THREE.Color('#2f6b2a') },
+  { t: 0.5, color: new THREE.Color('#4a8a35') },
+  { t: 1, color: new THREE.Color('#7a9a3a') },
+]
+/** Trunks are this wide, matching the collider. */
+const TRUNK_RADIUS = 0.35
+/** How far up a tree the crown starts, as a fraction of its height. */
+const CROWN_FROM = 0.25
+/** Storeys are this tall, and a block's windows this far apart along a face. */
+const STOREY = 3
+const WINDOW_PITCH = 3.5
+/** A house's windows are this far apart, one storey tall between them. */
+const HOUSE_PITCH = 3
+/** Roof tiles repeat every this many metres. */
+const ROOF_TILE = 2
+
+/**
+ * A repeating picture of a wall, as pixels: `tile` metres of it, drawn by
+ * `paint` with the pixel's place in the tile. Near white where the wall is
+ * bare, so the building's own colour comes through it.
+ */
+interface Facade {
+  texture: THREE.DataTexture
+  /** How many metres across and up one repeat of the picture covers. */
+  tile: THREE.Vector2
+}
+
+function paintedFacade(
+  size: number,
+  tile: [number, number],
+  paint: (u: number, v: number, out: THREE.Color) => void,
+): Facade {
+  const data = new Uint8Array(size * size * 4)
+  const color = new THREE.Color()
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // Rows run from the top of the tile down, as the wall is read.
+      paint((x + 0.5) / size, 1 - (y + 0.5) / size, color)
+      const at = (y * size + x) * 4
+      data[at] = Math.round(color.r * 255)
+      data[at + 1] = Math.round(color.g * 255)
+      data[at + 2] = Math.round(color.b * 255)
+      data[at + 3] = 255
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.generateMipmaps = true
+  texture.needsUpdate = true
+  return { texture, tile: new THREE.Vector2(tile[0], tile[1]) }
+}
+
+/** A cheap hash of a window's place, so each is lit its own way. */
+function windowHash(column: number, row: number): number {
+  const n = Math.sin(column * 127.1 + row * 311.7) * 43758.5453
+  return n - Math.floor(n)
+}
+
+/** Four bays of four storeys of a block's windows, on a bare wall. */
+function blockFacade(): Facade {
+  const bays = 4
+  const storeys = 4
+  return paintedFacade(128, [bays * WINDOW_PITCH, storeys * STOREY], (u, v, out) => {
+    const column = Math.floor(u * bays)
+    const row = Math.floor(v * storeys)
+    const du = u * bays - column
+    const dv = v * storeys - row
+    const inWindow = du > 0.22 && du < 0.78 && dv > 0.2 && dv < 0.72
+    if (!inWindow) {
+      out.setRGB(0.92, 0.92, 0.92)
+      return
+    }
+    const hash = windowHash(column, row)
+    // Most windows show sky and shadow; a few are lit from inside.
+    if (hash > 0.85) out.setRGB(0.95, 0.85, 0.55)
+    else out.setRGB(0.3 + hash * 0.15, 0.36 + hash * 0.15, 0.48 + hash * 0.12)
+  })
+}
+
+/** Two windows with sills and frames per storey of a house, on a bare wall. */
+function houseFacade(): Facade {
+  const bays = 2
+  return paintedFacade(64, [bays * HOUSE_PITCH, STOREY], (u, v, out) => {
+    const column = Math.floor(u * bays)
+    const du = u * bays - column
+    const inFrame = du > 0.25 && du < 0.75 && v > 0.3 && v < 0.8
+    const inPane = du > 0.3 && du < 0.7 && v > 0.35 && v < 0.75
+    if (inPane) {
+      const hash = windowHash(column, 1)
+      out.setRGB(0.35 + hash * 0.1, 0.42 + hash * 0.1, 0.55)
+    } else if (inFrame) out.setRGB(1, 1, 1)
+    else out.setRGB(0.94, 0.93, 0.9)
+  })
+}
+
+/** Courses of roof tiles, each a little darker along its lower edge. */
+function roofFacade(): Facade {
+  return paintedFacade(32, [ROOF_TILE, ROOF_TILE], (u, v, out) => {
+    const course = v * 4
+    const along = u * 4 + (Math.floor(course) % 2) * 0.5
+    const edge = course - Math.floor(course) < 0.18 || along - Math.floor(along) < 0.08
+    const shade = edge ? 0.62 : 0.9 + 0.06 * windowHash(Math.floor(along), Math.floor(course))
+    out.setRGB(shade, shade, shade)
+  })
+}
+
+/**
+ * A material that repeats its facade every `tile` metres over every face of
+ * an instanced box, whatever the box's size. The box's size is read back
+ * from its instance matrix, and a face's own span from its normal: the sides
+ * run along the box and up it, the top across it. Storeys count down from
+ * the roof, so the row under the ground is the one cut short.
+ */
+function facadeMaterial(facade: Facade, roughness: number): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ map: facade.texture, roughness, metalness: 0.05 })
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.facadeTile = { value: facade.tile }
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform vec2 facadeTile;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+        vec3 boxSize = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+        vec2 faceSpan = abs(normal.x) > 0.5 ? boxSize.zy : abs(normal.z) > 0.5 ? boxSize.xy : boxSize.xz;
+        vMapUv = vec2(uv.x, 1.0 - uv.y) * faceSpan / facadeTile;
+        #endif`,
+      )
+  }
+  material.customProgramCacheKey = () => 'facade'
+  return material
+}
 /** Boundary cells are split this many ways to fit the cut tightly to the bore. */
 const TUNNEL_CUT_SUBDIVISIONS = 4
 
@@ -494,6 +656,116 @@ function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
   return geometry
 }
 
+/**
+ * A batch of the same shape at many places: one draw call for every building,
+ * every roof, every trunk. `place` fills in where each goes and what colour it is.
+ */
+function instanced<T>(
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material | THREE.Material[],
+  items: T[],
+  place: (item: T, matrix: THREE.Matrix4, color: THREE.Color) => void,
+): THREE.InstancedMesh | null {
+  if (items.length === 0) return null
+  const mesh = new THREE.InstancedMesh(geometry, material, items.length)
+  const matrix = new THREE.Matrix4()
+  const color = new THREE.Color()
+  for (let i = 0; i < items.length; i++) {
+    matrix.identity()
+    place(items[i]!, matrix, color)
+    mesh.setMatrixAt(i, matrix)
+    mesh.setColorAt(i, color)
+  }
+  mesh.instanceMatrix.needsUpdate = true
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  return mesh
+}
+
+const boxAt = (building: Building, matrix: THREE.Matrix4): void => {
+  matrix.compose(
+    new THREE.Vector3(building.x, (building.top + building.bottom) / 2, building.z),
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), building.yaw),
+    new THREE.Vector3(building.width, building.top - building.bottom, building.depth),
+  )
+}
+
+/** The buildings, trees and shrubs of a map, as a few instanced meshes. */
+function buildStanding(map: TerrainMap): THREE.Object3D[] {
+  const box = new THREE.BoxGeometry(1, 1, 1)
+  const plain = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 })
+  const flatRoof = new THREE.MeshStandardMaterial({ color: '#bdbdb8', roughness: 0.95, metalness: 0 })
+  const meshes: (THREE.Object3D | null)[] = []
+
+  // A box's faces come in the order +X, -X, +Y, -Y, +Z, -Z: walls all round, a roof on top.
+  const walled = (wall: THREE.Material, top: THREE.Material): THREE.Material[] => [
+    wall,
+    wall,
+    top,
+    wall,
+    wall,
+    wall,
+  ]
+  const blocks = map.buildings.filter((building) => building.kind === 'block')
+  const houses = map.buildings.filter((building) => building.kind === 'house')
+  const blockWall = facadeMaterial(blockFacade(), 0.6)
+  const houseWall = facadeMaterial(houseFacade(), 0.9)
+  meshes.push(
+    instanced(box, walled(blockWall, flatRoof), blocks, (building, matrix, color) => {
+      boxAt(building, matrix)
+      sampleRamp(building.tone, BLOCK_STOPS, color)
+    }),
+    instanced(box, walled(houseWall, houseWall), houses, (building, matrix, color) => {
+      boxAt(building, matrix)
+      color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length]!)
+    }),
+  )
+
+  // A pitched roof: a four-sided cone, turned so its base is square to the box.
+  const roof = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4)
+  roof.rotateY(Math.PI / 4)
+  roof.translate(0, 0.5, 0)
+  const roofing = new THREE.MeshStandardMaterial({ map: roofFacade().texture, roughness: 0.95, metalness: 0 })
+  meshes.push(
+    instanced(roof, roofing, houses, (house, matrix, color) => {
+      const span = Math.min(house.width, house.depth)
+      matrix.compose(
+        new THREE.Vector3(house.x, house.top, house.z),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), house.yaw),
+        new THREE.Vector3(house.width + 0.6, span * ROOF_PITCH, house.depth + 0.6),
+      )
+      color.copy(ROOF_COLORS[Math.floor(house.tone * ROOF_COLORS.length) % ROOF_COLORS.length]!)
+    }),
+  )
+
+  const trees = map.trees.filter((tree) => tree.kind === 'tree')
+  const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
+  const trunk = new THREE.CylinderGeometry(TRUNK_RADIUS, TRUNK_RADIUS * 1.3, 1, 6)
+  trunk.translate(0, 0.5, 0)
+  const crown = new THREE.ConeGeometry(1, 1, 7)
+  crown.translate(0, 0.5, 0)
+  const bush = new THREE.SphereGeometry(1, 7, 5)
+  bush.translate(0, 0.5, 0)
+  const leaves = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, flatShading: true })
+  meshes.push(
+    instanced(trunk, plain, trees, (tree: Tree, matrix, color) => {
+      matrix.makeScale(1, tree.height * (CROWN_FROM + 0.1), 1)
+      matrix.setPosition(tree.x, tree.bottom, tree.z)
+      color.copy(TRUNK_COLOR)
+    }),
+    instanced(crown, leaves, trees, (tree: Tree, matrix, color) => {
+      matrix.makeScale(tree.radius, tree.height * (1 - CROWN_FROM), tree.radius)
+      matrix.setPosition(tree.x, tree.bottom + tree.height * CROWN_FROM, tree.z)
+      sampleRamp(tree.tone, CROWN_STOPS, color)
+    }),
+    instanced(bush, leaves, shrubs, (shrub: Tree, matrix, color) => {
+      matrix.makeScale(shrub.radius, shrub.height / 2, shrub.radius)
+      matrix.setPosition(shrub.x, shrub.bottom - shrub.height * 0.15, shrub.z)
+      sampleRamp(shrub.tone, CROWN_STOPS, color).multiplyScalar(0.85)
+    }),
+  )
+  return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)
+}
+
 const CAR_LENGTH = 4.4
 const CAR_WIDTH = 2
 const CAR_BODY_HEIGHT = 0.7
@@ -620,6 +892,8 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
       group.add(new THREE.Mesh(rails, railMaterial))
     }
   }
+
+  for (const standing of buildStanding(map)) group.add(standing)
 
   return group
 }
