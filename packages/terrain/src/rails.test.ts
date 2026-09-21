@@ -55,6 +55,23 @@ describe('guardrails', () => {
     }
   })
 
+  it('never cut one rail into two runs', () => {
+    // Where the road's samples begin is not a break in the rail: a run that
+    // ends there and another that begins there would flare across each other.
+    const runs = railRuns(map.roads)
+    for (const a of runs) {
+      const aEnd = a.points[a.flaredEnd ? a.points.length - 2 : a.points.length - 1]!
+      const aStart = a.points[a.flaredStart ? 1 : 0]!
+      for (const b of runs) {
+        if (a === b || a.road !== b.road || a.side !== b.side) continue
+        const bStart = b.points[b.flaredStart ? 1 : 0]!
+        const bEnd = b.points[b.flaredEnd ? b.points.length - 2 : b.points.length - 1]!
+        expect(Math.hypot(aEnd.x - bStart.x, aEnd.z - bStart.z)).toBeGreaterThan(RAIL_FLARE)
+        expect(Math.hypot(aStart.x - bEnd.x, aStart.z - bEnd.z)).toBeGreaterThan(RAIL_FLARE)
+      }
+    }
+  })
+
   it('flare away from the road at each end', () => {
     const runs = railRuns(map.roads)
     /** Distance in plan to the nearest stretch of a road's centreline. */

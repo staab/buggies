@@ -144,7 +144,21 @@ export function railRuns(roads: Road[]): RailRun[] {
         const { nx, nz } = frameAt(road, index)
         return { x: point.x + nx * side * half, y: point.y + lift, z: point.z + nz * side * half }
       }
-      for (let i = 0; i < segmentCount; i++) {
+      // A loop is walked from a break in its rail, so no run is cut in two
+      // where the road's samples happen to begin, with a flare crossing a
+      // flare at the join. A loop railed all the way round is one ring.
+      let first = 0
+      if (road.closed) {
+        while (first < segmentCount && railed(first, side)) first++
+        if (first === segmentCount) {
+          const ring: RoadPoint[] = []
+          for (let i = 0; i <= segmentCount; i++) ring.push(edge(i % count))
+          runs.push({ road, points: ring, side, flaredStart: false, flaredEnd: false })
+          continue
+        }
+      }
+      for (let step = 0; step < segmentCount; step++) {
+        const i = (first + step) % segmentCount
         if (!railed(i, side)) {
           if (run !== null) runs.push(finished(road, run, side, !runFromRoadStart, true))
           run = null

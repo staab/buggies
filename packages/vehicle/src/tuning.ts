@@ -232,7 +232,7 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   counterSteerSlipMin: 0.2,
   counterSteerAuthority: 0.9,
 
-  engineForce: 26000,
+  engineForce: 40000,
   driveSplit: 0.4,
   maxSpeed: 44,
   brakeForce: 32000,
