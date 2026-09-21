@@ -27,7 +27,7 @@ import {
 import {applyAirControl, applyAirStabilization} from './airControl.ts'
 import {addForceAlong, addTorqueAbout} from './bodyForces.ts'
 import {readChassisFrame, velocityAtPoint, type ChassisFrame} from './chassisFrame.ts'
-import {WHEEL_RAY_GROUPS} from './groups.ts'
+import {WHEEL_RAY_GROUPS, isGround} from './groups.ts'
 import {readDriverCommand, type VehicleInput} from './input.ts'
 import {updateSelfRighting} from './selfRighting.ts'
 import type {VehicleTuning} from './tuning.ts'
@@ -55,20 +55,32 @@ const contactForce = v3()
 const driveContext = createTyreDriveContext()
 
 /**
- * Buggies addition. Tell a crash from a jump by what it did to the car's
- * speed over the last step. The wheels and the road only ever push a car up
- * and down; a change of horizontal speed too big for the tyres to have made
- * is a wall, or another car, and for a while after it the car is left to
- * tumble as it will.
+ * Buggies addition. Tell a crash from a jump by what hit the chassis over
+ * the last step. The ground is no crash: a low car's belly touches down at
+ * the foot of a steep ramp and flies on. A wall, a tree or another car is,
+ * when it hits harder than the tyres ever could, and for a while after it
+ * the car is left to tumble as it will.
  */
-function noteImpacts(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
-  const {frame, lastLinearVelocity} = vehicle
-  const knock = Math.hypot(
-    frame.linearVelocity.x - lastLinearVelocity.x,
-    frame.linearVelocity.z - lastLinearVelocity.z,
-  )
-  vehicle.impactTime = knock > tuning.impactSpeedChange ? 0 : vehicle.impactTime + dt
-  vcopy(lastLinearVelocity, frame.linearVelocity)
+function noteImpacts(
+  world: RAPIER.World,
+  vehicle: Vehicle,
+  tuning: VehicleTuning,
+  dt: number,
+): void {
+  let impulse = 0
+  world.contactPairsWith(vehicle.collider, other => {
+    if (isGround(other)) return
+    world.contactPair(vehicle.collider, other, manifold => {
+      for (let i = 0; i < manifold.numContacts(); i++) {
+        impulse += Math.hypot(
+          manifold.contactImpulse(i),
+          manifold.contactTangentImpulseX(i),
+          manifold.contactTangentImpulseY(i),
+        )
+      }
+    })
+  })
+  vehicle.impactTime = impulse > tuning.impactSpeedChange * tuning.mass ? 0 : vehicle.impactTime + dt
 }
 
 function updateMotionState(vehicle: Vehicle): void {
@@ -395,7 +407,7 @@ export function stepVehicle(
 
   readDriverCommand(vehicle.command, input)
   readChassisFrame(vehicle.frame, body)
-  noteImpacts(vehicle, tuning, dt)
+  noteImpacts(world, vehicle, tuning, dt)
 
   vehicle.rideHeight = restingRideHeight(tuning, worldGravity(world))
 

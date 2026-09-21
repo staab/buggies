@@ -173,7 +173,7 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   handbrakeRearGripFraction: 0.35,
   rearLateralGripScale: 0.95,
 
-  downforce: 3.0,
+  downforce: 2.0,
   yawAssistTorque: 6000,
   yawAssistMinSpeed: 1.5,
   yawAssistFullSpeed: 12,
@@ -331,7 +331,9 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   handbrakeRearGripFraction: 0.3,
   rearLateralGripScale: 0.82,
 
-  downforce: 6.5,
+  // Enough to plant it, not enough to crush it: at its top speed this is half
+  // its weight, and the suspension still has travel left for the road.
+  downforce: 2.2,
   yawAssistTorque: 3500,
   yawAssistMinSpeed: 1.0,
   yawAssistFullSpeed: 10,

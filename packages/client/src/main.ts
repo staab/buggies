@@ -4,7 +4,7 @@ import {
   initPhysics,
   type VehicleProfileId,
 } from '@buggies/game'
-import { generateTerrain, type TerrainMap } from '@buggies/terrain'
+import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { createDriveMode } from './drive-mode.ts'
@@ -12,6 +12,7 @@ import { Menu, type Choice, type Mode } from './menu.ts'
 import type { ModeView } from './mode.ts'
 import { createOnlineMode } from './online-mode.ts'
 import { createPreviewMode } from './preview-mode.ts'
+import { TerrainSource } from './terrain-source.ts'
 import { createTerrainView } from './terrain-view.ts'
 
 const container = document.getElementById('app')!
@@ -33,6 +34,7 @@ scene.add(sun)
 let map: TerrainMap | null = null
 let view: THREE.Group | null = null
 let mode: ModeView | null = null
+const terrain = new TerrainSource()
 
 function disposeView(group: THREE.Group): void {
   const materials = new Set<THREE.Material>()
@@ -54,12 +56,15 @@ function disposeView(group: THREE.Group): void {
 /**
  * The map with this seed, generated only if it is not already the one on
  * show: switching modes on one island should not cost seconds of terrain
- * generation.
+ * generation. Generation runs off this thread, so the page keeps drawing
+ * and says what it is waiting for.
  */
-function mapFor(seed: number): TerrainMap {
+async function mapFor(seed: number): Promise<TerrainMap> {
   if (map !== null && map.seed === seed) return map
+  hudElement.textContent = `generating island ${seed}...`
+  const island = await terrain.generate(seed)
   if (view) disposeView(view)
-  map = generateTerrain(seed)
+  map = island
   view = createTerrainView(map)
   scene.add(view)
 
@@ -113,7 +118,7 @@ function settle(): void {
 }
 
 /** Put the player on the map they asked for, in the mode they asked for. */
-function apply(next: Choice): void {
+async function apply(next: Choice): Promise<void> {
   const stamp = ++generation
   choice = next
   mode?.dispose()
@@ -145,7 +150,9 @@ function apply(next: Choice): void {
     return
   }
 
-  const island = mapFor(next.seed)
+  const island = await mapFor(next.seed)
+  // A newer choice may have landed while the island was being made.
+  if (stamp !== generation) return
   mode =
     next.mode === 'drive'
       ? createDriveMode(island, scene, next.vehicle)
@@ -161,7 +168,7 @@ menu.onCommit(apply)
 // can be driven. It loads in well under a frame, and getting it out of the way
 // up front beats a loading state in the middle of a session.
 await initPhysics()
-apply(choice)
+void apply(choice)
 menu.show(choice)
 
 window.addEventListener('keydown', (event) => {
@@ -172,7 +179,7 @@ window.addEventListener('keydown', (event) => {
   }
   // Online, the server decides the map.
   if (menu.open || choice.mode === 'online' || event.key.toLowerCase() !== 'r') return
-  apply({ ...choice, seed: randomSeed() })
+  void apply({ ...choice, seed: randomSeed() })
 })
 
 function resize(): void {
