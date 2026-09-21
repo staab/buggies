@@ -82,11 +82,12 @@ export class PredictedCar {
   }
 
   aim(target: ChaseTarget): void {
-    const { body, speed } = this.prediction.vehicle
+    const { body, speed, wrecked } = this.prediction.vehicle
     body.translation(target.position)
     body.rotation(target.rotation)
     body.linvel(target.velocity)
     target.speed = speed
+    target.wrecked = wrecked
   }
 
   dispose(): void {

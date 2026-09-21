@@ -173,3 +173,35 @@ describe('ChaseCamera under a deck', () => {
     expect(camera.camera.position.y).toBeCloseTo(open, 1)
   })
 })
+
+describe('ChaseCamera at a wreck', () => {
+  it('stops where the car blew up, pulls far back and up to watch it, and snaps back to the chase when it is put back', () => {
+    const tuning = createCameraTuning()
+    const camera = new ChaseCamera(tuning)
+    camera.setGroundAt(() => 0)
+    const target = createChaseTarget()
+    target.position = { x: 0, y: 0.5, z: 0 }
+    camera.snapTo(target)
+    const chase = camera.camera.position.distanceTo(new THREE.Vector3(0, 0.5, 0))
+    expect(chase).toBeLessThan(15)
+
+    target.wrecked = true
+    for (let i = 0; i < 300; i++) camera.update(1 / 60, target)
+    const wreck = camera.camera.position.distanceTo(new THREE.Vector3(0, 0.5, 0))
+    expect(wreck).toBeGreaterThan(100)
+    expect(camera.camera.position.y).toBeGreaterThan(50)
+
+    // The wreck flies on; the camera stays put and only turns to watch it.
+    const held = camera.camera.position.clone()
+    target.position = { x: 40, y: 6, z: -30 }
+    for (let i = 0; i < 120; i++) camera.update(1 / 60, target)
+    expect(camera.camera.position.distanceTo(held)).toBeLessThan(1)
+    const looking = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.camera.quaternion)
+    const toWreck = new THREE.Vector3(40, 6, -30).sub(camera.camera.position).normalize()
+    expect(looking.dot(toWreck)).toBeGreaterThan(0.99)
+
+    target.wrecked = false
+    camera.snapTo(target)
+    expect(camera.camera.position.distanceTo(new THREE.Vector3(40, 6, -30))).toBeCloseTo(chase, 1)
+  })
+})
