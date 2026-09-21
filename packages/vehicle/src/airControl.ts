@@ -5,6 +5,7 @@ import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import {inverseLerpClamped, lerp, v3, vcopy, vcross, vlength} from '@buggies/physics'
 import {addTorqueAbout} from './bodyForces.ts'
+import {WHEEL_RAY_GROUPS} from './groups.ts'
 import type {DriverCommand} from './input.ts'
 import type {VehicleTuning} from './tuning.ts'
 import type {Vehicle} from './vehicleBody.ts'
@@ -54,7 +55,7 @@ function landingBoost(
     tuning.airLevelLandingCastDistance,
     true,
     undefined,
-    undefined,
+    WHEEL_RAY_GROUPS,
     undefined,
     body,
   )

@@ -8,13 +8,13 @@ import {
   takeSeat,
   type VehicleProfileId,
 } from '@buggies/game'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { BodyView } from './body-view.ts'
 import { CarView } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { driverLine, tunnelTest } from './driver-hud.ts'
+import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
 import { Keyboard } from './input.ts'
 import type { ModeView } from './mode.ts'
 
@@ -49,7 +49,7 @@ export function createDriveMode(
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
   const chase = new ChaseCamera(cameraTuning)
-  chase.setGroundAt((x, z) => sampleHeight(map.heightfield, x, z))
+  chase.setBoundsAt(cameraBounds(map))
   const target = createChaseTarget()
   const inTunnel = tunnelTest(map)
 
@@ -100,7 +100,6 @@ export function createDriveMode(
       body.apply(owed / FIXED_TIMESTEP)
       car.applySimulatedWheels(vehicle.wheels, seat.tuning)
       aimCamera()
-      chase.setSeated(inTunnel(vehicle.frame.position))
       chase.update(dt, target)
     },
     hud() {

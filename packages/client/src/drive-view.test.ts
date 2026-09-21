@@ -17,6 +17,7 @@ function restingWheels(travel: number, steer = 0, spin = 0): WheelState[] {
     suspensionExtensionRate: 0,
     suspensionForce: 0,
     bumpStopDepth: 0,
+    stickDepth: 0,
     rayOrigin: v3(),
     rayEnd: v3(),
     contactPoint: v3(),
@@ -124,37 +125,23 @@ describe('ChaseCamera', () => {
     expect(camera.camera.position.y).toBeGreaterThan(hill(camera.camera.position.x))
   })
 
-  it('moves into the cabin when seated, and back out again', () => {
+  it('stays under a tunnel roof, and comes back up once out of it', () => {
     const camera = new ChaseCamera(createCameraTuning())
-    camera.setGroundAt(flat)
+    // A bore three metres high, then open sky.
+    let roof = 3
+    camera.setBoundsAt((_x, _z, out) => {
+      out.floor = 0
+      out.ceiling = roof
+      return out
+    })
     const target = createChaseTarget()
     target.position = { x: 0, y: 0, z: 0 }
     camera.snapTo(target)
-    const chased = camera.camera.position.distanceTo(new THREE.Vector3(0, 0, 0))
-    expect(chased).toBeGreaterThan(8)
+    expect(camera.camera.position.y).toBeLessThan(roof)
+    expect(camera.camera.position.y).toBeGreaterThan(0.5)
 
-    camera.setSeated(true)
+    roof = Number.POSITIVE_INFINITY
     for (let i = 0; i < 180; i++) camera.update(1 / 60, target)
-    // In the car, not trailing it.
-    expect(camera.camera.position.distanceTo(new THREE.Vector3(0, 0, 0))).toBeLessThan(1)
-
-    camera.setSeated(false)
-    for (let i = 0; i < 180; i++) camera.update(1 / 60, target)
-    expect(camera.camera.position.distanceTo(new THREE.Vector3(0, 0, 0))).toBeCloseTo(chased, 0)
-  })
-
-  it('lets go of the ground once seated, which is what a tunnel needs', () => {
-    const camera = new ChaseCamera(createCameraTuning())
-    // A hill overhead, as the heightfield reads it from inside a bore.
-    camera.setGroundAt(() => 60)
-    const target = createChaseTarget()
-    target.position = { x: 0, y: 0, z: 0 }
-    camera.snapTo(target)
-    // Chasing, it is shoved up on top of the hill.
-    expect(camera.camera.position.y).toBeGreaterThan(60)
-
-    camera.setSeated(true)
-    for (let i = 0; i < 240; i++) camera.update(1 / 60, target)
-    expect(camera.camera.position.y).toBeLessThan(2)
+    expect(camera.camera.position.y).toBeCloseTo(createCameraTuning().height, 0)
   })
 })

@@ -1,5 +1,6 @@
 // Ported from the seattle project (src/physics/tuning.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// shape and formatting so the two can be compared and resynced. Buggies adds
+// the ground stick: how a car holds the road over a crest instead of leaving it.
 
 import {createRng} from '@buggies/physics'
 
@@ -24,6 +25,10 @@ export interface VehicleTuning {
   bumpStopStiffness: number
   antiRollStiffnessFront: number
   antiRollStiffnessRear: number
+
+  groundStickRange: number
+  groundStickStiffness: number
+  groundStickLiftSpeed: number
 
   maxSteerAngle: number
   steerRate: number
@@ -128,6 +133,10 @@ const MUSTANG_TUNING: Readonly<VehicleTuning> = Object.freeze({
   antiRollStiffnessFront: 18000,
   antiRollStiffnessRear: 15000,
 
+  groundStickRange: 0.25,
+  groundStickStiffness: 12000,
+  groundStickLiftSpeed: 3.0,
+
   maxSteerAngle: 0.62,
   steerRate: 4.0,
   steerReturnRate: 6.0,
@@ -202,6 +211,10 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   antiRollStiffnessFront: 32000,
   antiRollStiffnessRear: 26000,
 
+  groundStickRange: 0.3,
+  groundStickStiffness: 16000,
+  groundStickLiftSpeed: 3.0,
+
   maxSteerAngle: 0.5,
   steerRate: 2.6,
   steerReturnRate: 3.6,
@@ -275,6 +288,10 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   bumpStopStiffness: 460000,
   antiRollStiffnessFront: 22000,
   antiRollStiffnessRear: 26000,
+
+  groundStickRange: 0.15,
+  groundStickStiffness: 14000,
+  groundStickLiftSpeed: 3.0,
 
   maxSteerAngle: 0.58,
   steerRate: 7.0,

@@ -1,10 +1,10 @@
 import {
   ROAD_BRIDGE,
   ROAD_GRADE,
-  ROAD_SURFACE,
   ROAD_TUNNEL,
   flatHeightfield,
   generateTerrain,
+  roadLift,
   sampleHeight,
   type Heightfield,
   type TerrainMap,
@@ -114,7 +114,7 @@ describe('terrain colliders', () => {
           if (road.structure[i] !== ROAD_GRADE) continue
           const a = road.points[i]!
           const b = road.points[(i + 1) % count]!
-          const deck = (a.y + b.y) / 2 + ROAD_SURFACE
+          const deck = (a.y + b.y) / 2 + roadLift(road)
           total++
           const found = castDown(world, (a.x + b.x) / 2, (a.z + b.z) / 2, deck + 3)
           // Reading higher than its own deck is a junction: another
@@ -140,7 +140,7 @@ describe('terrain colliders', () => {
           const b = road.points[(i + 1) % count]!
           const x = (a.x + b.x) / 2
           const z = (a.z + b.z) / 2
-          const deck = (a.y + b.y) / 2 + ROAD_SURFACE
+          const deck = (a.y + b.y) / 2 + roadLift(road)
           spans++
 
           // From inside the bore, looking down: the road has to be there, or
@@ -171,7 +171,7 @@ describe('terrain colliders', () => {
           const b = road.points[(i + 1) % count]!
           const x = (a.x + b.x) / 2
           const z = (a.z + b.z) / 2
-          const deck = (a.y + b.y) / 2 + ROAD_SURFACE
+          const deck = (a.y + b.y) / 2 + roadLift(road)
           // Only spans that actually clear something: a deck sitting on the
           // ground proves nothing about whether it holds anything up.
           if (deck - sampleHeight(map.heightfield, x, z) < 1) continue

@@ -30,7 +30,10 @@ export {
   ROAD_TUNNEL,
   ROAD_WIDTH,
   STREET_WIDTH,
+  SURFACE_SHOULDER,
   generateRoads,
+  isSurfaceRoad,
+  roadLift,
 } from './roads.ts'
 export {
   orientedTriangle,
@@ -38,13 +41,28 @@ export {
   triangleCentroid,
   triangleInradius,
 } from './mountain.ts'
+export {
+  RAIL_BASE,
+  RAIL_FLARE,
+  RAIL_HEIGHT,
+  RAIL_THICKNESS,
+  railMesh,
+  railRuns,
+  type RailMesh,
+  type RailRun,
+} from './rails.ts'
 export { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 export {
+  TUNNEL_CLEARANCE,
+  TUNNEL_WALL,
   boreClearance,
   boreFloorAt,
   buildTunnelHoles,
+  tunnelCutFloors,
   tunnelSegments,
+  tunnelShellMesh,
   type BoreSegment,
+  type ShellMesh,
 } from './tunnels.ts'
 export { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
 export type {
@@ -55,6 +73,7 @@ export type {
   River,
   RiverPoint,
   Road,
+  RoadKind,
   RoadPoint,
   TerrainMap,
   TerrainOptions,

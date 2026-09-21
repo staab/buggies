@@ -7,12 +7,12 @@ import {
   type VehicleProfileId,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
 
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { driverLine, tunnelTest } from './driver-hud.ts'
+import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
 import { Keyboard } from './input.ts'
 import type { ModeView } from './mode.ts'
 import { PredictedCar } from './predicted-car.ts'
@@ -60,7 +60,7 @@ export async function createOnlineMode(
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
   const chase = new ChaseCamera(cameraTuning)
-  chase.setGroundAt((x, z) => sampleHeight(map.heightfield, x, z))
+  chase.setBoundsAt(cameraBounds(map))
   const target = createChaseTarget()
   const inTunnel = tunnelTest(map)
 
@@ -90,7 +90,6 @@ export async function createOnlineMode(
       others.update(client.sample(), dt)
       car.render(owed / FIXED_TIMESTEP, dt)
       car.aim(target)
-      chase.setSeated(inTunnel(prediction.vehicle.frame.position))
       if (chaseSnapped) chase.update(dt, target)
       else {
         chase.snapTo(target)

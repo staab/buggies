@@ -20,7 +20,7 @@ export {
   type VehicleInput,
 } from './input.ts'
 export { updateSelfRighting } from './selfRighting.ts'
-export { addHeightfield, addTerrain } from './terrain.ts'
+export { addHeightfield, addRailRuns, addTerrain } from './terrain.ts'
 export {
   DEFAULT_VEHICLE_PROFILE,
   VEHICLE_PROFILES,

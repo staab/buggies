@@ -72,6 +72,13 @@ export interface RoadPoint {
 }
 
 /**
+ * What a road is, which decides how it is made. The highway is a structure
+ * over the land: an embankment, a bridge, a tunnel. Everything else is the
+ * land, shaped to it and painted on.
+ */
+export type RoadKind = 'highway' | 'ramp' | 'cross' | 'arterial' | 'street'
+
+/**
  * A carriageway. Highways form closed loops through every city; interchanges
  * add open cross roads and one-lane ramps. `structure` holds one `ROAD_*`
  * code per segment: segment `i` runs from `points[i]` to the next point,
@@ -79,6 +86,7 @@ export interface RoadPoint {
  */
 export interface Road {
   id: number
+  kind: RoadKind
   closed: boolean
   /** Full carriageway width, in world units. */
   width: number

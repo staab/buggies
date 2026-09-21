@@ -5,12 +5,17 @@ import {
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_SKIRT,
-  ROAD_SURFACE,
   ROAD_TUNNEL,
+  TUNNEL_CLEARANCE,
   boreClearance,
   buildTunnelHoles,
   heightAt,
+  isSurfaceRoad,
+  railMesh,
+  railRuns,
+  roadLift,
   tunnelSegments,
+  tunnelShellMesh,
   type BoreSegment,
   type Heightfield,
   type Lake,
@@ -42,12 +47,16 @@ const ROAD_GRADE_COLOR = new THREE.Color('#43464b')
 const ROAD_BRIDGE_COLOR = new THREE.Color('#a8adb3')
 const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
-/** How far the embankment skirt reaches out from the deck edge, in world units. */
-const TUNNEL_SEGMENTS = 16
-/** Wall thickness, so the shell buries itself in the land it cuts through. */
-const TUNNEL_WALL_THICKNESS = 3
+const RAIL_COLOR = new THREE.Color('#c9cdd2')
 /** Boundary cells are split this many ways to fit the cut tightly to the bore. */
 const TUNNEL_CUT_SUBDIVISIONS = 4
+
+/**
+ * The ground is painted at this many texels per metre: fine enough that a
+ * street reads as a street, coarse enough that a whole island fits in one
+ * texture.
+ */
+const TEXELS_PER_METRE = 1
 
 function sampleRamp(t: number, stops: ColorStop[], out: THREE.Color): THREE.Color {
   if (t <= stops[0]!.t) return out.copy(stops[0]!.color)
@@ -81,18 +90,15 @@ function terrainColor(
   return out
 }
 
-function buildTerrainMesh(
-  field: Heightfield,
-  seaLevel: number,
-  districtOf: Uint8Array,
-  hole: Uint8Array,
-  segments: BoreSegment[],
-  margin: number,
-): THREE.Mesh {
-  const { width, depth, cellSize, heights } = field
-  const positions: number[] = []
-  const colors: number[] = []
-  const color = new THREE.Color()
+/**
+ * The land, coloured by height and district, with every surface road painted
+ * onto it. One texture over the whole island: the ground's colour is sampled
+ * at each corner of the grid and blended between them, the way the mesh
+ * blends its heights, and the roads are drawn on top with soft edges.
+ */
+function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
+  const { width, depth, cellSize, heights } = map.heightfield
+  const { seaLevel, districtOf } = map
 
   let min = Infinity
   let max = -Infinity
@@ -101,13 +107,123 @@ function buildTerrainMesh(
     if (height > max) max = height
   }
 
+  // The colour at every grid corner, ready to display.
+  const corner = new Float32Array(width * depth * 3)
+  const color = new THREE.Color()
+  const rgb = { r: 0, g: 0, b: 0 }
+  for (let cell = 0; cell < width * depth; cell++) {
+    terrainColor(heights[cell]!, min, max, seaLevel, districtOf[cell]!, color)
+    color.getRGB(rgb, THREE.SRGBColorSpace)
+    corner[cell * 3] = rgb.r
+    corner[cell * 3 + 1] = rgb.g
+    corner[cell * 3 + 2] = rgb.b
+  }
+
+  const texels = Math.ceil(width * cellSize * TEXELS_PER_METRE)
+  const data = new Uint8Array(texels * texels * 4)
+  for (let ty = 0; ty < texels; ty++) {
+    const gz = Math.min(((ty + 0.5) / TEXELS_PER_METRE) / cellSize, depth - 1)
+    const row = Math.min(Math.floor(gz), depth - 2)
+    const tz = gz - row
+    for (let tx = 0; tx < texels; tx++) {
+      const gx = Math.min(((tx + 0.5) / TEXELS_PER_METRE) / cellSize, width - 1)
+      const col = Math.min(Math.floor(gx), width - 2)
+      const txf = gx - col
+      const a = (row * width + col) * 3
+      const b = a + 3
+      const c = a + width * 3
+      const d = c + 3
+      const at = (ty * texels + tx) * 4
+      for (let channel = 0; channel < 3; channel++) {
+        const top = corner[a + channel]! * (1 - txf) + corner[b + channel]! * txf
+        const bottom = corner[c + channel]! * (1 - txf) + corner[d + channel]! * txf
+        data[at + channel] = Math.round((top * (1 - tz) + bottom * tz) * 255)
+      }
+      data[at + 3] = 255
+    }
+  }
+
+  ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
+  const asphalt = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  for (const road of map.roads) {
+    if (!isSurfaceRoad(road)) continue
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    const half = road.width / 2
+    for (let i = 0; i < segmentCount; i++) {
+      if (road.structure[i] !== ROAD_GRADE) continue
+      paintSegment(data, texels, road.points[i]!, road.points[(i + 1) % count]!, half, asphalt)
+    }
+  }
+
+  const texture = new THREE.DataTexture(data, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = THREE.ClampToEdgeWrapping
+  texture.wrapT = THREE.ClampToEdgeWrapping
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearMipmapLinearFilter
+  texture.generateMipmaps = true
+  texture.anisotropy = 8
+  texture.needsUpdate = true
+  return texture
+}
+
+/** One stretch of carriageway, as a capsule with an edge a texel wide. */
+function paintSegment(
+  data: Uint8Array,
+  texels: number,
+  a: { x: number; z: number },
+  b: { x: number; z: number },
+  half: number,
+  rgb: number[],
+): void {
+  const vx = b.x - a.x
+  const vz = b.z - a.z
+  const lengthSq = vx * vx + vz * vz || 1
+  const reach = half + 1 / TEXELS_PER_METRE
+  const minX = Math.max(Math.floor((Math.min(a.x, b.x) - reach) * TEXELS_PER_METRE), 0)
+  const maxX = Math.min(Math.ceil((Math.max(a.x, b.x) + reach) * TEXELS_PER_METRE), texels - 1)
+  const minZ = Math.max(Math.floor((Math.min(a.z, b.z) - reach) * TEXELS_PER_METRE), 0)
+  const maxZ = Math.min(Math.ceil((Math.max(a.z, b.z) + reach) * TEXELS_PER_METRE), texels - 1)
+  const edge = 0.5 / TEXELS_PER_METRE
+
+  for (let ty = minZ; ty <= maxZ; ty++) {
+    const z = (ty + 0.5) / TEXELS_PER_METRE
+    for (let tx = minX; tx <= maxX; tx++) {
+      const x = (tx + 0.5) / TEXELS_PER_METRE
+      const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
+      const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
+      const coverage = Math.min(Math.max((half + edge - distance) * TEXELS_PER_METRE, 0), 1)
+      if (coverage <= 0) continue
+      const at = (ty * texels + tx) * 4
+      for (let channel = 0; channel < 3; channel++) {
+        data[at + channel] = Math.round(data[at + channel]! + (rgb[channel]! - data[at + channel]!) * coverage)
+      }
+    }
+  }
+}
+
+function buildTerrainMesh(
+  field: Heightfield,
+  texture: THREE.DataTexture,
+  hole: Uint8Array,
+  segments: BoreSegment[],
+  margin: number,
+): THREE.Mesh {
+  const { width, depth, cellSize, heights } = field
+  const worldSize = width * cellSize
+  const positions: number[] = []
+  const uvs: number[] = []
+
+  const vertex = (x: number, height: number, z: number): number => {
+    positions.push(x, height, z)
+    uvs.push(x / worldSize, z / worldSize)
+    return positions.length / 3 - 1
+  }
+
   for (let row = 0; row < depth; row++) {
     for (let col = 0; col < width; col++) {
-      const cell = row * width + col
-      const height = heights[cell]!
-      positions.push(col * cellSize, height, row * cellSize)
-      terrainColor(height, min, max, seaLevel, districtOf[cell]!, color)
-      colors.push(color.r, color.g, color.b)
+      vertex(col * cellSize, heights[row * width + col]!, row * cellSize)
     }
   }
 
@@ -147,11 +263,7 @@ function buildTerrainMesh(
             line.push(-1)
             continue
           }
-          const index = positions.length / 3
-          positions.push(x, height, z)
-          terrainColor(height, min, max, seaLevel, districtOf[topLeft]!, color)
-          colors.push(color.r, color.g, color.b)
-          line.push(index)
+          line.push(vertex(x, height, z))
         }
         vertices.push(line)
       }
@@ -171,11 +283,11 @@ function buildTerrainMesh(
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
 
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
+  const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95, metalness: 0 })
   return new THREE.Mesh(geometry, material)
 }
 
@@ -247,9 +359,11 @@ function buildRiverGeometry(river: River): THREE.BufferGeometry {
 /**
  * The deck, plus an embankment skirt that falls from each edge to the ground.
  * Skirts are only drawn where the road is at grade; bridges and tunnels have
- * no ground to fall to.
+ * no ground to fall to. A surface road is the ground where it is at grade and
+ * is painted there instead, so only its bridges are drawn; nothing is returned
+ * for one with no bridge at all.
  */
-function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry {
+function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry | null {
   const points = road.points
   const count = points.length
   const segmentCount = road.closed ? count : count - 1
@@ -257,6 +371,9 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
   const colors: number[] = []
   const half = road.width / 2
   const skirt = half + ROAD_SKIRT
+  const verge = half + TUNNEL_CLEARANCE
+  const lift = roadLift(road)
+  const painted = isSurfaceRoad(road)
   const { cellSize } = field
 
   const groundUnder = (x: number, z: number): number =>
@@ -268,6 +385,10 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
       : structure === ROAD_TUNNEL
         ? ROAD_TUNNEL_COLOR
         : ROAD_GRADE_COLOR
+
+  const drawn = (segment: number): boolean => !painted || road.structure[segment] !== ROAD_GRADE
+  const isGrade = (segment: number): boolean => drawn(segment) && road.structure[segment] === ROAD_GRADE
+  const isTunnel = (segment: number): boolean => road.structure[segment] === ROAD_TUNNEL
 
   for (let i = 0; i < count; i++) {
     const point = points[i]!
@@ -282,10 +403,12 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
     const nz = dx
 
     // Lift the deck clear of the ground so it never z-fights the terrain.
-    const y = point.y + ROAD_SURFACE
+    const y = point.y + lift
     const leftGround = Math.min(groundUnder(point.x + nx * skirt, point.z + nz * skirt), y)
     const rightGround = Math.min(groundUnder(point.x - nx * skirt, point.z - nz * skirt), y)
 
+    // Six points across: the edges, the skirts down to the ground beside an
+    // embankment, and the verges out to the wall of a tunnel.
     positions.push(
       point.x + nx * half,
       y,
@@ -299,37 +422,35 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
       point.x - nx * skirt,
       rightGround,
       point.z - nz * skirt,
+      point.x + nx * verge,
+      y,
+      point.z + nz * verge,
+      point.x - nx * verge,
+      y,
+      point.z - nz * verge,
     )
 
     const color = structureColor(road.structure[Math.min(i, segmentCount - 1)]!)
-    colors.push(
-      color.r,
-      color.g,
-      color.b,
-      color.r,
-      color.g,
-      color.b,
-      ROAD_SKIRT_COLOR.r,
-      ROAD_SKIRT_COLOR.g,
-      ROAD_SKIRT_COLOR.b,
-      ROAD_SKIRT_COLOR.r,
-      ROAD_SKIRT_COLOR.g,
-      ROAD_SKIRT_COLOR.b,
-    )
+    colors.push(color.r, color.g, color.b, color.r, color.g, color.b)
+    for (let k = 0; k < 4; k++) colors.push(ROAD_SKIRT_COLOR.r, ROAD_SKIRT_COLOR.g, ROAD_SKIRT_COLOR.b)
   }
 
   const indices: number[] = []
-  const isGrade = (segment: number): boolean => road.structure[segment] === ROAD_GRADE
   for (let i = 0; i < segmentCount; i++) {
+    if (!drawn(i)) continue
     const next = (i + 1) % count
-    const a = i * 4
-    const b = next * 4
+    const a = i * 6
+    const b = next * 6
     indices.push(a, b, a + 1, a + 1, b, b + 1)
-    if (road.structure[i] === ROAD_GRADE) {
+    if (isGrade(i)) {
       indices.push(a, a + 2, b, b, a + 2, b + 2)
       indices.push(a + 1, b + 1, a + 3, a + 3, b + 1, b + 3)
+    } else if (isTunnel(i)) {
+      indices.push(a, a + 4, b, b, a + 4, b + 4)
+      indices.push(a + 1, b + 1, a + 5, a + 5, b + 1, b + 5)
     }
   }
+  if (indices.length === 0) return null
 
   // Cap the embankment wherever a skirt starts or stops, so an at-grade run
   // between two bridges does not show its hollow end.
@@ -339,7 +460,7 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
         ? isGrade((i - 1 + count) % count) !== isGrade(i)
         : (i === 0 && isGrade(0)) || (i === count - 1 && isGrade(count - 2))
     if (!caps) continue
-    const a = i * 4
+    const a = i * 6
     indices.push(a, a + 1, a + 3, a, a + 3, a + 2)
   }
 
@@ -351,110 +472,24 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
   return geometry
 }
 
-/**
- * A solid half-arch around the road for every tunnel run: an inner wall at the
- * road edge and an outer wall buried in the hillside, joined at the base and
- * capped at each portal. It follows the centreline through the mountain.
- */
-function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
-  const count = road.points.length
-  const segmentCount = road.closed ? count : count - 1
-
-  const inTunnel = new Uint8Array(count)
-  for (let i = 0; i < segmentCount; i++) {
-    if (road.structure[i] !== ROAD_TUNNEL) continue
-    inTunnel[i] = 1
-    inTunnel[(i + 1) % count] = 1
-  }
-
-  // Gather contiguous runs, starting from a sample outside every tunnel so no
-  // run has to wrap.
-  let firstOpen = 0
-  while (firstOpen < count && inTunnel[firstOpen]) firstOpen++
-  const runs: number[][] = []
-  if (firstOpen === count) {
-    runs.push(Array.from({ length: count }, (_, k) => k))
-  } else {
-    for (let k = 0; k < count; ) {
-      if (!inTunnel[(firstOpen + k) % count]) {
-        k++
-        continue
-      }
-      const run: number[] = []
-      while (k < count && inTunnel[(firstOpen + k) % count]) {
-        run.push((firstOpen + k) % count)
-        k++
-      }
-      runs.push(run)
-    }
-  }
-  if (runs.length === 0) return null
-
-  const positions: number[] = []
-  const indices: number[] = []
-  const arc = TUNNEL_SEGMENTS
-  const width = arc + 1
-  const archRadius = road.width / 2
-  const outerRadius = archRadius + TUNNEL_WALL_THICKNESS
-
-  for (const run of runs) {
-    // Overhang a sample into the hillside at each portal so the shell meets the
-    // landscape without a gap.
-    const samples =
-      run.length === count
-        ? run
-        : [(run[0]! - 1 + count) % count, ...run, (run[run.length - 1]! + 1) % count]
-
-    const base = positions.length / 3
-    for (const index of samples) {
-      const point = road.points[index]!
-      const prev = road.points[(index - 1 + count) % count]!
-      const next = road.points[(index + 1) % count]!
-      let dx = next.x - prev.x
-      let dz = next.z - prev.z
-      const length = Math.hypot(dx, dz) || 1
-      dx /= length
-      dz /= length
-      const nx = -dz
-      const nz = dx
-
-      for (const radius of [archRadius, outerRadius]) {
-        for (let j = 0; j <= arc; j++) {
-          const angle = (Math.PI * 2 * j) / arc
-          const cos = Math.cos(angle)
-          const sin = Math.sin(angle)
-          positions.push(
-            point.x + nx * radius * cos,
-            point.y + ROAD_SURFACE + radius * sin,
-            point.z + nz * radius * cos,
-          )
-        }
-      }
-    }
-
-    const inner = (s: number, j: number): number => base + s * width * 2 + j
-    const outer = (s: number, j: number): number => base + s * width * 2 + width + j
-    const quad = (a: number, b: number, c: number, d: number): void => {
-      indices.push(a, b, c, b, d, c)
-    }
-
-    for (let s = 0; s < samples.length - 1; s++) {
-      for (let j = 0; j < arc; j++) {
-        quad(inner(s, j), inner(s + 1, j), inner(s, j + 1), inner(s + 1, j + 1))
-        quad(outer(s, j), outer(s + 1, j), outer(s, j + 1), outer(s + 1, j + 1))
-      }
-    }
-    // Cap the wall at each portal.
-    for (const s of [0, samples.length - 1]) {
-      for (let j = 0; j < arc; j++) {
-        quad(inner(s, j), inner(s, j + 1), outer(s, j), outer(s, j + 1))
-      }
-    }
-  }
-
+/** The guardrails: the barriers the collider's blocks stand in. */
+function buildRailGeometry(map: TerrainMap): THREE.BufferGeometry | null {
+  const mesh = railMesh(railRuns(map.roads))
+  if (mesh.indices.length === 0) return null
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3))
+  geometry.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1))
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+/** The tunnel shell, the same one the collider is built from. */
+function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
+  const shell = tunnelShellMesh(road)
+  if (shell === null) return null
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(shell.positions, 3))
+  geometry.setIndex(new THREE.Uint32BufferAttribute(shell.indices, 1))
   geometry.computeVertexNormals()
   return geometry
 }
@@ -506,7 +541,7 @@ export function createScaleCar(map: TerrainMap): THREE.Group {
     const index = Math.floor(road.points.length * 0.25)
     const point = road.points[index]!
     const next = road.points[(index + 1) % road.points.length]!
-    car.position.set(point.x, point.y + ROAD_SURFACE, point.z)
+    car.position.set(point.x, point.y + roadLift(road), point.z)
     car.rotation.y = Math.atan2(next.x - point.x, next.z - point.z)
     return car
   }
@@ -538,14 +573,7 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   const segments = tunnelSegments(map.roads)
   const hole = buildTunnelHoles(map.heightfield, segments)
   group.add(
-    buildTerrainMesh(
-      map.heightfield,
-      map.seaLevel,
-      map.districtOf,
-      hole,
-      segments,
-      map.cellSize * 0.5,
-    ),
+    buildTerrainMesh(map.heightfield, buildGroundTexture(map), hole, segments, map.cellSize * 0.5),
   )
 
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
@@ -576,9 +604,20 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
       flatShading: true,
     })
     for (const road of map.roads) {
-      group.add(new THREE.Mesh(buildRoadGeometry(road, map.heightfield), roadMaterial))
+      const deck = buildRoadGeometry(road, map.heightfield)
+      if (deck) group.add(new THREE.Mesh(deck, roadMaterial))
       const tunnel = buildTunnelGeometry(road)
       if (tunnel) group.add(new THREE.Mesh(tunnel, tunnelMaterial))
+    }
+    const rails = buildRailGeometry(map)
+    if (rails) {
+      const railMaterial = new THREE.MeshStandardMaterial({
+        color: RAIL_COLOR,
+        roughness: 0.4,
+        metalness: 0.6,
+        side: THREE.DoubleSide,
+      })
+      group.add(new THREE.Mesh(rails, railMaterial))
     }
   }
 

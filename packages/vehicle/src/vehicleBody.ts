@@ -33,6 +33,8 @@ export interface WheelState {
   suspensionExtensionRate: number
   suspensionForce: number
   bumpStopDepth: number
+  /** How far past full droop the ground is, while the wheel is still holding on to it. */
+  stickDepth: number
 
   rayOrigin: Vec3
   rayEnd: Vec3
@@ -104,6 +106,7 @@ const NEUTRAL_WHEEL_MOTION: Readonly<WheelMotion> = Object.freeze({
   suspensionExtensionRate: 0,
   suspensionForce: 0,
   bumpStopDepth: 0,
+  stickDepth: 0,
   slipSpeedLongitudinal: 0,
   slipSpeedLateral: 0,
   forceLongitudinal: 0,
@@ -226,6 +229,15 @@ export function adoptVehicle(
   }
 }
 
+/**
+ * How far in from the chassis's edges and corners its collider is rounded,
+ * without changing its size. A sharp corner scraping along a wall catches on
+ * every seam between the wall's facets: the next facet's edge, a hair ahead
+ * of the corner, is met square on and the car is stopped dead. A rounded
+ * corner meets the edge at a glance and slides on over it.
+ */
+const CHASSIS_ROUNDING = 0.15
+
 export function createVehicle(
   world: RAPIER.World,
   tuning: VehicleTuning,
@@ -240,10 +252,11 @@ export function createVehicle(
   )
 
   const collider = world.createCollider(
-    RAPIER.ColliderDesc.cuboid(
-      tuning.chassisHalfWidth,
-      tuning.chassisHalfHeight,
-      tuning.chassisHalfLength,
+    RAPIER.ColliderDesc.roundCuboid(
+      tuning.chassisHalfWidth - CHASSIS_ROUNDING,
+      tuning.chassisHalfHeight - CHASSIS_ROUNDING,
+      tuning.chassisHalfLength - CHASSIS_ROUNDING,
+      CHASSIS_ROUNDING,
     )
       .setDensity(DENSITY_FROM_EXPLICIT_MASS_ONLY)
       .setFriction(CHASSIS_FRICTION)

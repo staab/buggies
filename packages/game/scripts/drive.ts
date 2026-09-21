@@ -1,4 +1,4 @@
-import { ROAD_BRIDGE, ROAD_GRADE, ROAD_SURFACE, generateTerrain, type Road } from '@buggies/terrain'
+import { ROAD_BRIDGE, ROAD_GRADE, generateTerrain, roadLift, type Road } from '@buggies/terrain'
 import {
   NEUTRAL_INPUT,
   VEHICLE_PROFILE_IDS,
@@ -23,7 +23,9 @@ function pursue(seat: Seat, target: { x: number; z: number }): number {
   let error = wanted - facing
   while (error > Math.PI) error -= 2 * Math.PI
   while (error < -Math.PI) error += 2 * Math.PI
-  return Math.max(-1, Math.min(1, error * 2.5))
+  // Headings grow from +Z toward +X, and a chassis facing -Z has +X on its
+  // right, so a target at a greater heading is off to the left.
+  return Math.max(-1, Math.min(1, -error * 2.5))
 }
 
 /** The longest stretch of a road that is actually on the ground: where it
@@ -71,7 +73,7 @@ for (const seed of [3, 7, 21]) {
     Object.assign(seat.spawn, {
       position: {
         x: road.points[from]!.x,
-        y: road.points[from]!.y + ROAD_SURFACE,
+        y: road.points[from]!.y + roadLift(road),
         z: road.points[from]!.z,
       },
       yaw: Math.atan2(
