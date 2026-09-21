@@ -121,8 +121,17 @@ function spawnAt(spot: RoadSpot): VehicleSpawn {
   }
 }
 
-/** The road point nearest the middle of the first city, at grade. */
+/**
+ * The road point nearest the middle of the first city, at grade: on the
+ * highway for preference, which loops and so never runs out ahead of a car
+ * setting off, and on any road only where there is no highway to be had.
+ */
 function nearestGradeSpot(map: TerrainMap): RoadSpot | null {
+  const highways = map.roads.filter((road) => road.kind === 'highway')
+  return nearestGradeSpotOn(map, highways) ?? nearestGradeSpotOn(map, map.roads)
+}
+
+function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
   const worldSize = map.size * map.cellSize
   const district = map.districts[0]
   const targetX = district?.cx ?? worldSize / 2
@@ -130,7 +139,7 @@ function nearestGradeSpot(map: TerrainMap): RoadSpot | null {
 
   let best: RoadSpot | null = null
   let bestDistance = Infinity
-  for (const road of map.roads) {
+  for (const road of roads) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
     for (let i = 0; i < segmentCount; i++) {

@@ -54,6 +54,23 @@ const pointVelocity = v3()
 const contactForce = v3()
 const driveContext = createTyreDriveContext()
 
+/**
+ * Buggies addition. Tell a crash from a jump by what it did to the car's
+ * speed over the last step. The wheels and the road only ever push a car up
+ * and down; a change of horizontal speed too big for the tyres to have made
+ * is a wall, or another car, and for a while after it the car is left to
+ * tumble as it will.
+ */
+function noteImpacts(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
+  const {frame, lastLinearVelocity} = vehicle
+  const knock = Math.hypot(
+    frame.linearVelocity.x - lastLinearVelocity.x,
+    frame.linearVelocity.z - lastLinearVelocity.z,
+  )
+  vehicle.impactTime = knock > tuning.impactSpeedChange ? 0 : vehicle.impactTime + dt
+  vcopy(lastLinearVelocity, frame.linearVelocity)
+}
+
 function updateMotionState(vehicle: Vehicle): void {
   const {frame} = vehicle
   const lateralSpeed = vdot(frame.linearVelocity, frame.right)
@@ -378,6 +395,7 @@ export function stepVehicle(
 
   readDriverCommand(vehicle.command, input)
   readChassisFrame(vehicle.frame, body)
+  noteImpacts(vehicle, tuning, dt)
 
   vehicle.rideHeight = restingRideHeight(tuning, worldGravity(world))
 

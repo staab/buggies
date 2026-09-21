@@ -177,11 +177,13 @@ describe('terrain colliders', () => {
         if (found !== null && Math.abs(found - tree.bottom - tree.height) < 0.01) trunks++
       }
       expect(trunks).toBe(trees.length)
-      // A shrub is nothing to hit: the ground is what is under it.
+      // A shrub is nothing to hit: the ray passes down through it to the
+      // ground, which the collider's triangles can put a little off the
+      // drawn ground's bilinear reading but never up at the shrub's top.
       let open = 0
       for (const shrub of shrubs) {
         const found = castDown(world, shrub.x, shrub.z, shrub.bottom + shrub.height + 5)
-        if (found !== null && found < shrub.bottom + 0.5) open++
+        if (found !== null && found < shrub.bottom + shrub.height - 0.1) open++
       }
       expect(open).toBe(shrubs.length)
     })

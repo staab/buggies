@@ -56,11 +56,12 @@ const HOUSE_RELIEF = 2.5
 /** Every building keeps this clear of any road. */
 const ROAD_MARGIN = 1.5
 /**
- * And this far off a tunnel's centreline: the shell round a bore is thicker
- * than it looks, and near a portal it stands out of the hillside, so nothing
- * is planted where it would be buried in it.
+ * And this far off a tunnel's centreline: the shell round a bore is built
+ * far thicker than it is drawn, to roof over the ground cut away round the
+ * bore, and near a portal it stands out of the hillside, so nothing is
+ * planted where it would be buried in it.
  */
-const TUNNEL_KEEP_OUT = 14
+const TUNNEL_KEEP_OUT = 20
 /** And this clear of any other building. */
 const BUILDING_GAP = 1
 /** Buildings are bucketed on this grid to find neighbours, in world units. */

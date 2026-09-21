@@ -3,7 +3,7 @@
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import {inverseLerpClamped, lerp, v3, vcopy, vcross, vlength} from '@buggies/physics'
+import {inverseLerpClamped, lerp, v3, vaddScaled, vcopy, vcross, vdot, vnormalize, vscale, vset} from '@buggies/physics'
 import {addTorqueAbout} from './bodyForces.ts'
 import {WHEEL_RAY_GROUPS} from './groups.ts'
 import type {DriverCommand} from './input.ts'
@@ -15,6 +15,9 @@ const MIN_FALL_SPEED_FOR_LANDING_PREDICTION = 1e-3
 
 const angularVelocity = v3()
 const uprightError = v3()
+const targetUp = v3()
+const pitchRollRate = v3()
+const levelTorque = v3()
 
 export function applyAirControl(vehicle: Vehicle, tuning: VehicleTuning): void {
   const {body, command, frame} = vehicle
@@ -25,12 +28,6 @@ export function applyAirControl(vehicle: Vehicle, tuning: VehicleTuning): void {
   addTorqueAbout(body, frame.forward, command.steer * tuning.airRollTorque)
 }
 
-function spinAuthority(angularSpeed: number, tuning: VehicleTuning): number {
-  return (
-    1 - inverseLerpClamped(angularSpeed, tuning.airLevelSpinFadeStart, tuning.airLevelSpinFadeEnd)
-  )
-}
-
 function inputAuthority(command: DriverCommand, tuning: VehicleTuning): number {
   const pitchDemand = Math.abs(command.throttle - command.brake)
   const rollYawDemand = Math.abs(command.steer)
@@ -38,19 +35,22 @@ function inputAuthority(command: DriverCommand, tuning: VehicleTuning): number {
   return 1 - tuning.airLevelInputYield * Math.max(pitchDemand, rollYawDemand)
 }
 
-function landingBoost(
-  world: RAPIER.World,
-  vehicle: Vehicle,
-  tuning: VehicleTuning,
-): number {
+/**
+ * Where the car is going to land: how much harder to level for it, and
+ * which way is up there. Falling toward ground within the lookahead, the
+ * levelling strengthens as it nears, and aims at the ground's own normal so
+ * the car lands square on a slope.
+ */
+function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): number {
   const {body, frame, landingRay} = vehicle
   const fallSpeed = -frame.linearVelocity.y
+  vcopy(targetUp, WORLD_UP)
 
   if (fallSpeed <= MIN_FALL_SPEED_FOR_LANDING_PREDICTION) return 1
 
   vcopy(landingRay.origin, frame.position)
 
-  const hit = world.castRay(
+  const hit = world.castRayAndGetNormal(
     landingRay,
     tuning.airLevelLandingCastDistance,
     true,
@@ -65,27 +65,42 @@ function landingBoost(
   const distanceToGround = hit.timeOfImpact
   const secondsToImpact = distanceToGround / fallSpeed
   const approach = 1 - inverseLerpClamped(secondsToImpact, 0, tuning.airLevelLandingLookahead)
+  // Only ground that is roughly level is worth landing square on: the car is
+  // not going to land on a wall.
+  if (hit.normal.y > 0.5) {
+    vset(targetUp, hit.normal.x, hit.normal.y, hit.normal.z)
+    vnormalize(targetUp, targetUp)
+  }
 
   return lerp(1, tuning.airLevelLandingBoostMax, approach)
 }
 
+/**
+ * Buggies rewrite. Off a jump the car is held level in the air, whatever spin
+ * the lip gave it: a torque toward upright, damped against its pitch and roll
+ * rate, so it lands on its wheels. Yaw is left alone for the air controls.
+ * Off a crash it is not: a car that has just been hit is let tumble.
+ */
 export function applyAirStabilization(
   world: RAPIER.World,
   vehicle: Vehicle,
   tuning: VehicleTuning,
 ): void {
   if (vehicle.airborneTime < tuning.airLevelEngageDelay) return
+  if (vehicle.impactTime < tuning.impactTumbleTime) return
 
-  vehicle.body.angvel(angularVelocity)
-
-  const fromSpin = spinAuthority(vlength(angularVelocity), tuning)
-
-  if (fromSpin <= 0) return
-
+  const {body, frame} = vehicle
   const fromInput = inputAuthority(vehicle.command, tuning)
-  const fromApproach = landingBoost(world, vehicle, tuning)
-  const authority = tuning.airLevelTorque * fromSpin * fromInput * fromApproach
+  const fromApproach = landing(world, vehicle, tuning)
+  const authority = fromInput * fromApproach
 
-  vcross(uprightError, vehicle.frame.up, WORLD_UP)
-  addTorqueAbout(vehicle.body, uprightError, authority)
+  vcross(uprightError, frame.up, targetUp)
+  body.angvel(angularVelocity)
+  // Pitch and roll rate: the spin less its part about the car's own up.
+  const yawRate = vdot(angularVelocity, frame.up)
+  vaddScaled(pitchRollRate, angularVelocity, frame.up, -yawRate)
+
+  vscale(levelTorque, uprightError, tuning.airLevelTorque * authority)
+  vaddScaled(levelTorque, levelTorque, pitchRollRate, -tuning.airLevelDamping * authority)
+  body.addTorque(levelTorque, true)
 }

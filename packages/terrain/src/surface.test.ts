@@ -3,7 +3,15 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { generateTerrain } from './generate.ts'
 import { sampleHeight } from './heightfield.ts'
 import { signedDistanceToTriangle, orientedTriangle } from './mountain.ts'
-import { ROAD_GRADE, isSurfaceRoad, roadLift } from './roads.ts'
+import {
+  MAX_RAMP_CURVATURE,
+  MAX_ROAD_CURVATURE,
+  RAMP_WIDTH,
+  ROAD_GRADE,
+  ROAD_SKIRT,
+  isSurfaceRoad,
+  roadLift,
+} from './roads.ts'
 import type { TerrainMap } from './types.ts'
 
 let map: TerrainMap
@@ -176,7 +184,9 @@ describe('the ground under the roads', () => {
           deckAtTop = point.y + roadLift(highway)
         }
       }
-      expect(nearestDeck).toBeLessThan(highway.width / 2 + 1)
+      // The top stands just clear of the deck's skirt, level with the deck.
+      expect(nearestDeck).toBeLessThan(highway.width / 2 + ROAD_SKIRT + RAMP_WIDTH / 2 + 1)
+      expect(nearestDeck).toBeGreaterThan(highway.width / 2 + ROAD_SKIRT)
       expect(Math.abs(deckAtTop - top.y)).toBeLessThan(0.5)
     }
   })
@@ -188,5 +198,38 @@ describe('the ground under the roads', () => {
     expect(map.roads.filter((road) => road.kind === 'highway')).toHaveLength(1)
     expect(map.roads.some((road) => road.kind === 'street')).toBe(true)
     expect(map.roads.some((road) => road.kind === 'arterial')).toBe(true)
+  })
+
+  it("bends every road's profile gently, at crests and sags alike", () => {
+    // A car at speed feels a change of grade as an acceleration; a road that
+    // kinks throws it off the ground at a crest and bottoms it out in a sag.
+    let length = 0
+    let over = 0
+    let sharpest = 0
+    for (const road of map.roads) {
+      const limit = road.kind === 'ramp' ? MAX_RAMP_CURVATURE : MAX_ROAD_CURVATURE
+      const { points, structure } = road
+      const count = points.length
+      const segments = road.closed ? count : count - 1
+      for (let i = 1; i < segments; i++) {
+        if (structure[i - 1] !== ROAD_GRADE || structure[i] !== ROAD_GRADE) continue
+        const a = points[i - 1]!
+        const b = points[i]!
+        const c = points[(i + 1) % count]!
+        const before = Math.hypot(b.x - a.x, b.z - a.z)
+        const after = Math.hypot(c.x - b.x, c.z - b.z)
+        if (before < 1 || after < 1) continue
+        const change = (c.y - b.y) / after - (b.y - a.y) / before
+        const curvature = Math.abs(change) / ((before + after) / 2)
+        length += (before + after) / 2
+        if (curvature > limit + 0.003) over += (before + after) / 2
+        sharpest = Math.max(sharpest, curvature - limit)
+      }
+    }
+    // Where roads cross, the ground takes the mean of both and each is left
+    // with a small kink it cannot smooth away on its own.
+    expect(length).toBeGreaterThan(1000)
+    expect(over / length).toBeLessThan(0.06)
+    expect(sharpest).toBeLessThan(0.04)
   })
 })

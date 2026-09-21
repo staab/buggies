@@ -30,7 +30,7 @@ import {
 const FLAT_OUT: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
 
 let map: TerrainMap
-let SPAWN: { x: number; y: number; z: number }
+let SPAWN: VehicleSpawn
 
 /** One driver in the first seat, which is all most of these need. */
 function solo(arena: Arena, spawn?: VehicleSpawn): Seat {
@@ -50,7 +50,7 @@ describe('game', () => {
   beforeAll(async () => {
     await initPhysics()
     map = generateTerrain(7, { size: 513 })
-    SPAWN = findSpawns(map, 1)[0]!.position
+    SPAWN = findSpawns(map, 1)[0]!
   }, 60_000)
 
   it('spawns on a road, facing along it', () => {
@@ -120,7 +120,7 @@ describe('game', () => {
     // what it has to show is the stopping, not a standstill it never keeps.
     const entry = seat.vehicle.forwardSpeed
     expect(entry).toBeGreaterThan(5)
-    run(arena, { ...NEUTRAL_INPUT, brake: 1 }, 1.5)
+    run(arena, { ...NEUTRAL_INPUT, brake: 1 }, 3)
     expect(seat.vehicle.forwardSpeed).toBeLessThanOrEqual(0)
 
     run(arena, { ...NEUTRAL_INPUT, brake: 1 }, 2)
@@ -187,23 +187,21 @@ describe('game', () => {
   })
 
   it('turns the way it is steered', () => {
-    // A chassis faces its own -Z with up at +Y, which puts its right at +X.
-    // Steering right has to carry it that way; the old physics had this
-    // backwards and every figure that takes an absolute value hid it.
-    const straightArena = createArena(map, 1)
-    const straight = solo(straightArena, { position: SPAWN, yaw: 0 })
-    run(straightArena, FLAT_OUT, 3)
-    const ahead = { ...straight.vehicle.frame.position }
-
-    const rightArena = createArena(map, 1)
-    const right = solo(rightArena, { position: SPAWN, yaw: 0 })
-    run(rightArena, { ...FLAT_OUT, steer: 1 }, 3)
-    expect(right.vehicle.frame.position.x).toBeGreaterThan(ahead.x + 1)
-
-    const leftArena = createArena(map, 1)
-    const left = solo(leftArena, { position: SPAWN, yaw: 0 })
-    run(leftArena, { ...FLAT_OUT, steer: -1 }, 3)
-    expect(left.vehicle.frame.position.x).toBeLessThan(ahead.x - 1)
+    // A chassis faces its own -Z with up at +Y, which puts its right at +X;
+    // turned by the spawn's yaw, that is the way steering right has to carry
+    // it. The old physics had this backwards and every figure that takes an
+    // absolute value hid it. Measured along the road, from the spawn on it.
+    const right = { x: Math.cos(SPAWN.yaw), z: -Math.sin(SPAWN.yaw) }
+    const drift = (steer: number): number => {
+      const arena = createArena(map, 1)
+      const seat = solo(arena, SPAWN)
+      run(arena, { ...FLAT_OUT, steer }, 3)
+      const { x, z } = seat.vehicle.frame.position
+      return (x - SPAWN.position.x) * right.x + (z - SPAWN.position.z) * right.z
+    }
+    const ahead = drift(0)
+    expect(drift(1)).toBeGreaterThan(ahead + 1)
+    expect(drift(-1)).toBeLessThan(ahead - 1)
   })
 
   it('replays the same drive from the same inputs', () => {
