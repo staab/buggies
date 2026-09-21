@@ -145,3 +145,31 @@ describe('ChaseCamera', () => {
     expect(camera.camera.position.y).toBeCloseTo(createCameraTuning().height, 0)
   })
 })
+
+describe('ChaseCamera under a deck', () => {
+  it('drops to a low chase under a bridge, and rises again once out from under it', () => {
+    const tuning = createCameraTuning()
+    const camera = new ChaseCamera(tuning)
+    // A deck five metres up that appears over the car, then goes away.
+    let deck = Number.POSITIVE_INFINITY
+    camera.setBoundsAt((_x, _z, out, above) => {
+      out.floor = 0
+      out.ceiling = deck > above + 1.5 ? deck - 0.4 : Number.POSITIVE_INFINITY
+      return out
+    })
+    const target = createChaseTarget()
+    target.position = { x: 0, y: 0.5, z: 0 }
+    camera.snapTo(target)
+    const open = camera.camera.position.y
+    expect(open).toBeGreaterThan(4)
+
+    deck = 5
+    for (let i = 0; i < 180; i++) camera.update(1 / 60, target)
+    expect(camera.camera.position.y).toBeLessThan(3)
+    expect(camera.camera.position.y).toBeGreaterThan(1.5)
+
+    deck = Number.POSITIVE_INFINITY
+    for (let i = 0; i < 180; i++) camera.update(1 / 60, target)
+    expect(camera.camera.position.y).toBeCloseTo(open, 1)
+  })
+})

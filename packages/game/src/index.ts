@@ -35,28 +35,29 @@ import type * as RAPIER from '@dimforge/rapier3d-compat'
 export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
   CHASSIS_FORWARD,
-  DEFAULT_VEHICLE_PROFILE,
-  NEUTRAL_INPUT,
-  VEHICLE_PROFILE_IDS,
-  VEHICLE_PROFILE_LABELS,
-  WHEEL_CORNERS,
-  WHEEL_COUNT,
   copyVehicleInput,
   createVehicleInput,
   createVehicleStepState,
   createVehicleTuning,
+  DAMAGE_SMOKING,
+  DEFAULT_VEHICLE_PROFILE,
   initPhysics,
+  NEUTRAL_INPUT,
   readVehicleStepState,
   restingRideHeight,
-  wheelMountLocal,
-  writeVehicleStepState,
   type Vehicle,
+  VEHICLE_PROFILE_IDS,
+  VEHICLE_PROFILE_LABELS,
   type VehicleInput,
   type VehicleProfileId,
   type VehicleSpawn,
   type VehicleStepState,
   type VehicleTuning,
+  WHEEL_CORNERS,
+  WHEEL_COUNT,
+  wheelMountLocal,
   type WheelState,
+  writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 
@@ -330,13 +331,14 @@ const ABYSS = 5
 const LOST_PATIENCE = 180
 
 /**
- * Whether a vehicle is somewhere it cannot drive out of: deep in the water,
+ * Whether a vehicle is done driving for now: blown up, deep in the water,
  * fallen through the world, or off the edge of it.
  */
 export function isLost(arena: Arena, seat: Seat): boolean {
   const { x, y, z } = seat.vehicle.frame.position
   const worldSize = arena.map.size * arena.map.cellSize
   return (
+    seat.vehicle.wrecked ||
     seat.submersion > SUNK ||
     y < arena.map.seaLevel - ABYSS ||
     x < 0 ||

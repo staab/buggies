@@ -143,6 +143,27 @@ describe('game', () => {
     expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
   })
 
+  it('puts a wreck back on its spawn once it has lain there long enough', () => {
+    const arena = createArena(map)
+    const seat = solo(arena)
+    const epoch = seat.epoch
+    run(arena, FLAT_OUT, 2)
+    // Blown up: the wreck is left where it is for a while, then put back.
+    seat.vehicle.wrecked = true
+    run(arena, FLAT_OUT, 2)
+    expect(respawnLost(arena)).toHaveLength(0)
+    expect(seat.vehicle.wrecked).toBe(true)
+    for (let i = 0; i < 60 * 4 && seat.epoch === epoch; i++) {
+      advance(arena, () => FLAT_OUT)
+      respawnLost(arena)
+    }
+    expect(seat.epoch).not.toBe(epoch)
+    expect(seat.vehicle.wrecked).toBe(false)
+    const { position } = seat.vehicle.frame
+    expect(position.x).toBeCloseTo(seat.spawn.position.x, 3)
+    expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
+  })
+
   it('only drives the seats someone is in', () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'pickup')

@@ -38,6 +38,8 @@ const snapshot: SnapshotMessage = {
       rotation: { x: 0, y: 0.7071067811865476, z: 0, w: 0.7071067811865476 },
       linearVelocity: { x: 1.5, y: -0.25, z: 30 },
       angularVelocity: { x: 0.125, y: 2, z: -0.5 },
+      damage: 1,
+      wrecked: true,
       appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true },
     },
     {
@@ -48,6 +50,8 @@ const snapshot: SnapshotMessage = {
       rotation: { x: 0, y: 0, z: 0, w: 1 },
       linearVelocity: { x: 0, y: 0, z: 0 },
       angularVelocity: { x: 0, y: 0, z: 0 },
+      damage: 0.4,
+      wrecked: false,
       appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false },
     },
   ],
@@ -82,6 +86,8 @@ describe('wire', () => {
       expect(got.seat).toBe(vehicle.seat)
       expect(got.epoch).toBe(vehicle.epoch)
       expect(got.profile).toBe(vehicle.profile)
+      expect(got.wrecked).toBe(vehicle.wrecked)
+      expect(got.damage).toBeCloseTo(vehicle.damage, 2)
       expect(got.appliedInput).toEqual(vehicle.appliedInput)
       for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
         for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(vehicle[key][axis], 4)

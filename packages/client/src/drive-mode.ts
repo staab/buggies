@@ -15,8 +15,11 @@ import { BodyView } from './body-view.ts'
 import { CarView } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
+import { smokeAmount } from './damage.ts'
+import { Explosions } from './explosion.ts'
 import { Keyboard } from './input.ts'
 import type { ModeView } from './mode.ts'
+import { Smoke } from './smoke.ts'
 
 /**
  * The most simulation a single frame may cover. A tab that was in the
@@ -44,6 +47,11 @@ export function createDriveMode(
   const car = new CarView(COLORS[profile])
   car.syncDimensions(seat.tuning)
   scene.add(car.object)
+  const explosions = new Explosions()
+  scene.add(explosions.object)
+  const smoke = new Smoke()
+  scene.add(smoke.object)
+  let wasWrecked = false
 
   const body = new BodyView(vehicle.body, car.object)
   const cameraTuning = createCameraTuning()
@@ -99,6 +107,14 @@ export function createDriveMode(
       // 60Hz simulation shown at any other rate stutters.
       body.apply(owed / FIXED_TIMESTEP)
       car.applySimulatedWheels(vehicle.wheels, seat.tuning)
+      if (vehicle.wrecked && !wasWrecked) explosions.burst(vehicle.frame.position)
+      wasWrecked = vehicle.wrecked
+      car.setWrecked(wasWrecked)
+      if (!wasWrecked) {
+        smoke.trail(vehicle.frame.position, vehicle.frame.linearVelocity, smokeAmount(vehicle.damage), dt)
+      }
+      smoke.update(dt)
+      explosions.update(dt)
       aimCamera()
       chase.update(dt, target)
     },
@@ -112,6 +128,8 @@ export function createDriveMode(
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       car.dispose()
+      explosions.dispose()
+      smoke.dispose()
       arena.world.free()
     },
   }

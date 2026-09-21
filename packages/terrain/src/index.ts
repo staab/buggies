@@ -16,6 +16,7 @@ export {
 export { computeFlowRouting, findLakes, type FlowRouting } from './flow.ts'
 export { WORLD_SCALE, generateTerrain } from './generate.ts'
 export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
+export { deckSpans, lowestDeckOver, type DeckSpan } from './overhead.ts'
 export {
   ARTERIAL_BRIDGE_GRADE,
   ARTERIAL_WIDTH,
@@ -82,6 +83,7 @@ export type {
   Heightfield,
   Lake,
   Mountain,
+  Ramp,
   River,
   RiverPoint,
   Road,

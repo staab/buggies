@@ -52,6 +52,14 @@ export class PredictedCar {
     return this.prediction.vehicle.speed
   }
 
+  get wrecked(): boolean {
+    return this.prediction.vehicle.wrecked
+  }
+
+  setWrecked(wrecked: boolean): void {
+    this.view.setWrecked(wrecked)
+  }
+
   /** One fixed step: take in the server's word, then run ahead again. */
   tick(update: PredictionUpdate): ReconcileOutcome {
     const outcome = this.prediction.reconcile(update.newestSnapshot)

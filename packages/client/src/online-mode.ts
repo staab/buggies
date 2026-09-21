@@ -13,10 +13,13 @@ import type * as THREE from 'three'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
+import { smokeAmount } from './damage.ts'
+import { Explosions } from './explosion.ts'
 import { Keyboard } from './input.ts'
 import type { ModeView } from './mode.ts'
 import { PredictedCar } from './predicted-car.ts'
 import { RemoteCars } from './remote-cars.ts'
+import { Smoke } from './smoke.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -54,8 +57,13 @@ export async function createOnlineMode(
   const keyboard = new Keyboard()
   const car = new PredictedCar(prediction, seatColor(welcome.seat))
   scene.add(car.object)
-  const others = new RemoteCars(welcome.seat)
+  const explosions = new Explosions()
+  scene.add(explosions.object)
+  const smoke = new Smoke()
+  scene.add(smoke.object)
+  const others = new RemoteCars(welcome.seat, (at) => explosions.burst(at), smoke)
   scene.add(others.object)
+  let wasWrecked = false
 
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
@@ -89,6 +97,15 @@ export async function createOnlineMode(
       }
       others.update(client.sample(), dt)
       car.render(owed / FIXED_TIMESTEP, dt)
+      if (car.wrecked && !wasWrecked) explosions.burst(prediction.vehicle.frame.position)
+      wasWrecked = car.wrecked
+      car.setWrecked(wasWrecked)
+      if (!wasWrecked) {
+        const { position, linearVelocity } = prediction.vehicle.frame
+        smoke.trail(position, linearVelocity, smokeAmount(prediction.vehicle.damage), dt)
+      }
+      smoke.update(dt)
+      explosions.update(dt)
       car.aim(target)
       if (chaseSnapped) chase.update(dt, target)
       else {
@@ -108,6 +125,8 @@ export async function createOnlineMode(
       client.close('left')
       others.dispose()
       car.dispose()
+      explosions.dispose()
+      smoke.dispose()
     },
   }
 }

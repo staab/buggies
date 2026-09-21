@@ -21,6 +21,7 @@ import {
   type Building,
   type Heightfield,
   type Lake,
+  type Ramp,
   type River,
   type Road,
   type TerrainMap,
@@ -708,17 +709,23 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   ]
   const blocks = map.buildings.filter((building) => building.kind === 'block')
   const houses = map.buildings.filter((building) => building.kind === 'house')
+  // A house with a ramp up to it is flat-topped, to be driven over; the rest
+  // carry a pitched roof.
+  const pitched = houses.filter((house) => house.roof === 'pitched')
+  const flat = houses.filter((house) => house.roof === 'flat')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
+  const paintHouse = (building: Building, matrix: THREE.Matrix4, color: THREE.Color): void => {
+    boxAt(building, matrix)
+    color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length]!)
+  }
   meshes.push(
     instanced(box, walled(blockWall, flatRoof), blocks, (building, matrix, color) => {
       boxAt(building, matrix)
       sampleRamp(building.tone, BLOCK_STOPS, color)
     }),
-    instanced(box, walled(houseWall, houseWall), houses, (building, matrix, color) => {
-      boxAt(building, matrix)
-      color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length]!)
-    }),
+    instanced(box, walled(houseWall, houseWall), pitched, paintHouse),
+    instanced(box, walled(houseWall, flatRoof), flat, paintHouse),
   )
 
   // A pitched roof: a four-sided cone, turned so its base is square to the box.
@@ -727,7 +734,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   roof.translate(0, 0.5, 0)
   const roofing = new THREE.MeshStandardMaterial({ map: roofFacade().texture, roughness: 0.95, metalness: 0 })
   meshes.push(
-    instanced(roof, roofing, houses, (house, matrix, color) => {
+    instanced(roof, roofing, pitched, (house, matrix, color) => {
       const span = Math.min(house.width, house.depth)
       matrix.compose(
         new THREE.Vector3(house.x, house.top, house.z),
@@ -896,5 +903,50 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
 
   for (const standing of buildStanding(map)) group.add(standing)
 
+  if (map.ramps.length > 0) {
+    const rampMaterial = new THREE.MeshStandardMaterial({
+      color: RAMP_COLOR,
+      roughness: 0.9,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+      flatShading: true,
+    })
+    group.add(new THREE.Mesh(buildRampGeometry(map.ramps), rampMaterial))
+  }
+
   return group
+}
+
+const RAMP_COLOR = new THREE.Color('#4a4a48')
+
+/** Every ramp as one mesh: a wedge with a top to drive on, two sides and a back against the house. */
+function buildRampGeometry(ramps: Ramp[]): THREE.BufferGeometry {
+  const positions: number[] = []
+  const indices: number[] = []
+  for (const ramp of ramps) {
+    const sx = -ramp.dz * (ramp.width / 2)
+    const sz = ramp.dx * (ramp.width / 2)
+    const tx = ramp.x + ramp.dx * ramp.length
+    const tz = ramp.z + ramp.dz * ramp.length
+    const under = ramp.bottom - 1
+    const base = positions.length / 3
+    positions.push(
+      ramp.x + sx, ramp.bottom, ramp.z + sz,
+      ramp.x - sx, ramp.bottom, ramp.z - sz,
+      tx + sx, ramp.top, tz + sz,
+      tx - sx, ramp.top, tz - sz,
+      tx + sx, under, tz + sz,
+      tx - sx, under, tz - sz,
+    )
+    // Top, the two sides, and the back.
+    indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2)
+    indices.push(base, base + 2, base + 4)
+    indices.push(base + 1, base + 5, base + 3)
+    indices.push(base + 2, base + 3, base + 4, base + 3, base + 5, base + 4)
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  return geometry
 }

@@ -221,3 +221,32 @@ describe('buildings and trees', () => {
     }
   })
 })
+
+describe('ramps', () => {
+  beforeAll(() => {
+    map ??= generateTerrain(1)
+  }, 60_000)
+
+  it('lead from the road shoulder up onto the roof of a few flat-topped houses', () => {
+    expect(map.ramps.length).toBeGreaterThan(3)
+    const flat = map.buildings.filter((building) => building.kind === 'house' && building.roof === 'flat')
+    expect(flat.length).toBe(map.ramps.length)
+    for (const ramp of map.ramps) {
+      // A grade a car can take flat out, and the foot on the ground, off the road.
+      const grade = (ramp.top - ramp.bottom) / ramp.length
+      expect(grade).toBeGreaterThan(0.2)
+      expect(grade).toBeLessThan(0.7)
+      expect(Math.abs(sampleHeight(map.heightfield, ramp.x, ramp.z) - ramp.bottom)).toBeLessThan(0.01)
+      expect(roadCrowding(map.roads, ramp.x, ramp.z)).toBeGreaterThan(1)
+      // The top edge meets a flat-topped house at its roof.
+      const tx = ramp.x + ramp.dx * ramp.length
+      const tz = ramp.z + ramp.dz * ramp.length
+      const house = flat.find(
+        (candidate) =>
+          Math.abs(candidate.top - ramp.top) < 1e-6 &&
+          Math.hypot(candidate.x - tx, candidate.z - tz) < candidate.depth / 2 + 1,
+      )
+      expect(house).toBeDefined()
+    }
+  })
+})

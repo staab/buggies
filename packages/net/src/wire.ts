@@ -31,7 +31,7 @@ export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
 export const SNAPSHOT_HEADER_BYTES = 10
-export const SNAPSHOT_VEHICLE_BYTES = 68
+export const SNAPSHOT_VEHICLE_BYTES = 70
 
 export interface HelloMessage {
   protocolVersion: number
@@ -60,6 +60,10 @@ export interface VehicleSnapshot {
   rotation: Quat
   linearVelocity: Vec3
   angularVelocity: Vec3
+  /** How beaten up the car is, 0 to 1, in steps of a 255th. */
+  damage: number
+  /** Blown up, and waiting to be put back. */
+  wrecked: boolean
   /** What the driver was asking for on the tick this was taken. */
   appliedInput: VehicleInput
 }
@@ -279,6 +283,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.quat(vehicle.rotation)
     writer.vec3(vehicle.linearVelocity)
     writer.vec3(vehicle.angularVelocity)
+    writer.u8(Math.round(Math.min(Math.max(vehicle.damage, 0), 1) * 255))
+    writer.u8(vehicle.wrecked ? 1 : 0)
     writer.input(vehicle.appliedInput)
   }
   return writer.bytes
@@ -317,6 +323,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       rotation: reader.quat(),
       linearVelocity: reader.vec3(),
       angularVelocity: reader.vec3(),
+      damage: reader.u8() / 255,
+      wrecked: reader.u8() === 1,
       appliedInput: reader.input(createVehicleInput()),
     })
   }

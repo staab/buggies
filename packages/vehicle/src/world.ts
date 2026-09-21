@@ -106,6 +106,26 @@ export function addStaticBox(world: RAPIER.World, options: BoxOptions): RAPIER.R
   return body
 }
 
+/** A fixed box that is not ground: a wall, met by the chassis and counted as a crash. */
+export function addStaticWall(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
+  const {halfExtents, position, yaw = 0, friction = 1.0, restitution = 0} = options
+
+  const body = world.createRigidBody(
+    RAPIER.RigidBodyDesc.fixed()
+      .setTranslation(position.x, position.y, position.z)
+      .setRotation(quatFromYaw(yaw)),
+  )
+
+  world.createCollider(
+    RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
+      .setFriction(friction)
+      .setRestitution(restitution),
+    body,
+  )
+
+  return body
+}
+
 export function addDynamicBox(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
   const {halfExtents, position, yaw = 0, friction = 0.8, restitution = 0.2, mass = 40} = options
 

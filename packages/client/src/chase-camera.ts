@@ -12,6 +12,8 @@ import {dampToward, dampVector3Toward} from './damping.ts'
 export interface CameraTuning {
   distance: number
   height: number
+  /** Buggies addition: the height the camera drops to with something overhead, under a bridge or in a tunnel. */
+  lowHeight: number
   distanceSpeedGain: number
 
   positionLambda: number
@@ -38,6 +40,7 @@ export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   distance: 8.5,
   // Raised from seattle's 3.2 on request, then a little more. The rest of the rig is untouched.
   height: 5.2,
+  lowHeight: 1.9,
   distanceSpeedGain: 2.5,
 
   positionLambda: 6,
@@ -93,7 +96,12 @@ export interface CameraBounds {
   ceiling: number
 }
 
-export type CameraBoundsAt = (x: number, z: number, out: CameraBounds) => CameraBounds
+/**
+ * Buggies addition. The bounds at a point, for a car at height `above`: a
+ * deck counts as a roof only when it is over the car, not when the car is
+ * driving on it.
+ */
+export type CameraBoundsAt = (x: number, z: number, out: CameraBounds, above: number) => CameraBounds
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const CHASSIS_FORWARD = new THREE.Vector3(
@@ -154,7 +162,7 @@ export class ChaseCamera {
   private confine(x: number, y: number, z: number): number {
     if (this.boundsAt === null) return y
 
-    const {floor, ceiling} = this.boundsAt(x, z, this.bounds)
+    const {floor, ceiling} = this.boundsAt(x, z, this.bounds, this.targetPosition.y)
     const lowest = floor + this.tuning.groundClearance
     const highest = ceiling - ROOF_CLEARANCE
 
@@ -213,15 +221,25 @@ export class ChaseCamera {
     this.armDirection.normalize()
   }
 
+  /** Buggies addition. Whether there is a roof over the car itself: a bridge deck, or a tunnel. */
+  private covered(): boolean {
+    if (this.boundsAt === null) return false
+    const {x, y, z} = this.targetPosition
+    return Number.isFinite(this.boundsAt(x, z, this.bounds, y).ceiling)
+  }
+
   private updateDesiredPose(speed: number, speedFractionOfReference: number): void {
     const tuning = this.tuning
     const armLength = tuning.distance + tuning.distanceSpeedGain * speedFractionOfReference
     const lookAheadDistance = Math.min(speed * tuning.lookAheadTime, tuning.lookAheadMax)
+    // Buggies addition: under a bridge the camera drops to a low chase, and
+    // eases back up once the car is out from under it.
+    const height = this.covered() ? tuning.lowHeight : tuning.height
 
     this.desiredPosition
       .copy(this.targetPosition)
       .addScaledVector(this.armDirection, -armLength)
-      .addScaledVector(WORLD_UP, tuning.height)
+      .addScaledVector(WORLD_UP, height)
     this.desiredPosition.y = this.confine(
       this.desiredPosition.x,
       this.desiredPosition.y,
