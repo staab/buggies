@@ -9,6 +9,7 @@ import * as THREE from 'three'
 
 import { loadCarModels } from './car-model.ts'
 import { createDriveMode } from './drive-mode.ts'
+import { LEFT_KEYS, RIGHT_KEYS, SOLO_KEYS } from './driver.ts'
 import { Hud } from './hud.ts'
 import { createIslandMode, islandSummary } from './island-mode.ts'
 import { Menu, type Choice, type Mode } from './menu.ts'
@@ -19,7 +20,9 @@ import { TerrainSource } from './terrain-source.ts'
 import { createTerrainView } from './terrain-view.ts'
 
 const container = document.getElementById('app')!
-const hud = new Hud(document.getElementById('hud')!)
+/** One HUD a viewport: the left, or only, and the right of a split screen. */
+const huds = [new Hud(document.getElementById('hud')!), new Hud(document.getElementById('hud-right')!)]
+const hud = huds[0]!
 const menuElement = document.getElementById('menu')!
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -112,14 +115,17 @@ function defaultServer(): string {
 function readChoice(): Choice {
   const params = new URLSearchParams(location.search)
   const seed = Number(params.get('seed'))
-  const vehicle = params.get('vehicle')
-  const mode: Mode = params.get('mode') === 'online' ? 'online' : 'drive'
+  const requested = params.get('mode')
+  const mode: Mode = requested === 'online' || requested === 'split' ? requested : 'drive'
+  const profile = (name: string, fallback: VehicleProfileId): VehicleProfileId => {
+    const given = params.get(name)
+    return VEHICLE_PROFILE_IDS.includes(given as VehicleProfileId) ? (given as VehicleProfileId) : fallback
+  }
   return {
     mode,
     seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
-    vehicle: VEHICLE_PROFILE_IDS.includes(vehicle as VehicleProfileId)
-      ? (vehicle as VehicleProfileId)
-      : DEFAULT_VEHICLE_PROFILE,
+    vehicle: profile('vehicle', DEFAULT_VEHICLE_PROFILE),
+    vehicle2: profile('vehicle2', VEHICLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE),
     server: params.get('server') ?? defaultServer(),
   }
 }
@@ -134,7 +140,8 @@ function settle(): void {
   const online = choice.mode === 'online'
   const url = online
     ? `?mode=online&server=${encodeURIComponent(choice.server)}&vehicle=${choice.vehicle}`
-    : `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}`
+    : `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}` +
+      (choice.mode === 'split' ? `&vehicle2=${choice.vehicle2}` : '')
   history.replaceState(null, '', url)
 }
 
@@ -178,7 +185,7 @@ async function resume(): Promise<void> {
   if (game === null) return
   const stamp = ++generation
   choice = game.choice
-  if (game.choice.mode === 'drive') {
+  if (game.choice.mode !== 'online') {
     await mapFor(game.choice.seed)
     if (stamp !== generation) return
   }
@@ -195,11 +202,12 @@ async function start(next: Choice): Promise<void> {
   choice = next
 
   if (game !== null && continues(game.choice, next)) {
-    if (next.mode === 'drive') {
+    if (next.mode !== 'online') {
       await mapFor(next.seed)
       if (stamp !== generation) return
     }
-    if (game.choice.vehicle !== next.vehicle) game.mode.setVehicle?.(next.vehicle)
+    if (game.choice.vehicle !== next.vehicle) game.mode.setVehicle?.(next.vehicle, 0)
+    if (next.mode === 'split' && game.choice.vehicle2 !== next.vehicle2) game.mode.setVehicle?.(next.vehicle2, 1)
     game.choice = next
     setBackdrop(null)
     settle()
@@ -236,7 +244,14 @@ async function start(next: Choice): Promise<void> {
   const island = await mapFor(next.seed)
   // A newer choice may have landed while the island was being made.
   if (stamp !== generation) return
-  setGame({ mode: createDriveMode(island, scene, next.vehicle), choice: next })
+  const players =
+    next.mode === 'split'
+      ? [
+          { profile: next.vehicle, keys: LEFT_KEYS },
+          { profile: next.vehicle2, keys: RIGHT_KEYS },
+        ]
+      : [{ profile: next.vehicle, keys: SOLO_KEYS }]
+  setGame({ mode: createDriveMode(island, scene, players), choice: next })
   settle()
 }
 
@@ -291,10 +306,13 @@ function frame(now: number): void {
   game?.mode.update(dt, !menu.open)
   if (menu.open) backdrop?.mode.update(dt, false)
   const shown = menu.open && backdrop !== null ? backdrop.mode : game?.mode ?? null
-  if (shown !== null) renderer.render(shown.scene ?? scene, shown.camera)
+  if (shown !== null) {
+    if (shown.render) shown.render(renderer)
+    else renderer.render(shown.scene ?? scene, shown.camera)
+  }
   // The menu says what it is showing itself.
-  if (menu.open) hud.render(null)
-  else if (game !== null) hud.render(game.mode.hud())
+  const states = menu.open || game === null ? [] : game.mode.hud()
+  if (menu.open || game !== null) huds.forEach((each, viewport) => each.render(states[viewport] ?? null))
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

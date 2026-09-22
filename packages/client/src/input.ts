@@ -1,6 +1,18 @@
 import { NEUTRAL_INPUT, type VehicleInput } from '@buggies/game'
 
-const BINDINGS: Record<string, keyof Held> = {
+interface Held {
+  forward: boolean
+  back: boolean
+  left: boolean
+  right: boolean
+  handbrake: boolean
+}
+
+/** Which key (by its `code`) does what. */
+export type KeyBindings = Readonly<Record<string, keyof Held>>
+
+/** The whole keyboard, for one driver: the letters and the arrows both. */
+export const SOLO_BINDINGS: KeyBindings = {
   KeyW: 'forward',
   ArrowUp: 'forward',
   KeyS: 'back',
@@ -12,12 +24,22 @@ const BINDINGS: Record<string, keyof Held> = {
   Space: 'handbrake',
 }
 
-interface Held {
-  forward: boolean
-  back: boolean
-  left: boolean
-  right: boolean
-  handbrake: boolean
+/** The letters, for whoever has the left of a shared keyboard. */
+export const LEFT_BINDINGS: KeyBindings = {
+  KeyW: 'forward',
+  KeyS: 'back',
+  KeyA: 'left',
+  KeyD: 'right',
+  Space: 'handbrake',
+}
+
+/** The arrows, for whoever has the right. */
+export const RIGHT_BINDINGS: KeyBindings = {
+  ArrowUp: 'forward',
+  ArrowDown: 'back',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+  ShiftLeft: 'handbrake',
 }
 
 const RELEASED: Held = {
@@ -35,9 +57,10 @@ const RELEASED: Held = {
 export class Keyboard {
   private readonly held: Held = { ...RELEASED }
   private readonly command: VehicleInput = { ...NEUTRAL_INPUT }
+  private readonly bindings: KeyBindings
 
   private readonly onKey = (event: KeyboardEvent): void => {
-    const binding = BINDINGS[event.code]
+    const binding = this.bindings[event.code]
     if (binding === undefined) return
     event.preventDefault()
     this.held[binding] = event.type === 'keydown'
@@ -45,7 +68,8 @@ export class Keyboard {
 
   private readonly onBlur = (): void => this.release()
 
-  constructor() {
+  constructor(bindings: KeyBindings = SOLO_BINDINGS) {
+    this.bindings = bindings
     window.addEventListener('keydown', this.onKey)
     window.addEventListener('keyup', this.onKey)
     window.addEventListener('blur', this.onBlur)

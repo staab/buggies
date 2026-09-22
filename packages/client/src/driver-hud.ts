@@ -68,5 +68,5 @@ export function driverState(vehicle: Vehicle, submersion: number, inTunnel: bool
             ? 'airborne'
             : Math.abs(vehicle.slipAngle) > SLIDE_ANGLE
               ? 'sliding'
-              : 'on the road'
+              : ''
 }

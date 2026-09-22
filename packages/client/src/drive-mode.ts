@@ -1,24 +1,9 @@
-import {
-  FIXED_TIMESTEP,
-  VEHICLE_PROFILE_LABELS,
-  advance,
-  changeVehicle,
-  createArena,
-  respawnLost,
-  respawnNearby,
-  takeSeat,
-  type VehicleProfileId,
-} from '@buggies/game'
+import { FIXED_TIMESTEP, advance, createArena, respawnLost, takeSeat, type VehicleProfileId } from '@buggies/game'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
-import { BodyView } from './body-view.ts'
-import { CarView, profileColor } from './car-view.ts'
-import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { cameraBounds, driverState, tunnelTest } from './driver-hud.ts'
-import { smokeAmount } from './damage.ts'
+import { Driver, type DriverKeys } from './driver.ts'
 import { Explosions } from './explosion.ts'
-import { Keyboard } from './input.ts'
 import type { ModeView } from './mode.ts'
 import { Smoke } from './smoke.ts'
 
@@ -28,118 +13,93 @@ import { Smoke } from './smoke.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-/** Alone on the island, in a one-seat arena. */
-export function createDriveMode(
-  map: TerrainMap,
-  scene: THREE.Scene,
-  firstProfile: VehicleProfileId,
-): ModeView {
-  const arena = createArena(map, 1)
-  const seat = takeSeat(arena, 0, firstProfile)
-  const { vehicle } = seat
-  const keyboard = new Keyboard()
-  let profile = firstProfile
-  let car = new CarView(profile, profileColor(profile))
-  car.syncDimensions(seat.tuning)
-  scene.add(car.object)
+/** Someone to put on the island: in what, and on which keys. */
+export interface Player {
+  profile: VehicleProfileId
+  keys: DriverKeys
+}
+
+/**
+ * On the island with no server: one player with the whole screen, or two
+ * with half each, side by side, in the one arena so that they can run into
+ * each other.
+ */
+export function createDriveMode(map: TerrainMap, scene: THREE.Scene, players: readonly Player[]): ModeView {
+  const arena = createArena(map, players.length)
   const explosions = new Explosions()
   scene.add(explosions.object)
   const smoke = new Smoke()
   scene.add(smoke.object)
-  let wasWrecked = false
-
-  let body = new BodyView(vehicle.body, car.object)
-  const cameraTuning = createCameraTuning()
-  cameraTuning.far = map.size * map.cellSize * 2
-  const chase = new ChaseCamera(cameraTuning)
-  chase.setBoundsAt(cameraBounds(map))
-  const target = createChaseTarget()
-  const inTunnel = tunnelTest(map)
-
-  const aimCamera = (): void => {
-    vehicle.body.translation(target.position)
-    vehicle.body.rotation(target.rotation)
-    vehicle.body.linvel(target.velocity)
-    target.speed = vehicle.speed
-    target.wrecked = vehicle.wrecked
-  }
-
-  const snap = (): void => {
-    body.reset()
-    aimCamera()
-    chase.snapTo(target)
-  }
+  const drivers = players.map(
+    (player, seat) =>
+      new Driver(scene, map, takeSeat(arena, seat, player.profile), player.profile, player.keys, { explosions, smoke }),
+  )
+  const split = drivers.length > 1
 
   const onKey = (event: KeyboardEvent): void => {
-    if (event.key !== 'Enter') return
-    respawnNearby(arena, seat)
-    keyboard.release()
-    snap()
+    for (const driver of drivers) {
+      if (driver.keys.respawn(event)) driver.respawn(arena)
+    }
   }
   window.addEventListener('keydown', onKey)
 
   let owed = 0
-  snap()
+  const viewport = new THREE.Vector4()
 
   return {
-    camera: chase.camera,
+    camera: drivers[0]!.camera,
     resize(aspect) {
-      chase.camera.aspect = aspect
-      chase.camera.updateProjectionMatrix()
+      // Side by side, each has half the width.
+      for (const driver of drivers) {
+        driver.camera.aspect = split ? aspect / 2 : aspect
+        driver.camera.updateProjectionMatrix()
+      }
     },
     update(dt, active) {
       // A menu over the top pauses the world rather than letting it run on
       // unattended behind the panel.
       if (!active) return
-      const input = keyboard.read()
+      const inputs = drivers.map((driver) => driver.input())
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
-        advance(arena, () => input)
-        if (respawnLost(arena).length > 0) snap()
-        body.capture()
+        advance(arena, (seat) => inputs[seat.id]!)
+        for (const lost of respawnLost(arena)) drivers[lost.id]?.snap()
+        for (const driver of drivers) driver.captureStep()
         owed -= FIXED_TIMESTEP
       }
       // Render between the last two steps rather than on the newest one, or a
       // 60Hz simulation shown at any other rate stutters.
-      body.apply(owed / FIXED_TIMESTEP)
-      car.applySimulatedWheels(vehicle.wheels, seat.tuning)
-      if (vehicle.wrecked && !wasWrecked) explosions.burst(vehicle.frame.position)
-      wasWrecked = vehicle.wrecked
-      car.setWrecked(wasWrecked)
-      if (!wasWrecked) {
-        smoke.trail(vehicle.frame.position, vehicle.frame.linearVelocity, smokeAmount(vehicle.damage), dt)
-      }
+      for (const driver of drivers) driver.render(owed / FIXED_TIMESTEP, dt)
       smoke.update(dt)
       explosions.update(dt)
-      aimCamera()
-      chase.update(dt, target)
     },
-    setVehicle(next) {
-      if (next === profile) return
-      changeVehicle(arena, seat, next)
-      profile = next
-      car.dispose()
-      car = new CarView(next, profileColor(next))
-      car.syncDimensions(seat.tuning)
-      scene.add(car.object)
-      body = new BodyView(vehicle.body, car.object)
-      wasWrecked = false
-      keyboard.release()
-      snap()
+    render(renderer) {
+      if (!split) {
+        renderer.render(scene, drivers[0]!.camera)
+        return
+      }
+      renderer.getViewport(viewport)
+      const { x, y, z: width, w: height } = viewport
+      const half = Math.floor(width / 2)
+      renderer.setScissorTest(true)
+      drivers.forEach((driver, side) => {
+        const left = x + side * half
+        renderer.setViewport(left, y, half, height)
+        renderer.setScissor(left, y, half, height)
+        renderer.render(scene, driver.camera)
+      })
+      renderer.setScissorTest(false)
+      renderer.setViewport(viewport)
+    },
+    setVehicle(profile, player = 0) {
+      drivers[player]?.setVehicle(arena, profile)
     },
     hud() {
-      return {
-        title: `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed}`,
-        state: driverState(vehicle, seat.submersion, inTunnel(vehicle.frame.position)),
-        speed: vehicle.speed,
-        maxSpeed: seat.tuning.maxSpeed,
-        damage: vehicle.wrecked ? 1 : vehicle.damage,
-      }
+      return drivers.map((driver) => driver.hud())
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
-      keyboard.dispose()
-      car.dispose()
+      for (const driver of drivers) driver.dispose()
       explosions.dispose()
       smoke.dispose()
       arena.world.free()

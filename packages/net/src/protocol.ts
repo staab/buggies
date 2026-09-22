@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 4
+export const PROTOCOL_VERSION = 5
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND

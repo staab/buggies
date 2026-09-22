@@ -30,14 +30,16 @@
         width: 100%;
         height: 100%;
       }
-      #hud {
+      #hud,
+      #hud-right {
         position: fixed;
         top: 12px;
         left: 12px;
         display: flex;
         flex-direction: column;
         gap: 6px;
-        min-width: 240px;
+        width: 300px;
+        box-sizing: border-box;
         padding: 10px 12px;
         border-radius: 8px;
         background: var(--panel);
@@ -45,91 +47,73 @@
         line-height: 1.5;
         pointer-events: none;
       }
+      /* The right half of a split screen has its own, in its own corner. */
+      #hud-right {
+        left: calc(50% + 12px);
+      }
       #hud[hidden],
-      #hud > [hidden] {
+      #hud-right[hidden],
+      #hud > [hidden],
+      #hud-right > [hidden] {
         display: none;
       }
-      #hud .gauges {
+      .gauges {
         display: flex;
+        justify-content: space-evenly;
         align-items: flex-end;
-        gap: 14px;
       }
-      .speedo {
+      .dial {
         width: 120px;
         height: 92px;
         flex: none;
       }
-      .speedo .track {
+      .dial .track {
         fill: none;
         stroke: rgba(150, 190, 220, 0.22);
         stroke-width: 6;
         stroke-linecap: round;
       }
-      .speedo .value {
+      .dial .value {
         fill: none;
         stroke: var(--accent);
         stroke-width: 6;
         stroke-linecap: round;
       }
-      .speedo .tick {
+      .dial .tick {
         stroke: var(--dim);
         stroke-width: 1.5;
       }
-      .speedo .needle {
+      .dial .needle {
         stroke: var(--ink);
         stroke-width: 2;
         stroke-linecap: round;
       }
-      .speedo .hub {
+      .dial .hub {
         fill: var(--ink);
       }
-      .speedo .reading {
+      .dial .reading {
         fill: var(--ink);
         font: 600 16px ui-monospace, SFMono-Regular, Menlo, monospace;
         text-anchor: middle;
       }
-      .speedo .unit {
+      .dial .unit {
         fill: var(--dim);
         font: 8px ui-monospace, SFMono-Regular, Menlo, monospace;
         letter-spacing: 0.12em;
         text-transform: uppercase;
         text-anchor: middle;
       }
-      #hud .damage {
-        flex: 1;
-        min-width: 110px;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        padding-bottom: 10px;
-      }
-      #hud .damage .bar {
-        height: 8px;
-        border-radius: 4px;
-        background: rgba(0, 0, 0, 0.35);
-        overflow: hidden;
-      }
-      #hud .damage .fill {
-        width: 0;
-        height: 100%;
-        border-radius: 4px;
-        transition:
-          width 120ms,
-          background 120ms;
-      }
-      #hud .damage .label {
-        font-size: 10px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
+      .state {
         color: var(--dim);
       }
-      #hud .state {
-        color: var(--dim);
-      }
-      #hud .controls {
+      .controls {
         font-size: 11px;
         line-height: 1.9;
         color: var(--dim);
+      }
+      .controls .hint {
+        display: inline-block;
+        margin-right: 8px;
       }
       /* The menu stands to one side and lets everything behind it be seen,
          and touched: the island is looked over past it. */
@@ -315,6 +299,7 @@
   <body>
     <div id="app"></div>
     <div id="hud">loading...</div>
+    <div id="hud-right" hidden></div>
     <div id="menu"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

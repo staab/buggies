@@ -2,16 +2,18 @@ import { VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } fr
 
 import { modelCredits } from './car-model.ts'
 
-export type Mode = 'drive' | 'online'
+export type Mode = 'drive' | 'split' | 'online'
 
 /** The wizard's pages, in the order they come. */
-export type Step = 'mode' | 'map' | 'car'
+export type Step = 'mode' | 'map' | 'car' | 'car2'
 
 /** What the player has chosen. Everything the app needs to build a session. */
 export interface Choice {
   mode: Mode
   seed: number
   vehicle: VehicleProfileId
+  /** The second driver's, on a split screen. */
+  vehicle2: VehicleProfileId
   server: string
 }
 
@@ -35,6 +37,11 @@ const MODE_NOTES: Record<Mode, { name: string; note: string; go: string }> = {
     note: 'Take a vehicle out on an island of your choosing.',
     go: 'Drive',
   },
+  split: {
+    name: 'Split screen',
+    note: 'Two of you on one keyboard: the letters on the left, the arrows on the right.',
+    go: 'Drive',
+  },
   online: {
     name: 'Online',
     note: 'Join a server and share its island with whoever else is on it.',
@@ -46,6 +53,7 @@ const STEP_NAMES: Record<Step, string> = {
   mode: 'Mode',
   map: 'Map',
   car: 'Vehicle',
+  car2: 'Vehicle 2',
 }
 
 const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
@@ -61,9 +69,16 @@ const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
   goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
 }
 
-/** The pages a mode goes through: online, the server picks the map. */
+/** The pages a mode goes through: online, the server picks the map; split, there are two vehicles to pick. */
 export function stepsFor(mode: Mode): readonly Step[] {
-  return mode === 'online' ? ['mode', 'car'] : ['mode', 'map', 'car']
+  if (mode === 'online') return ['mode', 'car']
+  if (mode === 'split') return ['mode', 'map', 'car', 'car2']
+  return ['mode', 'map', 'car']
+}
+
+/** Which of the choices a vehicle page is picking. */
+function vehicleKey(step: Step): 'vehicle' | 'vehicle2' {
+  return step === 'car2' ? 'vehicle2' : 'vehicle'
 }
 
 function card(name: string, note: string): HTMLButtonElement {
@@ -123,6 +138,7 @@ export class Menu {
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
   private readonly serverGroup: HTMLFieldSetElement
+  private readonly vehicleLegend: HTMLLegendElement
   private choice: Choice
   private step: Step = 'mode'
   /** Each island asked for outranks the one before: a slow one that lands late is let go. */
@@ -146,7 +162,7 @@ export class Menu {
 
     // Page one: how to play, and where, if that is somewhere else.
     const [modeGroup, modeCards] = group('Mode')
-    for (const mode of ['drive', 'online'] as const) {
+    for (const mode of ['drive', 'split', 'online'] as const) {
       const button = card(MODE_NOTES[mode].name, MODE_NOTES[mode].note)
       button.addEventListener('click', () => this.pick({ mode }))
       this.modeButtons.set(mode, button)
@@ -184,12 +200,14 @@ export class Menu {
     const mapPage = document.createElement('div')
     mapPage.append(mapGroup, orbit)
 
-    // Page three: the vehicle, turning on the spot beside the panel.
+    // Page three, and on a split screen four: the vehicle, turning on the
+    // spot beside the panel. One page serves both drivers in turn.
     const [vehicleGroup, vehicleCards] = group('Vehicle')
+    this.vehicleLegend = vehicleGroup.querySelector('legend')!
     for (const vehicle of VEHICLE_PROFILE_IDS) {
       const button = card(VEHICLE_PROFILE_LABELS[vehicle], VEHICLE_NOTES[vehicle])
       button.addEventListener('click', () => {
-        this.pick({ vehicle })
+        this.pick({ [vehicleKey(this.step)]: vehicle })
         this.host.showVehicle(vehicle)
       })
       this.vehicleButtons.set(vehicle, button)
@@ -198,7 +216,7 @@ export class Menu {
     const carPage = document.createElement('div')
     carPage.append(vehicleGroup)
 
-    this.pages = { mode: modePage, map: mapPage, car: carPage }
+    this.pages = { mode: modePage, map: mapPage, car: carPage, car2: carPage }
 
     const nav = document.createElement('div')
     nav.className = 'nav'
@@ -275,7 +293,7 @@ export class Menu {
     this.status.textContent = ''
     this.render()
     if (step === 'map') void this.generate()
-    if (step === 'car') this.host.showVehicle(this.choice.vehicle)
+    if (step === 'car' || step === 'car2') this.host.showVehicle(this.choice[vehicleKey(step)])
   }
 
   /** A page on, or back; on from the last page is setting off. */
@@ -312,16 +330,18 @@ export class Menu {
 
   private render(): void {
     const steps = stepsFor(this.choice.mode)
+    const split = this.choice.mode === 'split'
     this.steps.replaceChildren(
       ...steps.map((step) => {
         const item = document.createElement('li')
-        item.textContent = STEP_NAMES[step]
+        item.textContent = step === 'car' && split ? 'Vehicle 1' : STEP_NAMES[step]
         if (step === this.step) item.setAttribute('aria-current', 'step')
         else if (steps.indexOf(step) < steps.indexOf(this.step)) item.className = 'done'
         return item
       }),
     )
-    for (const [step, page] of Object.entries(this.pages)) page.hidden = step !== this.step
+    for (const [step, page] of Object.entries(this.pages)) page.hidden = page !== this.pages[this.step]
+    this.vehicleLegend.textContent = split ? (this.step === 'car2' ? 'Vehicle 2: the arrows' : 'Vehicle 1: the letters') : 'Vehicle'
     if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
     if (document.activeElement !== this.serverField) this.serverField.value = this.choice.server
     for (const [mode, button] of this.modeButtons) {
@@ -329,8 +349,9 @@ export class Menu {
     }
     // Online, the server picks the map, so there is a server to name instead.
     this.serverGroup.hidden = this.choice.mode !== 'online'
+    const picking = this.choice[vehicleKey(this.step)]
     for (const [vehicle, button] of this.vehicleButtons) {
-      button.setAttribute('aria-pressed', String(vehicle === this.choice.vehicle))
+      button.setAttribute('aria-pressed', String(vehicle === picking))
     }
     this.back.hidden = this.step === steps[0]
     this.next.disabled = this.step === 'map' && this.generating
