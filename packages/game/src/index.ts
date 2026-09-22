@@ -74,17 +74,42 @@ export {
   PICKUP_REACH_UP,
   PICKUP_RESPAWN_TICKS,
   PICKUP_SLOTS,
+  SPILL_FAR,
+  SPILL_FLIGHT_TICKS,
+  SPILL_LIFE_TICKS,
+  SPILL_MOST,
+  SPILL_MOST_OUT,
+  SPILL_NEAR,
   pickupKind,
   pickupOut,
   pickupSeed,
   pickupSpot,
   reachesPickup,
+  reachesSpilled,
   setPickup,
+  spillFrom,
+  spilledGone,
+  spilledOut,
   type Pickup,
   type PickupKind,
+  type Spilled,
 } from './pickups.ts'
 
-import { createPickups, pickupOut, reachesPickup, setPickup, PICKUP_RESPAWN_TICKS, type Pickup } from './pickups.ts'
+import {
+  createPickups,
+  pickupOut,
+  reachesPickup,
+  reachesSpilled,
+  setPickup,
+  spillFrom,
+  spilledGone,
+  spilledOut,
+  PICKUP_RESPAWN_TICKS,
+  SPILL_MOST,
+  SPILL_MOST_OUT,
+  type Pickup,
+  type Spilled,
+} from './pickups.ts'
 import { wreckVehicle } from '@buggies/vehicle'
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
@@ -132,6 +157,8 @@ export interface Arena {
   readonly water: Float32Array
   /** The map's bananas and bombs, a slot each, for the taking. */
   readonly pickups: readonly Pickup[]
+  /** Bananas spilled from wrecks, lying about until taken. Replaced whole by the server's word. */
+  spilled: Spilled[]
   tick: number
 }
 
@@ -310,7 +337,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
   world.step()
 
   const water = buildWaterLevels(map)
-  return { map, world, worldTuning, seats, water, pickups: createPickups(map, water), tick: 0 }
+  return { map, world, worldTuning, seats, water, pickups: createPickups(map, water), spilled: [], tick: 0 }
 }
 
 function nextEpoch(epoch: number): number {
@@ -419,6 +446,22 @@ export function advance(
   arena.world.step()
   arena.tick += 1
   collectPickups(arena)
+  spillBananas(arena)
+}
+
+/**
+ * A car blown up spills its bananas: they fly out of the blast and land
+ * about the wreck, for anyone to come and take. Only so many come out of
+ * one blast, and a map only holds so many, the oldest going first.
+ */
+function spillBananas(arena: Arena): void {
+  for (const seat of arena.seats) {
+    if (!seat.occupied || !seat.vehicle.wrecked || seat.score === 0) continue
+    const count = Math.min(seat.score, SPILL_MOST)
+    arena.spilled.push(...spillFrom(arena.map, seat.vehicle.frame.position, count, seat.id, arena.tick))
+    seat.score = 0
+  }
+  if (arena.spilled.length > SPILL_MOST_OUT) arena.spilled.splice(0, arena.spilled.length - SPILL_MOST_OUT)
 }
 
 /**
@@ -435,6 +478,21 @@ function collectPickups(arena: Arena): void {
       if (pickup.kind === 'banana') seat.score += 1
       else wreckVehicle(seat.vehicle, seat.tuning)
       setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
+      break
+    }
+  }
+  // Spilled bananas go the same way, or fade if nobody comes for them.
+  for (let i = arena.spilled.length - 1; i >= 0; i--) {
+    const spilled = arena.spilled[i]!
+    if (spilledGone(spilled, arena.tick)) {
+      arena.spilled.splice(i, 1)
+      continue
+    }
+    if (!spilledOut(spilled, arena.tick)) continue
+    for (const seat of arena.seats) {
+      if (!seat.occupied || seat.vehicle.wrecked || !reachesSpilled(spilled, seat.vehicle.frame.position)) continue
+      seat.score += 1
+      arena.spilled.splice(i, 1)
       break
     }
   }

@@ -1,6 +1,7 @@
 import { DEFAULT_WORLD_TUNING, createVehicleTuning, restingRideHeight, type VehicleProfileId } from '@buggies/game'
 import * as THREE from 'three'
 
+import type { EngineVoice, Sound } from './audio.ts'
 import { CarView, profileColor } from './car-view.ts'
 import type { ModeView } from './mode.ts'
 
@@ -20,6 +21,11 @@ const ELEVATION = 0.34
 const FILL = 0.5
 /** How far right of centre the vehicle sits, as a fraction of the frame's width: the panel is on the left. */
 const ASIDE = 0.15
+/** How hard the engine works on the turntable: idling, with a blip now and then. */
+const IDLE_REV = 0.08
+const BLIP_REV = 0.5
+const BLIP_EVERY = 4.2
+const BLIP_LENGTH = 0.45
 
 export interface Framing {
   position: THREE.Vector3
@@ -61,7 +67,7 @@ export interface ShowroomView extends ModeView {
  * a floor, a plinth and the sky. It keeps turning whether or not the menu
  * is up, since the menu is what it is there for.
  */
-export function createShowroomMode(): ShowroomView {
+export function createShowroomMode(sound: Sound | null = null): ShowroomView {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#a9cbe6')
   scene.add(new THREE.HemisphereLight('#cfe6ff', '#4a5a3a', 0.9))
@@ -88,6 +94,8 @@ export function createShowroomMode(): ShowroomView {
   let aspect = 1
   let car: CarView | null = null
   let vehicle: VehicleProfileId | null = null
+  let voice: EngineVoice | null = null
+  let running = 0
 
   const frame = (): void => {
     if (car === null) return
@@ -113,6 +121,9 @@ export function createShowroomMode(): ShowroomView {
     show(next) {
       if (next === vehicle) return
       vehicle = next
+      voice?.stop()
+      voice = sound?.engine(next) ?? null
+      running = 0
       car?.dispose()
       plinth?.removeFromParent()
       plinth?.geometry.dispose()
@@ -139,11 +150,15 @@ export function createShowroomMode(): ShowroomView {
     },
     update(dt) {
       turntable.rotation.y += TURN_RATE * dt
+      running += dt
+      const sinceBlip = running % BLIP_EVERY
+      voice?.set(sinceBlip < BLIP_LENGTH ? BLIP_REV * Math.sin((Math.PI * sinceBlip) / BLIP_LENGTH) : IDLE_REV)
     },
     hud() {
       return []
     },
     dispose() {
+      voice?.stop()
       car?.dispose()
       plinth?.geometry.dispose()
       plinthMaterial.dispose()

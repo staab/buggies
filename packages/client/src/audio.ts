@@ -1,0 +1,279 @@
+import type { VehicleProfileId } from '@buggies/game'
+
+/**
+ * All the sound is made here, from oscillators and noise: there are no
+ * recordings to load or to credit. An engine is a voice that is kept
+ * running and steered by speed and throttle; everything else is a one-off.
+ */
+
+/** What an engine sounds like: its wave, how low it idles, how high it revs, and how it chugs. */
+export interface EngineTimbre {
+  wave: OscillatorType
+  /** The fundamental at idle, in Hz, and how much revving adds to it. */
+  idle: number
+  span: number
+  /** How bright it is: the low-pass filter's cutoff at full revs, in Hz. */
+  cutoff: number
+  volume: number
+  /** How much a diesel's beat comes through at idle, 0 to 1, and how fast it beats. */
+  chug: number
+  chugRate: number
+}
+
+export const ENGINE_TIMBRES: Readonly<Record<VehicleProfileId, EngineTimbre>> = Object.freeze({
+  sportsCar: { wave: 'sawtooth', idle: 55, span: 230, cutoff: 1100, volume: 0.34, chug: 0, chugRate: 0 },
+  raceCar: { wave: 'sawtooth', idle: 95, span: 560, cutoff: 2600, volume: 0.3, chug: 0, chugRate: 0 },
+  police: { wave: 'sawtooth', idle: 60, span: 250, cutoff: 1000, volume: 0.34, chug: 0, chugRate: 0 },
+  firetruck: { wave: 'square', idle: 34, span: 90, cutoff: 480, volume: 0.4, chug: 0.5, chugRate: 22 },
+  pickup: { wave: 'sawtooth', idle: 42, span: 150, cutoff: 700, volume: 0.38, chug: 0.25, chugRate: 18 },
+  smallCar: { wave: 'square', idle: 72, span: 270, cutoff: 1300, volume: 0.26, chug: 0, chugRate: 0 },
+  tank: { wave: 'square', idle: 26, span: 48, cutoff: 360, volume: 0.46, chug: 0.7, chugRate: 12 },
+  ambulance: { wave: 'sawtooth', idle: 40, span: 130, cutoff: 650, volume: 0.36, chug: 0.3, chugRate: 20 },
+  semi: { wave: 'square', idle: 30, span: 70, cutoff: 420, volume: 0.42, chug: 0.6, chugRate: 14 },
+  goKart: { wave: 'square', idle: 120, span: 620, cutoff: 3200, volume: 0.28, chug: 0, chugRate: 0 },
+})
+
+/** How far away a sound can be heard from at all, in metres. */
+export const EARSHOT = 140
+
+/**
+ * How hard an engine is working, 0 idling to 1 flat out: mostly how fast it
+ * is going, but the throttle revs it from a standstill too.
+ */
+export function engineRev(speed: number, maxSpeed: number, throttle: number): number {
+  const going = Math.min(Math.abs(speed) / Math.max(maxSpeed, 1), 1)
+  const revving = Math.max(throttle, 0) * 0.35 * (1 - going)
+  return Math.min(going + revving, 1)
+}
+
+/** The fundamental an engine runs at for a rev. */
+export function engineFrequency(timbre: EngineTimbre, rev: number): number {
+  return timbre.idle + timbre.span * rev
+}
+
+/** How loud something this far off is, 0 to 1. */
+export function earshot(distance: number): number {
+  const near = Math.max(1 - distance / EARSHOT, 0)
+  return near * near
+}
+
+/** How smoothly an engine follows its rev, in seconds. */
+const ENGINE_FOLLOW = 0.08
+
+/** An engine kept running: told each frame how hard it works and how far off it is. */
+export class EngineVoice {
+  private readonly oscillators: OscillatorNode[]
+  private readonly filter: BiquadFilterNode
+  private readonly gain: GainNode
+  private readonly chug: GainNode
+  private readonly beat: OscillatorNode | null
+  private readonly beatDepth: GainNode | null
+  private stopped = false
+
+  constructor(
+    private readonly context: AudioContext,
+    private readonly timbre: EngineTimbre,
+    output: AudioNode,
+  ) {
+    const now = context.currentTime
+    this.filter = context.createBiquadFilter()
+    this.filter.type = 'lowpass'
+    this.filter.frequency.value = timbre.cutoff * 0.3
+    this.filter.Q.value = 1.2
+    this.chug = context.createGain()
+    this.chug.gain.value = 1
+    this.gain = context.createGain()
+    this.gain.gain.value = 0
+    this.filter.connect(this.chug).connect(this.gain).connect(output)
+    // Two of the wave a fifth apart, one a hair off tune, so it is not a pure buzz.
+    this.oscillators = [1, 1.5, 1.003].map((ratio, index) => {
+      const oscillator = context.createOscillator()
+      oscillator.type = timbre.wave
+      oscillator.frequency.value = timbre.idle * ratio
+      const level = context.createGain()
+      level.gain.value = index === 0 ? 1 : 0.35
+      oscillator.connect(level).connect(this.filter)
+      oscillator.start(now)
+      return oscillator
+    })
+    if (timbre.chug > 0) {
+      this.beat = context.createOscillator()
+      this.beat.type = 'sine'
+      this.beat.frequency.value = timbre.chugRate
+      this.beatDepth = context.createGain()
+      this.beatDepth.gain.value = timbre.chug * 0.5
+      this.beat.connect(this.beatDepth).connect(this.chug.gain)
+      this.beat.start(now)
+    } else {
+      this.beat = null
+      this.beatDepth = null
+    }
+  }
+
+  /** How hard it works, 0 to 1, and how far off it is. */
+  set(rev: number, distance = 0): void {
+    if (this.stopped) return
+    const { timbre, context } = this
+    const now = context.currentTime
+    const frequency = engineFrequency(timbre, rev)
+    this.oscillators[0]!.frequency.setTargetAtTime(frequency, now, ENGINE_FOLLOW)
+    this.oscillators[1]!.frequency.setTargetAtTime(frequency * 1.5, now, ENGINE_FOLLOW)
+    this.oscillators[2]!.frequency.setTargetAtTime(frequency * 1.003, now, ENGINE_FOLLOW)
+    this.filter.frequency.setTargetAtTime(timbre.cutoff * (0.3 + 0.7 * rev), now, ENGINE_FOLLOW)
+    const loudness = timbre.volume * (0.45 + 0.55 * rev) * earshot(distance)
+    this.gain.gain.setTargetAtTime(loudness, now, ENGINE_FOLLOW)
+    if (this.beat !== null && this.beatDepth !== null) {
+      // The beat is a diesel's idle: it smooths out as the revs come up.
+      this.beat.frequency.setTargetAtTime(timbre.chugRate * (0.6 + 1.4 * rev), now, ENGINE_FOLLOW)
+      this.beatDepth.gain.setTargetAtTime(timbre.chug * 0.5 * (1 - rev), now, ENGINE_FOLLOW)
+    }
+  }
+
+  stop(): void {
+    if (this.stopped) return
+    this.stopped = true
+    const now = this.context.currentTime
+    this.gain.gain.setTargetAtTime(0, now, 0.05)
+    const stopAt = now + 0.3
+    for (const oscillator of this.oscillators) oscillator.stop(stopAt)
+    this.beat?.stop(stopAt)
+    setTimeout(() => this.gain.disconnect(), 400)
+  }
+}
+
+/** A second of white noise, for bangs and thuds. */
+function noiseBuffer(context: AudioContext): AudioBuffer {
+  const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
+  return buffer
+}
+
+/** The three notes of a banana taken: a bright little rising chime. */
+const CHIME = [1318.5, 1661.2, 1975.5]
+
+/**
+ * The sound of the game. It has to be unlocked by something the player does
+ * before a browser will let it be heard, so the first key or click does that.
+ */
+export class Sound {
+  private readonly context: AudioContext
+  private readonly master: GainNode
+  private readonly noise: AudioBuffer
+  private mutedNow = false
+
+  constructor(context: AudioContext = new AudioContext()) {
+    this.context = context
+    this.master = context.createGain()
+    this.master.gain.value = 0.6
+    this.master.connect(context.destination)
+    this.noise = noiseBuffer(context)
+  }
+
+  /** Called from a click or a key: browsers hold sound back until then. */
+  unlock(): void {
+    if (this.context.state === 'suspended') void this.context.resume()
+  }
+
+  get muted(): boolean {
+    return this.mutedNow
+  }
+
+  set muted(muted: boolean) {
+    this.mutedNow = muted
+    this.master.gain.setTargetAtTime(muted ? 0 : 0.6, this.context.currentTime, 0.03)
+  }
+
+  /** An engine of this vehicle's kind, running until stopped. */
+  engine(profile: VehicleProfileId): EngineVoice {
+    return new EngineVoice(this.context, ENGINE_TIMBRES[profile], this.master)
+  }
+
+  /** Something blowing up, this far off: a bang, a rumble, and a thump underneath. */
+  boom(distance = 0): void {
+    const loudness = earshot(distance)
+    if (loudness <= 0) return
+    const { context } = this
+    const now = context.currentTime
+    const bang = context.createBufferSource()
+    bang.buffer = this.noise
+    const filter = context.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(2600, now)
+    filter.frequency.exponentialRampToValueAtTime(90, now + 1.3)
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(1.0 * loudness, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5)
+    bang.connect(filter).connect(gain).connect(this.master)
+    bang.start(now)
+    bang.stop(now + 1.5)
+    const thump = context.createOscillator()
+    thump.type = 'sine'
+    thump.frequency.setValueAtTime(70, now)
+    thump.frequency.exponentialRampToValueAtTime(28, now + 0.7)
+    const thumpGain = context.createGain()
+    thumpGain.gain.setValueAtTime(0.9 * loudness, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.8)
+    thump.connect(thumpGain).connect(this.master)
+    thump.start(now)
+    thump.stop(now + 0.8)
+  }
+
+  /** A banana taken: a rising chime. */
+  chime(): void {
+    const { context } = this
+    const now = context.currentTime
+    CHIME.forEach((frequency, index) => {
+      const at = now + index * 0.07
+      const note = context.createOscillator()
+      note.type = 'sine'
+      note.frequency.value = frequency
+      const overtone = context.createOscillator()
+      overtone.type = 'triangle'
+      overtone.frequency.value = frequency * 2
+      const gain = context.createGain()
+      gain.gain.setValueAtTime(0.0001, at)
+      gain.gain.exponentialRampToValueAtTime(0.25, at + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.001, at + 0.28)
+      const soft = context.createGain()
+      soft.gain.value = 0.25
+      note.connect(gain)
+      overtone.connect(soft).connect(gain)
+      gain.connect(this.master)
+      note.start(at)
+      overtone.start(at)
+      note.stop(at + 0.3)
+      overtone.stop(at + 0.3)
+    })
+  }
+
+  /** A knock, this hard (0 to 1) and this far off: a thud with a little crunch on it. */
+  thud(strength: number, distance = 0): void {
+    const loudness = Math.min(Math.max(strength, 0), 1) * earshot(distance)
+    if (loudness <= 0.01) return
+    const { context } = this
+    const now = context.currentTime
+    const crunch = context.createBufferSource()
+    crunch.buffer = this.noise
+    const filter = context.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(600 + 1400 * loudness, now)
+    filter.frequency.exponentialRampToValueAtTime(120, now + 0.18)
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(0.7 * loudness, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22)
+    crunch.connect(filter).connect(gain).connect(this.master)
+    crunch.start(now)
+    crunch.stop(now + 0.25)
+    const thump = context.createOscillator()
+    thump.type = 'sine'
+    thump.frequency.setValueAtTime(90, now)
+    thump.frequency.exponentialRampToValueAtTime(40, now + 0.2)
+    const thumpGain = context.createGain()
+    thumpGain.gain.setValueAtTime(0.6 * loudness, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25)
+    thump.connect(thumpGain).connect(this.master)
+    thump.start(now)
+    thump.stop(now + 0.25)
+  }
+}

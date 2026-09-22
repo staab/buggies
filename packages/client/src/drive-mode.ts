@@ -1,7 +1,9 @@
 import { FIXED_TIMESTEP, advance, createArena, respawnLost, takeSeat, type VehicleProfileId } from '@buggies/game'
+import type { Vec3 } from '@buggies/physics'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import type { Sound } from './audio.ts'
 import { Driver, type DriverKeys } from './driver.ts'
 import { Explosions } from './explosion.ts'
 import type { ModeView } from './mode.ts'
@@ -14,6 +16,10 @@ import { Smoke } from './smoke.ts'
  */
 const MAX_CATCH_UP = 0.25
 
+function distance(a: Vec3, b: Vec3): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
+}
+
 /** Someone to put on the island: in what, and on which keys. */
 export interface Player {
   profile: VehicleProfileId
@@ -25,17 +31,32 @@ export interface Player {
  * with half each, side by side, in the one arena so that they can run into
  * each other.
  */
-export function createDriveMode(map: TerrainMap, scene: THREE.Scene, players: readonly Player[]): ModeView {
+export function createDriveMode(
+  map: TerrainMap,
+  scene: THREE.Scene,
+  players: readonly Player[],
+  sound: Sound,
+): ModeView {
   const arena = createArena(map, players.length)
   const explosions = new Explosions()
   scene.add(explosions.object)
   const smoke = new Smoke()
   scene.add(smoke.object)
-  const pickups = new PickupField(arena, (at) => explosions.burst(at))
+  // A bomb is heard from the nearest of the cars.
+  const nearest = (at: Vec3): number =>
+    Math.min(...drivers.map((driver) => distance(driver.seat.vehicle.frame.position, at)))
+  const pickups = new PickupField(arena, (at) => {
+    explosions.burst(at)
+    sound.boom(nearest(at))
+  })
   scene.add(pickups.object)
-  const drivers = players.map(
+  const drivers: Driver[] = players.map(
     (player, seat) =>
-      new Driver(scene, map, takeSeat(arena, seat, player.profile), player.profile, player.keys, { explosions, smoke }),
+      new Driver(scene, map, takeSeat(arena, seat, player.profile), player.profile, player.keys, {
+        explosions,
+        smoke,
+        sound,
+      }),
   )
   const split = drivers.length > 1
 

@@ -195,10 +195,8 @@ export class Menu {
       void this.generate()
     })
     mapRow.append(this.seedField, shuffle)
-    const orbit = line('keys')
-    orbit.textContent = 'Drag to look around the island, scroll to move closer.'
     const mapPage = document.createElement('div')
-    mapPage.append(mapGroup, orbit)
+    mapPage.append(mapGroup)
 
     // Page three, and on a split screen four: the vehicle, turning on the
     // spot beside the panel. One page serves both drivers in turn.
@@ -277,9 +275,13 @@ export class Menu {
     this.root.hidden = true
   }
 
-  /** Something the player should know, shown until they move on: why a server could not be joined. */
-  notice(text: string): void {
+  /**
+   * Something the player should know, shown until they move on: why a
+   * server could not be joined, or, with `busy`, what is being waited for.
+   */
+  notice(text: string, busy = false): void {
     this.status.textContent = text
+    this.status.classList.toggle('busy', busy)
   }
 
   private pick(change: Partial<Choice>): void {
@@ -290,7 +292,7 @@ export class Menu {
   /** Turn to a page, and put behind the panel what the page is about. */
   private goTo(step: Step): void {
     this.step = step
-    this.status.textContent = ''
+    this.notice('')
     this.render()
     if (step === 'map') void this.generate()
     if (step === 'car' || step === 'car2') this.host.showVehicle(this.choice[vehicleKey(step)])
@@ -319,12 +321,12 @@ export class Menu {
     this.seedField.value = String(seed)
     const stamp = ++this.islands
     this.generating = true
-    this.status.textContent = `generating island ${seed}...`
+    this.notice(`generating island ${seed}...`, true)
     this.render()
     const about = await this.host.showIsland(seed)
     if (stamp !== this.islands) return
     this.generating = false
-    if (this.step === 'map') this.status.textContent = about
+    if (this.step === 'map') this.notice(about)
     this.render()
   }
 

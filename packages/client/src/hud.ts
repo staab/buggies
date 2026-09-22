@@ -179,6 +179,7 @@ export class Hud {
   /** Show this, or nothing. */
   render(state: HudState | null): void {
     this.root.hidden = state === null
+    this.root.classList.remove('busy')
     if (state === null) return
 
     if (state.title !== this.shownTitle) {
@@ -210,9 +211,10 @@ export class Hud {
     turnDial(this.damage, damage, `${Math.round(damage * 100)}%`, damageColor(damage))
   }
 
-  /** A line and nothing else: what is being waited for. */
+  /** A line and nothing else: what is being waited for, with a spinner under it. */
   notice(text: string): void {
     this.render({ title: text })
+    this.root.classList.add('busy')
   }
 
   private showControls(controls: readonly ControlHint[]): void {

@@ -11,7 +11,7 @@ import {
   type Seat,
   type VehicleInput,
 } from '@buggies/game'
-import { quat, v3 } from '@buggies/physics'
+import { quat, v3, vcopy } from '@buggies/physics'
 
 import { InputTimeline } from './input-timeline.ts'
 import {
@@ -33,6 +33,7 @@ import {
   encodeReject,
   encodeSnapshot,
   type PickupSnapshot,
+  type SpilledSnapshot,
   encodeWelcome,
   isRespawn,
   messageTypeOf,
@@ -88,6 +89,7 @@ export class GameServer implements TransportHandlers {
   private readonly scratchInput: VehicleInput = createVehicleInput()
   private readonly snapshotVehicles: VehicleSnapshot[] = []
   private readonly snapshotPickups: PickupSnapshot[] = []
+  private readonly snapshotSpilled: SpilledSnapshot[] = []
   private lastSnapshotBytes = 0
 
   constructor(arena: Arena, events: Partial<GameServerEvents> = {}) {
@@ -249,6 +251,18 @@ export class GameServer implements TransportHandlers {
     return pickups
   }
 
+  private collectSpilled(): SpilledSnapshot[] {
+    const spilled = this.snapshotSpilled
+    this.arena.spilled.forEach((banana, at) => {
+      const out = (spilled[at] ??= { from: v3(), position: v3(), age: 0 })
+      vcopy(out.from, banana.from)
+      vcopy(out.position, banana.position)
+      out.age = this.arena.tick - banana.bornTick
+    })
+    spilled.length = this.arena.spilled.length
+    return spilled
+  }
+
   private collectSnapshot(): VehicleSnapshot[] {
     const vehicles = this.snapshotVehicles
     let count = 0
@@ -291,6 +305,7 @@ export class GameServer implements TransportHandlers {
       ackInputTick: -1,
       vehicles: this.collectSnapshot(),
       pickups: this.collectPickups(),
+      spilled: this.collectSpilled(),
     })
     this.lastSnapshotBytes = encoded.length
     for (const player of this.players.values()) {

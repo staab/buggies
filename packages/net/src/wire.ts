@@ -30,9 +30,10 @@ export const WELCOME_BYTES = 15
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
-export const SNAPSHOT_HEADER_BYTES = 11
+export const SNAPSHOT_HEADER_BYTES = 12
 export const SNAPSHOT_VEHICLE_BYTES = 72
 export const SNAPSHOT_PICKUP_BYTES = 4
+export const SNAPSHOT_SPILLED_BYTES = 26
 
 export interface HelloMessage {
   protocolVersion: number
@@ -88,6 +89,15 @@ export interface SnapshotMessage {
   ackInputTick: number
   vehicles: VehicleSnapshot[]
   pickups: PickupSnapshot[]
+  spilled: SpilledSnapshot[]
+}
+
+/** A banana spilled from a wreck, as the server has it. */
+export interface SpilledSnapshot {
+  from: Vec3
+  position: Vec3
+  /** How many ticks before the snapshot's it was spilled. */
+  age: number
 }
 
 class Writer {
@@ -285,13 +295,15 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   const writer = new Writer(
     SNAPSHOT_HEADER_BYTES +
       message.vehicles.length * SNAPSHOT_VEHICLE_BYTES +
-      message.pickups.length * SNAPSHOT_PICKUP_BYTES,
+      message.pickups.length * SNAPSHOT_PICKUP_BYTES +
+      message.spilled.length * SNAPSHOT_SPILLED_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
   writer.u32(message.ackInputTick < 0 ? NO_TICK : message.ackInputTick)
   writer.u8(message.vehicles.length)
   writer.u8(message.pickups.length)
+  writer.u8(message.spilled.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -308,6 +320,11 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   for (const pickup of message.pickups) {
     writer.u16(pickup.generation & 0xffff)
     writer.u16(Math.min(Math.max(pickup.ticksUntilOut, 0), 0xffff))
+  }
+  for (const spilled of message.spilled) {
+    writer.vec3(spilled.from)
+    writer.vec3(spilled.position)
+    writer.u16(Math.min(Math.max(spilled.age, 0), 0xffff))
   }
   return writer.bytes
 }
@@ -330,9 +347,13 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const ack = reader.u32()
   const count = reader.u8()
   const pickupCount = reader.u8()
-  if (payload.length !== SNAPSHOT_HEADER_BYTES + count * SNAPSHOT_VEHICLE_BYTES + pickupCount * SNAPSHOT_PICKUP_BYTES) {
-    return null
-  }
+  const spilledCount = reader.u8()
+  const expected =
+    SNAPSHOT_HEADER_BYTES +
+    count * SNAPSHOT_VEHICLE_BYTES +
+    pickupCount * SNAPSHOT_PICKUP_BYTES +
+    spilledCount * SNAPSHOT_SPILLED_BYTES
+  if (payload.length !== expected) return null
 
   const vehicles: VehicleSnapshot[] = []
   for (let i = 0; i < count; i++) {
@@ -356,5 +377,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   }
   const pickups: PickupSnapshot[] = []
   for (let i = 0; i < pickupCount; i++) pickups.push({ generation: reader.u16(), ticksUntilOut: reader.u16() })
-  return { tick, ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack, vehicles, pickups }
+  const spilled: SpilledSnapshot[] = []
+  for (let i = 0; i < spilledCount; i++) spilled.push({ from: reader.vec3(), position: reader.vec3(), age: reader.u16() })
+  return { tick, ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack, vehicles, pickups, spilled }
 }

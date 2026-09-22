@@ -11,6 +11,7 @@ import {
   writeVehicleStepState,
   type Arena,
   type Pickup,
+  type Spilled,
   type Seat,
   type Vehicle,
   type VehicleInput,
@@ -177,6 +178,11 @@ export class LocalPrediction {
     return this.mirror.pickups
   }
 
+  /** Bananas spilled from wrecks, as the mirror has them. */
+  get spilled(): readonly Spilled[] {
+    return this.mirror.spilled
+  }
+
   /** Bananas taken, as predicted; the server's count catches up with it. */
   get score(): number {
     return this.seat.score
@@ -327,6 +333,11 @@ export class LocalPrediction {
       const mine = this.mirror.pickups[slot]
       if (mine !== undefined) setPickup(map, water, mine, slot, pickup.generation, snapshot.tick + pickup.ticksUntilOut)
     }
+    this.mirror.spilled = snapshot.spilled.map((spilled) => ({
+      from: { ...spilled.from },
+      position: { ...spilled.position },
+      bornTick: snapshot.tick - spilled.age,
+    }))
   }
 
   /** Whoever the server has on the map, the mirror has too, in the same car. */
