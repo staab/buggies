@@ -10,6 +10,7 @@ import {
 import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
 
+import { engineRev, type EngineVoice, type Sound } from './audio.ts'
 import { BodyView } from './body-view.ts'
 import { CarView, profileColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
@@ -36,6 +37,7 @@ export const SOLO_KEYS: DriverKeys = {
     { keys: ['W', 'A', 'S', 'D'], does: 'or arrows to drive' },
     { keys: ['Space'], does: 'handbrake' },
     { keys: ['Enter'], does: 'back to the road' },
+    { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -48,6 +50,7 @@ export const LEFT_KEYS: DriverKeys = {
     { keys: ['W', 'A', 'S', 'D'], does: 'to drive' },
     { keys: ['Space'], does: 'handbrake' },
     { keys: ['Q'], does: 'back to the road' },
+    { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -60,6 +63,7 @@ export const RIGHT_KEYS: DriverKeys = {
     { keys: ['↑', '←', '↓', '→'], does: 'to drive' },
     { keys: ['Left Shift'], does: 'handbrake' },
     { keys: ['?'], does: 'back to the road' },
+    { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -68,7 +72,11 @@ export const RIGHT_KEYS: DriverKeys = {
 export interface DriverEffects {
   explosions: Explosions
   smoke: Smoke
+  sound: Sound
 }
+
+/** A knock that takes this much of a car's life is heard at full volume. */
+const LOUD_KNOCK = 0.25
 
 /**
  * One person driving one seat: their keys, their car as drawn, and the
@@ -88,7 +96,10 @@ export class Driver {
   private readonly inTunnel: ReturnType<typeof tunnelTest>
   private car: CarView
   private body: BodyView
+  private voice: EngineVoice
   private wasWrecked = false
+  private lastDamage = 0
+  private lastScore = 0
 
   constructor(
     scene: THREE.Scene,
@@ -105,6 +116,7 @@ export class Driver {
     this.keys = keys
     this.effects = effects
     this.keyboard = new Keyboard(keys.bindings)
+    this.voice = effects.sound.engine(profile)
     this.car = new CarView(profile, profileColor(profile))
     this.car.syncDimensions(seat.tuning)
     scene.add(this.car.object)
@@ -134,17 +146,33 @@ export class Driver {
   /** Draw the car between the last two steps, feed its effects, and follow it. */
   render(fraction: number, dt: number): void {
     const { vehicle, tuning } = this.seat
-    const { explosions, smoke } = this.effects
+    const { explosions, smoke, sound } = this.effects
     this.body.apply(fraction)
     this.car.applySimulatedWheels(vehicle.wheels, tuning)
-    if (vehicle.wrecked && !this.wasWrecked) explosions.burst(vehicle.frame.position)
+    if (vehicle.wrecked && !this.wasWrecked) {
+      explosions.burst(vehicle.frame.position)
+      sound.boom()
+    }
     this.wasWrecked = vehicle.wrecked
     this.car.setWrecked(this.wasWrecked)
     if (!this.wasWrecked) {
       smoke.trail(vehicle.frame.position, vehicle.frame.linearVelocity, smokeAmount(vehicle.damage), dt)
     }
+    this.hear()
     this.aim()
     this.chase.update(dt, this.target)
+  }
+
+  /** The engine as it works, a knock as it lands, a banana as it goes. */
+  private hear(): void {
+    const { vehicle, tuning, score } = this.seat
+    const { sound } = this.effects
+    this.voice.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, tuning.maxSpeed, vehicle.command.throttle))
+    const knock = vehicle.damage - this.lastDamage
+    if (knock > 0 && !vehicle.wrecked) sound.thud(knock / LOUD_KNOCK)
+    this.lastDamage = vehicle.damage
+    if (score > this.lastScore) sound.chime()
+    this.lastScore = score
   }
 
   /** The car has been moved: pick the camera up and put it behind it. */
@@ -166,6 +194,9 @@ export class Driver {
     if (next === this.profile) return
     changeVehicle(arena, this.seat, next)
     this.profile = next
+    this.voice.stop()
+    this.voice = this.effects.sound.engine(next)
+    this.lastDamage = 0
     this.car.dispose()
     this.car = new CarView(next, profileColor(next))
     this.car.syncDimensions(this.seat.tuning)
@@ -190,6 +221,7 @@ export class Driver {
   }
 
   dispose(): void {
+    this.voice.stop()
     this.keyboard.dispose()
     this.car.dispose()
   }

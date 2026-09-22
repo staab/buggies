@@ -8,8 +8,9 @@ import {
 } from './protocol.ts'
 import {
   INPUT_BYTES,
-  SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_PICKUP_BYTES,
+  SNAPSHOT_SPILLED_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
   decodeHello,
   decodeInput,
@@ -62,6 +63,10 @@ const snapshot: SnapshotMessage = {
     { generation: 0, ticksUntilOut: 0 },
     { generation: 7, ticksUntilOut: 480 },
     { generation: 65535, ticksUntilOut: 12 },
+  ],
+  spilled: [
+    { from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
+    { from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
   ]
 }
 
@@ -85,11 +90,21 @@ describe('wire', () => {
 
   it('round-trips a snapshot, every vehicle and field', () => {
     const payload = encodeSnapshot(snapshot)
-    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 3 * SNAPSHOT_PICKUP_BYTES)
+    expect(payload.length).toBe(
+      SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 3 * SNAPSHOT_PICKUP_BYTES + 2 * SNAPSHOT_SPILLED_BYTES,
+    )
     const decoded = decodeSnapshot(payload)!
     expect(decoded.tick).toBe(snapshot.tick)
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
     expect(decoded.pickups).toEqual(snapshot.pickups)
+    for (const [i, spilled] of snapshot.spilled.entries()) {
+      const got = decoded.spilled[i]!
+      expect(got.age).toBe(spilled.age)
+      for (const axis of ['x', 'y', 'z'] as const) {
+        expect(got.from[axis]).toBeCloseTo(spilled.from[axis], 4)
+        expect(got.position[axis]).toBeCloseTo(spilled.position[axis], 4)
+      }
+    }
     for (const [i, vehicle] of snapshot.vehicles.entries()) {
       const got = decoded.vehicles[i]!
       expect(got.seat).toBe(vehicle.seat)

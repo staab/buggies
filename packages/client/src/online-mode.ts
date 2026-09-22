@@ -7,9 +7,11 @@ import {
   type VehicleProfileId,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
+import type { Vec3 } from '@buggies/physics'
 import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
 
+import { engineRev, type Sound } from './audio.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { SOLO_KEYS } from './driver.ts'
@@ -35,11 +37,15 @@ const MAX_CATCH_UP = 0.25
  * server owns the map, so it is only known once the server says which one:
  * `mapFor` is asked for it then.
  */
+/** A knock that takes this much of a car's life is heard at full volume. */
+const LOUD_KNOCK = 0.25
+
 export async function createOnlineMode(
   scene: THREE.Scene,
   url: string,
   profile: VehicleProfileId,
   mapFor: (seed: number) => Promise<TerrainMap>,
+  sound: Sound,
 ): Promise<ModeView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
@@ -68,11 +74,20 @@ export async function createOnlineMode(
   scene.add(explosions.object)
   const smoke = new Smoke()
   scene.add(smoke.object)
-  const others = new MirrorCars(prediction, welcome.seat, (at) => explosions.burst(at), smoke)
+  const ear = (): Vec3 => prediction.vehicle.frame.position
+  const distance = (at: Vec3): number => Math.hypot(at.x - ear().x, at.y - ear().y, at.z - ear().z)
+  const boom = (at: Vec3): void => {
+    explosions.burst(at)
+    sound.boom(distance(at))
+  }
+  const others = new MirrorCars(prediction, welcome.seat, boom, smoke, sound)
   scene.add(others.object)
-  const pickups = new PickupField(prediction, (at) => explosions.burst(at))
+  const pickups = new PickupField(prediction, boom)
   scene.add(pickups.object)
+  let voice = sound.engine(welcome.profile)
   let wasWrecked = false
+  let lastDamage = 0
+  let lastScore = 0
 
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
@@ -106,8 +121,15 @@ export async function createOnlineMode(
       }
       others.render(owed / FIXED_TIMESTEP, dt)
       car.render(owed / FIXED_TIMESTEP, dt)
-      if (car.wrecked && !wasWrecked) explosions.burst(prediction.vehicle.frame.position)
+      if (car.wrecked && !wasWrecked) boom(prediction.vehicle.frame.position)
       wasWrecked = car.wrecked
+      const { vehicle } = prediction
+      voice.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, prediction.tuning.maxSpeed, vehicle.command.throttle))
+      const knock = vehicle.damage - lastDamage
+      if (knock > 0 && !vehicle.wrecked) sound.thud(knock / LOUD_KNOCK)
+      lastDamage = vehicle.damage
+      if (prediction.score > lastScore) sound.chime()
+      lastScore = prediction.score
       car.setWrecked(wasWrecked)
       if (!wasWrecked) {
         const { position, linearVelocity } = prediction.vehicle.frame
@@ -144,6 +166,7 @@ export async function createOnlineMode(
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
+      voice.stop()
       pickups.dispose()
       others.dispose()
       car.dispose()

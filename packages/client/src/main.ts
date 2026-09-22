@@ -7,6 +7,7 @@ import {
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
 import { createDriveMode } from './drive-mode.ts'
 import { LEFT_KEYS, RIGHT_KEYS, SOLO_KEYS } from './driver.ts'
@@ -20,6 +21,26 @@ import { TerrainSource } from './terrain-source.ts'
 import { createTerrainView } from './terrain-view.ts'
 
 const container = document.getElementById('app')!
+const sound = new Sound()
+// Browsers hold sound back until the player has done something.
+for (const gesture of ['pointerdown', 'keydown'] as const) {
+  window.addEventListener(gesture, () => sound.unlock())
+}
+
+// A speaker button in the corner does what M does, and shows which way it is.
+const muteButton = document.getElementById('mute') as HTMLButtonElement
+function setMuted(muted: boolean): void {
+  sound.muted = muted
+  muteButton.setAttribute('aria-pressed', String(muted))
+  muteButton.setAttribute('aria-label', muted ? 'Unmute' : 'Mute')
+  muteButton.title = muted ? 'Unmute (M)' : 'Mute (M)'
+}
+muteButton.addEventListener('click', () => {
+  setMuted(!sound.muted)
+  // The keys drive the game, not the button, once it has been clicked.
+  muteButton.blur()
+})
+
 /** One HUD a viewport: the left, or only, and the right of a split screen. */
 const huds = [new Hud(document.getElementById('hud')!), new Hud(document.getElementById('hud-right')!)]
 const hud = huds[0]!
@@ -161,7 +182,7 @@ async function showIsland(seed: number): Promise<string> {
 function showVehicle(vehicle: VehicleProfileId): void {
   generation += 1
   choice = { ...choice, vehicle }
-  if (backdrop?.kind !== 'showroom') setBackdrop({ kind: 'showroom', mode: createShowroomMode() })
+  if (backdrop?.kind !== 'showroom') setBackdrop({ kind: 'showroom', mode: createShowroomMode(sound) })
   if (backdrop?.kind === 'showroom') backdrop.mode.show(vehicle)
 }
 
@@ -219,10 +240,16 @@ async function start(next: Choice): Promise<void> {
 
   if (next.mode === 'online') {
     hud.notice(`connecting to ${next.server}...`)
-    createOnlineMode(scene, next.server, next.vehicle, (seed) => {
-      choice = { ...choice, seed }
-      return mapFor(seed)
-    }).then(
+    createOnlineMode(
+      scene,
+      next.server,
+      next.vehicle,
+      (seed) => {
+        choice = { ...choice, seed }
+        return mapFor(seed)
+      },
+      sound,
+    ).then(
       (online) => {
         if (stamp !== generation) {
           online.dispose()
@@ -251,7 +278,7 @@ async function start(next: Choice): Promise<void> {
           { profile: next.vehicle2, keys: RIGHT_KEYS },
         ]
       : [{ profile: next.vehicle, keys: SOLO_KEYS }]
-  setGame({ mode: createDriveMode(island, scene, players), choice: next })
+  setGame({ mode: createDriveMode(island, scene, players, sound), choice: next })
   settle()
 }
 
@@ -266,12 +293,16 @@ hud.notice('loading...')
 await Promise.all([initPhysics(), loadCarModels()])
 menu.show(choice)
 // Something to look at behind the first page: the island that would be driven.
-menu.notice(`generating island ${choice.seed}...`)
+menu.notice(`generating island ${choice.seed}...`, true)
 void showIsland(choice.seed).then((about) => {
   if (about) menu.notice(about)
 })
 
 window.addEventListener('keydown', (event) => {
+  if (event.code === 'KeyM' && !menu.open) {
+    setMuted(!sound.muted)
+    return
+  }
   if (event.key !== 'Escape') return
   // From a game, the menu opens on the vehicle page, to swap and carry on;
   // closed again, the game goes on. With no game behind it, it stays up.

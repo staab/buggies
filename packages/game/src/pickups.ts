@@ -12,10 +12,13 @@ export const PICKUP_SLOTS = BANANA_SLOTS + BOMB_SLOTS
 /** How far above the ground a pickup floats, to be seen from a car. */
 export const PICKUP_HEIGHT = 1.4
 
-/** How close a chassis has to come, across the ground and up it, to take a banana or set off a bomb. */
-export const BANANA_REACH = 2.8
-export const BOMB_REACH = 3
-export const PICKUP_REACH_UP = 2.6
+/**
+ * How close a chassis has to come, across the ground and up it, to take a
+ * banana or set off a bomb: about as far as they are drawn out to.
+ */
+export const BANANA_REACH = 3.4
+export const BOMB_REACH = 3.2
+export const PICKUP_REACH_UP = 2.8
 
 /** How long a taken pickup's slot stays empty before another turns up elsewhere, in ticks. */
 export const PICKUP_RESPAWN_TICKS = 480
@@ -136,4 +139,72 @@ export function reachesPickup(pickup: Pickup, point: Vec3): boolean {
   const dx = point.x - pickup.position.x
   const dz = point.z - pickup.position.z
   return Math.abs(point.y - pickup.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= reach * reach
+}
+
+/** How many of a wreck's bananas spill out, at most; the rest are lost in the blast. */
+export const SPILL_MOST = 24
+
+/** How far from the wreck a spilled banana lands, in metres, at the nearest and the furthest. */
+export const SPILL_NEAR = 5
+export const SPILL_FAR = 16
+
+/** How long a spilled banana is in the air, in ticks, before it can be taken. */
+export const SPILL_FLIGHT_TICKS = 60
+
+/** How long a spilled banana lies about before it is gone, in ticks. */
+export const SPILL_LIFE_TICKS = 60 * 90
+
+/** How many spilled bananas a map holds at once; past that the oldest go. */
+export const SPILL_MOST_OUT = 120
+
+/**
+ * A banana spilled from a wreck: thrown from where the car blew up to
+ * where it lands, to lie there for the taking until it is taken or fades.
+ */
+export interface Spilled {
+  readonly from: Vec3
+  readonly position: Vec3
+  readonly bornTick: number
+}
+
+/**
+ * Where a wreck's bananas land: scattered about it, every one of them
+ * worked out from the map, the seat and the tick, so that everyone who
+ * knows those agrees.
+ */
+export function spillFrom(
+  map: TerrainMap,
+  from: Vec3,
+  count: number,
+  seat: number,
+  tick: number,
+): Spilled[] {
+  const rng = createRng(pickupSeed(map.seed, PICKUP_SLOTS + seat, tick))
+  const spilled: Spilled[] = []
+  const origin = v3(from.x, from.y, from.z)
+  for (let i = 0; i < count; i++) {
+    const angle = rng() * Math.PI * 2
+    const radius = SPILL_NEAR + rng() * (SPILL_FAR - SPILL_NEAR)
+    const x = from.x + Math.cos(angle) * radius
+    const z = from.z + Math.sin(angle) * radius
+    spilled.push({ from: origin, position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z), bornTick: tick })
+  }
+  return spilled
+}
+
+/** Whether a spilled banana has landed, and can be taken. */
+export function spilledOut(spilled: Spilled, tick: number): boolean {
+  return tick >= spilled.bornTick + SPILL_FLIGHT_TICKS
+}
+
+/** Whether a spilled banana has lain about long enough to be gone. */
+export function spilledGone(spilled: Spilled, tick: number): boolean {
+  return tick >= spilled.bornTick + SPILL_LIFE_TICKS
+}
+
+/** Whether something at this point has reached a spilled banana. */
+export function reachesSpilled(spilled: Spilled, point: Vec3): boolean {
+  const dx = point.x - spilled.position.x
+  const dz = point.z - spilled.position.z
+  return Math.abs(point.y - spilled.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= BANANA_REACH * BANANA_REACH
 }

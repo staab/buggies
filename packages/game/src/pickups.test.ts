@@ -7,12 +7,19 @@ import {
   PICKUP_HEIGHT,
   PICKUP_RESPAWN_TICKS,
   PICKUP_SLOTS,
+  SPILL_FAR,
+  SPILL_FLIGHT_TICKS,
+  SPILL_LIFE_TICKS,
+  SPILL_MOST,
+  SPILL_NEAR,
   advance,
   createArena,
   initPhysics,
+  wreckVehicle,
   pickupOut,
   pickupSpot,
   respawn,
+  spilledOut,
   takeSeat,
   type Arena,
 } from './index.ts'
@@ -100,6 +107,54 @@ describe('pickups', () => {
     expect(pickupOut(bomb, arena.tick)).toBe(false)
     // Thrown into the air by it.
     expect(seat.vehicle.frame.linearVelocity.y).not.toBe(0)
+    arena.world.free()
+  })
+
+  it('spill from a car blown up, flying out to land about the wreck for anyone to take', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    const b = takeSeat(arena, 1, 'sportsCar')
+    a.score = 5
+    wreckVehicle(a.vehicle, a.tuning)
+    const wreck = { ...a.vehicle.frame.position }
+    advance(arena, () => NEUTRAL_INPUT)
+    expect(a.score).toBe(0)
+    expect(arena.spilled).toHaveLength(5)
+    for (const spilled of arena.spilled) {
+      expect(spilled.from.x).toBeCloseTo(wreck.x, 1)
+      const flung = Math.hypot(spilled.position.x - wreck.x, spilled.position.z - wreck.z)
+      expect(flung).toBeGreaterThanOrEqual(SPILL_NEAR - 0.5)
+      expect(flung).toBeLessThanOrEqual(SPILL_FAR + 0.5)
+      expect(spilled.position.y).toBeCloseTo(
+        sampleHeight(map.heightfield, spilled.position.x, spilled.position.z) + PICKUP_HEIGHT,
+        3,
+      )
+      expect(spilledOut(spilled, arena.tick)).toBe(false)
+      expect(spilledOut(spilled, spilled.bornTick + SPILL_FLIGHT_TICKS)).toBe(true)
+    }
+    // Nothing more spills as the wreck lies there.
+    advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.spilled).toHaveLength(5)
+
+    // Once one has landed, someone driving onto it takes it, and it is gone.
+    const target = arena.spilled[2]!
+    respawn(b, { position: { x: target.position.x, y: target.position.y - PICKUP_HEIGHT, z: target.position.z }, yaw: 0 })
+    for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(b.score).toBe(0)
+    for (let i = 0; i < SPILL_FLIGHT_TICKS; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(b.score).toBe(1)
+    expect(arena.spilled).toHaveLength(4)
+    expect(arena.spilled.includes(target)).toBe(false)
+
+    // The rest fade in time.
+    arena.tick = arena.spilled[0]!.bornTick + SPILL_LIFE_TICKS
+    advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.spilled).toHaveLength(0)
+
+    // Only so many come out of one blast.
+    a.score = SPILL_MOST + 10
+    advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.spilled).toHaveLength(SPILL_MOST)
     arena.world.free()
   })
 

@@ -19,8 +19,9 @@ The server chooses the island; set `SEED=42 pnpm --filter @buggies/server dev` f
 one. `PORT` and `HOST` are honoured as well.
 
 Bananas float about every island, turning slowly; drive through one for a point, and another
-turns up somewhere else a little later. Bombs float about too, and one of those blows the car up.
-Online, the server keeps the score.
+turns up somewhere else a little later. Bombs float about too, and one of those blows the car up,
+and a car blown up spills its bananas about the wreck for anyone to come and take. Online, the
+server keeps the score.
 
 **Free drive** needs no server: pick an island by its seed, looking it over from above while you
 do, then a vehicle, and go. **Split screen** puts two of you on one keyboard, side by side: the

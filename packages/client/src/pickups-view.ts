@@ -1,11 +1,11 @@
-import { pickupOut, type Pickup } from '@buggies/game'
+import { SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, SPILL_MOST_OUT, pickupOut, type Pickup, type Spilled } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 /** Tip to tip, in metres: big enough to be seen from a chase camera. */
-export const BANANA_LENGTH = 1.3
+export const BANANA_LENGTH = 3.9
 /** A bomb's radius, in metres. */
-export const BOMB_RADIUS = 0.5
+export const BOMB_RADIUS = 1
 /** How fast a pickup turns on the spot, in radians a second. */
 export const SPIN_RATE = 0.9
 /** How far a pickup bobs up and down, and how fast. */
@@ -13,6 +13,10 @@ const BOB = 0.16
 const BOB_RATE = 1.7
 /** How a banana lies as it turns: tipped over, so the turn shows its curve. */
 const TILT = 0.45
+/** How high a spilled banana's arc goes over the ground it crosses, and how fast it spins in the air. */
+const FLING_HEIGHT = 3
+const FLING_LIFT = 0.25
+const FLING_SPIN = 11
 
 const SKIN = new THREE.Color('#f6d23c')
 const TIP = new THREE.Color('#6b4a1e')
@@ -108,7 +112,18 @@ export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
 /** Where a field's pickups are and when: an arena, or a mirror of one. */
 export interface PickupSource {
   readonly pickups: readonly Pickup[]
+  readonly spilled: readonly Spilled[]
   readonly tick: number
+}
+
+/** What a spilled banana is known by from one frame to the next, and where it was last drawn. */
+interface Loose {
+  position: THREE.Vector3
+  goneTick: number
+}
+
+function looseKey(spilled: Spilled): string {
+  return `${spilled.bornTick}:${spilled.position.x.toFixed(2)}:${spilled.position.z.toFixed(2)}`
 }
 
 interface Pop {
@@ -125,9 +140,10 @@ interface Pop {
 
 /**
  * The map's pickups, drawn where the simulation has them, turning slowly
- * and bobbing. A banana taken pops: it shoots up spinning and shrinks away
- * in a ring of sparks. A bomb set off is handed on to whoever does the
- * blowing up.
+ * and bobbing, and the bananas spilled from wrecks: each flies out of the
+ * blast in an arc, spinning, and lies where it lands. A banana taken pops:
+ * it shoots up spinning and shrinks away in a ring of sparks. A bomb set
+ * off is handed on to whoever does the blowing up.
  */
 export class PickupField {
   readonly object = new THREE.Group()
@@ -145,13 +161,13 @@ export class PickupField {
   })
   private readonly bombMaterial = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.4,
-    metalness: 0.5,
-    emissive: EMBER,
-    emissiveIntensity: 0.25,
+    roughness: 0.45,
+    metalness: 0.4,
   })
   private readonly bananas: THREE.InstancedMesh
   private readonly bombs: THREE.InstancedMesh
+  private readonly loose: THREE.InstancedMesh
+  private looseSeen = new Map<string, Loose>()
   /** Each slot's instance: which mesh, and which instance of it. */
   private readonly instances: { mesh: THREE.InstancedMesh; index: number }[]
   private readonly spark = new THREE.OctahedronGeometry(0.12)
@@ -170,7 +186,8 @@ export class PickupField {
     const bombCount = source.pickups.length - bananaCount
     this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(bananaCount, 1))
     this.bombs = new THREE.InstancedMesh(this.bombShape, this.bombMaterial, Math.max(bombCount, 1))
-    for (const mesh of [this.bananas, this.bombs]) {
+    this.loose = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, SPILL_MOST_OUT)
+    for (const mesh of [this.bananas, this.bombs, this.loose]) {
       mesh.castShadow = true
       mesh.frustumCulled = false
       mesh.count = 0
@@ -216,7 +233,54 @@ export class PickupField {
     }
     this.bananas.instanceMatrix.needsUpdate = true
     this.bombs.instanceMatrix.needsUpdate = true
+    this.updateLoose()
     this.updatePops(dt)
+  }
+
+  /**
+   * The spilled bananas: in the air for a while after the blast, then lying
+   * where they land. One that goes before its time was taken, and pops.
+   */
+  private updateLoose(): void {
+    const { spilled, tick } = this.source
+    const seen = new Map<string, Loose>()
+    let count = 0
+    for (const banana of spilled) {
+      if (count >= SPILL_MOST_OUT) break
+      const key = looseKey(banana)
+      const flight = Math.min(Math.max((tick - banana.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
+      const { from, position } = banana
+      if (flight < 1) {
+        // Out of the blast in an arc, tumbling.
+        const across = Math.hypot(position.x - from.x, position.z - from.z)
+        const lift = Math.sin(Math.PI * flight) * (FLING_HEIGHT + FLING_LIFT * across)
+        this.placer.position.set(
+          from.x + (position.x - from.x) * flight,
+          from.y + (position.y - from.y) * flight + lift,
+          from.z + (position.z - from.z) * flight,
+        )
+        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + banana.bornTick, TILT, 'YXZ')
+        this.placer.scale.setScalar(0.4 + 0.6 * Math.min(flight * 4, 1))
+      } else {
+        const phase = this.time * BOB_RATE + count * 1.7
+        this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
+        this.placer.rotation.set(0, this.time * SPIN_RATE + count * 0.9, TILT, 'YXZ')
+        this.placer.scale.setScalar(1)
+      }
+      this.placer.updateMatrix()
+      this.loose.setMatrixAt(count, this.placer.matrix)
+      const known = this.looseSeen.get(key)
+      const drawn = known?.position ?? new THREE.Vector3()
+      drawn.copy(this.placer.position)
+      seen.set(key, { position: drawn, goneTick: banana.bornTick + SPILL_LIFE_TICKS })
+      count += 1
+    }
+    for (const [key, known] of this.looseSeen) {
+      if (!seen.has(key) && tick < known.goneTick) this.pop(known.position)
+    }
+    this.looseSeen = seen
+    this.loose.count = count
+    this.loose.instanceMatrix.needsUpdate = true
   }
 
   dispose(): void {
@@ -226,6 +290,7 @@ export class PickupField {
     this.object.clear()
     this.bananas.dispose()
     this.bombs.dispose()
+    this.loose.dispose()
     this.bananaShape.dispose()
     this.bombShape.dispose()
     this.bananaMaterial.dispose()
