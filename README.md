@@ -19,7 +19,9 @@ The server chooses the island; set `SEED=42 pnpm --filter @buggies/server dev` f
 one. `PORT` and `HOST` are honoured as well.
 
 **Free drive** needs no server: pick an island by its seed, looking it over from above while you
-do, then a vehicle, and go.
+do, then a vehicle, and go. **Split screen** puts two of you on one keyboard, side by side: the
+letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to the road) and the arrows on
+the right (left `Shift` handbrake, `?` back to the road).
 
 ## Packages
 

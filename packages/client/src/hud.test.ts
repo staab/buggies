@@ -31,7 +31,7 @@ describe('the speedometer', () => {
   })
 })
 
-describe('the damage bar', () => {
+describe('the damage dial', () => {
   it('goes from a quiet colour to red as the car is knocked about', () => {
     const [r0, g0, b0] = channels(damageColor(0))
     const [r1, g1, b1] = channels(damageColor(1))

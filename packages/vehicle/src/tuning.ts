@@ -993,11 +993,11 @@ export type VehicleProfileId =
   | 'goKart'
 
 export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
+  'sportsCar',
   'raceCar',
   'police',
   'firetruck',
   'pickup',
-  'sportsCar',
   'smallCar',
   'tank',
   'ambulance',

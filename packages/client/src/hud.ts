@@ -12,6 +12,14 @@ export interface HudState {
   maxSpeed?: number
   /** How beaten up, 0 untouched to 1 wrecked. */
   damage?: number
+  /** Which keys do what, for whoever this is for. */
+  controls?: readonly ControlHint[]
+}
+
+/** Keys and what they do: `W` `A` `S` `D` "to drive". */
+export interface ControlHint {
+  keys: readonly string[]
+  does: string
 }
 
 const TO_KPH = 3.6
@@ -60,7 +68,7 @@ const UNHURT = new THREE.Color('#8ba3b6')
 const WRECKED = new THREE.Color('#e04a3a')
 const mixed = new THREE.Color()
 
-/** The damage bar's colour: nothing much to look at until it starts turning red. */
+/** The damage dial's colour: nothing much to look at until it starts turning red. */
 export function damageColor(damage: number): string {
   return mixed.lerpColors(UNHURT, WRECKED, THREE.MathUtils.clamp(damage, 0, 1)).getStyle()
 }
@@ -82,72 +90,79 @@ function div(className: string): HTMLDivElement {
   return element
 }
 
+/** A dial: an arc that fills round to a needle, with a reading under it. */
+interface Dial {
+  element: SVGSVGElement
+  needle: SVGLineElement
+  filled: SVGPathElement
+  reading: SVGTextElement
+  shownReading: string
+}
+
+function buildDial(unit: string): Dial {
+  const element = svg('svg', { class: 'dial', viewBox: '0 0 120 92' })
+  element.append(svg('path', { class: 'track', d: dialArc() }))
+  const filled = svg('path', { class: 'value', d: dialArc(), 'stroke-dasharray': `0 ${DIAL_LENGTH}` })
+  element.append(filled)
+  for (let tick = 0; tick < TICKS; tick++) {
+    const angle = needleAngle(tick / (TICKS - 1))
+    const inner = dialPoint(angle, DIAL_RADIUS - 9)
+    const outer = dialPoint(angle, DIAL_RADIUS - 4)
+    element.append(svg('line', { class: 'tick', x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y }))
+  }
+  const tip = dialPoint(0, DIAL_RADIUS - 10)
+  const needle = svg('line', {
+    class: 'needle',
+    x1: DIAL_CENTRE.x,
+    y1: DIAL_CENTRE.y,
+    x2: tip.x,
+    y2: tip.y,
+    transform: `rotate(${needleAngle(0)} ${DIAL_CENTRE.x} ${DIAL_CENTRE.y})`,
+  })
+  element.append(needle)
+  element.append(svg('circle', { class: 'hub', cx: DIAL_CENTRE.x, cy: DIAL_CENTRE.y, r: 3 }))
+  const reading = svg('text', { class: 'reading', x: DIAL_CENTRE.x, y: 80 })
+  reading.textContent = '0'
+  element.append(reading)
+  const label = svg('text', { class: 'unit', x: DIAL_CENTRE.x, y: 90 })
+  label.textContent = unit
+  element.append(label)
+  return { element, needle, filled, reading, shownReading: '0' }
+}
+
+/** Turn a dial to a fraction of its sweep, with this under the needle, in this colour if not its own. */
+function turnDial(dial: Dial, fraction: number, reading: string, colour?: string): void {
+  dial.needle.setAttribute('transform', `rotate(${needleAngle(fraction).toFixed(1)} ${DIAL_CENTRE.x} ${DIAL_CENTRE.y})`)
+  dial.filled.setAttribute('stroke-dasharray', `${(DIAL_LENGTH * fraction).toFixed(1)} ${DIAL_LENGTH}`)
+  if (colour !== undefined) dial.filled.style.stroke = colour
+  if (reading !== dial.shownReading) {
+    dial.shownReading = reading
+    dial.reading.textContent = reading
+  }
+}
+
 /**
  * The corner of the screen that says how it is going: a speedometer, a
- * damage bar that fills and reddens as the car is knocked about, a word on
- * the moment, and the keys.
+ * damage dial beside it that fills and reddens as the car is knocked about,
+ * a word on the moment, and the keys.
  */
 export class Hud {
   private readonly root: HTMLElement
   private readonly title = div('title')
   private readonly gauges = div('gauges')
-  private readonly needle: SVGLineElement
-  private readonly filled: SVGPathElement
-  private readonly reading: SVGTextElement
-  private readonly fill = div('fill')
+  private readonly speedo = buildDial('km/h')
+  private readonly damage = buildDial('damage')
   private readonly state = div('state')
   private readonly controls = div('controls')
   private shownTitle = ''
   private shownState = ''
-  private shownReading = ''
+  private shownControls = ''
 
   constructor(root: HTMLElement) {
     this.root = root
     root.replaceChildren()
 
-    const dial = svg('svg', { class: 'speedo', viewBox: '0 0 120 92' })
-    dial.append(svg('path', { class: 'track', d: dialArc() }))
-    this.filled = svg('path', { class: 'value', d: dialArc(), 'stroke-dasharray': `0 ${DIAL_LENGTH}` })
-    dial.append(this.filled)
-    for (let tick = 0; tick < TICKS; tick++) {
-      const angle = needleAngle(tick / (TICKS - 1))
-      const inner = dialPoint(angle, DIAL_RADIUS - 9)
-      const outer = dialPoint(angle, DIAL_RADIUS - 4)
-      dial.append(svg('line', { class: 'tick', x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y }))
-    }
-    const tip = dialPoint(0, DIAL_RADIUS - 10)
-    this.needle = svg('line', {
-      class: 'needle',
-      x1: DIAL_CENTRE.x,
-      y1: DIAL_CENTRE.y,
-      x2: tip.x,
-      y2: tip.y,
-      transform: `rotate(${needleAngle(0)} ${DIAL_CENTRE.x} ${DIAL_CENTRE.y})`,
-    })
-    dial.append(this.needle)
-    dial.append(svg('circle', { class: 'hub', cx: DIAL_CENTRE.x, cy: DIAL_CENTRE.y, r: 3 }))
-    this.reading = svg('text', { class: 'reading', x: DIAL_CENTRE.x, y: 80 })
-    this.reading.textContent = '0'
-    dial.append(this.reading)
-    const unit = svg('text', { class: 'unit', x: DIAL_CENTRE.x, y: 90 })
-    unit.textContent = 'km/h'
-    dial.append(unit)
-
-    const damage = div('damage')
-    const bar = div('bar')
-    bar.append(this.fill)
-    const label = document.createElement('span')
-    label.className = 'label'
-    label.textContent = 'damage'
-    damage.append(bar, label)
-
-    this.gauges.append(dial, damage)
-
-    this.controls.innerHTML =
-      '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive &nbsp; ' +
-      '<kbd>Space</kbd> handbrake<br />' +
-      '<kbd>Enter</kbd> back to the road &nbsp; <kbd>Esc</kbd> menu'
-
+    this.gauges.append(this.speedo.element, this.damage.element)
     root.append(this.title, this.gauges, this.state, this.controls)
     this.render(null)
   }
@@ -170,24 +185,36 @@ export class Hud {
 
     const driving = state.speed !== undefined && state.maxSpeed !== undefined && state.damage !== undefined
     this.gauges.hidden = !driving
-    this.controls.hidden = !driving
+    this.controls.hidden = !driving || state.controls === undefined
     if (!driving) return
+    if (state.controls !== undefined) this.showControls(state.controls)
 
-    const fraction = dialFraction(state.speed!, state.maxSpeed!)
-    this.needle.setAttribute('transform', `rotate(${needleAngle(fraction).toFixed(1)} ${DIAL_CENTRE.x} ${DIAL_CENTRE.y})`)
-    this.filled.setAttribute('stroke-dasharray', `${(DIAL_LENGTH * fraction).toFixed(1)} ${DIAL_LENGTH}`)
-    const reading = String(Math.round(Math.abs(state.speed!) * TO_KPH))
-    if (reading !== this.shownReading) {
-      this.shownReading = reading
-      this.reading.textContent = reading
-    }
+    turnDial(this.speedo, dialFraction(state.speed!, state.maxSpeed!), String(Math.round(Math.abs(state.speed!) * TO_KPH)))
     const damage = THREE.MathUtils.clamp(state.damage!, 0, 1)
-    this.fill.style.width = `${(damage * 100).toFixed(1)}%`
-    this.fill.style.background = damageColor(damage)
+    turnDial(this.damage, damage, `${Math.round(damage * 100)}%`, damageColor(damage))
   }
 
   /** A line and nothing else: what is being waited for. */
   notice(text: string): void {
     this.render({ title: text })
+  }
+
+  private showControls(controls: readonly ControlHint[]): void {
+    const key = JSON.stringify(controls)
+    if (key === this.shownControls) return
+    this.shownControls = key
+    this.controls.replaceChildren()
+    controls.forEach((hint, index) => {
+      const item = document.createElement('span')
+      item.className = 'hint'
+      for (const name of hint.keys) {
+        const kbd = document.createElement('kbd')
+        kbd.textContent = name
+        item.append(kbd)
+      }
+      item.append(` ${hint.does}`)
+      if (index > 0) this.controls.append(' ')
+      this.controls.append(item)
+    })
   }
 }
