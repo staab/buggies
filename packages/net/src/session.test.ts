@@ -106,6 +106,16 @@ const DELAY_TICKS = 3
 
 let map: TerrainMap
 
+/**
+ * Bombs would blow up a car driven flat out along the road, which is not
+ * what these tests are about: none goes off in them.
+ */
+function defuse(arena: Arena): void {
+  for (const pickup of arena.pickups) {
+    if (pickup.kind === 'bomb') pickup.spawnTick = Number.MAX_SAFE_INTEGER
+  }
+}
+
 /** A server and a way of putting players on it, all on one fake clock. */
 class Session {
   readonly clock = { tick: 0 }
@@ -116,6 +126,7 @@ class Session {
 
   constructor() {
     this.arena = createArena(map)
+    defuse(this.arena)
     this.server = new GameServer(this.arena, {
       onJoined: (seat) => this.events.push(`joined ${seat.id}`),
       onLeft: (seat) => this.events.push(`left ${seat.id}`),
@@ -141,6 +152,7 @@ class Session {
     }
     const welcome = await welcoming
     const mirror = createArena(map)
+    defuse(mirror)
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
     const player: Player = {

@@ -6,11 +6,11 @@ import {
   createVehicleStepState,
   leaveSeat,
   readVehicleStepState,
-  setBanana,
+  setPickup,
   takeSeat,
   writeVehicleStepState,
   type Arena,
-  type Banana,
+  type Pickup,
   type Seat,
   type Vehicle,
   type VehicleInput,
@@ -172,9 +172,9 @@ export class LocalPrediction {
     return this.seat.tuning
   }
 
-  /** The map's bananas as the mirror has them: the server's word, run ahead. */
-  get bananas(): readonly Banana[] {
-    return this.mirror.bananas
+  /** The map's bananas and bombs as the mirror has them: the server's word, run ahead. */
+  get pickups(): readonly Pickup[] {
+    return this.mirror.pickups
   }
 
   /** Bananas taken, as predicted; the server's count catches up with it. */
@@ -323,9 +323,9 @@ export class LocalPrediction {
       seat.score = vehicle.score
     }
     const { map, water } = this.mirror
-    for (const [slot, banana] of snapshot.bananas.entries()) {
-      const mine = this.mirror.bananas[slot]
-      if (mine !== undefined) setBanana(map, water, mine, slot, banana.generation, snapshot.tick + banana.ticksUntilOut)
+    for (const [slot, pickup] of snapshot.pickups.entries()) {
+      const mine = this.mirror.pickups[slot]
+      if (mine !== undefined) setPickup(map, water, mine, slot, pickup.generation, snapshot.tick + pickup.ticksUntilOut)
     }
   }
 

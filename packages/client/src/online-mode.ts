@@ -10,7 +10,6 @@ import { LocalPrediction, NetClient } from '@buggies/net'
 import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
 
-import { BananaField } from './bananas-view.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { SOLO_KEYS } from './driver.ts'
@@ -20,6 +19,7 @@ import { Explosions } from './explosion.ts'
 import { Keyboard } from './input.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import type { ModeView } from './mode.ts'
+import { PickupField } from './pickups-view.ts'
 import { PredictedCar } from './predicted-car.ts'
 import { Smoke } from './smoke.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
@@ -70,8 +70,8 @@ export async function createOnlineMode(
   scene.add(smoke.object)
   const others = new MirrorCars(prediction, welcome.seat, (at) => explosions.burst(at), smoke)
   scene.add(others.object)
-  const bananas = new BananaField(prediction)
-  scene.add(bananas.object)
+  const pickups = new PickupField(prediction, (at) => explosions.burst(at))
+  scene.add(pickups.object)
   let wasWrecked = false
 
   const cameraTuning = createCameraTuning()
@@ -113,7 +113,7 @@ export async function createOnlineMode(
         const { position, linearVelocity } = prediction.vehicle.frame
         smoke.trail(position, linearVelocity, smokeAmount(prediction.vehicle.damage), dt)
       }
-      bananas.update(dt)
+      pickups.update(dt)
       smoke.update(dt)
       explosions.update(dt)
       car.aim(target)
@@ -144,7 +144,7 @@ export async function createOnlineMode(
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
-      bananas.dispose()
+      pickups.dispose()
       others.dispose()
       car.dispose()
       explosions.dispose()
