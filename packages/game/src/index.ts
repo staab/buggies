@@ -42,6 +42,7 @@ export {
   createVehicleStepState,
   createVehicleTuning,
   DAMAGE_SMOKING,
+  DEFAULT_WORLD_TUNING,
   DEFAULT_VEHICLE_PROFILE,
   initPhysics,
   NEUTRAL_INPUT,

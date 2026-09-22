@@ -85,7 +85,7 @@ export class MirrorCars {
       }
       if (existing !== undefined && existing.profile === seat.profile) continue
       existing?.view.dispose()
-      const view = new CarView(seatColor(seat.id))
+      const view = new CarView(seat.profile, seatColor(seat.id))
       view.syncDimensions(seat.tuning)
       this.object.add(view.object)
       const body = new SmoothedBody(seat.vehicle.body, view.object)

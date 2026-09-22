@@ -1,3 +1,4 @@
+import type { VehicleProfileId } from '@buggies/game'
 import type { LocalPrediction, PredictionUpdate, ReconcileOutcome, SendInput } from '@buggies/net'
 import type * as THREE from 'three'
 
@@ -19,9 +20,10 @@ export class PredictedCar {
   constructor(
     private readonly prediction: LocalPrediction,
     private readonly send: SendInput,
+    profile: VehicleProfileId,
     color: number,
   ) {
-    this.view = new CarView(color)
+    this.view = new CarView(profile, color)
     this.view.syncDimensions(prediction.tuning)
     this.object = this.view.object
     this.body = new SmoothedBody(prediction.vehicle.body, this.object)

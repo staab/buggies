@@ -1,4 +1,12 @@
-import { NEUTRAL_INPUT, createArena, initPhysics, takeSeat, type Arena, type VehicleInput } from '@buggies/game'
+import {
+  NEUTRAL_INPUT,
+  createArena,
+  initPhysics,
+  takeSeat,
+  type Arena,
+  type VehicleInput,
+  type VehicleProfileId,
+} from '@buggies/game'
 import { generateTerrain, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -120,7 +128,7 @@ class Session {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: 'pickup' | 'mustang' | 'raceCar' = 'mustang', jitterTicks = 0): Promise<Player> {
+  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0): Promise<Player> {
     const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
     const client = new NetClient(wire.client, () => this.nowMs)
     const welcoming = client.connect(profile)
@@ -295,8 +303,8 @@ describe('a session', () => {
 
   it('keeps another player\'s car steady in the mirror, driving straight or weaving', async () => {
     const session = new Session()
-    const a = await session.join('mustang')
-    const b = await session.join('mustang')
+    const a = await session.join('sportsCar')
+    const b = await session.join('sportsCar')
     a.watching = b.client.welcome!.seat
     b.input = { ...NEUTRAL_INPUT, throttle: 1 }
     session.run(5)
@@ -320,7 +328,7 @@ describe('a session', () => {
     const session = new Session()
     // Every message up to three ticks late on top of the wire's delay, so
     // snapshots arrive in fits and starts.
-    const a = await session.join('mustang', 3)
+    const a = await session.join('sportsCar', 3)
     a.input = { ...NEUTRAL_INPUT, throttle: 1, steer: 0.2 }
     session.run(2)
     a.pumps = 0
@@ -337,7 +345,7 @@ describe('a session', () => {
 
   it('catches up a client that spent seconds generating its map before it first drove', async () => {
     const session = new Session()
-    const a = await session.join('mustang')
+    const a = await session.join('sportsCar')
     // Welcomed, then busy for three seconds while the server runs on and
     // its snapshots pile up on the wire.
     a.paused = true

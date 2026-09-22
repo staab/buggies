@@ -27,11 +27,18 @@ import { Smoke } from './smoke.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-/** A colour each, so the three are told apart at a glance. */
+/** A colour each, for when a vehicle has to be drawn as boxes. */
 const COLORS: Record<VehicleProfileId, number> = {
-  pickup: 0x3f6fb5,
-  mustang: 0xd8452f,
   raceCar: 0xe8a33a,
+  police: 0xf4f4f4,
+  firetruck: 0xc8252b,
+  pickup: 0x3f6fb5,
+  sportsCar: 0xd8452f,
+  smallCar: 0x6fd3c7,
+  tank: 0x6b7a3a,
+  ambulance: 0xf7f2e8,
+  semi: 0xe6e6e6,
+  goKart: 0x9b59b6,
 }
 
 /** Alone on the island, in a one-seat arena. */
@@ -44,7 +51,7 @@ export function createDriveMode(
   const seat = takeSeat(arena, 0, profile)
   const { vehicle } = seat
   const keyboard = new Keyboard()
-  const car = new CarView(COLORS[profile])
+  const car = new CarView(profile, COLORS[profile])
   car.syncDimensions(seat.tuning)
   scene.add(car.object)
   const explosions = new Explosions()

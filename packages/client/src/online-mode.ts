@@ -55,7 +55,12 @@ export async function createOnlineMode(
   const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
 
   const keyboard = new Keyboard()
-  const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat))
+  const car = new PredictedCar(
+    prediction,
+    (tick, input) => client.sendInput(tick, input),
+    welcome.profile,
+    seatColor(welcome.seat),
+  )
   scene.add(car.object)
   const explosions = new Explosions()
   scene.add(explosions.object)

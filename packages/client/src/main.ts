@@ -7,6 +7,7 @@ import {
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { loadCarModels } from './car-model.ts'
 import { createDriveMode } from './drive-mode.ts'
 import { Menu, type Choice, type Mode } from './menu.ts'
 import type { ModeView } from './mode.ts'
@@ -166,8 +167,11 @@ menu.onCommit(apply)
 
 // The physics engine is a wasm module, so it has to be ready before anything
 // can be driven. It loads in well under a frame, and getting it out of the way
-// up front beats a loading state in the middle of a session.
-await initPhysics()
+// up front beats a loading state in the middle of a session. The vehicles'
+// models come in alongside it: every one of them, since online anyone may
+// turn up in any of them.
+hudElement.textContent = 'loading...'
+await Promise.all([initPhysics(), loadCarModels()])
 void apply(choice)
 menu.show(choice)
 

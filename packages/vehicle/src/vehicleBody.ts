@@ -299,10 +299,12 @@ function cuboidPrincipalInertia(out: Vec3, mass: number, tuning: VehicleTuning):
 }
 
 export function applyChassisMassProperties(vehicle: Vehicle, tuning: VehicleTuning): void {
+  // The rounding is kept, so the box inside it is set that much smaller, or
+  // the chassis would be a rounding bigger all round than the tuning says.
   vehicle.collider.setHalfExtents({
-    x: tuning.chassisHalfWidth,
-    y: tuning.chassisHalfHeight,
-    z: tuning.chassisHalfLength,
+    x: tuning.chassisHalfWidth - CHASSIS_ROUNDING,
+    y: tuning.chassisHalfHeight - CHASSIS_ROUNDING,
+    z: tuning.chassisHalfLength - CHASSIS_ROUNDING,
   })
 
   vehicle.body.setAdditionalMassProperties(

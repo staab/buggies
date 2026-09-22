@@ -35,7 +35,7 @@ let SPAWN: VehicleSpawn
 
 /** One driver in the first seat, which is all most of these need. */
 function solo(arena: Arena, spawn?: VehicleSpawn): Seat {
-  const seat = takeSeat(arena, 0, 'mustang')
+  const seat = takeSeat(arena, 0, 'sportsCar')
   if (spawn) {
     Object.assign(seat.spawn, spawn)
     respawn(seat)
@@ -213,9 +213,9 @@ describe('game', () => {
     leaveSeat(arena, 0)
     expect(a.occupied).toBe(false)
     expect(a.vehicle.body.isEnabled()).toBe(false)
-    const again = takeSeat(arena, 0, 'mustang')
+    const again = takeSeat(arena, 0, 'sportsCar')
     expect(again.epoch).not.toBe(epoch)
-    expect(again.profile).toBe('mustang')
+    expect(again.profile).toBe('sportsCar')
   })
 
   it('brings back a vehicle that has fallen off the world', () => {

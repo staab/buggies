@@ -106,8 +106,8 @@ describe('wire', () => {
 
   it('refuses anything the wrong shape', () => {
     expect(decodeHello(new Uint8Array(0))).toBeNull()
-    expect(decodeHello(encodeHello('mustang').subarray(0, 3))).toBeNull()
-    expect(decodeWelcome(encodeHello('mustang'))).toBeNull()
+    expect(decodeHello(encodeHello('sportsCar').subarray(0, 3))).toBeNull()
+    expect(decodeWelcome(encodeHello('sportsCar'))).toBeNull()
     expect(decodeInput(encodeInput(1, snapshot.vehicles[0]!.appliedInput).subarray(0, 10), { ...snapshot.vehicles[0]!.appliedInput })).toBeNull()
     expect(decodeSnapshot(encodeSnapshot(snapshot).subarray(0, SNAPSHOT_HEADER_BYTES + 3))).toBeNull()
 
