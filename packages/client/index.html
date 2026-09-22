@@ -50,27 +50,76 @@
         color: var(--dim);
         pointer-events: none;
       }
+      #hud[hidden] {
+        display: none;
+      }
+      /* The menu stands to one side and lets everything behind it be seen,
+         and touched: the island is looked over past it. */
       #menu {
         position: fixed;
         inset: 0;
-        display: grid;
-        place-items: center;
-        background: rgba(6, 14, 22, 0.72);
-        backdrop-filter: blur(6px);
+        pointer-events: none;
         z-index: 10;
       }
       #menu[hidden] {
         display: none;
       }
       .panel {
-        width: min(560px, calc(100vw - 32px));
-        max-height: calc(100vh - 32px);
+        position: absolute;
+        left: 16px;
+        top: 16px;
+        bottom: 16px;
+        width: min(440px, calc(100vw - 32px));
         overflow-y: auto;
         box-sizing: border-box;
-        padding: 24px;
+        padding: 22px;
         border: 1px solid var(--edge);
         border-radius: 12px;
         background: var(--panel);
+        backdrop-filter: blur(6px);
+        pointer-events: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .panel > [hidden] {
+        display: none;
+      }
+      .steps {
+        display: flex;
+        gap: 16px;
+        margin: 0 0 18px;
+        padding: 0;
+        list-style: none;
+        counter-reset: step;
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .steps li::before {
+        counter-increment: step;
+        content: counter(step) ' ';
+        opacity: 0.7;
+      }
+      .steps li.done {
+        color: var(--ink);
+      }
+      .steps li[aria-current='step'] {
+        color: var(--accent);
+      }
+      .status {
+        margin: 0 0 12px;
+        min-height: 1.5em;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .nav {
+        display: flex;
+        gap: 8px;
+        margin-top: auto;
+      }
+      .nav .go {
+        flex: 1;
       }
       .panel h1 {
         margin: 0;
@@ -114,6 +163,13 @@
       button:hover {
         border-color: var(--accent);
       }
+      button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      button:disabled:hover {
+        border-color: var(--edge);
+      }
       button[aria-pressed='true'] {
         border-color: var(--accent);
         background: rgba(111, 211, 199, 0.14);
@@ -150,7 +206,6 @@
         border-color: var(--accent);
       }
       .go {
-        width: 100%;
         text-align: center;
         padding: 13px;
         border-color: var(--accent);
@@ -159,7 +214,7 @@
         text-transform: uppercase;
       }
       .keys {
-        margin: 16px 0 0;
+        margin: 12px 0 0;
         font-size: 11px;
         line-height: 1.7;
         color: var(--dim);

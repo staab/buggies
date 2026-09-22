@@ -11,14 +11,15 @@ pnpm dev
 ```
 
 That starts everything: the Vite client on port 5173 and the game server on port 8787, both
-reachable from other machines on the network. Open the client, pick **Online** in the menu, and
-connect. The server field defaults to the game server next to whichever address the page was
-opened on, so a second screen just opens the same URL and connects too.
+reachable from other machines on the network. Open the client, pick **Online** on the first page
+of the menu, and connect. The server field defaults to the game server next to whichever address
+the page was opened on, so a second screen just opens the same URL and connects too.
 
 The server chooses the island; set `SEED=42 pnpm --filter @buggies/server dev` for a particular
 one. `PORT` and `HOST` are honoured as well.
 
-**Free drive** and **Terrain preview** need no server.
+**Free drive** needs no server: pick an island by its seed, looking it over from above while you
+do, then a vehicle, and go.
 
 ## Packages
 

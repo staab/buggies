@@ -35,6 +35,24 @@ export function seatColor(seat: number): number {
   return SEAT_COLORS[seat % SEAT_COLORS.length]!
 }
 
+/** Buggies: a colour each, for when a vehicle has to be drawn as boxes. */
+const PROFILE_COLORS: Record<VehicleProfileId, number> = {
+  raceCar: 0xe8a33a,
+  police: 0xf4f4f4,
+  firetruck: 0xc8252b,
+  pickup: 0x3f6fb5,
+  sportsCar: 0xd8452f,
+  smallCar: 0x6fd3c7,
+  tank: 0x6b7a3a,
+  ambulance: 0xf7f2e8,
+  semi: 0xe6e6e6,
+  goKart: 0x9b59b6,
+}
+
+export function profileColor(profile: VehicleProfileId): number {
+  return PROFILE_COLORS[profile]
+}
+
 const CABIN_COLOR = 0x1f2933
 const WHEEL_COLOR = 0x14181d
 

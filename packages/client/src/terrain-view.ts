@@ -1017,10 +1017,13 @@ function buildCar(): THREE.Group {
 
 /**
  * A single car parked on the highway (or the first city, or the map centre) so
- * the size of roads, cities and features can be judged at a glance.
+ * the size of roads, cities and features can be judged at a glance. Given a
+ * car to park, in the chassis frame (its front toward -Z, its wheels below
+ * its origin), that one is parked, facing along the road.
  */
-export function createScaleCar(map: TerrainMap): THREE.Group {
-  const car = buildCar()
+export function createScaleCar(map: TerrainMap, passenger: THREE.Object3D = buildCar()): THREE.Group {
+  const car = new THREE.Group()
+  car.add(passenger)
   const road = map.roads[0]
 
   if (road && road.points.length > 1) {
@@ -1028,7 +1031,7 @@ export function createScaleCar(map: TerrainMap): THREE.Group {
     const point = road.points[index]!
     const next = road.points[(index + 1) % road.points.length]!
     car.position.set(point.x, point.y + roadLift(road), point.z)
-    car.rotation.y = Math.atan2(next.x - point.x, next.z - point.z)
+    car.rotation.y = Math.atan2(-(next.x - point.x), -(next.z - point.z))
     return car
   }
 
