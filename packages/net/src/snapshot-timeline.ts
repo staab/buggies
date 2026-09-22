@@ -120,6 +120,11 @@ export class SnapshotTimeline {
     while (this.buffer.length > MAX_BUFFERED_SNAPSHOTS) this.buffer.shift()
   }
 
+  /** Whether any snapshot has arrived to set the clock by. */
+  get hasClock(): boolean {
+    return this.clockOffsetMs !== null
+  }
+
   /** The server's tick right now, as best this side can tell. Zero until it can. */
   estimatedServerTick(nowMs: number): number {
     if (this.clockOffsetMs === null) return 0

@@ -43,6 +43,19 @@ const MAX_SLACK_TICKS = 4
 /** Lead comes down slowly, so a good moment does not undo a bad second. */
 const LEAD_RELAX_INTERVAL_MS = 1000
 
+/**
+ * The mirror steps once per local fixed step, whatever the server's clock is
+ * doing: that is what keeps the car smooth. Only when it has drifted further
+ * than this from the lead it should hold over the server's clock is it
+ * nudged, a tick at a time. Behind, where inputs would arrive late, it
+ * catches up a tick every step; ahead, which costs nothing but a little
+ * lag, it gives a tick back no more often than this. Further behind than
+ * `STALL_TICKS` it is not nudged but jumped, since that is a stall.
+ */
+const SLEW_SLACK_TICKS = 2
+const SLEW_BACK_INTERVAL_MS = 250
+const STALL_TICKS = INPUT_TIMELINE_TICKS / 2
+
 export interface NetClientEvents {
   onClosed(reason: string): void
 }
@@ -64,9 +77,9 @@ export class NetClient {
   private newestSnapshot: SnapshotMessage | null = null
   private settleWelcome: { resolve(welcome: WelcomeMessage): void; reject(error: Error): void } | null = null
   private lastSentTick = -1
-  private skippedTicks = 0
   private lead = INITIAL_LEAD_TICKS
   private leadRelaxedAtMs = 0
+  private slewedAtMs = 0
   private closedReason: string | null = null
   private ackTick = UNACKNOWLEDGED_INPUT_TICK
 
@@ -114,21 +127,47 @@ export class NetClient {
     }
   }
 
-  /**
-   * Send the current input for every tick the server is about to reach that
-   * has not been sent for yet, and say what the prediction should do about it.
-   */
+  /** The tick the mirror should start on: the lead ahead of the server's clock at the welcome. */
+  get startTick(): number {
+    return (this.welcomeMessage?.tick ?? 0) + this.lead
+  }
+
+  /** Once per local fixed step: the newest word from the server, and the input to run on. */
   pump(input: VehicleInput): PredictionUpdate {
-    const estimatedServerTick = this.timeline.estimatedServerTick(this.clock())
-    const skippedBefore = this.skippedTicks
-    this.sendInputThrough(estimatedServerTick + this.lead, input)
     return {
-      estimatedServerTick,
-      sentThroughTick: this.lastSentTick,
-      skippedTicks: this.skippedTicks - skippedBefore,
+      estimatedServerTick: this.timeline.estimatedServerTick(this.clock()),
+      stepsFor: (nextTick) => this.stepsFor(nextTick),
       input,
       newestSnapshot: this.newestSnapshot,
     }
+  }
+
+  /**
+   * How many ticks the prediction should run this step, given that its
+   * mirror is about to simulate `nextTick`: one, nearly always; none or two
+   * now and then, to hold the lead over the server's clock; many after a
+   * stall. Asked once the snapshot has been taken in, since that can move
+   * the mirror.
+   */
+  stepsFor(nextTick: number): number {
+    if (!this.timeline.hasClock) return 1
+    const nowMs = this.clock()
+    const behind = this.timeline.estimatedServerTick(nowMs) + this.lead - nextTick
+    if (behind > STALL_TICKS) return behind
+    if (behind > SLEW_SLACK_TICKS) return 2
+    if (behind < -SLEW_SLACK_TICKS && nowMs - this.slewedAtMs >= SLEW_BACK_INTERVAL_MS) {
+      this.slewedAtMs = nowMs
+      return 0
+    }
+    return 1
+  }
+
+  /** Send the input the mirror is simulating a tick with, stamped with that tick. */
+  sendInput(tick: number, input: VehicleInput): void {
+    if (this.welcomeMessage === null || this.closedReason !== null) return
+    if (tick <= this.lastSentTick) return
+    this.lastSentTick = tick
+    this.transport.send(encodeInput(tick, input))
   }
 
   requestRespawn(): void {
@@ -145,21 +184,6 @@ export class NetClient {
     this.transport.close(reason)
   }
 
-  private sendInputThrough(targetTick: number, input: VehicleInput): void {
-    if (this.welcomeMessage === null || this.closedReason !== null) return
-    // After a long stall the oldest owed ticks are already past what the
-    // server will accept, so they are skipped rather than sent for nothing.
-    const oldestWorthSending = targetTick - INPUT_TIMELINE_TICKS
-    if (this.lastSentTick < oldestWorthSending) {
-      this.skippedTicks += oldestWorthSending - this.lastSentTick
-      this.lastSentTick = oldestWorthSending
-    }
-    while (this.lastSentTick < targetTick) {
-      this.lastSentTick += 1
-      this.transport.send(encodeInput(this.lastSentTick, input))
-    }
-  }
-
   private receive(payload: Uint8Array): void {
     const type = messageTypeOf(payload)
 
@@ -170,7 +194,6 @@ export class NetClient {
         return
       }
       this.welcomeMessage = welcome
-      this.lastSentTick = welcome.tick + this.lead - 1
       this.settleWelcome?.resolve(welcome)
       this.settleWelcome = null
       return
