@@ -35,9 +35,9 @@ function restingWheels(travel: number, steer = 0, spin = 0): WheelState[] {
 
 describe('CarView', () => {
   it('draws a vehicle the size its tuning says', () => {
-    for (const profile of ['pickup', 'mustang', 'raceCar'] as const) {
+    for (const profile of ['pickup', 'sportsCar', 'raceCar'] as const) {
       const tuning = createVehicleTuning(profile)
-      const view = new CarView(0xff0000)
+      const view = new CarView(profile, 0xff0000, null)
       view.syncDimensions(tuning)
       view.applySimulatedWheels(restingWheels(tuning.suspensionRestLength), tuning)
       view.object.updateMatrixWorld(true)
@@ -50,8 +50,8 @@ describe('CarView', () => {
   })
 
   it('hangs each wheel off its own mount, dropped by its suspension', () => {
-    const tuning = createVehicleTuning('mustang')
-    const view = new CarView(0xff0000)
+    const tuning = createVehicleTuning('sportsCar')
+    const view = new CarView('sportsCar', 0xff0000, null)
     view.syncDimensions(tuning)
     view.applySimulatedWheels(restingWheels(0.2), tuning)
 
@@ -67,8 +67,8 @@ describe('CarView', () => {
   })
 
   it('turns the front wheels only, and rolls them all', () => {
-    const tuning = createVehicleTuning('mustang')
-    const view = new CarView(0xff0000)
+    const tuning = createVehicleTuning('sportsCar')
+    const view = new CarView('sportsCar', 0xff0000, null)
     view.syncDimensions(tuning)
     view.applySimulatedWheels(restingWheels(0.2, 0.4, 2.5), tuning)
 

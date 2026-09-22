@@ -75,7 +75,7 @@ describe('ground stick', () => {
   })
 
   it('holds the car to the road over a crest it would otherwise leave', () => {
-    const tuning = createVehicleTuning('mustang')
+    const tuning = createVehicleTuning('sportsCar')
     const floating: VehicleTuning = { ...tuning, groundStickRange: 0 }
 
     const without = drive(runway(crest), floating, 30)
@@ -88,7 +88,7 @@ describe('ground stick', () => {
   })
 
   it('still lets go off a real jump', () => {
-    const flown = drive(runway(jump), createVehicleTuning('mustang'), 30)
+    const flown = drive(runway(jump), createVehicleTuning('sportsCar'), 30)
     expect(flown.reached).toBe(true)
     // Half a second or more in the air: the ramp threw it, and nothing dragged it back down.
     expect(flown.airborneTicks).toBeGreaterThan(30)

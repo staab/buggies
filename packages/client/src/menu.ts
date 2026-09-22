@@ -1,5 +1,7 @@
 import { VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
 
+import { modelCredits } from './car-model.ts'
+
 export type Mode = 'preview' | 'drive' | 'online'
 
 /** What the player has chosen. Everything the app needs to build a session. */
@@ -29,9 +31,16 @@ const MODE_NOTES: Record<Mode, { name: string; note: string; go: string }> = {
 }
 
 const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
-  pickup: 'Heavy and slow to turn. Slides rather than rolls.',
-  mustang: 'The balanced one. Start here.',
   raceCar: 'Fast and unforgiving. Spins out if you ask too much.',
+  police: 'A sedan with some shove. Takes a knock.',
+  firetruck: 'Seven tonnes with the engine to climb anything. Slowly.',
+  pickup: 'Heavy and slow to turn. Slides rather than rolls.',
+  sportsCar: 'The balanced one. Start here.',
+  smallCar: 'Tiny and nimble. Not quick.',
+  tank: 'Nothing moves it off its line, and nothing hurts it much.',
+  ambulance: 'A tall van, loaded. Steady if you let it be.',
+  semi: 'The tractor unit, bobtail. Slow to turn, slower to stop.',
+  goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
 }
 
 function card(name: string, note: string): HTMLButtonElement {
@@ -147,7 +156,27 @@ export class Menu {
       '<kbd>Space</kbd> handbrake &nbsp; <kbd>Enter</kbd> back to the road<br />' +
       '<kbd>R</kbd> a different map &nbsp; <kbd>Esc</kbd> this menu'
 
-    panel.append(title, blurb, modeGroup, mapGroup, serverGroup, vehicleGroup, this.go, keys)
+    // Whose models the vehicles are. One of them asks to be credited, and
+    // the rest deserve it.
+    const credits = document.createElement('p')
+    credits.className = 'keys'
+    credits.append('Vehicles: ')
+    modelCredits().forEach((credit, index) => {
+      if (index > 0) credits.append(' · ')
+      const model = document.createElement('a')
+      model.href = credit.url
+      model.target = '_blank'
+      model.rel = 'noopener'
+      model.textContent = `${credit.title} by ${credit.author}`
+      const licence = document.createElement('a')
+      licence.href = credit.licenceUrl
+      licence.target = '_blank'
+      licence.rel = 'noopener'
+      licence.textContent = credit.licence
+      credits.append(model, ' (', licence, ')')
+    })
+
+    panel.append(title, blurb, modeGroup, mapGroup, serverGroup, vehicleGroup, this.go, keys, credits)
     this.root.append(panel)
     this.render()
   }

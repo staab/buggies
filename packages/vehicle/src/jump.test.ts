@@ -91,7 +91,7 @@ describe('jumps', () => {
   })
 
   it('carries a car off a massive kicker and lands it on its wheels', () => {
-    for (const profile of ['mustang', 'pickup', 'raceCar'] as const) {
+    for (const profile of ['sportsCar', 'pickup', 'raceCar'] as const) {
       const flight = fly(runway(kicker), createVehicleTuning(profile), 40)
       // A long flight, held level all the way, down on its wheels.
       expect(flight.airborneTicks).toBeGreaterThan(60)
@@ -114,7 +114,7 @@ describe('jumps', () => {
         mass: 1200,
       }).setLinvel({ x: linearVelocity.x - 12, y: linearVelocity.y, z: linearVelocity.z }, true)
     }
-    const tuning = createVehicleTuning('mustang')
+    const tuning = createVehicleTuning('sportsCar')
     const knocked = fly(runway(kicker), tuning, 40, shove)
     const levelled = fly(runway(kicker), { ...tuning, impactSpeedChange: Number.POSITIVE_INFINITY }, 40, shove)
     expect(knocked.lowestUp).toBeLessThan(0)

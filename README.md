@@ -39,3 +39,9 @@ pnpm test
 
 The tests cover terrain, driving, the wire format, and a whole session — two clients on a
 server over a simulated wire, with prediction — all in Node, no browser needed.
+
+## Credits
+
+The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a
+[tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a
+[cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). See `CREDITS.md`.

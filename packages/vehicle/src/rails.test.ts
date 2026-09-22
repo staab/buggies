@@ -35,7 +35,7 @@ describe('guardrails', () => {
       structure: new Uint8Array(points.length - 1),
     }
     addRailRuns(world, [{ road, points, side: -1, flaredStart: false, flaredEnd: false }])
-    const tuning = createVehicleTuning('mustang')
+    const tuning = createVehicleTuning('sportsCar')
     const vehicle = createVehicle(world, tuning, { position: { x: MIDDLE, y: 0, z: 800 }, yaw: 0 })
     world.step()
 
@@ -106,7 +106,7 @@ describe('guardrails', () => {
       }
       return Number.POSITIVE_INFINITY
     }
-    const tuning = createVehicleTuning('mustang')
+    const tuning = createVehicleTuning('sportsCar')
     const vehicle = createVehicle(world, tuning, { position: { x: middle, y: 0, z: 800 }, yaw: 0 })
     world.step()
 

@@ -1,16 +1,19 @@
 // Ported from the seattle project (src/game/carView.ts). Kept in its original shape
-// and formatting so the two can be compared and resynced.
+// and formatting so the two can be compared and resynced. Buggies draws each
+// vehicle with its model when one has loaded, and falls back to seattle's boxes.
 
 import * as THREE from 'three'
 
 import {v3, type Vec3} from '@buggies/physics'
-import type {VehicleTuning} from '@buggies/game'
+import type {VehicleProfileId, VehicleTuning} from '@buggies/game'
 import {
   wheelMountLocal,
   WHEEL_CORNERS,
   WHEEL_COUNT,
   type WheelState,
 } from '@buggies/game'
+
+import {carModelFor, type CarModel} from './car-model.ts'
 
 export const PLAYER_BODY_COLOR = 0xd8452f
 export const REMOTE_BODY_COLOR = 0x3f6fb5
@@ -46,17 +49,52 @@ const LOADED_SUSPENSION_FRACTION = 0.7
 const unitBoxGeometry = new THREE.BoxGeometry(1, 1, 1)
 const unitWheelGeometry = new THREE.CylinderGeometry(1, 1, 1, 20).rotateZ(Math.PI / 2)
 
+/** Buggies: a drawn wheel, and which of the simulated wheels it follows. */
+interface DrawnWheel {
+  pivot: THREE.Object3D
+  /** Which simulated wheel it follows, in `WHEEL_CORNERS` order. */
+  corner: number
+  /** Where its hub sits across and along the chassis: the model's own place for it. */
+  x: number
+  z: number
+}
+
+function cornerIndex(isFront: boolean, isLeft: boolean): number {
+  return WHEEL_CORNERS.findIndex((corner) => corner.isFront === isFront && corner.isLeft === isLeft)
+}
+
 export class CarView {
   readonly object: THREE.Group
 
-  private readonly chassisMesh: THREE.Mesh
-  private readonly cabinMesh: THREE.Mesh
+  private readonly chassisMesh: THREE.Mesh | null = null
+  private readonly cabinMesh: THREE.Mesh | null = null
   private readonly wheelMeshes: THREE.Mesh[] = []
+  private readonly drawnWheels: DrawnWheel[] = []
   private readonly materials: THREE.Material[] = []
   private readonly mountLocal: Vec3 = v3()
+  /** Buggies: whether the wheels sit where the model has them or where the tuning does. */
+  private readonly modelled: boolean
 
-  constructor(bodyColor: number) {
+  constructor(profile: VehicleProfileId, bodyColor: number, model: CarModel | null = carModelFor(profile)) {
     this.object = new THREE.Group()
+    this.modelled = model !== null
+
+    if (model !== null) {
+      this.object.add(model.body.clone())
+      for (const wheel of model.wheels) {
+        const pivot = new THREE.Group()
+        pivot.rotation.order = 'YXZ'
+        pivot.add(wheel.group.clone())
+        this.object.add(pivot)
+        this.drawnWheels.push({
+          pivot,
+          corner: cornerIndex(wheel.isFront, wheel.isLeft),
+          x: wheel.x,
+          z: wheel.z,
+        })
+      }
+      return
+    }
 
     const bodyMaterial = new THREE.MeshStandardMaterial({
       color: bodyColor,
@@ -88,6 +126,7 @@ export class CarView {
       mesh.rotation.order = 'YXZ'
       this.wheelMeshes.push(mesh)
       this.object.add(mesh)
+      this.drawnWheels.push({pivot: mesh, corner: index, x: 0, z: 0})
     }
   }
 
@@ -97,6 +136,9 @@ export class CarView {
   }
 
   syncDimensions(tuning: VehicleTuning): void {
+    // A model is already the size its tuning was measured from.
+    if (this.chassisMesh === null || this.cabinMesh === null) return
+
     const width = tuning.chassisHalfWidth * 2
     const height = tuning.chassisHalfHeight * 2
     const length = tuning.chassisHalfLength * 2
@@ -117,33 +159,46 @@ export class CarView {
   }
 
   applySimulatedWheels(wheels: readonly WheelState[], tuning: VehicleTuning): void {
-    for (const [index, wheel] of wheels.entries()) {
-      const mesh = this.wheelMeshes[index]
+    for (const drawn of this.drawnWheels) {
+      const wheel = wheels[drawn.corner]
 
-      if (mesh === undefined) continue
+      if (wheel === undefined) continue
 
-      wheelMountLocal(this.mountLocal, wheel, tuning)
-      mesh.position.set(
-        this.mountLocal.x,
-        this.mountLocal.y - wheel.suspensionLength,
-        this.mountLocal.z,
-      )
-      mesh.rotation.set(-wheel.spin, -wheel.steerAngle, 0)
+      this.placeWheel(drawn, wheel, tuning, wheel.suspensionLength)
+      drawn.pivot.rotation.set(-wheel.spin, -wheel.steerAngle, 0)
     }
   }
 
   applyRollingWheels(tuning: VehicleTuning, spin: number): void {
     const suspensionLength = tuning.suspensionRestLength * LOADED_SUSPENSION_FRACTION
 
-    for (const [index, corner] of WHEEL_CORNERS.entries()) {
-      const mesh = this.wheelMeshes[index]
+    for (const drawn of this.drawnWheels) {
+      const corner = WHEEL_CORNERS[drawn.corner]
 
-      if (mesh === undefined) continue
+      if (corner === undefined) continue
 
-      wheelMountLocal(this.mountLocal, corner, tuning)
-      mesh.position.set(this.mountLocal.x, this.mountLocal.y - suspensionLength, this.mountLocal.z)
-      mesh.rotation.set(-spin, 0, 0)
+      this.placeWheel(drawn, corner, tuning, suspensionLength)
+      drawn.pivot.rotation.set(-spin, 0, 0)
     }
+  }
+
+  /**
+   * Buggies: a wheel hangs below its mount by its suspension's length. A
+   * model's wheel keeps the model's place for it across and along the
+   * chassis, so it stays in its arch; the boxes' wheels take the tuning's.
+   */
+  private placeWheel(
+    drawn: DrawnWheel,
+    corner: {readonly isFront: boolean; readonly isLeft: boolean},
+    tuning: VehicleTuning,
+    suspensionLength: number,
+  ): void {
+    wheelMountLocal(this.mountLocal, corner, tuning)
+    drawn.pivot.position.set(
+      this.modelled ? drawn.x : this.mountLocal.x,
+      this.mountLocal.y - suspensionLength,
+      this.modelled ? drawn.z : this.mountLocal.z,
+    )
   }
 
   dispose(): void {
@@ -154,5 +209,6 @@ export class CarView {
 
     this.materials.length = 0
     this.wheelMeshes.length = 0
+    this.drawnWheels.length = 0
   }
 }
