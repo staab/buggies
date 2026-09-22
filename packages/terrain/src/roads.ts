@@ -110,7 +110,7 @@ const RAMP_SEGMENTS = 24
  * leaving the deck crosses the skirt onto ground still level with it, and
  * only descends once the ramp has pulled clear of the highway.
  */
-const RAMP_PLATEAU = 20
+export const RAMP_PLATEAU = 20
 
 /** Arterial road width, in world units. */
 export const ARTERIAL_WIDTH = 10
