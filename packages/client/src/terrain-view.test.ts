@@ -75,6 +75,53 @@ describe('createTerrainView', () => {
     }
   })
 
+  it('paves the deck skirt beside each ramp mouth level with the deck, in the road colour', () => {
+    const map = generateTerrain(1)
+    const view = createTerrainView(map)
+    const highway = map.roads.find((road) => road.kind === 'highway')!
+    const ramps = map.roads.filter((road) => road.kind === 'ramp')
+    expect(ramps.length).toBeGreaterThan(0)
+    // The highway's deck mesh: six coloured vertices per centreline point.
+    const deck = view.children.find(
+      (child): child is THREE.Mesh =>
+        child instanceof THREE.Mesh &&
+        child.geometry.getAttribute('color') !== undefined &&
+        child.geometry.getAttribute('position').count === highway.points.length * 6,
+    )
+    expect(deck).toBeDefined()
+    const colors = deck!.geometry.getAttribute('color')
+    const positions = deck!.geometry.getAttribute('position')
+    let paved = 0
+    for (const ramp of ramps) {
+      const mouth = ramp.points[0]!
+      let nearest = 0
+      let best = Infinity
+      for (const [i, point] of highway.points.entries()) {
+        const distance = Math.hypot(point.x - mouth.x, point.z - mouth.z)
+        if (distance < best) {
+          best = distance
+          nearest = i
+        }
+      }
+      // Whichever skirt vertex is nearer the mouth is the one beside it.
+      const left = nearest * 6 + 2
+      const right = nearest * 6 + 3
+      const nearer =
+        Math.hypot(positions.getX(left) - mouth.x, positions.getZ(left) - mouth.z) <
+        Math.hypot(positions.getX(right) - mouth.x, positions.getZ(right) - mouth.z)
+          ? left
+          : right
+      const edge = nearest * 6 + (nearer === left ? 0 : 1)
+      const sameColor =
+        Math.abs(colors.getX(nearer) - colors.getX(edge)) < 1e-6 &&
+        Math.abs(colors.getY(nearer) - colors.getY(edge)) < 1e-6 &&
+        Math.abs(colors.getZ(nearer) - colors.getZ(edge)) < 1e-6
+      const level = Math.abs(positions.getY(nearer) - positions.getY(edge)) < 1e-6
+      if (sameColor && level) paved++
+    }
+    expect(paved).toBe(ramps.length)
+  })
+
   it('places the scale car on the highway', () => {
     const map = generateTerrain(5, { size: 257 })
     const road = map.roads[0]

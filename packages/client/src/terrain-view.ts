@@ -2,10 +2,13 @@ import {
   DISTRICT_CITY,
   DISTRICT_SUBURB,
   RIVER_BANK_LAP,
+  RAMP_PLATEAU,
+  RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_SKIRT,
   ROAD_TUNNEL,
+  ROAD_WIDTH,
   STREET_SPACING,
   TUNNEL_CLEARANCE,
   TUNNEL_WALL_HEIGHT,
@@ -265,7 +268,7 @@ function terrainColor(
  * at each corner of the grid and blended between them, the way the mesh
  * blends its heights, and the roads are drawn on top with soft edges.
  */
-function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
+function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture {
   const { width, depth, cellSize, heights } = map.heightfield
   const { seaLevel, districtOf } = map
 
@@ -341,6 +344,14 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
       if (city.inCity((a.x + b.x) / 2, (a.z + b.z) / 2)) continue
       paintSegment(data, texels, a, b, half, asphalt)
     }
+  }
+  // And the strip between each ramp's plateau and the deck it leaves, under
+  // the deck's paved skirt, so no ground shows at the seam between them.
+  for (const mouth of mouths) {
+    const out = RAMP_WIDTH / 2 + ROAD_SKIRT / 2
+    const a = { x: mouth.x + mouth.inX * out, y: 0, z: mouth.z + mouth.inZ * out }
+    const b = { x: a.x + mouth.dx * RAMP_PLATEAU, y: 0, z: a.z + mouth.dz * RAMP_PLATEAU }
+    paintSegment(data, texels, a, b, ROAD_SKIRT / 2 + 1.5, asphalt)
   }
 
   const texture = new THREE.DataTexture(data, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType)
@@ -443,6 +454,71 @@ function cityBlocks(map: TerrainMap): {
     return ou >= inset && ou <= STREET_SPACING - inset && ov >= inset && ov <= STREET_SPACING - inset
   }
   return { inCity, insideBlock }
+}
+
+/** Where a ramp leaves the highway's deck, and the way it runs from there. */
+interface Mouth {
+  x: number
+  z: number
+  dx: number
+  dz: number
+  /** Unit direction from the mouth in toward the highway's centreline. */
+  inX: number
+  inZ: number
+}
+
+/**
+ * The mouths of the ramps. A ramp's carriageway starts at the foot of the
+ * deck's skirt and runs level beside the deck for its plateau, so the deck's
+ * skirt there is not an embankment but a strip of road between the two.
+ */
+function rampMouths(roads: Road[]): Mouth[] {
+  const highways = roads.filter((road) => road.kind === 'highway')
+  const mouths: Mouth[] = []
+  for (const road of roads) {
+    if (road.kind !== 'ramp' || road.points.length < 2) continue
+    const [start, next] = [road.points[0]!, road.points[1]!]
+    const length = Math.hypot(next.x - start.x, next.z - start.z) || 1
+    let nearest = { x: start.x, z: start.z }
+    let best = Infinity
+    for (const highway of highways) {
+      for (const point of highway.points) {
+        const distance = Math.hypot(point.x - start.x, point.z - start.z)
+        if (distance < best) {
+          best = distance
+          nearest = point
+        }
+      }
+    }
+    const reach = Math.hypot(nearest.x - start.x, nearest.z - start.z) || 1
+    mouths.push({
+      x: start.x,
+      z: start.z,
+      dx: (next.x - start.x) / length,
+      dz: (next.z - start.z) / length,
+      inX: (nearest.x - start.x) / reach,
+      inZ: (nearest.z - start.z) / reach,
+    })
+  }
+  return mouths
+}
+
+/**
+ * Whether a point on the deck's centreline lies beside a ramp's plateau on
+ * the given side: 1 for its left, along the normal `nx, nz`, -1 for its
+ * right. An interchange has a ramp on each side of the same stretch.
+ */
+function mouthBeside(mouths: Mouth[], x: number, z: number, nx: number, nz: number, side: number): boolean {
+  for (const mouth of mouths) {
+    const toMouthX = mouth.x - x
+    const toMouthZ = mouth.z - z
+    const along = -(toMouthX * mouth.dx + toMouthZ * mouth.dz)
+    if (along < -(RAMP_WIDTH / 2 + ROAD_SKIRT) || along > RAMP_PLATEAU) continue
+    const across = (toMouthX * nx + toMouthZ * nz) * side
+    if (across < 0 || across > ROAD_WIDTH / 2 + ROAD_SKIRT + RAMP_WIDTH + 2) continue
+    return true
+  }
+  return false
 }
 
 function buildTerrainMesh(
@@ -605,7 +681,7 @@ function buildRiverGeometry(river: River): THREE.BufferGeometry {
  * is painted there instead, so only its bridges are drawn; nothing is returned
  * for one with no bridge at all.
  */
-function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry | null {
+function buildRoadGeometry(road: Road, field: Heightfield, mouths: Mouth[]): THREE.BufferGeometry | null {
   const points = road.points
   const count = points.length
   const segmentCount = road.closed ? count : count - 1
@@ -646,8 +722,12 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
 
     // Lift the deck clear of the ground so it never z-fights the terrain.
     const y = point.y + lift
-    const leftGround = Math.min(groundUnder(point.x + nx * skirt, point.z + nz * skirt), y)
-    const rightGround = Math.min(groundUnder(point.x - nx * skirt, point.z - nz * skirt), y)
+    // Beside a ramp's plateau the skirt is level with the deck and is road,
+    // not embankment: the strip a car crosses between the two.
+    const pavedLeft = road.kind === 'highway' && mouthBeside(mouths, point.x, point.z, nx, nz, 1)
+    const pavedRight = road.kind === 'highway' && mouthBeside(mouths, point.x, point.z, nx, nz, -1)
+    const leftGround = pavedLeft ? y : Math.min(groundUnder(point.x + nx * skirt, point.z + nz * skirt), y)
+    const rightGround = pavedRight ? y : Math.min(groundUnder(point.x - nx * skirt, point.z - nz * skirt), y)
 
     // Six points across: the edges, the skirts down to the ground beside an
     // embankment, and the verges out to the wall of a tunnel.
@@ -674,7 +754,10 @@ function buildRoadGeometry(road: Road, field: Heightfield): THREE.BufferGeometry
 
     const color = structureColor(road.structure[Math.min(i, segmentCount - 1)]!)
     colors.push(color.r, color.g, color.b, color.r, color.g, color.b)
-    for (let k = 0; k < 4; k++) colors.push(ROAD_SKIRT_COLOR.r, ROAD_SKIRT_COLOR.g, ROAD_SKIRT_COLOR.b)
+    const leftSkirt = pavedLeft ? color : ROAD_SKIRT_COLOR
+    const rightSkirt = pavedRight ? color : ROAD_SKIRT_COLOR
+    colors.push(leftSkirt.r, leftSkirt.g, leftSkirt.b, rightSkirt.r, rightSkirt.g, rightSkirt.b)
+    for (let k = 0; k < 2; k++) colors.push(ROAD_SKIRT_COLOR.r, ROAD_SKIRT_COLOR.g, ROAD_SKIRT_COLOR.b)
   }
 
   const indices: number[] = []
@@ -975,8 +1058,9 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
 
   const segments = tunnelSegments(map.roads)
   const hole = buildTunnelHoles(map.heightfield, segments)
+  const mouths = rampMouths(map.roads)
   group.add(
-    buildTerrainMesh(map.heightfield, buildGroundTexture(map), hole, segments, map.cellSize * 0.5),
+    buildTerrainMesh(map.heightfield, buildGroundTexture(map, mouths), hole, segments, map.cellSize * 0.5),
   )
 
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
@@ -1007,7 +1091,7 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
       flatShading: true,
     })
     for (const road of map.roads) {
-      const deck = buildRoadGeometry(road, map.heightfield)
+      const deck = buildRoadGeometry(road, map.heightfield, mouths)
       if (deck) group.add(new THREE.Mesh(deck, roadMaterial))
       const tunnel = buildTunnelGeometry(road)
       if (tunnel) group.add(new THREE.Mesh(tunnel, tunnelMaterial))
