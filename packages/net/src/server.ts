@@ -32,7 +32,7 @@ import {
   decodeInput,
   encodeReject,
   encodeSnapshot,
-  type BananaSnapshot,
+  type PickupSnapshot,
   encodeWelcome,
   isRespawn,
   messageTypeOf,
@@ -87,7 +87,7 @@ export class GameServer implements TransportHandlers {
   private readonly handshaking = new Map<number, Handshake>()
   private readonly scratchInput: VehicleInput = createVehicleInput()
   private readonly snapshotVehicles: VehicleSnapshot[] = []
-  private readonly snapshotBananas: BananaSnapshot[] = []
+  private readonly snapshotPickups: PickupSnapshot[] = []
   private lastSnapshotBytes = 0
 
   constructor(arena: Arena, events: Partial<GameServerEvents> = {}) {
@@ -238,15 +238,15 @@ export class GameServer implements TransportHandlers {
     this.events.onRejected?.(connection.id, rejectLabel(reason))
   }
 
-  private collectBananas(): BananaSnapshot[] {
-    const bananas = this.snapshotBananas
-    this.arena.bananas.forEach((banana, slot) => {
-      const out = (bananas[slot] ??= { generation: 0, ticksUntilOut: 0 })
-      out.generation = banana.generation
-      out.ticksUntilOut = Math.max(banana.spawnTick - this.arena.tick, 0)
+  private collectPickups(): PickupSnapshot[] {
+    const pickups = this.snapshotPickups
+    this.arena.pickups.forEach((pickup, slot) => {
+      const out = (pickups[slot] ??= { generation: 0, ticksUntilOut: 0 })
+      out.generation = pickup.generation
+      out.ticksUntilOut = Math.max(pickup.spawnTick - this.arena.tick, 0)
     })
-    bananas.length = this.arena.bananas.length
-    return bananas
+    pickups.length = this.arena.pickups.length
+    return pickups
   }
 
   private collectSnapshot(): VehicleSnapshot[] {
@@ -290,7 +290,7 @@ export class GameServer implements TransportHandlers {
       tick: this.arena.tick,
       ackInputTick: -1,
       vehicles: this.collectSnapshot(),
-      bananas: this.collectBananas(),
+      pickups: this.collectPickups(),
     })
     this.lastSnapshotBytes = encoded.length
     for (const player of this.players.values()) {

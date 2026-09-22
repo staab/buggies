@@ -2,15 +2,16 @@ import { DRY, generateTerrain, sampleHeight, waterLevelAt, type TerrainMap } fro
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
-  BANANA_HEIGHT,
-  BANANA_RESPAWN_TICKS,
   BANANA_SLOTS,
   NEUTRAL_INPUT,
+  PICKUP_HEIGHT,
+  PICKUP_RESPAWN_TICKS,
+  PICKUP_SLOTS,
   advance,
-  bananaOut,
-  bananaSpot,
   createArena,
   initPhysics,
+  pickupOut,
+  pickupSpot,
   respawn,
   takeSeat,
   type Arena,
@@ -18,7 +19,7 @@ import {
 
 let map: TerrainMap
 
-describe('bananas', () => {
+describe('pickups', () => {
   beforeAll(async () => {
     await initPhysics()
     map = generateTerrain(11, { size: 513 })
@@ -26,61 +27,79 @@ describe('bananas', () => {
 
   it('are put out over the map, above dry land or a road, the same every time', () => {
     const arena = createArena(map)
-    expect(arena.bananas).toHaveLength(BANANA_SLOTS)
+    expect(arena.pickups).toHaveLength(PICKUP_SLOTS)
+    expect(arena.pickups.filter((pickup) => pickup.kind === 'banana')).toHaveLength(BANANA_SLOTS)
+    expect(arena.pickups[BANANA_SLOTS]!.kind).toBe('bomb')
     const extent = map.size * map.cellSize
     let onRoads = 0
     let moved = 0
-    for (const [slot, banana] of arena.bananas.entries()) {
-      const { x, y, z } = banana.position
+    for (const [slot, pickup] of arena.pickups.entries()) {
+      const { x, y, z } = pickup.position
       expect(x).toBeGreaterThan(0)
       expect(x).toBeLessThan(extent)
       expect(z).toBeGreaterThan(0)
       expect(z).toBeLessThan(extent)
       // Floating over the ground, or over a road that may be above it.
       const ground = sampleHeight(map.heightfield, x, z)
-      expect(y).toBeGreaterThanOrEqual(ground + BANANA_HEIGHT - 0.5)
+      expect(y).toBeGreaterThanOrEqual(ground + PICKUP_HEIGHT - 0.5)
       const water = waterLevelAt(map.heightfield, arena.water, x, z)
       if (water !== DRY) expect(y).toBeGreaterThan(water + 1)
-      if (Math.abs(y - ground - BANANA_HEIGHT) > 0.5) onRoads++
-      expect(bananaOut(banana, 0)).toBe(true)
+      if (Math.abs(y - ground - PICKUP_HEIGHT) > 0.5) onRoads++
+      expect(pickupOut(pickup, 0)).toBe(true)
       // Worked out again, it is where it was; the slot's next is elsewhere.
-      const again = bananaSpot(map, arena.water, slot, 0)
-      expect(again).toEqual(banana.position)
-      const next = bananaSpot(map, arena.water, slot, 1)
+      const again = pickupSpot(map, arena.water, slot, 0)
+      expect(again).toEqual(pickup.position)
+      const next = pickupSpot(map, arena.water, slot, 1)
       if (Math.hypot(next.x - x, next.z - z) > 5) moved++
     }
     // Some are up on decks; most are on the ground or on roads at grade.
-    expect(onRoads).toBeLessThan(BANANA_SLOTS / 2)
-    // All but the odd coincidence of a slot's next banana is well away from its first.
-    expect(moved).toBeGreaterThan(BANANA_SLOTS - 4)
+    expect(onRoads).toBeLessThan(PICKUP_SLOTS / 2)
+    // All but the odd coincidence of a slot's next pickup is well away from its first.
+    expect(moved).toBeGreaterThan(PICKUP_SLOTS - 4)
     arena.world.free()
   })
 
   function driveOnto(arena: Arena, slot: number): ReturnType<typeof takeSeat> {
     const seat = takeSeat(arena, 0, 'sportsCar')
-    const { position } = arena.bananas[slot]!
-    // On the ground under the banana, rolling.
-    respawn(seat, { position: { x: position.x, y: position.y - BANANA_HEIGHT, z: position.z }, yaw: 0 })
+    const { position } = arena.pickups[slot]!
+    // On the ground under the pickup, rolling.
+    respawn(seat, { position: { x: position.x, y: position.y - PICKUP_HEIGHT, z: position.z }, yaw: 0 })
     return seat
   }
 
-  it('are taken by a vehicle that reaches them, for a point, and turn up elsewhere later', () => {
+  it('bananas are taken by a vehicle that reaches them, for a point, and turn up elsewhere later', () => {
     const arena = createArena(map)
     const seat = driveOnto(arena, 3)
-    const before = { ...arena.bananas[3]!.position }
+    const before = { ...arena.pickups[3]!.position }
     for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
-    const banana = arena.bananas[3]!
+    expect(seat.vehicle.wrecked).toBe(false)
+    const banana = arena.pickups[3]!
     expect(banana.generation).toBe(1)
     // Gone for a while, then out again somewhere else.
-    expect(bananaOut(banana, arena.tick)).toBe(false)
+    expect(pickupOut(banana, arena.tick)).toBe(false)
     expect(banana.spawnTick).toBeGreaterThan(arena.tick)
-    expect(banana.spawnTick - arena.tick).toBeLessThanOrEqual(BANANA_RESPAWN_TICKS)
-    expect(bananaOut(banana, banana.spawnTick)).toBe(true)
+    expect(banana.spawnTick - arena.tick).toBeLessThanOrEqual(PICKUP_RESPAWN_TICKS)
+    expect(pickupOut(banana, banana.spawnTick)).toBe(true)
     expect(Math.hypot(banana.position.x - before.x, banana.position.z - before.z)).toBeGreaterThan(1)
     // The one taken is not taken again, and the rest were out of reach.
     for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
+    arena.world.free()
+  })
+
+  it('bombs blow up a vehicle that reaches them, and are gone until the next', () => {
+    const arena = createArena(map)
+    const seat = driveOnto(arena, BANANA_SLOTS + 2)
+    const bomb = arena.pickups[BANANA_SLOTS + 2]!
+    for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(seat.vehicle.wrecked).toBe(true)
+    expect(seat.vehicle.damage).toBe(1)
+    expect(seat.score).toBe(0)
+    expect(bomb.generation).toBe(1)
+    expect(pickupOut(bomb, arena.tick)).toBe(false)
+    // Thrown into the air by it.
+    expect(seat.vehicle.frame.linearVelocity.y).not.toBe(0)
     arena.world.free()
   })
 
@@ -90,7 +109,7 @@ describe('bananas', () => {
     seat.vehicle.wrecked = true
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(0)
-    expect(arena.bananas[5]!.generation).toBe(0)
+    expect(arena.pickups[5]!.generation).toBe(0)
     seat.vehicle.wrecked = false
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)

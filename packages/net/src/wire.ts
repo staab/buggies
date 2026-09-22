@@ -32,7 +32,7 @@ export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
 export const SNAPSHOT_HEADER_BYTES = 11
 export const SNAPSHOT_VEHICLE_BYTES = 72
-export const SNAPSHOT_BANANA_BYTES = 4
+export const SNAPSHOT_PICKUP_BYTES = 4
 
 export interface HelloMessage {
   protocolVersion: number
@@ -71,9 +71,9 @@ export interface VehicleSnapshot {
   appliedInput: VehicleInput
 }
 
-/** One of the map's banana slots, as the server has it. */
-export interface BananaSnapshot {
-  /** How many bananas the slot has had: says where the current one is. */
+/** One of the map's pickup slots, as the server has it. */
+export interface PickupSnapshot {
+  /** How many pickups the slot has had: says where the current one is. */
   generation: number
   /** How many ticks after the snapshot's the current one appears; none, and it is out. */
   ticksUntilOut: number
@@ -87,7 +87,7 @@ export interface SnapshotMessage {
    */
   ackInputTick: number
   vehicles: VehicleSnapshot[]
-  bananas: BananaSnapshot[]
+  pickups: PickupSnapshot[]
 }
 
 class Writer {
@@ -285,13 +285,13 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   const writer = new Writer(
     SNAPSHOT_HEADER_BYTES +
       message.vehicles.length * SNAPSHOT_VEHICLE_BYTES +
-      message.bananas.length * SNAPSHOT_BANANA_BYTES,
+      message.pickups.length * SNAPSHOT_PICKUP_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
   writer.u32(message.ackInputTick < 0 ? NO_TICK : message.ackInputTick)
   writer.u8(message.vehicles.length)
-  writer.u8(message.bananas.length)
+  writer.u8(message.pickups.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -305,9 +305,9 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(vehicle.score, 0xffff))
     writer.input(vehicle.appliedInput)
   }
-  for (const banana of message.bananas) {
-    writer.u16(banana.generation & 0xffff)
-    writer.u16(Math.min(Math.max(banana.ticksUntilOut, 0), 0xffff))
+  for (const pickup of message.pickups) {
+    writer.u16(pickup.generation & 0xffff)
+    writer.u16(Math.min(Math.max(pickup.ticksUntilOut, 0), 0xffff))
   }
   return writer.bytes
 }
@@ -329,8 +329,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const tick = reader.u32()
   const ack = reader.u32()
   const count = reader.u8()
-  const bananaCount = reader.u8()
-  if (payload.length !== SNAPSHOT_HEADER_BYTES + count * SNAPSHOT_VEHICLE_BYTES + bananaCount * SNAPSHOT_BANANA_BYTES) {
+  const pickupCount = reader.u8()
+  if (payload.length !== SNAPSHOT_HEADER_BYTES + count * SNAPSHOT_VEHICLE_BYTES + pickupCount * SNAPSHOT_PICKUP_BYTES) {
     return null
   }
 
@@ -354,7 +354,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       appliedInput: reader.input(createVehicleInput()),
     })
   }
-  const bananas: BananaSnapshot[] = []
-  for (let i = 0; i < bananaCount; i++) bananas.push({ generation: reader.u16(), ticksUntilOut: reader.u16() })
-  return { tick, ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack, vehicles, bananas }
+  const pickups: PickupSnapshot[] = []
+  for (let i = 0; i < pickupCount; i++) pickups.push({ generation: reader.u16(), ticksUntilOut: reader.u16() })
+  return { tick, ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack, vehicles, pickups }
 }

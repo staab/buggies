@@ -124,6 +124,15 @@ const blast = v3()
  * by whoever runs the arena. Nothing here is random, so every copy of the
  * simulation blows it up the same way.
  */
+/**
+ * Buggies: blow a car up from outside, a bomb having gone off under it. It
+ * is as wrecked as a crash would leave it, and thrown up and over the same.
+ */
+export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
+  vehicle.damage = 1
+  wreck(vehicle, tuning)
+}
+
 function wreck(vehicle: Vehicle, tuning: VehicleTuning): void {
   const {body, frame} = vehicle
   vehicle.wrecked = true

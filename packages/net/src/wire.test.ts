@@ -8,7 +8,7 @@ import {
 } from './protocol.ts'
 import {
   INPUT_BYTES,
-  SNAPSHOT_BANANA_BYTES,
+  SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
   decodeHello,
@@ -58,7 +58,7 @@ const snapshot: SnapshotMessage = {
       appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false },
     },
   ],
-  bananas: [
+  pickups: [
     { generation: 0, ticksUntilOut: 0 },
     { generation: 7, ticksUntilOut: 480 },
     { generation: 65535, ticksUntilOut: 12 },
@@ -85,11 +85,11 @@ describe('wire', () => {
 
   it('round-trips a snapshot, every vehicle and field', () => {
     const payload = encodeSnapshot(snapshot)
-    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 3 * SNAPSHOT_BANANA_BYTES)
+    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 3 * SNAPSHOT_PICKUP_BYTES)
     const decoded = decodeSnapshot(payload)!
     expect(decoded.tick).toBe(snapshot.tick)
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
-    expect(decoded.bananas).toEqual(snapshot.bananas)
+    expect(decoded.pickups).toEqual(snapshot.pickups)
     for (const [i, vehicle] of snapshot.vehicles.entries()) {
       const got = decoded.vehicles[i]!
       expect(got.seat).toBe(vehicle.seat)
