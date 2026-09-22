@@ -6,10 +6,12 @@ import {
   ROAD_GRADE,
   ROAD_SKIRT,
   ROAD_TUNNEL,
+  STREET_SPACING,
   TUNNEL_CLEARANCE,
   TUNNEL_WALL_HEIGHT,
   boreClearance,
   buildTunnelHoles,
+  cityFrame,
   deckShouldered,
   heightAt,
   isSurfaceRoad,
@@ -27,7 +29,6 @@ import {
   type Ramp,
   type River,
   type Road,
-  type Sidewalk,
   type TerrainMap,
   type Tree,
 } from '@buggies/terrain'
@@ -287,21 +288,37 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     corner[cell * 3 + 2] = rgb.b
   }
 
+  ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
+  const asphalt = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  const city = cityBlocks(map)
+
   const texels = Math.ceil(width * cellSize * TEXELS_PER_METRE)
   const data = new Uint8Array(texels * texels * 4)
   for (let ty = 0; ty < texels; ty++) {
-    const gz = Math.min(((ty + 0.5) / TEXELS_PER_METRE) / cellSize, depth - 1)
+    const z = (ty + 0.5) / TEXELS_PER_METRE
+    const gz = Math.min(z / cellSize, depth - 1)
     const row = Math.min(Math.floor(gz), depth - 2)
     const tz = gz - row
     for (let tx = 0; tx < texels; tx++) {
-      const gx = Math.min(((tx + 0.5) / TEXELS_PER_METRE) / cellSize, width - 1)
+      const x = (tx + 0.5) / TEXELS_PER_METRE
+      const gx = Math.min(x / cellSize, width - 1)
       const col = Math.min(Math.floor(gx), width - 2)
       const txf = gx - col
+      const at = (ty * texels + tx) * 4
+      // In a city, everything outside a block's sidewalk is asphalt: the
+      // streets and every gap between them alike, one crisp grey. Inside the
+      // sidewalk the ground keeps its own colour.
+      if (districtOf[Math.round(gz) * width + Math.round(gx)] === DISTRICT_CITY && !city.insideBlock(x, z)) {
+        data[at] = asphalt[0]!
+        data[at + 1] = asphalt[1]!
+        data[at + 2] = asphalt[2]!
+        data[at + 3] = 255
+        continue
+      }
       const a = (row * width + col) * 3
       const b = a + 3
       const c = a + width * 3
       const d = c + 3
-      const at = (ty * texels + tx) * 4
       for (let channel = 0; channel < 3; channel++) {
         const top = corner[a + channel]! * (1 - txf) + corner[b + channel]! * txf
         const bottom = corner[c + channel]! * (1 - txf) + corner[d + channel]! * txf
@@ -311,8 +328,7 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     }
   }
 
-  ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
-  const asphalt = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  // The roads out of the cities are painted on over the land.
   for (const road of map.roads) {
     if (!isSurfaceRoad(road)) continue
     const count = road.points.length
@@ -320,14 +336,12 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     const half = road.width / 2
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
-      paintSegment(data, texels, road.points[i]!, road.points[(i + 1) % count]!, half, asphalt)
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % count]!
+      if (city.inCity((a.x + b.x) / 2, (a.z + b.z) / 2)) continue
+      paintSegment(data, texels, a, b, half, asphalt)
     }
   }
-
-  // The ground inside each block's sidewalk is paved too, darker than the walk.
-  BLOCK_PAVEMENT_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
-  const pavement = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
-  for (const walk of map.sidewalks) paintBlock(data, texels, walk, pavement)
 
   const texture = new THREE.DataTexture(data, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -376,30 +390,59 @@ function paintSegment(
   }
 }
 
-/** Fill the square inside a sidewalk ring with a colour. */
-function paintBlock(data: Uint8Array, texels: number, walk: Sidewalk, color: number[]): void {
-  const inner = walk.half - walk.band
-  const cos = Math.cos(walk.yaw)
-  const sin = Math.sin(walk.yaw)
-  const reach = inner * Math.SQRT2
-  const fromX = Math.max(Math.floor((walk.x - reach) * TEXELS_PER_METRE), 0)
-  const toX = Math.min(Math.ceil((walk.x + reach) * TEXELS_PER_METRE), texels - 1)
-  const fromY = Math.max(Math.floor((walk.z - reach) * TEXELS_PER_METRE), 0)
-  const toY = Math.min(Math.ceil((walk.z + reach) * TEXELS_PER_METRE), texels - 1)
-  for (let ty = fromY; ty <= toY; ty++) {
-    const z = (ty + 0.5) / TEXELS_PER_METRE - walk.z
-    for (let tx = fromX; tx <= toX; tx++) {
-      const x = (tx + 0.5) / TEXELS_PER_METRE - walk.x
-      // Into the block's frame: u along its first side, v along the second.
-      const u = x * cos + z * sin
-      const v = -x * sin + z * cos
-      if (Math.abs(u) > inner || Math.abs(v) > inner) continue
-      const at = (ty * texels + tx) * 4
-      data[at] = color[0]!
-      data[at + 1] = color[1]!
-      data[at + 2] = color[2]!
-    }
+/**
+ * Where the cities' blocks are, for colouring the ground: a point is inside a
+ * block where a sidewalk rings it, read straight off the city's grid frame
+ * rather than by searching the rings.
+ */
+function cityBlocks(map: TerrainMap): {
+  inCity: (x: number, z: number) => boolean
+  insideBlock: (x: number, z: number) => boolean
+} {
+  const { width, depth, cellSize } = map.heightfield
+  const inCity = (x: number, z: number): boolean => {
+    const col = Math.floor(x / cellSize)
+    const row = Math.floor(z / cellSize)
+    if (col < 0 || col >= width || row < 0 || row >= depth) return false
+    return map.districtOf[row * width + col] === DISTRICT_CITY
   }
+  const frames = map.districts.map((district) => cityFrame(map.heightfield, map.districtOf, district))
+  // The blocks that have a sidewalk, by city and grid cell, with how far in
+  // from the block's grid lines the sidewalk's inner edge lies.
+  const ringed = new Map<string, number>()
+  const frameOf = (x: number, z: number): { index: number; u: number; v: number } | null => {
+    let best: { index: number; u: number; v: number } | null = null
+    let bestDistance = Infinity
+    for (const [index, frame] of frames.entries()) {
+      if (frame === null) continue
+      const distance = Math.hypot(x - frame.cx, z - frame.cz)
+      if (distance >= bestDistance) continue
+      bestDistance = distance
+      const dx = x - frame.cx
+      const dz = z - frame.cz
+      best = { index, u: dx * frame.cos + dz * frame.sin, v: -dx * frame.sin + dz * frame.cos }
+    }
+    return best
+  }
+  for (const walk of map.sidewalks) {
+    const at = frameOf(walk.x, walk.z)
+    if (at === null) continue
+    const i = Math.floor(at.u / STREET_SPACING)
+    const j = Math.floor(at.v / STREET_SPACING)
+    ringed.set(`${at.index}:${i}:${j}`, STREET_SPACING / 2 - (walk.half - walk.band))
+  }
+  const insideBlock = (x: number, z: number): boolean => {
+    const at = frameOf(x, z)
+    if (at === null) return false
+    const i = Math.floor(at.u / STREET_SPACING)
+    const j = Math.floor(at.v / STREET_SPACING)
+    const inset = ringed.get(`${at.index}:${i}:${j}`)
+    if (inset === undefined) return false
+    const ou = at.u - i * STREET_SPACING
+    const ov = at.v - j * STREET_SPACING
+    return ou >= inset && ou <= STREET_SPACING - inset && ov >= inset && ov <= STREET_SPACING - inset
+  }
+  return { inCity, insideBlock }
 }
 
 function buildTerrainMesh(
@@ -1016,7 +1059,6 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
 
 const RAMP_COLOR = new THREE.Color('#4a4a48')
 const SIDEWALK_COLOR = new THREE.Color('#b9b5ad')
-const BLOCK_PAVEMENT_COLOR = new THREE.Color('#6a6763')
 const TUNNEL_LIGHT_COLOR = new THREE.Color('#fff1c4')
 /** How far apart the lights hang along a tunnel's ceiling, and how far below the arch's crown. */
 const TUNNEL_LIGHT_SPACING = 9

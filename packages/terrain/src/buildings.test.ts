@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts'
+import { insidePolygon, interchangeZones } from './interchanges.ts'
 import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
 import { sampleHeight } from './heightfield.ts'
@@ -271,5 +272,37 @@ describe('sidewalks', () => {
       expect(walk.half).toBeCloseTo(STREET_SPACING / 2 - STREET_WIDTH / 2, 6)
       expect(walk.band).toBeGreaterThan(1)
     }
+  })
+})
+
+describe('interchanges', () => {
+  beforeAll(() => {
+    map ??= generateTerrain(1)
+  }, 60_000)
+
+  it('have no building, sidewalk or kicker on the ground their ramps enclose', () => {
+    const zones = interchangeZones(map.roads)
+    expect(zones.length).toBeGreaterThan(0)
+    const inside = (x: number, z: number): boolean => zones.some((zone) => insidePolygon(zone, x, z))
+    for (const building of map.buildings) {
+      for (const point of samples(building)) expect(inside(point.x, point.z)).toBe(false)
+    }
+    for (const walk of map.sidewalks) {
+      // The middle of every built side.
+      const reach = walk.half - walk.band / 2
+      const middles = [
+        [0, reach],
+        [-reach, 0],
+        [0, -reach],
+        [reach, 0],
+      ]
+      for (const [side, [u, v]] of middles.entries()) {
+        if (!walk.sides[side]) continue
+        const x = walk.x + u! * Math.cos(walk.yaw) - v! * Math.sin(walk.yaw)
+        const z = walk.z + u! * Math.sin(walk.yaw) + v! * Math.cos(walk.yaw)
+        expect(inside(x, z)).toBe(false)
+      }
+    }
+    for (const ramp of map.ramps) expect(inside(ramp.x, ramp.z)).toBe(false)
   })
 })

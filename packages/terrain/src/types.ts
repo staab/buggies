@@ -152,6 +152,12 @@ export interface Sidewalk {
   half: number
   /** How wide the ring is, kerb to inner edge. */
   band: number
+  /**
+   * Which of the ring's four sides are built, going round from the side at
+   * +v: a side that a road other than the block's own streets cuts across
+   * is left out, or its kerb would be a step in that road.
+   */
+  sides: [boolean, boolean, boolean, boolean]
 }
 
 export interface Tree {

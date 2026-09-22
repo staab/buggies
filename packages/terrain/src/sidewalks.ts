@@ -17,7 +17,7 @@ export interface SidewalkMesh {
  * Every sidewalk as one mesh, drawn and driven on: a slab top a kerb above
  * the ground, a kerb face at the street and a face at the inner edge. Each
  * side of a ring is one strip from corner to corner, so the four meet at the
- * corners without overlapping.
+ * corners without overlapping; a side the ring goes without is left out.
  */
 export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): SidewalkMesh {
   const positions: number[] = []
@@ -54,6 +54,7 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
       [outer, -outer],
     ]
     for (let side = 0; side < 4; side++) {
+      if (!walk.sides[side]) continue
       const [u0, v0] = corners[side]!
       const [u1, v1] = corners[(side + 1) % 4]!
       const scale = inner / outer

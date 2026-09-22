@@ -2937,7 +2937,7 @@ export interface Footprint {
 }
 
 /** The four corners of a footprint. */
-function footprintCorners(footprint: Footprint): Vec2[] {
+export function footprintCorners(footprint: Footprint): Vec2[] {
   const cos = Math.cos(footprint.yaw)
   const sin = Math.sin(footprint.yaw)
   const corners: Vec2[] = []
