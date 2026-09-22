@@ -2,6 +2,7 @@ import { FIXED_TIMESTEP, advance, createArena, respawnLost, takeSeat, type Vehic
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { BananaField } from './bananas-view.ts'
 import { Driver, type DriverKeys } from './driver.ts'
 import { Explosions } from './explosion.ts'
 import type { ModeView } from './mode.ts'
@@ -30,6 +31,8 @@ export function createDriveMode(map: TerrainMap, scene: THREE.Scene, players: re
   scene.add(explosions.object)
   const smoke = new Smoke()
   scene.add(smoke.object)
+  const bananas = new BananaField(arena)
+  scene.add(bananas.object)
   const drivers = players.map(
     (player, seat) =>
       new Driver(scene, map, takeSeat(arena, seat, player.profile), player.profile, player.keys, { explosions, smoke }),
@@ -70,6 +73,7 @@ export function createDriveMode(map: TerrainMap, scene: THREE.Scene, players: re
       // Render between the last two steps rather than on the newest one, or a
       // 60Hz simulation shown at any other rate stutters.
       for (const driver of drivers) driver.render(owed / FIXED_TIMESTEP, dt)
+      bananas.update(dt)
       smoke.update(dt)
       explosions.update(dt)
     },
@@ -100,6 +104,7 @@ export function createDriveMode(map: TerrainMap, scene: THREE.Scene, players: re
     dispose() {
       window.removeEventListener('keydown', onKey)
       for (const driver of drivers) driver.dispose()
+      bananas.dispose()
       explosions.dispose()
       smoke.dispose()
       arena.world.free()

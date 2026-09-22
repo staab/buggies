@@ -185,6 +185,7 @@ export class Driver {
       maxSpeed: tuning.maxSpeed,
       damage: vehicle.wrecked ? 1 : vehicle.damage,
       controls: this.keys.controls,
+      score: this.seat.score,
     }
   }
 

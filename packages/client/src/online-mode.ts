@@ -10,6 +10,7 @@ import { LocalPrediction, NetClient } from '@buggies/net'
 import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
 
+import { BananaField } from './bananas-view.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { SOLO_KEYS } from './driver.ts'
@@ -69,6 +70,8 @@ export async function createOnlineMode(
   scene.add(smoke.object)
   const others = new MirrorCars(prediction, welcome.seat, (at) => explosions.burst(at), smoke)
   scene.add(others.object)
+  const bananas = new BananaField(prediction)
+  scene.add(bananas.object)
   let wasWrecked = false
 
   const cameraTuning = createCameraTuning()
@@ -110,6 +113,7 @@ export async function createOnlineMode(
         const { position, linearVelocity } = prediction.vehicle.frame
         smoke.trail(position, linearVelocity, smokeAmount(prediction.vehicle.damage), dt)
       }
+      bananas.update(dt)
       smoke.update(dt)
       explosions.update(dt)
       car.aim(target)
@@ -132,6 +136,7 @@ export async function createOnlineMode(
           maxSpeed: prediction.tuning.maxSpeed,
           damage: vehicle.wrecked ? 1 : vehicle.damage,
           controls: SOLO_KEYS.controls,
+          score: prediction.score,
         },
       ]
     },
@@ -139,6 +144,7 @@ export async function createOnlineMode(
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
+      bananas.dispose()
       others.dispose()
       car.dispose()
       explosions.dispose()

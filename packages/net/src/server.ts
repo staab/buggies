@@ -32,6 +32,7 @@ import {
   decodeInput,
   encodeReject,
   encodeSnapshot,
+  type BananaSnapshot,
   encodeWelcome,
   isRespawn,
   messageTypeOf,
@@ -86,6 +87,7 @@ export class GameServer implements TransportHandlers {
   private readonly handshaking = new Map<number, Handshake>()
   private readonly scratchInput: VehicleInput = createVehicleInput()
   private readonly snapshotVehicles: VehicleSnapshot[] = []
+  private readonly snapshotBananas: BananaSnapshot[] = []
   private lastSnapshotBytes = 0
 
   constructor(arena: Arena, events: Partial<GameServerEvents> = {}) {
@@ -236,6 +238,17 @@ export class GameServer implements TransportHandlers {
     this.events.onRejected?.(connection.id, rejectLabel(reason))
   }
 
+  private collectBananas(): BananaSnapshot[] {
+    const bananas = this.snapshotBananas
+    this.arena.bananas.forEach((banana, slot) => {
+      const out = (bananas[slot] ??= { generation: 0, ticksUntilOut: 0 })
+      out.generation = banana.generation
+      out.ticksUntilOut = Math.max(banana.spawnTick - this.arena.tick, 0)
+    })
+    bananas.length = this.arena.bananas.length
+    return bananas
+  }
+
   private collectSnapshot(): VehicleSnapshot[] {
     const vehicles = this.snapshotVehicles
     let count = 0
@@ -251,6 +264,7 @@ export class GameServer implements TransportHandlers {
         angularVelocity: v3(),
         damage: 0,
         wrecked: false,
+        score: 0,
         appliedInput: createVehicleInput(),
       })
       vehicle.seat = seat.id
@@ -262,6 +276,7 @@ export class GameServer implements TransportHandlers {
       body.angvel(vehicle.angularVelocity)
       vehicle.damage = seat.vehicle.damage
       vehicle.wrecked = seat.vehicle.wrecked
+      vehicle.score = seat.score
       Object.assign(vehicle.appliedInput, this.playerIn(seat)?.timeline.appliedInput ?? this.scratchInput)
       count += 1
     }
@@ -275,6 +290,7 @@ export class GameServer implements TransportHandlers {
       tick: this.arena.tick,
       ackInputTick: -1,
       vehicles: this.collectSnapshot(),
+      bananas: this.collectBananas(),
     })
     this.lastSnapshotBytes = encoded.length
     for (const player of this.players.values()) {

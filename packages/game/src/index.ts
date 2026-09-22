@@ -64,6 +64,21 @@ export {
   writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
+export {
+  BANANA_HEIGHT,
+  BANANA_REACH,
+  BANANA_REACH_UP,
+  BANANA_RESPAWN_TICKS,
+  BANANA_SLOTS,
+  bananaOut,
+  bananaSeed,
+  bananaSpot,
+  reachesBanana,
+  setBanana,
+  type Banana,
+} from './bananas.ts'
+
+import { createBananas, bananaOut, reachesBanana, setBanana, BANANA_RESPAWN_TICKS, type Banana } from './bananas.ts'
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
 export const MAX_PLAYERS = 8
@@ -92,6 +107,8 @@ export interface Seat {
   submersion: number
   /** Consecutive steps spent sunk or off the map. */
   lostTicks: number
+  /** Bananas taken since sitting down. */
+  score: number
 }
 
 /**
@@ -106,6 +123,8 @@ export interface Arena {
   readonly seats: readonly Seat[]
   /** Water surface per terrain cell, for whatever a vehicle is sitting in. */
   readonly water: Float32Array
+  /** The map's bananas, a slot each, for the taking. */
+  readonly bananas: readonly Banana[]
   tick: number
 }
 
@@ -274,6 +293,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       epoch: 0,
       submersion: 0,
       lostTicks: 0,
+      score: 0,
     }
   })
 
@@ -282,7 +302,8 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
   // with every ray missing and drop the vehicle through the road.
   world.step()
 
-  return { map, world, worldTuning, seats, water: buildWaterLevels(map), tick: 0 }
+  const water = buildWaterLevels(map)
+  return { map, world, worldTuning, seats, water, bananas: createBananas(map, water), tick: 0 }
 }
 
 function nextEpoch(epoch: number): number {
@@ -339,6 +360,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   if (seat === undefined) throw new RangeError(`no seat ${id}`)
   reshape(arena, seat, profile)
   seat.occupied = true
+  seat.score = 0
   seat.vehicle.body.setEnabled(true)
   respawn(seat)
   return seat
@@ -349,6 +371,7 @@ export function leaveSeat(arena: Arena, id: number): void {
   const seat = arena.seats[id]
   if (seat === undefined || !seat.occupied) return
   seat.occupied = false
+  seat.score = 0
   seat.vehicle.body.setEnabled(false)
 }
 
@@ -388,6 +411,24 @@ export function advance(
   }
   arena.world.step()
   arena.tick += 1
+  collectBananas(arena)
+}
+
+/**
+ * Every banana a vehicle has reached is taken, a point to whoever reached
+ * it, and its slot moves on to the next, to turn up elsewhere in a while. A
+ * wreck takes nothing.
+ */
+function collectBananas(arena: Arena): void {
+  for (const [slot, banana] of arena.bananas.entries()) {
+    if (!bananaOut(banana, arena.tick)) continue
+    for (const seat of arena.seats) {
+      if (!seat.occupied || seat.vehicle.wrecked || !reachesBanana(banana, seat.vehicle.frame.position)) continue
+      seat.score += 1
+      setBanana(arena.map, arena.water, banana, slot, banana.generation + 1, arena.tick + BANANA_RESPAWN_TICKS)
+      break
+    }
+  }
 }
 
 /** Under this much water a vehicle is not coming back on its own. */

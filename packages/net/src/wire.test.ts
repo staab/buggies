@@ -8,6 +8,7 @@ import {
 } from './protocol.ts'
 import {
   INPUT_BYTES,
+  SNAPSHOT_BANANA_BYTES,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
   decodeHello,
@@ -40,6 +41,7 @@ const snapshot: SnapshotMessage = {
       angularVelocity: { x: 0.125, y: 2, z: -0.5 },
       damage: 1,
       wrecked: true,
+      score: 60000,
       appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true },
     },
     {
@@ -52,9 +54,15 @@ const snapshot: SnapshotMessage = {
       angularVelocity: { x: 0, y: 0, z: 0 },
       damage: 0.4,
       wrecked: false,
+      score: 3,
       appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false },
     },
   ],
+  bananas: [
+    { generation: 0, ticksUntilOut: 0 },
+    { generation: 7, ticksUntilOut: 480 },
+    { generation: 65535, ticksUntilOut: 12 },
+  ]
 }
 
 describe('wire', () => {
@@ -77,16 +85,18 @@ describe('wire', () => {
 
   it('round-trips a snapshot, every vehicle and field', () => {
     const payload = encodeSnapshot(snapshot)
-    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
+    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 3 * SNAPSHOT_BANANA_BYTES)
     const decoded = decodeSnapshot(payload)!
     expect(decoded.tick).toBe(snapshot.tick)
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
+    expect(decoded.bananas).toEqual(snapshot.bananas)
     for (const [i, vehicle] of snapshot.vehicles.entries()) {
       const got = decoded.vehicles[i]!
       expect(got.seat).toBe(vehicle.seat)
       expect(got.epoch).toBe(vehicle.epoch)
       expect(got.profile).toBe(vehicle.profile)
       expect(got.wrecked).toBe(vehicle.wrecked)
+      expect(got.score).toBe(vehicle.score)
       expect(got.damage).toBeCloseTo(vehicle.damage, 2)
       expect(got.appliedInput).toEqual(vehicle.appliedInput)
       for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
