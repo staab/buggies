@@ -14,6 +14,7 @@ import {
   MAX_PLAYERS,
   NEUTRAL_INPUT,
   advance,
+  changeVehicle,
   createArena,
   findSpawns,
   initPhysics,
@@ -21,7 +22,9 @@ import {
   respawn,
   respawnLost,
   respawnNearby,
+  restingRideHeight,
   takeSeat,
+  worldGravity,
   type Arena,
   type Seat,
   type VehicleInput,
@@ -192,6 +195,30 @@ describe('game', () => {
     expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.7)
     expect(offRoad(after.position.x, after.position.z)).toBeLessThan(1)
     expect(seat.vehicle.speed).toBe(0)
+  })
+
+  it('puts someone in a different vehicle where they are, and the map goes on', () => {
+    const arena = createArena(map)
+    const seat = solo(arena)
+    run(arena, FLAT_OUT, 6)
+    const { position, forward } = seat.vehicle.frame
+    const before = { x: position.x, z: position.z, fx: forward.x, fz: forward.z }
+    const tick = arena.tick
+
+    changeVehicle(arena, seat, 'tank')
+    expect(seat.profile).toBe('tank')
+    expect(seat.tuning.mass).toBe(14000)
+    const after = seat.vehicle.frame
+    // The new one starts near where the old one was, on a road, heading the
+    // same way; the arena itself was not started over.
+    expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(15)
+    expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.7)
+    expect(offRoad(after.position.x, after.position.z)).toBeLessThan(1)
+    expect(arena.tick).toBe(tick)
+    // And it sits as the new vehicle: on the tank's springs, at the tank's height.
+    run(arena, NEUTRAL_INPUT, 1)
+    expect(seat.vehicle.frame.up.y).toBeGreaterThan(0.95)
+    expect(seat.vehicle.rideHeight).toBeCloseTo(restingRideHeight(seat.tuning, worldGravity(arena.world)), 5)
   })
 
   it('only drives the seats someone is in', () => {

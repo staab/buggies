@@ -1,4 +1,7 @@
+import type { VehicleProfileId } from '@buggies/game'
 import type * as THREE from 'three'
+
+import type { HudState } from './hud.ts'
 
 /**
  * One way of being on a map. Modes own their camera and whatever they add to
@@ -11,6 +14,9 @@ export interface ModeView {
   resize(aspect: number): void
   /** `active` is false while a menu is over the top and the player is not driving. */
   update(dt: number, active: boolean): void
-  hud(): string
+  /** What the HUD should say of the mode; nothing, and it is not shown. */
+  hud(): HudState | null
+  /** Put the player in a different vehicle where they are, if the mode can. */
+  setVehicle?(profile: VehicleProfileId): void
   dispose(): void
 }

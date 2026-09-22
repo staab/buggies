@@ -213,8 +213,8 @@ export class Menu {
     const keys = line('keys')
     keys.innerHTML =
       '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive &nbsp; ' +
-      '<kbd>Space</kbd> handbrake &nbsp; <kbd>Enter</kbd> back to the road<br />' +
-      '<kbd>R</kbd> a different map &nbsp; <kbd>Esc</kbd> this menu'
+      '<kbd>Space</kbd> handbrake<br />' +
+      '<kbd>Enter</kbd> back to the road &nbsp; <kbd>Esc</kbd> this menu'
 
     // Whose models the vehicles are. One of them asks to be credited, and
     // the rest deserve it.
@@ -248,11 +248,11 @@ export class Menu {
     return !this.root.hidden
   }
 
-  /** Open at the first page, with these choices made already. */
-  show(choice: Choice): void {
+  /** Open at a page, the first as a rule, with these choices made already. */
+  show(choice: Choice, step: Step = 'mode'): void {
     this.choice = { ...choice }
     this.root.hidden = false
-    this.goTo('mode')
+    this.goTo(step)
   }
 
   hide(): void {

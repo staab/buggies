@@ -141,7 +141,7 @@ export function createShowroomMode(): ShowroomView {
       turntable.rotation.y += TURN_RATE * dt
     },
     hud() {
-      return ''
+      return null
     },
     dispose() {
       car?.dispose()

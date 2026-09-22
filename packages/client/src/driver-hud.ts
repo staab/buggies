@@ -12,8 +12,6 @@ import {
 
 import type { CameraBoundsAt } from './chase-camera.ts'
 
-const TO_KPH = 3.6
-
 /** Slip angle past which the HUD starts calling it a slide, in radians. */
 const SLIDE_ANGLE = 0.35
 
@@ -57,9 +55,8 @@ export function cameraBounds(map: TerrainMap): CameraBoundsAt {
 }
 
 /** The speed line of the HUD: how fast, and what the car is up to. */
-export function driverLine(vehicle: Vehicle, submersion: number, inTunnel: boolean): string {
-  const speed = Math.round(vehicle.speed * TO_KPH)
-  const state = vehicle.wrecked
+export function driverState(vehicle: Vehicle, submersion: number, inTunnel: boolean): string {
+  return vehicle.wrecked
     ? 'wrecked'
     : submersion > 0.2
       ? 'in the water'
@@ -72,6 +69,4 @@ export function driverLine(vehicle: Vehicle, submersion: number, inTunnel: boole
             : Math.abs(vehicle.slipAngle) > SLIDE_ANGLE
               ? 'sliding'
               : 'on the road'
-  const hurt = vehicle.damage > 0 && !vehicle.wrecked ? `  damage ${Math.round(vehicle.damage * 100)}%` : ''
-  return `${String(speed).padStart(3)} km/h  ${state}${hurt}`
 }

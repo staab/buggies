@@ -12,7 +12,7 @@ import type * as THREE from 'three'
 
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
+import { cameraBounds, driverState, tunnelTest } from './driver-hud.ts'
 import { smokeAmount } from './damage.ts'
 import { Explosions } from './explosion.ts'
 import { Keyboard } from './input.ts'
@@ -120,9 +120,16 @@ export async function createOnlineMode(
     },
     hud() {
       const players = client.playerCount
-      const who = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
-      if (lost !== null) return `${who}\ndisconnected: ${lost}`
-      return `${who}\n${driverLine(prediction.vehicle, prediction.submersion, inTunnel(prediction.vehicle.frame.position))}`
+      const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
+      if (lost !== null) return { title, state: `disconnected: ${lost}` }
+      const { vehicle } = prediction
+      return {
+        title,
+        state: driverState(vehicle, prediction.submersion, inTunnel(vehicle.frame.position)),
+        speed: vehicle.speed,
+        maxSpeed: prediction.tuning.maxSpeed,
+        damage: vehicle.wrecked ? 1 : vehicle.damage,
+      }
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
