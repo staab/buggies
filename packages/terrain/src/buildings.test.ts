@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts'
+import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
@@ -254,6 +255,21 @@ describe('ramps', () => {
       expect(nearest).toBeLessThan(ramp.width + 1)
       expect(alongRoad).toBeGreaterThan(0.95)
       expect(roadCrowding(map.roads, ramp.x, ramp.z)).toBeGreaterThan(1)
+    }
+  })
+})
+
+describe('sidewalks', () => {
+  beforeAll(() => {
+    map ??= generateTerrain(1)
+  }, 60_000)
+
+  it('ring every city block, a block wide less the street', () => {
+    expect(map.sidewalks.length).toBeGreaterThan(20)
+    for (const walk of map.sidewalks) {
+      expect(districtAt(walk.x, walk.z)).toBe(DISTRICT_CITY)
+      expect(walk.half).toBeCloseTo(STREET_SPACING / 2 - STREET_WIDTH / 2, 6)
+      expect(walk.band).toBeGreaterThan(1)
     }
   })
 })

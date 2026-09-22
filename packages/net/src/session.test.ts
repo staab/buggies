@@ -73,6 +73,9 @@ interface Player {
   prediction: LocalPrediction
   wire: Loopback
   input: VehicleInput
+  /** Another seat this player's mirror is watched on, for how much its car gets corrected. */
+  watching: number | null
+  largestWatchedCorrection: number
 }
 
 const DELAY_TICKS = 3
@@ -116,7 +119,14 @@ class Session {
     const mirror = createArena(map)
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, welcome.tick)
-    const player = { client, prediction, wire, input: { ...NEUTRAL_INPUT } }
+    const player: Player = {
+      client,
+      prediction,
+      wire,
+      input: { ...NEUTRAL_INPUT },
+      watching: null,
+      largestWatchedCorrection: 0,
+    }
     this.players.push(player)
     return player
   }
@@ -129,7 +139,17 @@ class Session {
     for (const player of this.players) {
       player.wire.deliver()
       const update = player.client.pump(player.input)
-      player.prediction.reconcile(update.newestSnapshot)
+      // Where the watched car stood in the mirror before the server's word,
+      // against where the replay puts it at the same tick: the correction.
+      const watched = player.watching === null ? null : player.prediction.seats[player.watching]!.vehicle
+      const before = watched === null ? null : { ...watched.frame.position }
+      const outcome = player.prediction.reconcile(update.newestSnapshot)
+      if (watched !== null && before !== null && outcome === 'replayed') {
+        player.largestWatchedCorrection = Math.max(
+          player.largestWatchedCorrection,
+          distance(before, watched.frame.position),
+        )
+      }
       player.prediction.advance(update)
     }
   }
@@ -248,6 +268,29 @@ describe('a session', () => {
     // more shows as the car jumping about.
     expect(worst).toBeLessThan(0.5)
     expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(1)
+    session.dispose()
+  })
+
+  it('keeps another player\'s car steady in the mirror, driving straight or weaving', async () => {
+    const session = new Session()
+    const a = await session.join('mustang')
+    const b = await session.join('mustang')
+    a.watching = b.client.welcome!.seat
+    b.input = { ...NEUTRAL_INPUT, throttle: 1 }
+    session.run(5)
+    expect(session.serverPositionOf(b).x).not.toBe(session.predictedPositionOf(a).x)
+    // Straight and flat out, the mirror's guess is right and stays right.
+    expect(a.largestWatchedCorrection).toBeLessThan(0.6)
+
+    // Weaving, every change of steering is a surprise to the mirror, and
+    // each one is a nudge, not a jump.
+    a.largestWatchedCorrection = 0
+    for (let i = 0; i < 8; i++) {
+      b.input = { ...NEUTRAL_INPUT, throttle: 1, steer: i % 2 === 0 ? 0.4 : -0.4 }
+      session.run(0.5)
+    }
+    expect(a.largestWatchedCorrection).toBeGreaterThan(0)
+    expect(a.largestWatchedCorrection).toBeLessThan(1.5)
     session.dispose()
   })
 

@@ -19,6 +19,7 @@ import {
   type Heightfield,
   type Road,
   rampFacets,
+  sidewalkMesh,
   type Ramp,
   type TerrainMap,
 } from '@buggies/terrain'
@@ -342,6 +343,7 @@ export function addTerrain(world: RAPIER.World, map: TerrainMap): void {
   addRails(world, map)
   addBuildings(world, map)
   addRamps(world, map.ramps)
+  addSidewalks(world, map)
 }
 
 /**
@@ -385,4 +387,18 @@ export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
       )
     }
   }
+}
+
+/** The sidewalks round the city blocks: a kerb's step up off the street, driven on like the road. */
+export function addSidewalks(world: RAPIER.World, map: TerrainMap): void {
+  if (map.sidewalks.length === 0) return
+  const { positions, indices } = sidewalkMesh(map.heightfield, map.sidewalks)
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
+  world.createCollider(
+    RAPIER.ColliderDesc.trimesh(positions, indices)
+      .setCollisionGroups(GROUND_GROUPS)
+      .setFriction(ROAD_FRICTION)
+      .setRestitution(GROUND_RESTITUTION),
+    body,
+  )
 }

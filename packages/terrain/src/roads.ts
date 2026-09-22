@@ -2577,7 +2577,15 @@ function buildArterials(
 }
 
 /** City street width, in world units. */
-export const STREET_WIDTH = 6
+export const STREET_WIDTH = 10
+/**
+ * How far from a city street's centreline the blocks' lots begin, and what a
+ * block keeps clear of the street: the kerb of the narrow street the blocks
+ * were laid out against. The street has since been widened over the old
+ * pavement, and the sidewalk now runs from the carriageway's edge in under
+ * the buildings' fronts, so nothing in a block has had to move.
+ */
+export const STREET_KERB = 3
 /** Spacing between city streets and the step along them, in world units. */
 export const STREET_SPACING = 48
 const STREET_STEP = 12
@@ -3010,13 +3018,18 @@ function segmentFootprintDistance(footprint: Footprint, segment: ClaimedSegment)
 
 /**
  * A test of whether a footprint keeps `margin` clear of every road: its
- * carriageway, and the embankment a built road carries down beside it.
+ * carriageway, and the embankment a built road carries down beside it. A
+ * city street reaches `streetReach` from its centreline: its carriageway,
+ * or, for the blocks laid out against the old kerb, only that far.
  */
-export function roadClearance(roads: Road[]): (footprint: Footprint, margin: number) => boolean {
+export function roadClearance(
+  roads: Road[],
+  streetReach = STREET_WIDTH / 2,
+): (footprint: Footprint, margin: number) => boolean {
   let reachMost = 0
   const segments: ClaimedSegment[] = []
   for (const road of roads) {
-    const reach = road.width / 2 + (isSurfaceRoad(road) ? 0 : ROAD_SKIRT)
+    const reach = road.kind === 'street' ? streetReach : road.width / 2 + (isSurfaceRoad(road) ? 0 : ROAD_SKIRT)
     reachMost = Math.max(reachMost, reach)
     segments.push(...claimedSegments(road, reach))
   }
@@ -3051,7 +3064,7 @@ export function roadClearance(roads: Road[]): (footprint: Footprint, margin: num
  * into a street that was clear when it was drawn.
  */
 function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[] {
-  const arterials = roads.filter((road) => road.width === ARTERIAL_WIDTH)
+  const arterials = roads.filter((road) => road.kind === 'arterial')
   if (arterials.length === 0) return roads
 
   const near = indexSegments(
@@ -3108,7 +3121,7 @@ function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[] {
   const trimmed: Road[] = []
 
   for (const road of roads) {
-    if (road.width !== STREET_WIDTH) {
+    if (road.kind !== 'street') {
       trimmed.push(road)
       continue
     }
@@ -3224,7 +3237,7 @@ function roadsMeet(a: Road, b: Road): boolean {
  * leads from it to an arterial, a cross road or the highway itself.
  */
 function pruneStrandedStreets(roads: Road[]): Road[] {
-  const streets = roads.filter((road) => road.width === STREET_WIDTH)
+  const streets = roads.filter((road) => road.kind === 'street')
   if (streets.length === 0) return roads
 
   // Union-find over the streets alone; every other road is the one network they
@@ -3242,7 +3255,7 @@ function pruneStrandedStreets(roads: Road[]): Road[] {
   }
   for (let i = 0; i < streets.length; i++) {
     for (const other of roads) {
-      if (other.width === STREET_WIDTH) continue
+      if (other.kind === 'street') continue
       if (roadsMeet(streets[i]!, other)) {
         linked.add(find(i))
         break
@@ -3319,7 +3332,7 @@ function smoothRoad(points: RoadPoint[], passes: number): void {
 /** True when `road` properly crosses any other road. */
 function crossesAny(road: Road, roads: Road[]): boolean {
   for (const other of roads) {
-    if (other === road || other.width === STREET_WIDTH) continue
+    if (other === road || other.kind === 'street') continue
     for (let i = 0; i + 1 < road.points.length; i++) {
       const a = road.points[i]!
       const b = road.points[i + 1]!
@@ -3344,7 +3357,7 @@ function crossesAny(road: Road, roads: Road[]): boolean {
 function alignJunctions(roads: Road[]): void {
   const ends: RoadEnd[] = []
   for (const road of roads) {
-    if (road.closed || road.points.length < 2 || road.width === STREET_WIDTH) continue
+    if (road.closed || road.points.length < 2 || road.kind === 'street') continue
     ends.push({ road, start: true })
     ends.push({ road, start: false })
   }
