@@ -1,4 +1,4 @@
-import type { LocalPrediction, PredictionUpdate, ReconcileOutcome } from '@buggies/net'
+import type { LocalPrediction, PredictionUpdate, ReconcileOutcome, SendInput } from '@buggies/net'
 import type * as THREE from 'three'
 
 import { CarView } from './car-view.ts'
@@ -18,6 +18,7 @@ export class PredictedCar {
 
   constructor(
     private readonly prediction: LocalPrediction,
+    private readonly send: SendInput,
     color: number,
   ) {
     this.view = new CarView(color)
@@ -47,7 +48,7 @@ export class PredictedCar {
     if (outcome === 'replayed') this.body.absorbCorrection()
     if (outcome === 'resynced') this.body.snapToBody()
     others?.reconciled(outcome)
-    this.prediction.advance(update)
+    this.prediction.advance(update, this.send)
     this.body.captureStep()
     others?.stepped()
     return outcome

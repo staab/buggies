@@ -89,17 +89,25 @@ export interface PredictionStats {
   lastCorrectionRadians: number
   ticksAheadOfServer: number
   hardResyncs: number
+  /** How many ticks the last advance ran: one as a rule. */
+  lastSteps: number
 }
 
 /** What one pump of the client produced, for the prediction to act on. */
 export interface PredictionUpdate {
   estimatedServerTick: number
-  sentThroughTick: number
-  /** Ticks the client gave up sending for because they were already too old. */
-  skippedTicks: number
+  /**
+   * How many ticks to run once the snapshot has been taken in, given the
+   * tick the mirror is then about to simulate: one as a rule, none or two
+   * to hold the lead, many after a stall.
+   */
+  stepsFor: (nextTick: number) => number
   input: VehicleInput
   newestSnapshot: SnapshotMessage | null
 }
+
+/** Where the input a tick is simulated with goes: to the server, stamped with that tick. */
+export type SendInput = (tick: number, input: VehicleInput) => void
 
 function angleBetween(a: Quat, b: Quat): number {
   const alignment = Math.abs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w)
@@ -121,6 +129,7 @@ export class LocalPrediction {
     lastCorrectionRadians: 0,
     ticksAheadOfServer: 0,
     hardResyncs: 0,
+    lastSteps: 1,
   }
 
   private readonly mirror: Arena
@@ -209,29 +218,35 @@ export class LocalPrediction {
     return 'replayed'
   }
 
-  /** Run the mirror up to the newest tick an input has been sent for. */
-  advance(update: PredictionUpdate): void {
-    const target = update.sentThroughTick + 1
-    if (target > this.mirror.tick) {
-      if (target - this.mirror.tick > MAX_REPLAY_TICKS) this.jumpTo(target)
-      else this.simulateForward(target, update.skippedTicks, update.input)
+  /** The tick the mirror is about to simulate. */
+  get tick(): number {
+    return this.mirror.tick
+  }
+
+  /**
+   * Run the mirror on, the steps the client asks for from where the
+   * snapshot has left it, sending the input each tick is simulated with as
+   * it goes.
+   */
+  advance(update: PredictionUpdate, send: SendInput): void {
+    const steps = update.stepsFor(this.mirror.tick)
+    const target = this.mirror.tick + steps
+    if (steps > MAX_REPLAY_TICKS) {
+      this.jumpTo(target)
+    } else {
+      while (this.mirror.tick < target) {
+        send(this.mirror.tick, update.input)
+        this.recordAndStep(update.input)
+      }
+      copyVehicleInput(this.lastSentInput, update.input)
     }
+    this.stats.lastSteps = steps
     this.history.recordState(this.mirror.tick, this.seat.vehicle)
     this.stats.ticksAheadOfServer = this.mirror.tick - update.estimatedServerTick
   }
 
   dispose(): void {
     this.mirror.world.free()
-  }
-
-  private simulateForward(target: number, skippedTicks: number, input: VehicleInput): void {
-    // Ticks that were skipped rather than sent still carry the old input on
-    // the server, so they do here too.
-    const firstTickCarryingThisInput = this.mirror.tick + skippedTicks
-    while (this.mirror.tick < target) {
-      this.recordAndStep(this.mirror.tick < firstTickCarryingThisInput ? this.lastSentInput : input)
-    }
-    if (target > firstTickCarryingThisInput) copyVehicleInput(this.lastSentInput, input)
   }
 
   private recordAndStep(input: VehicleInput): void {

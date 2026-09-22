@@ -5,6 +5,7 @@ export {
   type PredictionStats,
   type PredictionUpdate,
   type ReconcileOutcome,
+  type SendInput,
 } from './prediction.ts'
 export {
   INPUT_TIMELINE_TICKS,

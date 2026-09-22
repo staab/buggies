@@ -26,17 +26,28 @@ class Loopback {
   private closed = false
   readonly connection: TransportConnection
 
+  private jitterSeed = 12345
+
   constructor(
     private readonly server: TransportHandlers,
     private readonly delayTicks: number,
     private readonly clock: { tick: number },
+    /** Up to this many ticks more, differing from message to message, as a jittery network would. */
+    private readonly jitterTicks = 0,
   ) {
     const id = Loopback.nextId++
     this.connection = {
       id,
-      send: (payload) => this.toClient.push({ at: clock.tick + delayTicks, payload: payload.slice() }),
+      send: (payload) => this.toClient.push({ at: clock.tick + this.delay(), payload: payload.slice() }),
       close: (reason) => this.drop(reason),
     }
+  }
+
+  /** The delay of the next message: the wire's, plus some jitter, the same run every time. */
+  private delay(): number {
+    if (this.jitterTicks === 0) return this.delayTicks
+    this.jitterSeed = (this.jitterSeed * 1103515245 + 12345) & 0x7fffffff
+    return this.delayTicks + (this.jitterSeed % (this.jitterTicks + 1))
   }
 
   get client(): ClientTransport {
@@ -45,7 +56,7 @@ class Loopback {
         this.clientHandlers = handlers
         this.server.onOpen(this.connection)
       },
-      send: (payload) => this.toServer.push({ at: this.clock.tick + this.delayTicks, payload: payload.slice() }),
+      send: (payload) => this.toServer.push({ at: this.clock.tick + this.delay(), payload: payload.slice() }),
       close: (reason) => this.drop(reason),
     }
   }
@@ -76,6 +87,11 @@ interface Player {
   /** Another seat this player's mirror is watched on, for how much its car gets corrected. */
   watching: number | null
   largestWatchedCorrection: number
+  /** How many times the prediction was pumped, and how many of those ran other than one tick. */
+  pumps: number
+  unevenPumps: number
+  /** Not pumped at all for now, as a client busy generating its map is not. */
+  paused: boolean
 }
 
 const DELAY_TICKS = 3
@@ -104,8 +120,8 @@ class Session {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: 'pickup' | 'mustang' | 'raceCar' = 'mustang'): Promise<Player> {
-    const wire = new Loopback(this.server, DELAY_TICKS, this.clock)
+  async join(profile: 'pickup' | 'mustang' | 'raceCar' = 'mustang', jitterTicks = 0): Promise<Player> {
+    const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
     const client = new NetClient(wire.client, () => this.nowMs)
     const welcoming = client.connect(profile)
     welcoming.catch(() => undefined)
@@ -118,7 +134,7 @@ class Session {
     const welcome = await welcoming
     const mirror = createArena(map)
     takeSeat(mirror, welcome.seat, welcome.profile)
-    const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, welcome.tick)
+    const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
     const player: Player = {
       client,
       prediction,
@@ -126,6 +142,9 @@ class Session {
       input: { ...NEUTRAL_INPUT },
       watching: null,
       largestWatchedCorrection: 0,
+      pumps: 0,
+      unevenPumps: 0,
+      paused: false,
     }
     this.players.push(player)
     return player
@@ -138,6 +157,7 @@ class Session {
     for (const wire of extraWires) wire.deliver()
     for (const player of this.players) {
       player.wire.deliver()
+      if (player.paused) continue
       const update = player.client.pump(player.input)
       // Where the watched car stood in the mirror before the server's word,
       // against where the replay puts it at the same tick: the correction.
@@ -150,7 +170,9 @@ class Session {
           distance(before, watched.frame.position),
         )
       }
-      player.prediction.advance(update)
+      player.prediction.advance(update, (tick, input) => player.client.sendInput(tick, input))
+      player.pumps += 1
+      if (player.prediction.stats.lastSteps !== 1) player.unevenPumps += 1
     }
   }
 
@@ -291,6 +313,49 @@ describe('a session', () => {
     }
     expect(a.largestWatchedCorrection).toBeGreaterThan(0)
     expect(a.largestWatchedCorrection).toBeLessThan(1.5)
+    session.dispose()
+  })
+
+  it('runs the local car one tick per step through a jittery wire, with rare nudges', async () => {
+    const session = new Session()
+    // Every message up to three ticks late on top of the wire's delay, so
+    // snapshots arrive in fits and starts.
+    const a = await session.join('mustang', 3)
+    a.input = { ...NEUTRAL_INPUT, throttle: 1, steer: 0.2 }
+    session.run(2)
+    a.pumps = 0
+    a.unevenPumps = 0
+    session.run(8)
+    // The car is stepped once per fixed step nearly every time: it never
+    // lurches or stalls to follow the arrivals.
+    expect(a.unevenPumps / a.pumps).toBeLessThan(0.03)
+    expect(a.prediction.stats.lastCorrectionMetres).toBeLessThan(0.5)
+    expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(1)
+    expect(a.client.leadTicks).toBeLessThanOrEqual(DELAY_TICKS * 2 + 3 + TICKS_PER_SNAPSHOT + 2)
+    session.dispose()
+  })
+
+  it('catches up a client that spent seconds generating its map before it first drove', async () => {
+    const session = new Session()
+    const a = await session.join('mustang')
+    // Welcomed, then busy for three seconds while the server runs on and
+    // its snapshots pile up on the wire.
+    a.paused = true
+    session.run(3)
+    a.paused = false
+    a.input = { ...NEUTRAL_INPUT, throttle: 1 }
+    const before = session.serverPositionOf(a)
+    const heldBefore = session.server.stats().inputsHeld
+    session.run(4)
+    // The car drives: its inputs reach the server on ticks it will accept,
+    // within a moment of the client coming back.
+    expect(distance(before, session.serverPositionOf(a))).toBeGreaterThan(20)
+    expect(session.server.stats().inputsHeld - heldBefore).toBeLessThan(TICKS_PER_SECOND)
+    // The mirror sits its lead ahead of the server, not seconds ahead or behind.
+    expect(a.prediction.stats.ticksAheadOfServer).toBeGreaterThan(0)
+    expect(a.prediction.stats.ticksAheadOfServer).toBeLessThan(INPUT_TIMELINE_TICKS / 2)
+    expect(a.prediction.stats.lastCorrectionMetres).toBeLessThan(0.5)
+    expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(2)
     session.dispose()
   })
 
