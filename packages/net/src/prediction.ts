@@ -6,9 +6,11 @@ import {
   createVehicleStepState,
   leaveSeat,
   readVehicleStepState,
+  setBanana,
   takeSeat,
   writeVehicleStepState,
   type Arena,
+  type Banana,
   type Seat,
   type Vehicle,
   type VehicleInput,
@@ -170,6 +172,16 @@ export class LocalPrediction {
     return this.seat.tuning
   }
 
+  /** The map's bananas as the mirror has them: the server's word, run ahead. */
+  get bananas(): readonly Banana[] {
+    return this.mirror.bananas
+  }
+
+  /** Bananas taken, as predicted; the server's count catches up with it. */
+  get score(): number {
+    return this.seat.score
+  }
+
   get submersion(): number {
     return this.seat.submersion
   }
@@ -308,6 +320,12 @@ export class LocalPrediction {
       vcopy(seat.vehicle.lastLinearVelocity, vehicle.linearVelocity)
       seat.vehicle.damage = vehicle.damage
       seat.vehicle.wrecked = vehicle.wrecked
+      seat.score = vehicle.score
+    }
+    const { map, water } = this.mirror
+    for (const [slot, banana] of snapshot.bananas.entries()) {
+      const mine = this.mirror.bananas[slot]
+      if (mine !== undefined) setBanana(map, water, mine, slot, banana.generation, snapshot.tick + banana.ticksUntilOut)
     }
   }
 

@@ -18,6 +18,9 @@ the page was opened on, so a second screen just opens the same URL and connects 
 The server chooses the island; set `SEED=42 pnpm --filter @buggies/server dev` for a particular
 one. `PORT` and `HOST` are honoured as well.
 
+Bananas float about every island, turning slowly; drive through one for a point, and another
+turns up somewhere else a little later. Online, the server keeps the score.
+
 **Free drive** needs no server: pick an island by its seed, looking it over from above while you
 do, then a vehicle, and go. **Split screen** puts two of you on one keyboard, side by side: the
 letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to the road) and the arrows on

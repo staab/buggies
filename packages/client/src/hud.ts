@@ -14,6 +14,8 @@ export interface HudState {
   damage?: number
   /** Which keys do what, for whoever this is for. */
   controls?: readonly ControlHint[]
+  /** Bananas taken. */
+  score?: number
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -149,6 +151,7 @@ function turnDial(dial: Dial, fraction: number, reading: string, colour?: string
 export class Hud {
   private readonly root: HTMLElement
   private readonly title = div('title')
+  private readonly score = div('score')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
   private readonly damage = buildDial('damage')
@@ -157,13 +160,19 @@ export class Hud {
   private shownTitle = ''
   private shownState = ''
   private shownControls = ''
+  private shownScore = ''
+  private readonly scoreCount = document.createElement('span')
 
   constructor(root: HTMLElement) {
     this.root = root
     root.replaceChildren()
 
     this.gauges.append(this.speedo.element, this.damage.element)
-    root.append(this.title, this.gauges, this.state, this.controls)
+    const banana = svg('svg', { class: 'banana', viewBox: '0 0 24 24' })
+    banana.append(svg('path', { d: 'M3 13c3 6 12 7 17-1-1 4-7 8-13 5-2-1-3-2-4-4z', fill: '#f6d23c' }))
+    banana.append(svg('path', { d: 'M19 11.5l1.6-2.2-1-.3z', fill: '#6b4a1e' }))
+    this.score.append(banana, this.scoreCount)
+    root.append(this.title, this.score, this.gauges, this.state, this.controls)
     this.render(null)
   }
 
@@ -182,6 +191,13 @@ export class Hud {
       this.state.textContent = shownState
     }
     this.state.hidden = shownState === ''
+
+    const score = state.score === undefined ? '' : String(state.score)
+    if (score !== this.shownScore) {
+      this.shownScore = score
+      this.scoreCount.textContent = score
+    }
+    this.score.hidden = score === ''
 
     const driving = state.speed !== undefined && state.maxSpeed !== undefined && state.damage !== undefined
     this.gauges.hidden = !driving
