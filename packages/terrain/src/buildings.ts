@@ -11,6 +11,7 @@ import { createRng, randomInt, randomRange, type Rng } from '@buggies/physics'
 
 import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts'
 import { sampleHeight } from './heightfield.ts'
+import { interchangeZones, meetsInterchange } from './interchanges.ts'
 import { orientedTriangle, signedDistanceToTriangle, triangleInradius, type Triangle } from './mountain.ts'
 import { fbm2D, smoothstep } from './noise.ts'
 import { RIVER_BANK_LAP } from './rivers.ts'
@@ -34,6 +35,14 @@ const BUILDING_SALT = 0x6b1d
 const PAVEMENT = 2
 /** How far in from the street's edge the sidewalk reaches, under the fronts of the buildings. */
 const SIDEWALK_BAND = 2
+/**
+ * The most the ground under a sidewalk may rise or fall: across its band,
+ * and from one sample to the next along it. A slab over steeper ground would
+ * stand off it like a wall, so such a side is left out.
+ */
+const SIDEWALK_CROSS_RELIEF = 0.35
+const SIDEWALK_ALONG_RELIEF = 0.5
+const SIDEWALK_SAMPLE = 4
 /** No lot narrower than this: a block is cut into as many lots as leave each this wide. */
 const LOT_MIN = 9
 /** A building stands this far inside its lot at most, on each side. */
@@ -378,6 +387,58 @@ function fillCities(
     // The lots are laid out from the old kerb, whatever the street's width
     // now: the sidewalk fills the difference, under the buildings' fronts.
     const edge = STREET_KERB + PAVEMENT
+    /**
+     * Which sides of a block's sidewalk ring have only the block's own
+     * streets beside them, round from the side at +v. A kerb across an
+     * arterial or a ramp cutting through the block would be a step in that
+     * road, so a side one crosses is left out.
+     */
+    const ringSides = (blockU: number, blockV: number): [boolean, boolean, boolean, boolean] => {
+      const half = STREET_SPACING / 2 - STREET_WIDTH / 2
+      const band = SIDEWALK_BAND
+      const yaw = -Math.atan2(sin, cos)
+      const groundAt = (u: number, v: number): number =>
+        sampleHeight(field, cx + u * cos - v * sin, cz + u * sin + v * cos)
+      /** Whether the ground under a side is level enough to lay a slab on. */
+      const gentle = (u: number, v: number, along: boolean): boolean => {
+        let lastMiddle = Number.NaN
+        for (let t = -half; t <= half; t += SIDEWALK_SAMPLE) {
+          const su = along ? u + t : u
+          const sv = along ? v : v + t
+          const outer = groundAt(along ? su : su + band / 2, along ? sv + band / 2 : sv)
+          const inner = groundAt(along ? su : su - band / 2, along ? sv - band / 2 : sv)
+          const middle = groundAt(su, sv)
+          if (Math.abs(outer - inner) > SIDEWALK_CROSS_RELIEF) return false
+          if (!Number.isNaN(lastMiddle) && Math.abs(middle - lastMiddle) > SIDEWALK_ALONG_RELIEF) return false
+          lastMiddle = middle
+        }
+        return true
+      }
+      const sideClear = (du: number, dv: number, along: boolean): boolean => {
+        const u = blockU + du
+        const v = blockV + dv
+        return (
+          gentle(u, v, along) &&
+          clear(
+            {
+              x: cx + u * cos - v * sin,
+              z: cz + u * sin + v * cos,
+              yaw,
+              width: along ? 2 * half : band,
+              depth: along ? band : 2 * half,
+            },
+            0,
+          )
+        )
+      }
+      const inset = half - band / 2
+      return [
+        sideClear(0, inset, true),
+        sideClear(-inset, 0, false),
+        sideClear(0, -inset, true),
+        sideClear(inset, 0, false),
+      ]
+    }
     const first = (value: number): number => Math.floor(value / STREET_SPACING) * STREET_SPACING
 
     for (let v0 = first(frame.vMin); v0 < frame.vMax; v0 += STREET_SPACING) {
@@ -386,13 +447,17 @@ function fillCities(
         const blockV = v0 + STREET_SPACING / 2
         const block = { x: cx + blockU * cos - blockV * sin, z: cz + blockU * sin + blockV * cos }
         if (inCity(block.x, block.z)) {
-          sidewalks.push({
-            ...block,
-            // The frame's own turn: the ring is placed the way the block is.
-            yaw: Math.atan2(sin, cos),
-            half: STREET_SPACING / 2 - STREET_WIDTH / 2,
-            band: SIDEWALK_BAND,
-          })
+          const sides = ringSides(blockU, blockV)
+          if (sides.some((side) => side)) {
+            sidewalks.push({
+              ...block,
+              // The frame's own turn: the ring is placed the way the block is.
+              yaw: Math.atan2(sin, cos),
+              half: STREET_SPACING / 2 - STREET_WIDTH / 2,
+              band: SIDEWALK_BAND,
+              sides,
+            })
+          }
         }
         const lotsU = cutLots(rng, u0 + edge, u0 + STREET_SPACING - edge)
         const lotsV = cutLots(rng, v0 + edge, v0 + STREET_SPACING - edge)
@@ -767,8 +832,12 @@ export function generateBuildings(
 ): { buildings: Building[]; trees: Tree[]; ramps: Ramp[]; sidewalks: Sidewalk[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
   // Buildings stand against the old kerb, on the sidewalk; what grows keeps
-  // off the sidewalk as well as the street.
-  const clear = roadClearance(roads, STREET_KERB)
+  // off the sidewalk as well as the street. Nothing is built at all on the
+  // ground an interchange's ramps enclose.
+  const zones = interchangeZones(roads)
+  const clearOfRoads = roadClearance(roads, STREET_KERB)
+  const clear = (footprint: Footprint, margin: number): boolean =>
+    clearOfRoads(footprint, margin) && !meetsInterchange(zones, footprint)
   const clearOfStreets = roadClearance(roads, STREET_WIDTH / 2 + SIDEWALK_BAND)
   const wet = wetTest(field, seaLevel, rivers, lakes, roads)
   const placed = new Placed()

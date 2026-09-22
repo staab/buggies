@@ -211,11 +211,21 @@ describe('terrain colliders', () => {
       expect(map.sidewalks.length).toBeGreaterThan(0)
       let kerbed = 0
       for (const walk of map.sidewalks) {
-        // The middle of one side's slab, just in from the kerb, short of the
-        // buildings standing on the slab further in.
-        const u = walk.half - 0.3
-        const x = walk.x + u * Math.cos(walk.yaw)
-        const z = walk.z + u * Math.sin(walk.yaw)
+        // The middle of one built side's slab, just in from the kerb, short
+        // of the buildings standing on the slab further in. Sides go round
+        // from the one at +v.
+        const side = walk.sides.findIndex((built) => built)
+        const reach = walk.half - 0.3
+        const [u, v] = (
+          [
+            [0, reach],
+            [-reach, 0],
+            [0, -reach],
+            [reach, 0],
+          ] as [number, number][]
+        )[side]!
+        const x = walk.x + u * Math.cos(walk.yaw) - v * Math.sin(walk.yaw)
+        const z = walk.z + u * Math.sin(walk.yaw) + v * Math.cos(walk.yaw)
         const ground = sampleHeight(map.heightfield, x, z)
         // From just over the kerb, under any deck that crosses the city above it.
         const found = castDown(world, x, z, ground + 1)
