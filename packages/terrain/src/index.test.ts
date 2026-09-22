@@ -605,7 +605,7 @@ describe('roads', () => {
     for (let seed = 1; seed <= 3; seed++) {
       const map = generateTerrain(seed)
       const crossRoads = map.roads.filter((road) => !road.closed && road.width === CROSS_WIDTH)
-      const grown = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+      const grown = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
       const starts = grown.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
       arterials += grown.length
 
@@ -634,7 +634,7 @@ describe('roads', () => {
     const highway = map.roads.find((road) => road.closed)!
     const crossRoads = map.roads.filter((road) => !road.closed && road.width === CROSS_WIDTH)
     const centres = crossRoads.map((road) => road.points[Math.floor(road.points.length / 2)]!)
-    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     expect(arterials.length).toBeGreaterThan(0)
 
     const straddles = (
@@ -674,7 +674,7 @@ describe('roads', () => {
 
   it('keeps arterials from crossing any other road', () => {
     const map = generateTerrain(1)
-    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     expect(arterials.length).toBeGreaterThan(0)
 
     const straddles = (
@@ -697,7 +697,7 @@ describe('roads', () => {
     let crossings = 0
     for (const road of arterials) {
       for (const other of map.roads) {
-        if (other === road || other.width === STREET_WIDTH) continue
+        if (other === road || other.kind === 'street') continue
         for (let p = 0; p + 1 < road.points.length; p++) {
           const p1 = road.points[p]!
           const p2 = road.points[p + 1]!
@@ -719,7 +719,7 @@ describe('roads', () => {
       const map = generateTerrain(seed)
       const ends: { road: Road; start: boolean }[] = []
       for (const road of map.roads) {
-        if (road.closed || road.points.length < 2 || road.width === STREET_WIDTH) continue
+        if (road.closed || road.points.length < 2 || road.kind === 'street') continue
         ends.push({ road, start: true }, { road, start: false })
       }
       const direction = (road: Road, start: boolean): { x: number; z: number; px: number; pz: number } => {
@@ -765,7 +765,7 @@ describe('roads', () => {
 
   it('fills each city with a grade-limited street grid', () => {
     const map = generateTerrain(1)
-    const streets = map.roads.filter((road) => !road.closed && road.width === STREET_WIDTH)
+    const streets = map.roads.filter((road) => !road.closed && road.kind === 'street')
     expect(streets.length).toBeGreaterThan(0)
     for (const road of streets) {
       expect(road.points.length).toBeGreaterThan(1)
@@ -776,7 +776,7 @@ describe('roads', () => {
 
   it('keeps city streets a road\'s width clear of highways and ramps', () => {
     const map = generateTerrain(1)
-    const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+    const streets = map.roads.filter((road) => road.kind === 'street')
     const fast = map.roads.filter((road) => road.width === ROAD_WIDTH || road.width === RAMP_WIDTH)
     expect(streets.length).toBeGreaterThan(0)
     expect(fast.length).toBeGreaterThan(0)
@@ -802,7 +802,7 @@ describe('roads', () => {
   it('leaves the pocket between an interchange\'s ramps and highway empty', () => {
     // Seed 4 puts an interchange well inside a city, so its grid has to dodge one.
     const map = generateTerrain(4)
-    const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+    const streets = map.roads.filter((road) => road.kind === 'street')
     const crossRoads = map.roads.filter((road) => road.width === CROSS_WIDTH)
     const ramps = map.roads.filter((road) => road.width === RAMP_WIDTH)
     expect(crossRoads.length).toBeGreaterThan(0)
@@ -834,8 +834,8 @@ describe('roads', () => {
     const overlap = (ARTERIAL_WIDTH + STREET_WIDTH) / 2
     for (const seed of [1, 5]) {
       const map = generateTerrain(seed)
-      const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
-      const arterials = map.roads.filter((road) => road.width === ARTERIAL_WIDTH)
+      const streets = map.roads.filter((road) => road.kind === 'street')
+      const arterials = map.roads.filter((road) => road.kind === 'arterial')
       expect(streets.length).toBeGreaterThan(0)
       expect(arterials.length).toBeGreaterThan(0)
 
@@ -991,7 +991,7 @@ describe('roads', () => {
     for (const seed of [1, 4, 6]) {
       const map = generateTerrain(seed)
       const highway = map.roads.find((road) => road.closed && road.width === ROAD_WIDTH)!
-      const arterials = map.roads.filter((road) => road.width === ARTERIAL_WIDTH)
+      const arterials = map.roads.filter((road) => road.kind === 'arterial')
       expect(arterials.length).toBeGreaterThan(0)
       const clear = (ARTERIAL_WIDTH + ROAD_WIDTH) / 2
 
@@ -1023,7 +1023,7 @@ describe('roads', () => {
     for (const seed of [1, 2, 5]) {
       const map = generateTerrain(seed)
       const arterials = map.roads.filter(
-        (road) => road.width === ARTERIAL_WIDTH && road.points.length >= 2,
+        (road) => road.kind === 'arterial' && road.points.length >= 2,
       )
       expect(arterials.length).toBeGreaterThan(0)
 
@@ -1063,8 +1063,8 @@ describe('roads', () => {
     const steps: number[] = []
     for (const seed of [1, 2, 3]) {
       const map = generateTerrain(seed)
-      const arterials = map.roads.filter((road) => road.width === ARTERIAL_WIDTH)
-      const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+      const arterials = map.roads.filter((road) => road.kind === 'arterial')
+      const streets = map.roads.filter((road) => road.kind === 'street')
       expect(arterials.length).toBeGreaterThan(0)
       expect(streets.length).toBeGreaterThan(0)
 
@@ -1103,7 +1103,7 @@ describe('roads', () => {
 
   it('leaves no city street stranded off the network', () => {
     const map = generateTerrain(1)
-    const streets = map.roads.filter((road) => road.width === STREET_WIDTH)
+    const streets = map.roads.filter((road) => road.kind === 'street')
     expect(streets.length).toBeGreaterThan(0)
 
     const parent = streets.map((_, index) => index)
@@ -1119,7 +1119,7 @@ describe('roads', () => {
     const reached = new Set<number>()
     for (let i = 0; i < streets.length; i++) {
       for (const road of map.roads) {
-        if (road.width === STREET_WIDTH) continue
+        if (road.kind === 'street') continue
         if (meets(streets[i]!, road)) {
           reached.add(find(i))
           break
@@ -1176,7 +1176,7 @@ describe('roads', () => {
 
   it('rounds arterial corners instead of leaving sharp bends', () => {
     const map = generateTerrain(1)
-    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     expect(arterials.length).toBeGreaterThan(0)
 
     let sharpest = 0
@@ -1204,7 +1204,7 @@ describe('roads', () => {
 
   it('leaves no arterial dead ends', () => {
     const map = generateTerrain(1)
-    const arterials = map.roads.filter((road) => !road.closed && road.width === ARTERIAL_WIDTH)
+    const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     const ends = arterials.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
     const distanceToSegment = (x: number, z: number, a: RoadPoint, b: RoadPoint): number => {
       const vx = b.x - a.x

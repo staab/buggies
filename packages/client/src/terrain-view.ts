@@ -7,6 +7,7 @@ import {
   ROAD_SKIRT,
   ROAD_TUNNEL,
   TUNNEL_CLEARANCE,
+  TUNNEL_WALL_HEIGHT,
   boreClearance,
   buildTunnelHoles,
   deckShouldered,
@@ -16,6 +17,7 @@ import {
   railRuns,
   rampFacets,
   roadLift,
+  sidewalkMesh,
   tunnelSegments,
   tunnelShellMesh,
   type BoreSegment,
@@ -25,6 +27,7 @@ import {
   type Ramp,
   type River,
   type Road,
+  type Sidewalk,
   type TerrainMap,
   type Tree,
 } from '@buggies/terrain'
@@ -321,6 +324,11 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     }
   }
 
+  // The ground inside each block's sidewalk is paved too, darker than the walk.
+  BLOCK_PAVEMENT_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
+  const pavement = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  for (const walk of map.sidewalks) paintBlock(data, texels, walk, pavement)
+
   const texture = new THREE.DataTexture(data, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = THREE.ClampToEdgeWrapping
@@ -364,6 +372,32 @@ function paintSegment(
       for (let channel = 0; channel < 3; channel++) {
         data[at + channel] = Math.round(data[at + channel]! + (rgb[channel]! - data[at + channel]!) * coverage)
       }
+    }
+  }
+}
+
+/** Fill the square inside a sidewalk ring with a colour. */
+function paintBlock(data: Uint8Array, texels: number, walk: Sidewalk, color: number[]): void {
+  const inner = walk.half - walk.band
+  const cos = Math.cos(walk.yaw)
+  const sin = Math.sin(walk.yaw)
+  const reach = inner * Math.SQRT2
+  const fromX = Math.max(Math.floor((walk.x - reach) * TEXELS_PER_METRE), 0)
+  const toX = Math.min(Math.ceil((walk.x + reach) * TEXELS_PER_METRE), texels - 1)
+  const fromY = Math.max(Math.floor((walk.z - reach) * TEXELS_PER_METRE), 0)
+  const toY = Math.min(Math.ceil((walk.z + reach) * TEXELS_PER_METRE), texels - 1)
+  for (let ty = fromY; ty <= toY; ty++) {
+    const z = (ty + 0.5) / TEXELS_PER_METRE - walk.z
+    for (let tx = fromX; tx <= toX; tx++) {
+      const x = (tx + 0.5) / TEXELS_PER_METRE - walk.x
+      // Into the block's frame: u along its first side, v along the second.
+      const u = x * cos + z * sin
+      const v = -x * sin + z * cos
+      if (Math.abs(u) > inner || Math.abs(v) > inner) continue
+      const at = (ty * texels + tx) * 4
+      data[at] = color[0]!
+      data[at + 1] = color[1]!
+      data[at + 2] = color[2]!
     }
   }
 }
@@ -649,6 +683,57 @@ function buildRailGeometry(map: TerrainMap): THREE.BufferGeometry | null {
 }
 
 /** The tunnel shell, the same one the collider is built from. */
+/**
+ * Strip lights along the crown of every tunnel, one every few metres: bright
+ * panels that need no light of their own to be seen glowing in the dark.
+ */
+function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
+  const spots: { x: number; y: number; z: number; dx: number; dz: number }[] = []
+  for (const road of roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    const crown = TUNNEL_WALL_HEIGHT + road.width / 2 + TUNNEL_CLEARANCE - TUNNEL_LIGHT_DROP
+    const lift = roadLift(road)
+    let owed = TUNNEL_LIGHT_SPACING / 2
+    for (let i = 0; i < segmentCount; i++) {
+      if (road.structure[i] !== ROAD_TUNNEL) {
+        owed = TUNNEL_LIGHT_SPACING / 2
+        continue
+      }
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % count]!
+      const length = Math.hypot(b.x - a.x, b.z - a.z)
+      if (length < 1e-6) continue
+      const dx = (b.x - a.x) / length
+      const dz = (b.z - a.z) / length
+      let along = owed
+      while (along <= length) {
+        const t = along / length
+        spots.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t + lift + crown, z: a.z + (b.z - a.z) * t, dx, dz })
+        along += TUNNEL_LIGHT_SPACING
+      }
+      owed = along - length
+    }
+  }
+  if (spots.length === 0) return null
+  const panel = new THREE.BoxGeometry(0.5, 0.12, 2.2)
+  const glow = new THREE.MeshBasicMaterial({ color: TUNNEL_LIGHT_COLOR })
+  const mesh = new THREE.InstancedMesh(panel, glow, spots.length)
+  const matrix = new THREE.Matrix4()
+  const position = new THREE.Vector3()
+  const rotation = new THREE.Quaternion()
+  const up = new THREE.Vector3(0, 1, 0)
+  const one = new THREE.Vector3(1, 1, 1)
+  for (const [i, spot] of spots.entries()) {
+    position.set(spot.x, spot.y, spot.z)
+    rotation.setFromAxisAngle(up, Math.atan2(spot.dx, spot.dz))
+    matrix.compose(position, rotation, one)
+    mesh.setMatrixAt(i, matrix)
+  }
+  mesh.instanceMatrix.needsUpdate = true
+  return mesh
+}
+
 function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
   const shell = tunnelShellMesh(road)
   if (shell === null) return null
@@ -884,6 +969,8 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
       const tunnel = buildTunnelGeometry(road)
       if (tunnel) group.add(new THREE.Mesh(tunnel, tunnelMaterial))
     }
+    const lights = buildTunnelLights(map.roads)
+    if (lights) group.add(lights)
     const rails = buildRailGeometry(map)
     if (rails) {
       const railMaterial = new THREE.MeshStandardMaterial({
@@ -897,6 +984,21 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   }
 
   for (const standing of buildStanding(map)) group.add(standing)
+
+  if (map.sidewalks.length > 0) {
+    const { positions, indices } = sidewalkMesh(map.heightfield, map.sidewalks)
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1))
+    geometry.computeVertexNormals()
+    const concrete = new THREE.MeshStandardMaterial({
+      color: SIDEWALK_COLOR,
+      roughness: 0.95,
+      metalness: 0,
+      flatShading: true,
+    })
+    group.add(new THREE.Mesh(geometry, concrete))
+  }
 
   if (map.ramps.length > 0) {
     const rampMaterial = new THREE.MeshStandardMaterial({
@@ -913,6 +1015,12 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
 }
 
 const RAMP_COLOR = new THREE.Color('#4a4a48')
+const SIDEWALK_COLOR = new THREE.Color('#b9b5ad')
+const BLOCK_PAVEMENT_COLOR = new THREE.Color('#6a6763')
+const TUNNEL_LIGHT_COLOR = new THREE.Color('#fff1c4')
+/** How far apart the lights hang along a tunnel's ceiling, and how far below the arch's crown. */
+const TUNNEL_LIGHT_SPACING = 9
+const TUNNEL_LIGHT_DROP = 0.3
 
 /** Every ramp as one mesh: a faceted arc to drive up, two sides, and a face under the lip. */
 function buildRampGeometry(ramps: Ramp[]): THREE.BufferGeometry {

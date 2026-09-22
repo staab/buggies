@@ -3,6 +3,7 @@ import {
   ROAD_GRADE,
   ROAD_TUNNEL,
   flatHeightfield,
+  KERB_HEIGHT,
   RAMP_FACETS,
   generateTerrain,
   rampFacets,
@@ -204,6 +205,23 @@ describe('terrain colliders', () => {
         if (facetsFound === RAMP_FACETS + 1) sound++
       }
       expect(sound).toBe(map.ramps.length)
+    })
+
+    it('raises a kerb round every city block that the wheels find', () => {
+      expect(map.sidewalks.length).toBeGreaterThan(0)
+      let kerbed = 0
+      for (const walk of map.sidewalks) {
+        // The middle of one side's slab, just in from the kerb, short of the
+        // buildings standing on the slab further in.
+        const u = walk.half - 0.3
+        const x = walk.x + u * Math.cos(walk.yaw)
+        const z = walk.z + u * Math.sin(walk.yaw)
+        const ground = sampleHeight(map.heightfield, x, z)
+        // From just over the kerb, under any deck that crosses the city above it.
+        const found = castDown(world, x, z, ground + 1)
+        if (found !== null && found > ground + KERB_HEIGHT - 0.05 && found < ground + KERB_HEIGHT + 0.6) kerbed++
+      }
+      expect(kerbed).toBe(map.sidewalks.length)
     })
 
     it('carries a bridge over the gap it spans', () => {

@@ -18,6 +18,7 @@ export { WORLD_SCALE, generateTerrain } from './generate.ts'
 export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
 export { deckSpans, lowestDeckOver, type DeckSpan } from './overhead.ts'
 export { RAMP_FACETS, rampFacets, rampRise } from './ramps.ts'
+export { KERB_HEIGHT, sidewalkMesh, type SidewalkMesh } from './sidewalks.ts'
 export {
   ARTERIAL_BRIDGE_GRADE,
   ARTERIAL_WIDTH,
@@ -35,6 +36,7 @@ export {
   ROAD_SURFACE,
   ROAD_TUNNEL,
   ROAD_WIDTH,
+  STREET_KERB,
   STREET_SPACING,
   STREET_WIDTH,
   SURFACE_SHOULDER,
@@ -68,6 +70,7 @@ export { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 export {
   TUNNEL_CLEARANCE,
   TUNNEL_WALL,
+  TUNNEL_WALL_HEIGHT,
   boreClearance,
   boreFloorAt,
   buildTunnelHoles,
@@ -90,6 +93,7 @@ export type {
   Road,
   RoadKind,
   RoadPoint,
+  Sidewalk,
   TerrainMap,
   TerrainOptions,
   Tree,

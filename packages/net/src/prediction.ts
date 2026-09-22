@@ -148,6 +148,15 @@ export class LocalPrediction {
     return this.seat.vehicle
   }
 
+  /**
+   * Every seat of the mirror, other players' included: their cars are the
+   * bodies the local car is driven against, run ahead from the last
+   * snapshot on the inputs the server last saw them give.
+   */
+  get seats(): readonly Seat[] {
+    return this.mirror.seats
+  }
+
   get tuning(): VehicleTuning {
     return this.seat.tuning
   }

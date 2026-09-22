@@ -562,6 +562,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     buildings: [],
     trees: [],
     ramps: [],
+    sidewalks: [],
   }
   scaleWorld(map, WORLD_SCALE)
   map.roads = generateRoads(

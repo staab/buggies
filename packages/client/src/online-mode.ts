@@ -16,9 +16,9 @@ import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
 import { smokeAmount } from './damage.ts'
 import { Explosions } from './explosion.ts'
 import { Keyboard } from './input.ts'
+import { MirrorCars } from './mirror-cars.ts'
 import type { ModeView } from './mode.ts'
 import { PredictedCar } from './predicted-car.ts'
-import { RemoteCars } from './remote-cars.ts'
 import { Smoke } from './smoke.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -61,7 +61,7 @@ export async function createOnlineMode(
   scene.add(explosions.object)
   const smoke = new Smoke()
   scene.add(smoke.object)
-  const others = new RemoteCars(welcome.seat, (at) => explosions.burst(at), smoke)
+  const others = new MirrorCars(prediction, welcome.seat, (at) => explosions.burst(at), smoke)
   scene.add(others.object)
   let wasWrecked = false
 
@@ -92,10 +92,10 @@ export async function createOnlineMode(
       const input = active ? keyboard.read() : NEUTRAL_INPUT
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
-        if (car.tick(client.pump(input)) === 'resynced') chaseSnapped = false
+        if (car.tick(client.pump(input), others) === 'resynced') chaseSnapped = false
         owed -= FIXED_TIMESTEP
       }
-      others.update(client.sample(), dt)
+      others.render(owed / FIXED_TIMESTEP, dt)
       car.render(owed / FIXED_TIMESTEP, dt)
       if (car.wrecked && !wasWrecked) explosions.burst(prediction.vehicle.frame.position)
       wasWrecked = car.wrecked

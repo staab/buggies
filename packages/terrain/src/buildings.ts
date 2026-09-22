@@ -21,16 +21,19 @@ import {
   ROAD_BRIDGE,
   ROAD_GRADE,
   roadClearance,
+  STREET_KERB,
   STREET_SPACING,
   STREET_WIDTH,
   type Footprint,
 } from './roads.ts'
-import type {Building, District, Heightfield, Lake, Mountain, Ramp, River, Road, Tree} from './types.ts'
+import type {Building, District, Heightfield, Lake, Mountain, Ramp, River, Road, Sidewalk, Tree} from './types.ts'
 
 const BUILDING_SALT = 0x6b1d
 
 /** Ground kept clear between a street's edge and the lots along it. */
 const PAVEMENT = 2
+/** How far in from the street's edge the sidewalk reaches, under the fronts of the buildings. */
+const SIDEWALK_BAND = 2
 /** No lot narrower than this: a block is cut into as many lots as leave each this wide. */
 const LOT_MIN = 9
 /** A building stands this far inside its lot at most, on each side. */
@@ -285,21 +288,21 @@ function cutLots(rng: Rng, from: number, to: number): [number, number][] {
 }
 
 /** Plants a tree or a shrub at a spot, if nothing is in the way there. Answers whether it did. */
-type Planter = (
-  x: number,
-  z: number,
-  kind: Tree['kind'],
-  clear: (footprint: Footprint, margin: number) => boolean,
-  wet: (x: number, z: number) => boolean,
-) => boolean
+type Planter = (x: number, z: number, kind: Tree['kind'], wet: (x: number, z: number) => boolean) => boolean
 
 /**
  * A planter over the given ground. A tree keeps its crown clear of every
  * building and every other crown, and off the roads; a shrub only has to
  * find open ground.
  */
-function planter(rng: Rng, field: Heightfield, placed: Placed, trees: Tree[]): Planter {
-  return (x, z, kind, clear, wet) => {
+function planter(
+  rng: Rng,
+  field: Heightfield,
+  placed: Placed,
+  trees: Tree[],
+  clear: (footprint: Footprint, margin: number) => boolean,
+): Planter {
+  return (x, z, kind, wet) => {
     const radius =
       kind === 'tree'
         ? randomRange(rng, TREE_RADIUS.min, TREE_RADIUS.max)
@@ -333,6 +336,7 @@ function fillCities(
   wet: (x: number, z: number) => boolean,
   placed: Placed,
   buildings: Building[],
+  sidewalks: Sidewalk[],
   plant: Planter,
 ): void {
   const { width, cellSize } = field
@@ -353,11 +357,11 @@ function fillCities(
     }
     for (let k = 0; k < Math.round(area * PARK_TREES) * PARK_TRIES; k++) {
       const at = somewhere(TREE_RADIUS.max)
-      if (at) plant(at.x, at.z, 'tree', clear, wet)
+      if (at) plant(at.x, at.z, 'tree', wet)
     }
     for (let k = 0; k < Math.round(area * PARK_SHRUBS) * PARK_TRIES; k++) {
       const at = somewhere(SHRUB_RADIUS.max)
-      if (at) plant(at.x, at.z, 'shrub', clear, wet)
+      if (at) plant(at.x, at.z, 'shrub', wet)
     }
   }
   const inCity = (x: number, z: number): boolean => {
@@ -371,11 +375,25 @@ function fillCities(
     const frame = cityFrame(field, districtOf, district)
     if (frame === null) continue
     const { cx, cz, cos, sin } = frame
-    const edge = STREET_WIDTH / 2 + PAVEMENT
+    // The lots are laid out from the old kerb, whatever the street's width
+    // now: the sidewalk fills the difference, under the buildings' fronts.
+    const edge = STREET_KERB + PAVEMENT
     const first = (value: number): number => Math.floor(value / STREET_SPACING) * STREET_SPACING
 
     for (let v0 = first(frame.vMin); v0 < frame.vMax; v0 += STREET_SPACING) {
       for (let u0 = first(frame.uMin); u0 < frame.uMax; u0 += STREET_SPACING) {
+        const blockU = u0 + STREET_SPACING / 2
+        const blockV = v0 + STREET_SPACING / 2
+        const block = { x: cx + blockU * cos - blockV * sin, z: cz + blockU * sin + blockV * cos }
+        if (inCity(block.x, block.z)) {
+          sidewalks.push({
+            ...block,
+            // The frame's own turn: the ring is placed the way the block is.
+            yaw: Math.atan2(sin, cos),
+            half: STREET_SPACING / 2 - STREET_WIDTH / 2,
+            band: SIDEWALK_BAND,
+          })
+        }
         const lotsU = cutLots(rng, u0 + edge, u0 + STREET_SPACING - edge)
         const lotsV = cutLots(rng, v0 + edge, v0 + STREET_SPACING - edge)
         for (const [vFrom, vTo] of lotsV) {
@@ -508,18 +526,12 @@ function lineArterials(
     const front = side * (houseDepth / 2 + 1.5)
     for (let k = randomInt(rng, GARDEN_SHRUBS.min, GARDEN_SHRUBS.max); k > 0; k--) {
       const along = randomRange(rng, -houseWidth / 2, houseWidth / 2)
-      plant(
-        footprint.x + dx * along - nx * front,
-        footprint.z + dz * along - nz * front,
-        'shrub',
-        clear,
-        wet,
-      )
+      plant(footprint.x + dx * along - nx * front, footprint.z + dz * along - nz * front, 'shrub', wet)
     }
     for (let k = randomInt(rng, GARDEN_TREES.min, GARDEN_TREES.max); k > 0; k--) {
       const along = randomRange(rng, -houseWidth / 2, houseWidth / 2)
       const back = side * (houseDepth / 2 + TREE_RADIUS.max + randomRange(rng, 1, 6))
-      plant(footprint.x + dx * along + nx * back, footprint.z + dz * along + nz * back, 'tree', clear, wet)
+      plant(footprint.x + dx * along + nx * back, footprint.z + dz * along + nz * back, 'tree', wet)
     }
     return true
   }
@@ -532,7 +544,7 @@ function lineArterials(
     const z = point.z + nz * side * (road.width / 2 + setback)
     if (districtAt(x, z) !== DISTRICT_COUNTRY) return
     if (inClearing(x, z)) return
-    plant(x, z, 'tree', clear, wet)
+    plant(x, z, 'tree', wet)
   }
 
   for (const road of roads) {
@@ -736,7 +748,7 @@ function plantWilds(
       const shrubs = LONE_SHRUBS + (WOOD_SHRUBS - LONE_SHRUBS) * thickness
       if (roll >= trees + shrubs) continue
       if (slopeAt(x, z) > WILD_MAX_SLOPE) continue
-      plant(x, z, roll < trees ? 'tree' : 'shrub', clear, wet)
+      plant(x, z, roll < trees ? 'tree' : 'shrub', wet)
     }
   }
 }
@@ -752,18 +764,22 @@ export function generateBuildings(
   lakes: Lake[],
   mountains: Mountain[],
   seed: number,
-): { buildings: Building[]; trees: Tree[]; ramps: Ramp[] } {
+): { buildings: Building[]; trees: Tree[]; ramps: Ramp[]; sidewalks: Sidewalk[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
-  const clear = roadClearance(roads)
+  // Buildings stand against the old kerb, on the sidewalk; what grows keeps
+  // off the sidewalk as well as the street.
+  const clear = roadClearance(roads, STREET_KERB)
+  const clearOfStreets = roadClearance(roads, STREET_WIDTH / 2 + SIDEWALK_BAND)
   const wet = wetTest(field, seaLevel, rivers, lakes, roads)
   const placed = new Placed()
   const buildings: Building[] = []
   const trees: Tree[] = []
   const ramps: Ramp[] = []
-  const plant = planter(rng, field, placed, trees)
-  fillCities(rng, field, districts, districtOf, clear, wet, placed, buildings, plant)
+  const sidewalks: Sidewalk[] = []
+  const plant = planter(rng, field, placed, trees, clearOfStreets)
+  fillCities(rng, field, districts, districtOf, clear, wet, placed, buildings, sidewalks, plant)
   lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
   lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
-  return { buildings, trees, ramps }
+  return { buildings, trees, ramps, sidewalks }
 }

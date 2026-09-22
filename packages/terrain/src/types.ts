@@ -139,6 +139,21 @@ export interface Ramp {
  * tall in all. A tree has a trunk to run into; a shrub is only something to
  * drive through.
  */
+/**
+ * The sidewalk round one city block: a square ring, raised a kerb's height
+ * above the street, from the carriageway's edge in under the buildings.
+ */
+export interface Sidewalk {
+  /** The block's centre. */
+  x: number
+  z: number
+  yaw: number
+  /** Half the ring's outer side, from the block's centre to the kerb. */
+  half: number
+  /** How wide the ring is, kerb to inner edge. */
+  band: number
+}
+
 export interface Tree {
   kind: 'tree' | 'shrub'
   x: number
@@ -186,4 +201,5 @@ export interface TerrainMap {
   buildings: Building[]
   trees: Tree[]
   ramps: Ramp[]
+  sidewalks: Sidewalk[]
 }
