@@ -51,7 +51,7 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
       controls.update()
     },
     hud() {
-      return islandSummary(map)
+      return null
     },
     dispose() {
       controls.dispose()

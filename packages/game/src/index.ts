@@ -60,6 +60,7 @@ export {
   WHEEL_COUNT,
   wheelMountLocal,
   type WheelState,
+  worldGravity,
   writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
@@ -317,6 +318,19 @@ export function respawnNearby(arena: Arena, seat: Seat): void {
   const { position, forward } = seat.vehicle.frame
   const spot = nearestRoadSpotTo(arena.map, position.x, position.z)
   respawn(seat, spot === null ? seat.spawn : spawnFacing(spot, forward))
+}
+
+/**
+ * Put someone in a different vehicle where they are: on the road nearest to
+ * where the old one was, facing the way it was going. The map, and the rest
+ * of the arena, go on as they were.
+ */
+export function changeVehicle(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
+  const { position, forward } = seat.vehicle.frame
+  const spot = nearestRoadSpotTo(arena.map, position.x, position.z)
+  const spawn = spot === null ? seat.spawn : spawnFacing(spot, forward)
+  reshape(arena, seat, profile)
+  respawn(seat, spawn)
 }
 
 /** Put someone in a seat, in the vehicle they asked for, on the spawn. */

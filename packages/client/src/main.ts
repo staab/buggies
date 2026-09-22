@@ -9,6 +9,7 @@ import * as THREE from 'three'
 
 import { loadCarModels } from './car-model.ts'
 import { createDriveMode } from './drive-mode.ts'
+import { Hud } from './hud.ts'
 import { createIslandMode, islandSummary } from './island-mode.ts'
 import { Menu, type Choice, type Mode } from './menu.ts'
 import type { ModeView } from './mode.ts'
@@ -18,8 +19,7 @@ import { TerrainSource } from './terrain-source.ts'
 import { createTerrainView } from './terrain-view.ts'
 
 const container = document.getElementById('app')!
-const hudElement = document.getElementById('hud')!
-const footerElement = document.getElementById('footer')!
+const hud = new Hud(document.getElementById('hud')!)
 const menuElement = document.getElementById('menu')!
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -37,20 +37,27 @@ let map: TerrainMap | null = null
 let view: THREE.Group | null = null
 const terrain = new TerrainSource()
 
-/**
- * What is on show: a game being played, an island being looked over while
- * it is chosen, or a vehicle turning in the showroom while it is.
- */
-type OnShow =
-  | { kind: 'game'; mode: ModeView }
-  | { kind: 'island'; seed: number; mode: ModeView }
-  | { kind: 'showroom'; mode: ShowroomView }
+/** The game being played, and what it was set off with. */
+interface Game {
+  mode: ModeView
+  choice: Choice
+}
 
-let onShow: OnShow | null = null
+/** What the menu puts up over the game while something is chosen. */
+type Backdrop = { kind: 'island'; seed: number; mode: ModeView } | { kind: 'showroom'; mode: ShowroomView }
 
-function put(next: OnShow | null): void {
-  onShow?.mode.dispose()
-  onShow = next
+let game: Game | null = null
+let backdrop: Backdrop | null = null
+
+function setBackdrop(next: Backdrop | null): void {
+  backdrop?.mode.dispose()
+  backdrop = next
+  resize()
+}
+
+function setGame(next: Game | null): void {
+  game?.mode.dispose()
+  game = next
   resize()
 }
 
@@ -79,7 +86,7 @@ function disposeView(group: THREE.Group): void {
  */
 async function mapFor(seed: number): Promise<TerrainMap> {
   if (map !== null && map.seed === seed) return map
-  hudElement.textContent = `generating island ${seed}...`
+  hud.notice(`generating island ${seed}...`)
   const island = await terrain.generate(seed)
   if (view) disposeView(view)
   map = island
@@ -122,27 +129,24 @@ let choice = readChoice()
 /** Each thing asked for outranks the one before: a slow one that lands late is let go. */
 let generation = 0
 
-/** Reflect what is being played in the address bar and the footer. */
+/** Reflect what is being played in the address bar. */
 function settle(): void {
   const online = choice.mode === 'online'
   const url = online
     ? `?mode=online&server=${encodeURIComponent(choice.server)}&vehicle=${choice.vehicle}`
     : `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}`
   history.replaceState(null, '', url)
-  footerElement.textContent = online
-    ? 'Enter  back to the road      Esc  menu'
-    : 'R  a different map      Esc  menu'
 }
 
 /** Put the island with this seed on show, to be looked over, and say what it is like. */
 async function showIsland(seed: number): Promise<string> {
   const stamp = ++generation
   choice = { ...choice, seed }
-  if (onShow?.kind === 'island' && onShow.seed === seed && map !== null) return islandSummary(map)
+  if (backdrop?.kind === 'island' && backdrop.seed === seed && map !== null) return islandSummary(map)
   const island = await mapFor(seed)
   // Something else may have been asked for while the island was being made.
   if (stamp !== generation) return ''
-  put({ kind: 'island', seed, mode: createIslandMode(island, scene, renderer.domElement) })
+  setBackdrop({ kind: 'island', seed, mode: createIslandMode(island, scene, renderer.domElement) })
   return islandSummary(island)
 }
 
@@ -150,19 +154,63 @@ async function showIsland(seed: number): Promise<string> {
 function showVehicle(vehicle: VehicleProfileId): void {
   generation += 1
   choice = { ...choice, vehicle }
-  if (onShow?.kind !== 'showroom') put({ kind: 'showroom', mode: createShowroomMode() })
-  if (onShow?.kind === 'showroom') onShow.mode.show(vehicle)
+  if (backdrop?.kind !== 'showroom') setBackdrop({ kind: 'showroom', mode: createShowroomMode() })
+  if (backdrop?.kind === 'showroom') backdrop.mode.show(vehicle)
 }
 
-/** Put the player on the map they asked for, in the mode they asked for. */
+/**
+ * Whether a choice is the game already being played, give or take the
+ * vehicle: the same island, or the same server. Online, a different vehicle
+ * means joining again, since the server seats a player in one for good.
+ */
+function continues(running: Choice, next: Choice): boolean {
+  if (running.mode !== next.mode) return false
+  return next.mode === 'online'
+    ? running.server === next.server && running.vehicle === next.vehicle
+    : running.seed === next.seed
+}
+
+/**
+ * Go back to the game behind the menu, with the island it is played on
+ * back in view: choosing another one to look at will have taken it down.
+ */
+async function resume(): Promise<void> {
+  if (game === null) return
+  const stamp = ++generation
+  choice = game.choice
+  if (game.choice.mode === 'drive') {
+    await mapFor(game.choice.seed)
+    if (stamp !== generation) return
+  }
+  setBackdrop(null)
+  settle()
+}
+
+/**
+ * Put the player on the map they asked for, in the mode they asked for; or,
+ * if that is the game they are already playing, just in the vehicle.
+ */
 async function start(next: Choice): Promise<void> {
   const stamp = ++generation
   choice = next
-  put(null)
+
+  if (game !== null && continues(game.choice, next)) {
+    if (next.mode === 'drive') {
+      await mapFor(next.seed)
+      if (stamp !== generation) return
+    }
+    if (game.choice.vehicle !== next.vehicle) game.mode.setVehicle?.(next.vehicle)
+    game.choice = next
+    setBackdrop(null)
+    settle()
+    return
+  }
+
+  setBackdrop(null)
+  setGame(null)
 
   if (next.mode === 'online') {
-    hudElement.textContent = `connecting to ${next.server}...`
-    footerElement.textContent = 'Esc  menu'
+    hud.notice(`connecting to ${next.server}...`)
     createOnlineMode(scene, next.server, next.vehicle, (seed) => {
       choice = { ...choice, seed }
       return mapFor(seed)
@@ -172,7 +220,7 @@ async function start(next: Choice): Promise<void> {
           online.dispose()
           return
         }
-        put({ kind: 'game', mode: online })
+        setGame({ mode: online, choice: { ...next, seed: choice.seed } })
         settle()
       },
       (error: unknown) => {
@@ -188,7 +236,7 @@ async function start(next: Choice): Promise<void> {
   const island = await mapFor(next.seed)
   // A newer choice may have landed while the island was being made.
   if (stamp !== generation) return
-  put({ kind: 'game', mode: createDriveMode(island, scene, next.vehicle) })
+  setGame({ mode: createDriveMode(island, scene, next.vehicle), choice: next })
   settle()
 }
 
@@ -199,7 +247,7 @@ const menu = new Menu(menuElement, choice, { showIsland, showVehicle, start })
 // up front beats a loading state in the middle of a session. The vehicles'
 // models come in alongside it: every one of them, since online anyone may
 // turn up in any of them.
-hudElement.textContent = 'loading...'
+hud.notice('loading...')
 await Promise.all([initPhysics(), loadCarModels()])
 menu.show(choice)
 // Something to look at behind the first page: the island that would be driven.
@@ -209,25 +257,25 @@ void showIsland(choice.seed).then((about) => {
 })
 
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    // A game paused behind the menu can be gone back to; an island or a
-    // showroom is only there for the menu, so the menu stays up with it.
-    if (menu.open) {
-      if (onShow?.kind === 'game') menu.hide()
-    } else {
-      menu.show(choice)
+  if (event.key !== 'Escape') return
+  // From a game, the menu opens on the vehicle page, to swap and carry on;
+  // closed again, the game goes on. With no game behind it, it stays up.
+  if (menu.open) {
+    if (game !== null) {
+      menu.hide()
+      void resume()
     }
-    return
+  } else {
+    menu.show(game?.choice ?? choice, game === null ? 'mode' : 'car')
   }
-  // Online, the server decides the map.
-  if (menu.open || onShow?.kind !== 'game' || choice.mode === 'online') return
-  if (event.key.toLowerCase() === 'r') void start({ ...choice, seed: randomSeed() })
 })
 
 function resize(): void {
   const { clientWidth, clientHeight } = container
   renderer.setSize(clientWidth, clientHeight, false)
-  onShow?.mode.resize(clientWidth / Math.max(clientHeight, 1))
+  const aspect = clientWidth / Math.max(clientHeight, 1)
+  game?.mode.resize(aspect)
+  backdrop?.mode.resize(aspect)
 }
 window.addEventListener('resize', resize)
 resize()
@@ -237,14 +285,16 @@ let last = performance.now()
 function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.1)
   last = now
-  if (onShow) {
-    const { mode } = onShow
-    mode.update(dt, !menu.open)
-    renderer.render(mode.scene ?? scene, mode.camera)
-    hudElement.textContent = mode.hud()
-  }
+  // The game keeps its clock behind the menu, driven or not: online, the
+  // server does not wait. What is drawn is whatever the menu has put up
+  // over it, if anything.
+  game?.mode.update(dt, !menu.open)
+  if (menu.open) backdrop?.mode.update(dt, false)
+  const shown = menu.open && backdrop !== null ? backdrop.mode : game?.mode ?? null
+  if (shown !== null) renderer.render(shown.scene ?? scene, shown.camera)
   // The menu says what it is showing itself.
-  hudElement.hidden = menu.open
+  if (menu.open) hud.render(null)
+  else if (game !== null) hud.render(game.mode.hud())
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

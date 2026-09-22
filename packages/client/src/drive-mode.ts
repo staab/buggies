@@ -2,6 +2,7 @@ import {
   FIXED_TIMESTEP,
   VEHICLE_PROFILE_LABELS,
   advance,
+  changeVehicle,
   createArena,
   respawnLost,
   respawnNearby,
@@ -14,7 +15,7 @@ import * as THREE from 'three'
 import { BodyView } from './body-view.ts'
 import { CarView, profileColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { cameraBounds, driverLine, tunnelTest } from './driver-hud.ts'
+import { cameraBounds, driverState, tunnelTest } from './driver-hud.ts'
 import { smokeAmount } from './damage.ts'
 import { Explosions } from './explosion.ts'
 import { Keyboard } from './input.ts'
@@ -31,13 +32,14 @@ const MAX_CATCH_UP = 0.25
 export function createDriveMode(
   map: TerrainMap,
   scene: THREE.Scene,
-  profile: VehicleProfileId,
+  firstProfile: VehicleProfileId,
 ): ModeView {
   const arena = createArena(map, 1)
-  const seat = takeSeat(arena, 0, profile)
+  const seat = takeSeat(arena, 0, firstProfile)
   const { vehicle } = seat
   const keyboard = new Keyboard()
-  const car = new CarView(profile, profileColor(profile))
+  let profile = firstProfile
+  let car = new CarView(profile, profileColor(profile))
   car.syncDimensions(seat.tuning)
   scene.add(car.object)
   const explosions = new Explosions()
@@ -46,7 +48,7 @@ export function createDriveMode(
   scene.add(smoke.object)
   let wasWrecked = false
 
-  const body = new BodyView(vehicle.body, car.object)
+  let body = new BodyView(vehicle.body, car.object)
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
   const chase = new ChaseCamera(cameraTuning)
@@ -112,11 +114,27 @@ export function createDriveMode(
       aimCamera()
       chase.update(dt, target)
     },
+    setVehicle(next) {
+      if (next === profile) return
+      changeVehicle(arena, seat, next)
+      profile = next
+      car.dispose()
+      car = new CarView(next, profileColor(next))
+      car.syncDimensions(seat.tuning)
+      scene.add(car.object)
+      body = new BodyView(vehicle.body, car.object)
+      wasWrecked = false
+      keyboard.release()
+      snap()
+    },
     hud() {
-      return (
-        `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed}\n` +
-        driverLine(vehicle, seat.submersion, inTunnel(vehicle.frame.position))
-      )
+      return {
+        title: `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed}`,
+        state: driverState(vehicle, seat.submersion, inTunnel(vehicle.frame.position)),
+        speed: vehicle.speed,
+        maxSpeed: seat.tuning.maxSpeed,
+        damage: vehicle.wrecked ? 1 : vehicle.damage,
+      }
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
