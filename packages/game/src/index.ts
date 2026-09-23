@@ -92,7 +92,6 @@ export {
   SPILLED_KINDS,
   BOMB_REACH,
   LOOSE_MOST,
-  NO_OWNER,
   pickupOut,
   pickupSeed,
   pickupSpot,
@@ -617,9 +616,9 @@ function collectPickups(arena: Arena): void {
     }
   }
   // Spilled bananas go the same way, or fade if nobody comes for them; a
-  // bomb goes off on the first car to reach it that is not the one that
-  // dropped it. Walked from the end, so taking one out moves nothing still
-  // to come, and i stays within the list.
+  // bomb goes off on the first car to reach it once it has landed. Walked
+  // from the end, so taking one out moves nothing still to come, and i
+  // stays within the list.
   for (let i = arena.spilled.length - 1; i >= 0; i--) {
     const spilled = arena.spilled[i]!
     if (spilledGone(spilled, arena.tick)) {
@@ -629,12 +628,8 @@ function collectPickups(arena: Arena): void {
     if (!spilledOut(spilled, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesSpilled(spilled, seat.vehicle.frame.position)) continue
-      if (spilled.kind === 'bomb') {
-        if (seat.id === spilled.owner) continue
-        wreckVehicle(seat.vehicle, seat.tuning)
-      } else {
-        score(arena, seat)
-      }
+      if (spilled.kind === 'bomb') wreckVehicle(seat.vehicle, seat.tuning)
+      else score(arena, seat)
       arena.spilled.splice(i, 1)
       break
     }

@@ -2,7 +2,6 @@ import {
   MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
-  NO_OWNER,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
   arm,
@@ -511,7 +510,6 @@ describe('a session', () => {
     arena.spilled.push({
       id: 7,
       kind: 'banana',
-      owner: NO_OWNER,
       from: { x: 1, y: 2, z: 3 },
       position: { x: 4, y: 5, z: 6 },
       bornTick: arena.tick,

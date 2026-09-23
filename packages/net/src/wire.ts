@@ -1,5 +1,4 @@
 import {
-  NO_OWNER,
   NO_TARGET,
   SPILLED_KINDS,
   VEHICLE_PROFILE_IDS,
@@ -44,14 +43,14 @@ export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 17
 export const SNAPSHOT_VEHICLE_BYTES = 75
 export const SNAPSHOT_PICKUP_BYTES = 5
-export const SNAPSHOT_SPILLED_BYTES = 30
+export const SNAPSHOT_SPILLED_BYTES = 29
 export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 30
 
 /** What a vehicle can carry, by the byte that says so: nothing first. */
 const WEAPON_CODES: readonly Weapon[] = ['none', ...WEAPONS]
 
-/** A rocket or shot with no target, or a loose thing with no owner, on the wire. */
+/** A rocket or shot with no target, on the wire. */
 const NOBODY_BYTE = 0xff
 
 export interface HelloMessage {
@@ -159,8 +158,6 @@ export interface SnapshotMessage {
 export interface SpilledSnapshot {
   id: number
   kind: SpilledKind
-  /** Whose car dropped it, or NO_OWNER. */
-  owner: number
   from: Vec3
   position: Vec3
   /** How many ticks before the snapshot's it was spilled. */
@@ -443,7 +440,6 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   for (const spilled of message.spilled) {
     writer.u16(spilled.id)
     writer.u8(Math.max(SPILLED_KINDS.indexOf(spilled.kind), 0))
-    writer.u8(spilled.owner === NO_OWNER ? NOBODY_BYTE : spilled.owner)
     writer.vec3(spilled.from)
     writer.vec3(spilled.position)
     writer.u16(Math.min(Math.max(spilled.age, 0), 0xffff))
@@ -534,11 +530,9 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const id = reader.u16()
     const kind = SPILLED_KINDS[reader.u8()]
     if (kind === undefined) return null
-    const owner = reader.u8()
     spilled.push({
       id,
       kind,
-      owner: owner === NOBODY_BYTE ? NO_OWNER : owner,
       from: reader.vec3(),
       position: reader.vec3(),
       age: reader.u16(),

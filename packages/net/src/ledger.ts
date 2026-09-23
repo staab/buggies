@@ -40,7 +40,6 @@ export class BananaLedger {
       this.spilledById.set(spilled.id, {
         id: spilled.id,
         kind: spilled.kind,
-        owner: spilled.owner,
         from: { ...spilled.from },
         position: { ...spilled.position },
         bornTick: snapshot.tick - spilled.age,

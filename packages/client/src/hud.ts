@@ -147,21 +147,44 @@ function turnDial(dial: Dial, fraction: number, reading: string, colour?: string
   }
 }
 
+/** A double caret, pointing down: pull the drawer open. Turned over, it shuts it. */
+function caret(): SVGSVGElement {
+  const icon = svg('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' })
+  for (const top of [5, 12]) {
+    icon.append(
+      svg('path', {
+        d: `M6 ${top} l6 6 6 -6`,
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': 2,
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+      }),
+    )
+  }
+  return icon
+}
+
 /**
- * The corner of the screen that says how it is going: a speedometer, a
- * damage dial beside it that fills and reddens as the car is knocked about,
- * a word on the moment, and the keys.
+ * The corner of the screen that says how it is going: the bananas taken
+ * beside what the car is carrying, a speedometer, a damage dial beside it
+ * that fills and reddens as the car is knocked about, a word on the moment,
+ * and the keys in a drawer under it all that a caret pulls open and shut.
  */
 export class Hud {
   private readonly root: HTMLElement
   private readonly title = div('title')
+  private readonly row = div('row')
   private readonly score = div('score')
   private readonly weapon = div('weapon')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
   private readonly damage = buildDial('damage')
   private readonly state = div('state')
+  private readonly drawer = div('drawer')
   private readonly controls = div('controls')
+  private readonly toggle = document.createElement('button')
+  private expanded = false
   private shownTitle = ''
   private shownState = ''
   private shownControls = ''
@@ -194,8 +217,23 @@ export class Hud {
     banana.append(tilted)
     this.score.append(banana, this.scoreCount)
     this.weapon.append(this.weaponName)
-    root.append(this.title, this.score, this.weapon, this.gauges, this.state, this.controls)
+    this.row.append(this.score, this.weapon)
+    this.drawer.append(this.controls)
+    this.toggle.type = 'button'
+    this.toggle.className = 'toggle'
+    this.toggle.append(caret())
+    this.toggle.addEventListener('click', () => this.expand(!this.expanded))
+    this.expand(false)
+    root.append(this.title, this.row, this.gauges, this.state, this.drawer, this.toggle)
     this.render(null)
+  }
+
+  /** Pull the drawer of keys open, or shut it. */
+  expand(open: boolean): void {
+    this.expanded = open
+    this.root.classList.toggle('expanded', open)
+    this.toggle.setAttribute('aria-expanded', String(open))
+    this.toggle.setAttribute('aria-label', open ? 'hide the controls' : 'show the controls')
   }
 
   /** Show this, or nothing. */
@@ -230,9 +268,12 @@ export class Hud {
       this.weaponName.textContent = weapon
     }
     this.weapon.classList.toggle('rolling', state.rolling === true)
+    this.row.hidden = !driving && score === ''
     this.weapon.hidden = !driving
     this.gauges.hidden = !driving
-    this.controls.hidden = !driving || state.controls === undefined
+    const keyed = driving && state.controls !== undefined
+    this.drawer.hidden = !keyed
+    this.toggle.hidden = !keyed
     if (!driving) return
     if (state.controls !== undefined) this.showControls(state.controls)
 
