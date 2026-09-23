@@ -3,6 +3,8 @@ import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 const SHELL = new THREE.Color('#ece7dd')
+const WING = new THREE.Color('#dfe6ec')
+const FLAME = new THREE.Color('#ffa63a')
 const NOSE = new THREE.Color('#d8402c')
 const STEEL = new THREE.Color('#2c3038')
 const BARREL = new THREE.Color('#4b525c')
@@ -18,6 +20,48 @@ const AIM_RATE = 10
 
 function metal(color: THREE.Color, roughness = 0.5): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.2 })
+}
+
+/** A rocket engine: a stubby dark booster with a nozzle at the back, and a flame behind it when it burns. */
+export function buildEngine(): { model: THREE.Group; flame: THREE.Mesh } {
+  const model = new THREE.Group()
+  const booster = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 1.0, 12), metal(STEEL))
+  booster.rotation.x = Math.PI / 2
+  model.add(booster)
+  const nozzle = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.35, 12, 1, true), metal(BARREL, 0.35))
+  nozzle.rotation.x = Math.PI / 2
+  nozzle.position.z = 0.6
+  model.add(nozzle)
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.04, 6, 16), metal(NOSE, 0.5))
+  band.position.z = -0.3
+  model.add(band)
+  const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.2, 0.9, 10),
+    new THREE.MeshBasicMaterial({ color: FLAME, transparent: true, opacity: 0.85 }),
+  )
+  flame.rotation.x = Math.PI / 2
+  flame.position.z = 1.2
+  flame.visible = false
+  model.add(flame)
+  model.traverse((node) => {
+    if (node instanceof THREE.Mesh && node !== flame) node.castShadow = true
+  })
+  return { model, flame }
+}
+
+/** Wings: a pair of pale, swept, slightly raised wings, either side of the roof. */
+export function buildWings(): THREE.Group {
+  const group = new THREE.Group()
+  for (const side of [-1, 1]) {
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.5), metal(WING, 0.6))
+    wing.position.set(side * 1.0, 0.1, 0.1)
+    wing.rotation.set(0, -side * 0.35, side * 0.12)
+    wing.castShadow = true
+    group.add(wing)
+  }
+  const spar = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.3), metal(STEEL))
+  group.add(spar)
+  return group
 }
 
 /** A rocket: a pale tube with a red nose and three fins, pointing the way the car does. */
@@ -115,6 +159,8 @@ export class WeaponMount {
   private readonly rocket = buildRocket()
   private readonly gun = buildGun()
   private readonly bomb = buildBomb()
+  private readonly engine = buildEngine()
+  private readonly wings = buildWings()
   private readonly height: number
   private readonly desired = AHEAD.clone()
   private shownWeapon: Weapon = 'none'
@@ -126,8 +172,10 @@ export class WeaponMount {
     this.rocket.visible = false
     this.gun.visible = false
     this.bomb.visible = false
+    this.engine.model.visible = false
+    this.wings.visible = false
     this.gun.quaternion.copy(AHEAD)
-    this.object.add(this.rocket, this.gun, this.bomb)
+    this.object.add(this.rocket, this.gun, this.bomb, this.engine.model, this.wings)
   }
 
   /** Where the gun points: at this, or dead ahead for nothing. */
@@ -162,6 +210,8 @@ export class WeaponMount {
     this.rocket.visible = weapon === 'rocket'
     this.gun.visible = weapon === 'machineGun'
     this.bomb.visible = weapon === 'bomb'
+    this.engine.model.visible = weapon === 'engine'
+    this.wings.visible = weapon === 'wings'
   }
 
   update(dt: number): void {
@@ -170,11 +220,22 @@ export class WeaponMount {
     this.object.rotation.y = Math.sin(this.time * SWAY_RATE) * SWAY
   }
 
+  /** Whether the engine's flame is out behind it, flickering. */
+  burn(on: boolean): void {
+    const { flame } = this.engine
+    flame.visible = on && this.shownWeapon === 'engine'
+    if (!flame.visible) return
+    const flicker = 0.75 + 0.25 * Math.sin(this.time * 47) * Math.sin(this.time * 31)
+    flame.scale.set(flicker, flicker, 0.8 + 0.5 * flicker)
+  }
+
   dispose(): void {
     this.object.removeFromParent()
     disposeModel(this.rocket)
     disposeModel(this.gun)
     disposeModel(this.bomb)
+    disposeModel(this.engine.model)
+    disposeModel(this.wings)
     this.object.clear()
   }
 }

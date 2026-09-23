@@ -82,6 +82,10 @@ export interface Vehicle {
   damage: number
   /** Blown up: past driving, and waiting to be put back on its spawn. */
   wrecked: boolean
+  /** Pushed along this step by something other than its own engine, so the tyres do not take hold against it. */
+  boosted: boolean
+  /** Held up this step by something other than the ground, so the wheels let go of the road rather than sticking to it. */
+  lifted: boolean
   invertedRestTime: number
   selfRighting: boolean
   selfRightElapsed: number
@@ -170,6 +174,8 @@ const NEUTRAL_VEHICLE_MOTION: Readonly<VehicleMotion> = Object.freeze({
   impactTime: Number.POSITIVE_INFINITY,
   damage: 0,
   wrecked: false,
+  boosted: false,
+  lifted: false,
   invertedRestTime: 0,
   selfRighting: false,
   selfRightElapsed: 0,

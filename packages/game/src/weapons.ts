@@ -1,20 +1,34 @@
-import { FIXED_TIMESTEP, v3, vaddScaled, vcopy, vdot, vlength, vnormalize, vscale, vsub, type Vec3 } from '@buggies/physics'
+import {
+  FIXED_TIMESTEP,
+  clamp,
+  v3,
+  vaddScaled,
+  vcopy,
+  vdot,
+  vlength,
+  vnormalize,
+  vscale,
+  vsub,
+  type Vec3,
+} from '@buggies/physics'
 import { sampleHeight, type TerrainMap } from '@buggies/terrain'
-import { hurtVehicle, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
+import { WORLD_UP, addForceAlong, addTorqueAbout, hurtVehicle, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
 import { PICKUP_HEIGHT, SPILLED_IDS, pickupSeed, type Spilled } from './pickups.ts'
 
 /** What a car can be carrying over its roof: nothing, or something won with bananas. */
-export type Weapon = 'none' | 'rocket' | 'machineGun' | 'bomb'
+export type Weapon = 'none' | 'rocket' | 'machineGun' | 'bomb' | 'engine' | 'wings'
 
 /** What can be won, in the order the HUD rolls through them. */
-export const WEAPONS: readonly Weapon[] = ['rocket', 'machineGun', 'bomb']
+export const WEAPONS: readonly Weapon[] = ['rocket', 'machineGun', 'bomb', 'engine', 'wings']
 
 export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   none: '',
   rocket: 'Rocket',
   machineGun: 'Machine gun',
   bomb: 'Bomb',
+  engine: 'Rocket engine',
+  wings: 'Wings',
 }
 
 /** How far behind the middle of the car a bomb is dropped. */
@@ -26,9 +40,28 @@ export const BANANAS_PER_WEAPON = 1
 /** How far over the roof a weapon rides, and rockets and bullets leave from. */
 export const MOUNT_HEIGHT = 1.1
 
-/** How long the machine gun fires for, held down, in ticks; a shot every so many of them. */
+/**
+ * How long, held down, the machine gun fires for, the rocket engine burns
+ * and the wings hold the car up, in ticks; the gun fires a shot every so
+ * many of them.
+ */
 export const MACHINE_GUN_AMMO_TICKS = 60 * 10
+export const ENGINE_BURN_TICKS = 60 * 10
+export const WINGS_FLIGHT_TICKS = 60 * 10
 export const MACHINE_GUN_SHOT_TICKS = 6
+
+/** How hard the rocket engine pushes, in metres a second a second, fading out toward this many times the car's own top speed. */
+export const ENGINE_PUSH = 12
+export const ENGINE_TOP_SPEED = 1.8
+
+/**
+ * How fast the wings climb, in metres a second, and how hard they push up
+ * toward that; and how hard they turn the car in the air, as a share of
+ * what the pedals pitch it by.
+ */
+export const WINGS_CLIMB_SPEED = 8
+export const WINGS_CLIMB_PUSH = 6
+export const WINGS_TURN = 0.8
 /**
  * How far a shot carries, and how far off dead ahead the gun swings to
  * pick out a car: it trains itself on the nearest one in that sweep, and
@@ -118,10 +151,54 @@ export function weaponWon(mapSeed: number, seat: number, tick: number, score: nu
   return WEAPONS[hash % WEAPONS.length] ?? 'none'
 }
 
-/** Give a seat what it has won. The machine gun comes with its ammunition. */
+/** How long a weapon lasts, held down: none at all for one that goes all at once. */
+export function ammoFor(weapon: Weapon): number {
+  switch (weapon) {
+    case 'machineGun':
+      return MACHINE_GUN_AMMO_TICKS
+    case 'engine':
+      return ENGINE_BURN_TICKS
+    case 'wings':
+      return WINGS_FLIGHT_TICKS
+    default:
+      return 0
+  }
+}
+
+/** Give a seat what it has won, with however long it lasts. */
 export function arm(seat: Gunner, weapon: Weapon): void {
   seat.weapon = weapon
-  seat.ammoTicks = weapon === 'machineGun' ? MACHINE_GUN_AMMO_TICKS : 0
+  seat.ammoTicks = ammoFor(weapon)
+}
+
+/**
+ * Whether the car is being driven along by what it carries: the rocket
+ * engine burning or the wings holding it up, the button down and something
+ * left of them. A wreck burns nothing.
+ */
+export function burning(seat: Gunner, fire = seat.vehicle.command.fire): boolean {
+  if (seat.weapon !== 'engine' && seat.weapon !== 'wings') return false
+  return fire && seat.ammoTicks > 0 && !seat.vehicle.wrecked
+}
+
+/**
+ * The push of the rocket engine and the lift of the wings, for the step:
+ * the engine shoves the car the way its nose points, less and less as it
+ * gets far past what its own engine could do; the wings push it up toward
+ * a steady climb, arrest a fall, and turn it as it is steered.
+ */
+export function pushWithWeapons(seat: Gunner, gravity: number): void {
+  if (!burning(seat)) return
+  const { vehicle, tuning } = seat
+  const { body, frame, command } = vehicle
+  if (seat.weapon === 'engine') {
+    const headroom = clamp(1 - vehicle.speed / (tuning.maxSpeed * ENGINE_TOP_SPEED), 0, 1)
+    addForceAlong(body, frame.forward, tuning.mass * ENGINE_PUSH * headroom)
+    return
+  }
+  const climb = clamp(1 - frame.linearVelocity.y / WINGS_CLIMB_SPEED, 0, 1)
+  addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
+  addTorqueAbout(body, frame.up, -command.steer * tuning.airPitchTorque * WINGS_TURN)
 }
 
 export function disarm(seat: Gunner): void {
@@ -269,7 +346,9 @@ export function fireWeapons(arena: Battlefield): void {
       drop(arena, seat)
       continue
     }
-    if (seat.ammoTicks % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat)
+    // The rest last as long as the button is held: the gun firing, the
+    // engine burning, the wings holding the car up, until they run out.
+    if (seat.weapon === 'machineGun' && seat.ammoTicks % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat)
     seat.ammoTicks -= 1
     if (seat.ammoTicks <= 0) disarm(seat)
   }

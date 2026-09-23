@@ -238,6 +238,59 @@ export class SkidVoice {
   }
 }
 
+/**
+ * A rocket engine burning: a deep, roaring rush that swells up when it is
+ * lit and dies away when it is not.
+ */
+export class ThrustVoice {
+  private readonly rush: AudioBufferSourceNode
+  private readonly rumble: OscillatorNode
+  private readonly gain: GainNode
+  private stopped = false
+
+  constructor(
+    private readonly context: AudioContext,
+    noise: AudioBuffer,
+    output: AudioNode,
+  ) {
+    const now = context.currentTime
+    this.gain = context.createGain()
+    this.gain.gain.value = 0
+    this.gain.connect(output)
+    const low = context.createBiquadFilter()
+    low.type = 'lowpass'
+    low.frequency.value = 520
+    this.rush = context.createBufferSource()
+    this.rush.buffer = noise
+    this.rush.loop = true
+    this.rush.connect(low).connect(this.gain)
+    this.rush.start(now)
+    this.rumble = context.createOscillator()
+    this.rumble.type = 'sawtooth'
+    this.rumble.frequency.value = 48
+    const rumbleLevel = context.createGain()
+    rumbleLevel.gain.value = 0.25
+    this.rumble.connect(rumbleLevel).connect(this.gain)
+    this.rumble.start(now)
+  }
+
+  /** How hard it is burning, 0 to 1, and how far off. */
+  set(burn: number, distance = 0): void {
+    if (this.stopped) return
+    this.gain.gain.setTargetAtTime(0.5 * burn * earshot(distance), this.context.currentTime, 0.08)
+  }
+
+  stop(): void {
+    if (this.stopped) return
+    this.stopped = true
+    const now = this.context.currentTime
+    this.gain.gain.setTargetAtTime(0, now, 0.05)
+    this.rush.stop(now + 0.3)
+    this.rumble.stop(now + 0.3)
+    setTimeout(() => this.gain.disconnect(), 400)
+  }
+}
+
 /** A second of white noise, for bangs and thuds. */
 function noiseBuffer(context: AudioContext): AudioBuffer {
   const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate)
@@ -289,6 +342,11 @@ export class Sound {
   /** A set of tyres, silent until they slide. */
   skid(): SkidVoice {
     return new SkidVoice(this.context, this.noise, this.master)
+  }
+
+  /** A rocket engine, silent until lit. */
+  thrust(): ThrustVoice {
+    return new ThrustVoice(this.context, this.noise, this.master)
   }
 
   /** Something blowing up, this far off: a bang, a rumble, and a thump underneath. */

@@ -109,6 +109,9 @@ export {
 export {
   BANANAS_PER_WEAPON,
   BOMB_DROP_BACK,
+  ENGINE_BURN_TICKS,
+  ENGINE_PUSH,
+  ENGINE_TOP_SPEED,
   MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
   MACHINE_GUN_RANGE,
@@ -123,11 +126,18 @@ export {
   ROCKET_SPEED,
   WEAPON_LABELS,
   WEAPONS,
+  WINGS_CLIMB_PUSH,
+  WINGS_CLIMB_SPEED,
+  WINGS_FLIGHT_TICKS,
+  WINGS_TURN,
+  ammoFor,
   arm,
+  burning,
   disarm,
   fireWeapons,
   flyRockets,
   mountPoint,
+  pushWithWeapons,
   rocketId,
   weaponWon,
   type Battlefield,
@@ -141,9 +151,11 @@ import {
   BANANAS_PER_WEAPON,
   NO_TARGET,
   arm,
+  burning,
   disarm,
   fireWeapons,
   flyRockets,
+  pushWithWeapons,
   weaponWon,
   type Rocket,
   type Shot,
@@ -525,9 +537,17 @@ export function advance(
   dt = FIXED_TIMESTEP,
 ): void {
   applyWorldTuning(arena.world, arena.worldTuning)
+  const gravity = worldGravity(arena.world)
   for (const seat of arena.seats) {
     if (!seat.occupied) continue
-    stepVehicle(arena.world, seat.vehicle, seat.tuning, inputFor(seat), dt)
+    const input = inputFor(seat)
+    // A car its engine or wings are driving along is not one the tyres hold
+    // still, and one its wings are lifting is not one the road holds down.
+    const lit = burning(seat, input.fire)
+    seat.vehicle.boosted = lit
+    seat.vehicle.lifted = lit && seat.weapon === 'wings'
+    stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
+    pushWithWeapons(seat, gravity)
     const level = waterUnder(arena, seat)
     seat.submersion =
       level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level)

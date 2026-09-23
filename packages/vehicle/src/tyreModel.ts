@@ -36,6 +36,8 @@ export interface TyreDriveContext {
   brakePedalDrivesReverse: boolean
   remainingDriveFraction: number
   massPerWheel: number
+  /** Whether something other than the engine is driving the car along this step. */
+  boosted: boolean
 }
 
 export function createTyreDriveContext(): TyreDriveContext {
@@ -46,6 +48,7 @@ export function createTyreDriveContext(): TyreDriveContext {
     brakePedalDrivesReverse: false,
     remainingDriveFraction: 0,
     massPerWheel: 0,
+    boosted: false,
   }
 }
 
@@ -108,7 +111,7 @@ function retardingForce(wheel: WheelState, drive: TyreDriveContext, tuning: Vehi
  * The handbrake or the brake at speed ask nothing: they are stopping it.
  */
 function takeHold(wheel: WheelState, drive: TyreDriveContext): void {
-  const asked = drive.throttle > 0 || (drive.brake > 0 && drive.brakePedalDrivesReverse)
+  const asked = drive.throttle > 0 || (drive.brake > 0 && drive.brakePedalDrivesReverse) || drive.boosted
   const still =
     Math.abs(wheel.slipSpeedLongitudinal) < HOLD_SLIP_SPEED && Math.abs(wheel.slipSpeedLateral) < HOLD_SLIP_SPEED
   if (asked || !still) {
