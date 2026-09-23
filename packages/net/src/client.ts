@@ -111,7 +111,8 @@ export class NetClient {
     return this.newestSnapshot?.vehicles.length ?? 0
   }
 
-  async connect(profile: VehicleProfileId): Promise<WelcomeMessage> {
+  /** Join the room for a seed, in a vehicle. */
+  async connect(profile: VehicleProfileId, seed: number): Promise<WelcomeMessage> {
     try {
       await this.transport.connect({
         onMessage: (payload) => this.receive(payload),
@@ -120,7 +121,7 @@ export class NetClient {
       const welcome = new Promise<WelcomeMessage>((resolve, reject) => {
         this.settleWelcome = { resolve, reject }
       })
-      this.transport.send(encodeHello(profile))
+      this.transport.send(encodeHello(profile, seed))
       return await welcome
     } catch (error) {
       throw new ConnectionFailure(error instanceof Error ? error.message : String(error))

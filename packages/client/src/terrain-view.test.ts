@@ -2,7 +2,7 @@ import { WORLD_SCALE, generateTerrain } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
-import { createTerrainView } from './terrain-view.ts'
+import { createScaleCar, createTerrainView } from './terrain-view.ts'
 
 function positionValues(group: THREE.Group): number[] {
   group.updateMatrixWorld(true)
@@ -122,4 +122,19 @@ describe('createTerrainView', () => {
     expect(paved).toBe(ramps.length)
   })
 
+
+  it('places the scale car on the highway', () => {
+    const map = generateTerrain(5, { size: 257 })
+    const road = map.roads[0]
+    expect(road).toBeDefined()
+
+    const car = createScaleCar(map)
+    const index = Math.floor(road!.points.length * 0.25)
+    const point = road!.points[index]!
+
+    expect(car.position.x).toBeCloseTo(point.x, 5)
+    expect(car.position.y).toBeCloseTo(point.y + 0.2, 5)
+    expect(car.position.z).toBeCloseTo(point.z, 5)
+    expect(Number.isFinite(car.rotation.y)).toBe(true)
+  })
 })

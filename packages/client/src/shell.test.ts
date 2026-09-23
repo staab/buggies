@@ -68,13 +68,20 @@ class StubMenu implements ShellMenu {
   }
 }
 
-const CHOICE: Choice = { mode: 'solo', vehicle: 'sportsCar', vehicle2: 'raceCar' }
+const CHOICE: Choice = { mode: 'solo', seed: 5, vehicle: 'sportsCar', vehicle2: 'raceCar' }
 const SERVER = 'ws://island:8787'
 
+/** An island being looked over, that only remembers what was done to it. */
+interface StubIsland extends ModeView {
+  seed: number
+  disposed: boolean
+}
+
 /** A shell with nothing real behind it, and a record of everything it made. */
-function build(seed = 5, refuse: string | null = null) {
+function build(refuse: string | null = null) {
   const games: StubGame[] = []
   const showrooms: StubShowroom[] = []
+  const islands: StubIsland[] = []
   const generated: number[] = []
   const settled: Choice[] = []
   const joined: string[] = []
@@ -90,13 +97,31 @@ function build(seed = 5, refuse: string | null = null) {
   } as unknown as THREE.WebGLRenderer
   const modes: ShellModes = {
     terrainView: () => new THREE.Group(),
+    island: (map) => {
+      const island: StubIsland = {
+        seed: map.seed,
+        disposed: false,
+        camera: new THREE.PerspectiveCamera(),
+        resize() {},
+        update() {},
+        hud() {
+          return []
+        },
+        dispose() {
+          island.disposed = true
+        },
+      }
+      island.camera.name = `island ${map.seed}`
+      islands.push(island)
+      return island
+    },
     showroom: () => {
       const showroom = stubShowroom()
       showrooms.push(showroom)
       return showroom
     },
-    play: async (_scene, url, players, mapFor) => {
-      joined.push(url)
+    play: async (_scene, url, seed, players, mapFor) => {
+      joined.push(`${url}#${seed}`)
       if (refuse !== null) throw new Error(refuse)
       // Two players joining at once both ask for the island.
       await Promise.all(players.map(() => mapFor(seed)))
@@ -150,32 +175,55 @@ function build(seed = 5, refuse: string | null = null) {
     },
     CHOICE,
   )
-  return { shell, menu, games, showrooms, generated, settled, joined, hudStates, rendered }
+  return { shell, menu, games, showrooms, islands, generated, settled, joined, hudStates, rendered }
+}
+
+/** Let every promise the shell is waiting on settle. */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 6; i++) await Promise.resolve()
 }
 
 describe('the shell', () => {
-  it('opens the menu with the vehicle turning behind it', () => {
-    const { shell, menu, showrooms } = build()
+  it('opens the menu with the island coming up behind it, made once', async () => {
+    const { shell, menu, islands, generated } = build()
     shell.welcome()
+    await settle()
     expect(menu.open).toBe(true)
-    expect(showrooms).toHaveLength(1)
-    expect(showrooms[0]!.vehicle).toBe('sportsCar')
-    expect(shell.onShow).toBe('showroom')
-    // Another vehicle turns on the same turntable.
-    shell.showVehicle('tank')
-    expect(showrooms).toHaveLength(1)
-    expect(showrooms[0]!.vehicle).toBe('tank')
+    expect(generated).toEqual([5])
+    expect(islands).toHaveLength(1)
+    expect(shell.onShow).toBe('island')
+    // Looking at the same island again makes nothing new; another seed does.
+    expect(await shell.showIsland(5)).toContain('seed 5')
+    expect(generated).toEqual([5])
+    await shell.showIsland(9)
+    expect(generated).toEqual([5, 9])
+    expect(islands[0]!.disposed).toBe(true)
+    expect(islands[1]!.seed).toBe(9)
   })
 
-  it('joins the server, makes the island once, and keeps the game behind the menu', async () => {
+  it('puts the vehicle turning in front, and lets go of an island something newer overtook', async () => {
+    const { shell, islands, showrooms } = build()
+    const looking = shell.showIsland(9)
+    shell.showVehicle('tank')
+    expect(await looking).toBe('')
+    expect(islands).toHaveLength(0)
+    expect(shell.onShow).toBe('showroom')
+    expect(showrooms[0]!.vehicle).toBe('tank')
+    // Another vehicle turns on the same turntable.
+    shell.showVehicle('semi')
+    expect(showrooms).toHaveLength(1)
+    expect(showrooms[0]!.vehicle).toBe('semi')
+  })
+
+  it('joins the room for the island, made once, and keeps the game behind the menu', async () => {
     const { shell, menu, games, showrooms, generated, settled, joined } = build()
     shell.welcome()
+    await settle()
     await shell.start(CHOICE)
-    expect(joined).toEqual([SERVER])
+    expect(joined).toEqual([`${SERVER}#5`])
     expect(games).toHaveLength(1)
     expect(games[0]!.kind).toBe('sportsCar on 5')
     expect(generated).toEqual([5])
-    expect(showrooms[0]!.disposed).toBe(true)
     expect(shell.playing).toBe(true)
     expect(settled).toEqual([CHOICE])
 
@@ -190,14 +238,15 @@ describe('the shell', () => {
 
     // Escape again: the showroom goes, the game goes on, in front.
     shell.toggleMenu()
+    await settle()
     expect(menu.open).toBe(false)
-    expect(showrooms[1]!.disposed).toBe(true)
+    expect(showrooms[0]!.disposed).toBe(true)
     expect(shell.onShow).toBe('game')
     shell.frame(0.016)
     expect(games[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: true })
   })
 
-  it('goes back to the same game, and rejoins for a different vehicle or a second player', async () => {
+  it('goes back to the same game, and rejoins for another island, vehicle or a second player', async () => {
     const { shell, games, joined, generated } = build()
     await shell.start(CHOICE)
     await shell.start(CHOICE)
@@ -208,17 +257,23 @@ describe('the shell', () => {
     expect(joined).toHaveLength(2)
     expect(games[0]!.disposed).toBe(true)
     expect(games[1]!.kind).toBe('tank on 5')
-    // The island is the server's, made once and kept.
+    // The island is kept: it is the same one.
     expect(generated).toEqual([5])
 
-    await shell.start({ mode: 'duo', vehicle: 'tank', vehicle2: 'goKart' })
+    await shell.start({ mode: 'duo', seed: 5, vehicle: 'tank', vehicle2: 'goKart' })
     expect(games[2]!.kind).toBe('tank+goKart on 5')
     expect(generated).toEqual([5])
+
+    // Another island is another room, made afresh.
+    await shell.start({ ...CHOICE, seed: 6 })
+    expect(joined.at(-1)).toBe(`${SERVER}#6`)
+    expect(games[3]!.kind).toBe('sportsCar on 6')
+    expect(generated).toEqual([5, 6])
   })
 
   it('draws what is in front and fills a HUD a player from the game', async () => {
     const { shell, hudStates, rendered } = build()
-    await shell.start({ mode: 'duo', vehicle: 'sportsCar', vehicle2: 'semi' })
+    await shell.start({ mode: 'duo', seed: 5, vehicle: 'sportsCar', vehicle2: 'semi' })
     hudStates.forEach((states) => states.splice(0))
     shell.frame(0.01)
     expect(rendered.at(-1)).toBe('sportsCar+semi on 5')
@@ -244,7 +299,7 @@ describe('the shell', () => {
   })
 
   it('puts the menu back up with the reason when the server cannot be joined', async () => {
-    const { shell, menu } = build(5, 'refused')
+    const { shell, menu } = build('refused')
     await shell.start(CHOICE)
     expect(shell.playing).toBe(false)
     expect(menu.open).toBe(true)
@@ -253,6 +308,7 @@ describe('the shell', () => {
 
   it('knows when a choice is the game already on', () => {
     expect(continues(CHOICE, CHOICE)).toBe(true)
+    expect(continues(CHOICE, { ...CHOICE, seed: 6 })).toBe(false)
     expect(continues(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(false)
     expect(continues(CHOICE, { ...CHOICE, vehicle2: 'tank' })).toBe(true)
     const duo: Choice = { ...CHOICE, mode: 'duo' }

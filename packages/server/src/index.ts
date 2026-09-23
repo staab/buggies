@@ -6,7 +6,6 @@ import { WebSocketServerTransport } from './ws-transport.ts'
 
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 8787)
-const seed = Number(process.env.SEED ?? 1)
 
 /** How often the loop checks whether a step is due. Finer than a step. */
 const PUMP_INTERVAL_MS = 4
@@ -23,14 +22,22 @@ function log(message: string): void {
 
 await initPhysics()
 
-log(`generating seed ${seed}...`)
-const arena = createArena(generateTerrain(seed))
-const server = new GameServer(arena, {
-  onJoined: (seat, connection) => log(`joined seat=${seat.id} ${seat.profile} connection=${connection}`),
-  onLeft: (seat, connection) => log(`left seat=${seat.id} connection=${connection}`),
-  onRejected: (connection, reason) => log(`rejected connection=${connection}: ${reason}`),
-  onRespawned: (seat, why) => log(`respawned seat=${seat.id} (${why})`),
-})
+// An island is made the first time anyone asks for its seed, in a room of
+// its own. Generation takes a few seconds, during which every room waits.
+const server = new GameServer(
+  (seed) => {
+    log(`generating seed ${seed}...`)
+    return createArena(generateTerrain(seed))
+  },
+  {
+    onJoined: (seat, connection, seed) => log(`joined seed=${seed} seat=${seat.id} ${seat.profile} connection=${connection}`),
+    onLeft: (seat, connection, seed) => log(`left seed=${seed} seat=${seat.id} connection=${connection}`),
+    onRejected: (connection, reason) => log(`rejected connection=${connection}: ${reason}`),
+    onRespawned: (seat, why) => log(`respawned seat=${seat.id} (${why})`),
+    onRoomOpened: (seed) => log(`room opened seed=${seed}`),
+    onRoomClosed: (seed) => log(`room closed seed=${seed}`),
+  },
+)
 
 const transport = new WebSocketServerTransport({ host, port })
 const address = await transport.listen(server)
@@ -71,5 +78,5 @@ const shutdown = (): void => {
 process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
-log(`simulation ${TICKS_PER_SECOND}Hz, snapshots ${SNAPSHOTS_PER_SECOND}Hz, ${arena.seats.length} seats`)
+log(`simulation ${TICKS_PER_SECOND}Hz, snapshots ${SNAPSHOTS_PER_SECOND}Hz, a room per seed`)
 log(`listening on ws://${address.host}:${address.port}`)

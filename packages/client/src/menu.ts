@@ -6,11 +6,13 @@ import { modelCredits } from './car-model.ts'
 export type Mode = 'solo' | 'duo'
 
 /** The wizard's pages, in the order they come. */
-export type Step = 'mode' | 'car' | 'car2'
+export type Step = 'mode' | 'map' | 'car' | 'car2'
 
 /** What the player has chosen. Everything the app needs to join the server. */
 export interface Choice {
   mode: Mode
+  /** Which island: the server has a room for each. */
+  seed: number
   vehicle: VehicleProfileId
   /** The second driver's, on a split screen. */
   vehicle2: VehicleProfileId
@@ -18,6 +20,12 @@ export interface Choice {
 
 /** What the wizard asks of the app as the player goes through it. */
 export interface MenuHost {
+  /**
+   * Put the island with this seed behind the panel, to be looked over. It
+   * resolves to a line about the island once it is made; an empty one if
+   * something else was asked for in the meantime.
+   */
+  showIsland(seed: number): Promise<string>
   /** Put this vehicle behind the panel, turning on the spot. */
   showVehicle(vehicle: VehicleProfileId): void
   /** Set off. */
@@ -27,7 +35,7 @@ export interface MenuHost {
 const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
   solo: {
     name: '1 player',
-    note: 'The whole screen, and whoever else is on the server.',
+    note: 'The whole screen, and whoever else is on the island.',
   },
   duo: {
     name: '2 players',
@@ -37,6 +45,7 @@ const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
 
 const STEP_NAMES: Record<Step, string> = {
   mode: 'Players',
+  map: 'Island',
   car: 'Vehicle',
   car2: 'Vehicle 2',
 }
@@ -56,7 +65,7 @@ const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
 
 /** The pages a mode goes through: two players have two vehicles to pick. */
 export function stepsFor(mode: Mode): readonly Step[] {
-  return mode === 'duo' ? ['mode', 'car', 'car2'] : ['mode', 'car']
+  return mode === 'duo' ? ['mode', 'map', 'car', 'car2'] : ['mode', 'map', 'car']
 }
 
 /** Which of the choices a vehicle page is picking. */
@@ -83,17 +92,31 @@ function group(label: string): [HTMLFieldSetElement, HTMLDivElement] {
   return [fieldset, cards]
 }
 
+/** A text field that keeps its keystrokes to itself: the game is listening too. */
+function field(label: string): HTMLInputElement {
+  const input = document.createElement('input')
+  input.type = 'text'
+  input.setAttribute('aria-label', label)
+  input.addEventListener('keydown', (event) => event.stopPropagation())
+  return input
+}
+
 function line(className: string): HTMLParagraphElement {
   const paragraph = document.createElement('p')
   paragraph.className = className
   return paragraph
 }
 
+function randomSeed(): number {
+  return Math.floor(Math.random() * 100000)
+}
+
 /**
  * The one place a player picks anything, a page at a time: how many are
- * playing, then which vehicle each drives, turning on the spot beside the
- * panel. It is reachable from the game, so a vehicle can be changed without
- * going back to the start.
+ * playing, then which island (looked over from above while it is chosen),
+ * then which vehicle each drives, turning on the spot beside the panel. It
+ * is reachable from the game, so any of it can be changed without going
+ * back to the start.
  */
 export class Menu {
   private readonly root: HTMLElement
@@ -102,12 +125,17 @@ export class Menu {
   private readonly status = line('status')
   private readonly back = document.createElement('button')
   private readonly next = document.createElement('button')
+  private readonly seedField = field('Island seed')
   private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
   private readonly vehicleLegend: HTMLLegendElement
   private choice: Choice
   private step: Step = 'mode'
+  /** Each island asked for outranks the one before: a slow one that lands late is let go. */
+  private islands = 0
+  /** Whether the island asked for last is still being made: there is no moving on until it is. */
+  private generating = false
 
   constructor(root: HTMLElement, choice: Choice, host: MenuHost) {
     this.root = root
@@ -134,8 +162,25 @@ export class Menu {
     const modePage = document.createElement('div')
     modePage.append(modeGroup)
 
-    // Page two, and with two players three: the vehicle, turning on the spot
-    // beside the panel. One page serves both drivers in turn.
+    // Page two: the island, made afresh whenever the seed changes, and
+    // looked over from above meanwhile. Everyone on the same seed shares it.
+    const [mapGroup, mapRow] = group('Island seed')
+    mapRow.className = 'map'
+    this.seedField.inputMode = 'numeric'
+    this.seedField.addEventListener('change', () => void this.generate())
+    const shuffle = document.createElement('button')
+    shuffle.type = 'button'
+    shuffle.textContent = 'Random'
+    shuffle.addEventListener('click', () => {
+      this.seedField.value = String(randomSeed())
+      void this.generate()
+    })
+    mapRow.append(this.seedField, shuffle)
+    const mapPage = document.createElement('div')
+    mapPage.append(mapGroup)
+
+    // Page three, and with two players four: the vehicle, turning on the
+    // spot beside the panel. One page serves both drivers in turn.
     const [vehicleGroup, vehicleCards] = group('Vehicle')
     this.vehicleLegend = vehicleGroup.querySelector('legend')!
     for (const vehicle of VEHICLE_PROFILE_IDS) {
@@ -150,7 +195,7 @@ export class Menu {
     const carPage = document.createElement('div')
     carPage.append(vehicleGroup)
 
-    this.pages = { mode: modePage, car: carPage, car2: carPage }
+    this.pages = { mode: modePage, map: mapPage, car: carPage, car2: carPage }
 
     const nav = document.createElement('div')
     nav.className = 'nav'
@@ -187,7 +232,7 @@ export class Menu {
       credits.append(model, ' (', licence, ')')
     })
 
-    panel.append(title, blurb, this.steps, modePage, carPage, this.status, nav, keys, credits)
+    panel.append(title, blurb, this.steps, modePage, mapPage, carPage, this.status, nav, keys, credits)
     // Enter moves on, unless it is pressing a button, which does its own thing.
     panel.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) this.advance(1)
@@ -211,9 +256,13 @@ export class Menu {
     this.root.hidden = true
   }
 
-  /** Something the player should know, shown until they move on: why the server could not be joined. */
-  notice(text: string): void {
+  /**
+   * Something the player should know, shown until they move on: why the
+   * server could not be joined, or, with `busy`, what is being waited for.
+   */
+  notice(text: string, busy = false): void {
     this.status.textContent = text
+    this.status.classList.toggle('busy', busy)
   }
 
   private pick(change: Partial<Choice>): void {
@@ -226,11 +275,13 @@ export class Menu {
     this.step = step
     this.notice('')
     this.render()
-    this.host.showVehicle(this.choice[vehicleKey(step)])
+    if (step === 'map') void this.generate()
+    if (step === 'car' || step === 'car2') this.host.showVehicle(this.choice[vehicleKey(step)])
   }
 
   /** A page on, or back; on from the last page is setting off. */
   private advance(delta: 1 | -1): void {
+    if (delta === 1 && this.next.disabled) return
     const steps = stepsFor(this.choice.mode)
     const to = steps[steps.indexOf(this.step) + delta]
     if (to !== undefined) {
@@ -241,6 +292,23 @@ export class Menu {
       this.hide()
       this.host.start({ ...this.choice })
     }
+  }
+
+  /** Make the island the seed field asks for, or one at random, and say what came of it. */
+  private async generate(): Promise<void> {
+    const typed = Number(this.seedField.value.trim())
+    const seed = Number.isFinite(typed) && typed !== 0 ? Math.floor(Math.abs(typed)) : randomSeed()
+    this.choice.seed = seed
+    this.seedField.value = String(seed)
+    const stamp = ++this.islands
+    this.generating = true
+    this.notice(`generating island ${seed}...`, true)
+    this.render()
+    const about = await this.host.showIsland(seed)
+    if (stamp !== this.islands) return
+    this.generating = false
+    if (this.step === 'map') this.notice(about)
+    this.render()
   }
 
   private render(): void {
@@ -256,6 +324,7 @@ export class Menu {
       }),
     )
     for (const page of new Set(Object.values(this.pages))) page.hidden = page !== this.pages[this.step]
+    if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
     this.vehicleLegend.textContent = duo ? (this.step === 'car2' ? 'Vehicle 2: the arrows' : 'Vehicle 1: the letters') : 'Vehicle'
     for (const [mode, button] of this.modeButtons) {
       button.setAttribute('aria-pressed', String(mode === this.choice.mode))
@@ -265,6 +334,7 @@ export class Menu {
       button.setAttribute('aria-pressed', String(vehicle === picking))
     }
     this.back.hidden = this.step === steps[0]
+    this.next.disabled = this.step === 'map' && this.generating
     this.next.textContent = this.step === steps[steps.length - 1] ? 'Play' : 'Next'
   }
 }

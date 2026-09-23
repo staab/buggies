@@ -59,9 +59,14 @@ function serverUrl(): string {
   return `${scheme}://${location.hostname || 'localhost'}:8787`
 }
 
+function randomSeed(): number {
+  return Math.floor(Math.random() * 100000)
+}
+
 /** What the address bar asks for, with something sensible for whatever it leaves out. */
 function readChoice(): Choice {
   const params = new URLSearchParams(location.search)
+  const seed = Number(params.get('seed'))
   const mode: Mode = params.get('mode') === 'duo' ? 'duo' : 'solo'
   const profile = (name: string, fallback: VehicleProfileId): VehicleProfileId => {
     const given = params.get(name)
@@ -69,6 +74,7 @@ function readChoice(): Choice {
   }
   return {
     mode,
+    seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
     vehicle: profile('vehicle', DEFAULT_VEHICLE_PROFILE),
     vehicle2: profile('vehicle2', VEHICLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE),
   }
@@ -76,7 +82,9 @@ function readChoice(): Choice {
 
 /** Reflect what is being played in the address bar. */
 function settle(choice: Choice): void {
-  const url = `?mode=${choice.mode}&vehicle=${choice.vehicle}` + (choice.mode === 'duo' ? `&vehicle2=${choice.vehicle2}` : '')
+  const url =
+    `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}` +
+    (choice.mode === 'duo' ? `&vehicle2=${choice.vehicle2}` : '')
   history.replaceState(null, '', url)
 }
 

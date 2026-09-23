@@ -4,6 +4,7 @@ import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
 import type { HudState } from './hud.ts'
+import { createIslandMode, islandSummary } from './island-mode.ts'
 import { LEFT_KEYS, RIGHT_KEYS, SOLO_KEYS } from './keys.ts'
 import type { Choice, MenuHost, Step } from './menu.ts'
 import type { ModeView } from './mode.ts'
@@ -18,7 +19,7 @@ export interface ShellMenu {
   readonly open: boolean
   show(choice: Choice, step?: Step): void
   hide(): void
-  notice(text: string): void
+  notice(text: string, busy?: boolean): void
 }
 
 /** A HUD, as the shell fills it: one a viewport. */
@@ -38,10 +39,12 @@ export interface IslandSource {
  */
 export interface ShellModes {
   terrainView(map: TerrainMap): THREE.Group
+  island(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView
   showroom(sound: Sound): ShowroomView
   play(
     scene: THREE.Scene,
     url: string,
+    seed: number,
     players: readonly OnlinePlayer[],
     mapFor: (seed: number) => Promise<TerrainMap>,
     sound: Sound,
@@ -52,6 +55,7 @@ export interface ShellModes {
 /** The real thing. */
 export const MODES: ShellModes = {
   terrainView: createTerrainView,
+  island: createIslandMode,
   showroom: createShowroomMode,
   play: createTeamMode,
 }
@@ -81,16 +85,19 @@ interface Game {
   choice: Choice
 }
 
+/** What the menu puts up over the game while something is chosen. */
+type Backdrop = { kind: 'island'; seed: number; mode: ModeView } | { kind: 'showroom'; mode: ShowroomView }
+
 /** What is on the screen, for anyone asking. */
-export type OnShow = 'game' | 'showroom' | null
+export type OnShow = 'game' | 'island' | 'showroom' | null
 
 /**
- * Whether a choice is the game already being played: the same players in
- * the same vehicles. Any other vehicle means joining again, since the
- * server seats a player in one for good.
+ * Whether a choice is the game already being played: the same island, the
+ * same players in the same vehicles. Anything else means joining again,
+ * since the server seats a player on one island in one vehicle for good.
  */
 export function continues(running: Choice, next: Choice): boolean {
-  if (running.mode !== next.mode || running.vehicle !== next.vehicle) return false
+  if (running.mode !== next.mode || running.seed !== next.seed || running.vehicle !== next.vehicle) return false
   return next.mode === 'solo' || running.vehicle2 === next.vehicle2
 }
 
@@ -122,10 +129,10 @@ function disposeView(scene: THREE.Scene, group: THREE.Group): void {
 }
 
 /**
- * What is on the screen and why: the vehicle turning while the menu is up,
- * and the game behind it. It keeps the server's island on show, joins and
- * rejoins as the menu asks, and draws whichever of them is in front each
- * frame.
+ * What is on the screen and why: the island being looked over or the
+ * vehicle turning while the menu is up, and the game behind them. It keeps
+ * the island of the seed on show, joins and rejoins as the menu asks, and
+ * draws whichever of them is in front each frame.
  */
 export class Shell implements MenuHost {
   readonly menu: ShellMenu
@@ -147,7 +154,7 @@ export class Shell implements MenuHost {
   /** An island on its way, so that two players joining at once do not each make one. */
   private making: { seed: number; island: Promise<TerrainMap> } | null = null
   private game: Game | null = null
-  private showroom: ShowroomView | null = null
+  private backdrop: Backdrop | null = null
   /** Each thing asked for outranks the one before: a slow one that lands late is let go. */
   private generation = 0
 
@@ -176,8 +183,8 @@ export class Shell implements MenuHost {
   }
 
   get onShow(): OnShow {
-    if (this.menu.open && this.showroom !== null) return 'showroom'
-    return this.game !== null ? 'game' : this.showroom !== null ? 'showroom' : null
+    if (this.menu.open && this.backdrop !== null) return this.backdrop.kind
+    return this.game !== null ? 'game' : (this.backdrop?.kind ?? null)
   }
 
   /** A line on the HUD and nothing else: what is being waited for. */
@@ -185,10 +192,10 @@ export class Shell implements MenuHost {
     this.huds[0]?.notice(text)
   }
 
-  /** Open the menu on its first page, the vehicle that would be driven turning behind it. */
+  /** Open the menu on its first page, with the island that would be driven coming up behind it. */
   welcome(): void {
     this.menu.show(this.choiceNow)
-    this.showVehicle(this.choiceNow.vehicle)
+    void this.showIsland(this.choiceNow.seed)
   }
 
   /**
@@ -200,25 +207,39 @@ export class Shell implements MenuHost {
     if (this.menu.open) {
       if (this.game !== null) {
         this.menu.hide()
-        this.resume()
+        void this.resume()
       }
     } else {
       this.menu.show(this.game?.choice ?? this.choiceNow, this.game === null ? 'mode' : 'car')
     }
   }
 
+  /** Put the island with this seed on show, to be looked over, and say what it is like. */
+  async showIsland(seed: number): Promise<string> {
+    const stamp = ++this.generation
+    this.choiceNow = { ...this.choiceNow, seed }
+    if (this.backdrop?.kind === 'island' && this.backdrop.seed === seed && this.map !== null) {
+      return islandSummary(this.map)
+    }
+    const island = await this.mapFor(seed)
+    // Something else may have been asked for while the island was being made.
+    if (stamp !== this.generation) return ''
+    this.setBackdrop({ kind: 'island', seed, mode: this.modes.island(island, this.scene, this.renderer.domElement) })
+    return islandSummary(island)
+  }
+
   /** Put this vehicle on show, turning on the spot. */
   showVehicle(vehicle: VehicleProfileId): void {
-    if (this.showroom === null) {
-      this.showroom = this.modes.showroom(this.sound)
-      this.resize()
-    }
-    this.showroom.show(vehicle)
+    this.generation += 1
+    this.choiceNow = { ...this.choiceNow, vehicle }
+    if (this.backdrop?.kind !== 'showroom') this.setBackdrop({ kind: 'showroom', mode: this.modes.showroom(this.sound) })
+    if (this.backdrop?.kind === 'showroom') this.backdrop.mode.show(vehicle)
   }
 
   /**
-   * Join the server with everyone on this screen in the vehicles they
-   * asked for; or, if that is the game already being played, go back to it.
+   * Join the server's room for the island with everyone on this screen in
+   * the vehicles they asked for; or, if that is the game already being
+   * played, go back to it.
    */
   async start(next: Choice): Promise<void> {
     const stamp = ++this.generation
@@ -226,17 +247,18 @@ export class Shell implements MenuHost {
     this.menu.hide()
 
     if (this.game !== null && continues(this.game.choice, next)) {
-      this.resume()
+      await this.resume()
       return
     }
 
-    this.dropShowroom()
+    this.setBackdrop(null)
     this.setGame(null)
     this.notice(`connecting to ${this.server}...`)
     try {
       const mode = await this.modes.play(
         this.scene,
         this.server,
+        next.seed,
         playersFor(next),
         (seed) => this.mapFor(seed),
         this.sound,
@@ -256,13 +278,18 @@ export class Shell implements MenuHost {
     }
   }
 
-  /** Go back to the game behind the menu. */
-  resume(): void {
+  /**
+   * Go back to the game behind the menu, with the island it is played on
+   * back in view: looking over another one will have taken it down.
+   */
+  async resume(): Promise<void> {
     const { game } = this
     if (game === null) return
-    this.generation += 1
+    const stamp = ++this.generation
     this.choiceNow = game.choice
-    this.dropShowroom()
+    await this.mapFor(game.choice.seed)
+    if (stamp !== this.generation) return
+    this.setBackdrop(null)
     this.settle(game.choice)
   }
 
@@ -271,20 +298,20 @@ export class Shell implements MenuHost {
     this.renderer.setSize(clientWidth, clientHeight, false)
     const aspect = clientWidth / Math.max(clientHeight, 1)
     this.game?.mode.resize(aspect)
-    this.showroom?.resize(aspect)
+    this.backdrop?.mode.resize(aspect)
   }
 
   /**
    * One frame. The game keeps its clock behind the menu, driven or not: the
-   * server does not wait. What is drawn is the showroom if the menu has put
-   * it up, else the game, and the HUDs say what the game says unless the
+   * server does not wait. What is drawn is whatever the menu has put up
+   * over it, if anything, and the HUDs say what the game says unless the
    * menu is up, which speaks for itself.
    */
   frame(dt: number): void {
-    const { menu, game, showroom } = this
+    const { menu, game, backdrop } = this
     game?.mode.update(dt, !menu.open)
-    if (menu.open) showroom?.update(dt, false)
-    const shown: ModeView | null = menu.open && showroom !== null ? showroom : (game?.mode ?? showroom)
+    if (menu.open) backdrop?.mode.update(dt, false)
+    const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
       if (shown.render) shown.render(this.renderer)
       else this.renderer.render(shown.scene ?? this.scene, shown.camera)
@@ -320,9 +347,10 @@ export class Shell implements MenuHost {
     return island
   }
 
-  private dropShowroom(): void {
-    this.showroom?.dispose()
-    this.showroom = null
+  private setBackdrop(next: Backdrop | null): void {
+    this.backdrop?.mode.dispose()
+    this.backdrop = next
+    this.resize()
   }
 
   private setGame(next: Game | null): void {

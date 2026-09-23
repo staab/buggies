@@ -15,13 +15,16 @@ import type { Sun } from './sun.ts'
 export async function createTeamMode(
   scene: THREE.Scene,
   url: string,
+  seed: number,
   players: readonly OnlinePlayer[],
   mapFor: (seed: number) => Promise<TerrainMap>,
   sound: Sound,
   sun: Sun,
 ): Promise<ModeView> {
   const locals = new Set<number>()
-  const joins = await Promise.allSettled(players.map((player) => joinOnline(scene, url, player, locals, mapFor, sound)))
+  const joins = await Promise.allSettled(
+    players.map((player) => joinOnline(scene, url, seed, player, locals, mapFor, sound)),
+  )
   const failed = joins.find((join): join is PromiseRejectedResult => join.status === 'rejected')
   if (failed !== undefined) {
     // One of them could not get on: neither plays.
