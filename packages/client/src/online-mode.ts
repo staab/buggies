@@ -11,11 +11,11 @@ import type { Vec3 } from '@buggies/physics'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
-import { engineRev, skidAmount, type Sound } from './audio.ts'
+import type { Sound } from './audio.ts'
+import type { PresenceEffects } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { cameraBounds, driverState, tunnelTest } from './driver-hud.ts'
-import { smokeAmount } from './damage.ts'
+import { cameraBounds, tunnelTest } from './driver-hud.ts'
 import { Explosions } from './explosion.ts'
 import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
@@ -31,9 +31,6 @@ import { WebSocketClientTransport } from './ws-transport.ts'
  * background for a minute should resume, not fast-forward a minute of driving.
  */
 const MAX_CATCH_UP = 0.25
-
-/** A knock that takes this much of a car's life is heard at full volume. */
-const LOUD_KNOCK = 0.25
 
 /** Someone to put on the server: in what, and on which keys. */
 export interface OnlinePlayer {
@@ -87,41 +84,22 @@ export async function joinOnline(
   const root = new THREE.Group()
   scene.add(root)
   const keyboard = new Keyboard(player.keys.bindings)
-  const car = new PredictedCar(
-    prediction,
-    (tick, input) => client.sendInput(tick, input),
-    welcome.profile,
-    seatColor(welcome.seat),
-  )
-  root.add(car.object)
   const explosions = new Explosions()
   root.add(explosions.object)
   const smoke = new Smoke()
   root.add(smoke.object)
-  const ear = (): Vec3 => prediction.vehicle.frame.position
-  const distance = (at: Vec3): number => Math.hypot(at.x - ear().x, at.y - ear().y, at.z - ear().z)
-  const isLocal = (seat: number): boolean => locals.has(seat)
-  const boom = (at: Vec3): void => {
-    explosions.burst(at)
-    sound.boom(distance(at))
-  }
-  // A player beside you blowing up is seen from here, but heard from their own view.
-  const others = new MirrorCars(
-    prediction,
-    welcome.seat,
-    (at, seat) => (isLocal(seat) ? explosions.burst(at) : boom(at)),
-    smoke,
-    sound,
-    isLocal,
-  )
+  const effects: PresenceEffects = { explosions, smoke, sound }
+  const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), effects)
+  root.add(car.object)
+  // A player beside you is seen from here, but heard from their own view.
+  const others = new MirrorCars(prediction, welcome.seat, effects, (seat) => locals.has(seat))
   root.add(others.object)
-  const pickups = new PickupField(prediction, boom)
+  const ear = (): Vec3 => prediction.vehicle.frame.position
+  const pickups = new PickupField(prediction, (at) => {
+    explosions.burst(at)
+    sound.boom(Math.hypot(at.x - ear().x, at.y - ear().y, at.z - ear().z))
+  })
   root.add(pickups.object)
-  const voice = sound.engine(welcome.profile)
-  const skid = sound.skid()
-  let wasWrecked = false
-  let lastDamage = 0
-  let lastScore = 0
 
   const cameraTuning = createCameraTuning()
   cameraTuning.far = map.size * map.cellSize * 2
@@ -156,26 +134,11 @@ export async function joinOnline(
         owed -= FIXED_TIMESTEP
       }
       others.render(owed / FIXED_TIMESTEP, dt)
-      car.render(owed / FIXED_TIMESTEP, dt)
-      if (car.wrecked && !wasWrecked) boom(prediction.vehicle.frame.position)
-      wasWrecked = car.wrecked
-      const { vehicle } = prediction
-      voice.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, prediction.tuning.maxSpeed, vehicle.command.throttle))
-      skid.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels))
-      const knock = vehicle.damage - lastDamage
-      if (knock > 0 && !vehicle.wrecked) sound.thud(knock / LOUD_KNOCK)
-      lastDamage = vehicle.damage
-      if (prediction.score > lastScore) sound.chime()
-      lastScore = prediction.score
-      car.setWrecked(wasWrecked)
-      if (!wasWrecked) {
-        const { position, linearVelocity } = prediction.vehicle.frame
-        smoke.trail(position, linearVelocity, smokeAmount(prediction.vehicle.damage), dt)
-      }
+      car.presence.render(owed / FIXED_TIMESTEP, dt)
       pickups.update(dt)
       smoke.update(dt)
       explosions.update(dt)
-      car.aim(target)
+      car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
       else {
         chase.snapTo(target)
@@ -186,23 +149,12 @@ export async function joinOnline(
       const players = client.playerCount
       const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       if (lost !== null) return { title, state: `disconnected: ${lost}` }
-      const { vehicle } = prediction
-      return {
-        title,
-        state: driverState(vehicle, prediction.submersion, inTunnel(vehicle.frame.position)),
-        speed: vehicle.speed,
-        maxSpeed: prediction.tuning.maxSpeed,
-        damage: vehicle.wrecked ? 1 : vehicle.damage,
-        controls: player.keys.controls,
-        score: prediction.score,
-      }
+      return car.presence.hudState(title, player.keys.controls, inTunnel(prediction.vehicle.frame.position))
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
-      voice.stop()
-      skid.stop()
       pickups.dispose()
       others.dispose()
       car.dispose()

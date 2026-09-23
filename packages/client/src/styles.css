@@ -1,0 +1,356 @@
+:root {
+  --ink: #dceaf5;
+  --dim: #8ba3b6;
+  --panel: rgba(8, 20, 30, 0.82);
+  --edge: rgba(150, 190, 220, 0.22);
+  --accent: #6fd3c7;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #0b1620;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+#app {
+  position: fixed;
+  inset: 0;
+}
+#app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#hud,
+#hud-right {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 300px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+/* The right half of a split screen has its own, in its own corner. */
+#hud-right {
+  left: calc(50% + 12px);
+}
+/* A speaker in the corner, crossed out when muted. */
+#mute {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 20;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+}
+#mute svg {
+  width: 20px;
+  height: 20px;
+}
+#mute .off {
+  display: none;
+}
+#mute[aria-pressed='true'] .on {
+  display: none;
+}
+#mute[aria-pressed='true'] .off {
+  display: block;
+}
+#hud[hidden],
+#hud-right[hidden],
+#hud > [hidden],
+#hud-right > [hidden] {
+  display: none;
+}
+.score {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.score .banana {
+  width: 22px;
+  height: 22px;
+}
+.gauges {
+  display: flex;
+  justify-content: space-evenly;
+  align-items: flex-end;
+}
+.dial {
+  width: 120px;
+  height: 92px;
+  flex: none;
+}
+.dial .track {
+  fill: none;
+  stroke: rgba(150, 190, 220, 0.22);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.dial .value {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+.dial .tick {
+  stroke: var(--dim);
+  stroke-width: 1.5;
+}
+.dial .needle {
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.dial .hub {
+  fill: var(--ink);
+}
+.dial .reading {
+  fill: var(--ink);
+  font: 600 16px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-anchor: middle;
+}
+.dial .unit {
+  fill: var(--dim);
+  font: 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-anchor: middle;
+}
+.state {
+  color: var(--dim);
+}
+.controls {
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--dim);
+}
+.controls .hint {
+  display: inline-block;
+  margin-right: 8px;
+}
+/* The menu stands to one side and lets everything behind it be seen,
+   and touched: the island is looked over past it. */
+#menu {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+#menu[hidden] {
+  display: none;
+}
+.panel {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  bottom: 16px;
+  width: min(440px, calc(100vw - 32px));
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 22px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+}
+.panel > [hidden] {
+  display: none;
+}
+.steps {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.steps li::before {
+  counter-increment: step;
+  content: counter(step) ' ';
+  opacity: 0.7;
+}
+.steps li.done {
+  color: var(--ink);
+}
+.steps li[aria-current='step'] {
+  color: var(--accent);
+}
+.status {
+  margin: 0 0 12px;
+  min-height: 1.5em;
+  font-size: 12px;
+  color: var(--dim);
+}
+/* Something being waited for: said in the middle, with a spinner under it. */
+.busy {
+  text-align: center;
+  padding: 18px 0;
+}
+.busy::after {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 22px;
+  margin: 12px auto 0;
+  border: 2px solid var(--edge);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.nav {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+}
+.nav .go {
+  flex: 1;
+}
+.panel h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.panel p.blurb {
+  margin: 6px 0 20px;
+  font-size: 13px;
+  color: var(--dim);
+}
+fieldset {
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+legend {
+  padding: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.cards {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px 12px;
+  text-align: left;
+  transition: border-color 120ms, background 120ms;
+}
+button:hover {
+  border-color: var(--accent);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button:disabled:hover {
+  border-color: var(--edge);
+}
+/* Cards in a row are as tall as the tallest, with their text at the top, not floating mid-way. */
+.cards button {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+}
+button[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgba(111, 211, 199, 0.14);
+}
+button .name {
+  display: block;
+  font-size: 14px;
+}
+button .note {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--dim);
+}
+fieldset[disabled] {
+  opacity: 0.4;
+}
+.map {
+  display: flex;
+  gap: 8px;
+}
+.map input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+}
+.map input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.go {
+  text-align: center;
+  padding: 13px;
+  border-color: var(--accent);
+  background: rgba(111, 211, 199, 0.18);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.keys {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--dim);
+}
+.keys a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.keys a:hover {
+  text-decoration: underline;
+}
+kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+}
