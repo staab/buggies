@@ -3,7 +3,7 @@ import type { LocalPrediction, ReconcileOutcome } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
-import { engineRev, type EngineVoice, type Sound } from './audio.ts'
+import { engineRev, skidAmount, type EngineVoice, type SkidVoice, type Sound } from './audio.ts'
 import { CarView, seatColor } from './car-view.ts'
 import { smokeAmount } from './damage.ts'
 import type { Smoke } from './smoke.ts'
@@ -15,6 +15,7 @@ interface Entry {
   view: CarView
   body: SmoothedBody
   voice: EngineVoice | null
+  skid: SkidVoice | null
   wrecked: boolean
 }
 
@@ -32,12 +33,14 @@ export class MirrorCars {
   constructor(
     private readonly prediction: LocalPrediction,
     private readonly ownSeat: number,
-    /** Called where a car blows up, the moment the server first says it has. */
-    private readonly onWreck: (at: Vec3) => void = () => {},
+    /** Called where a car blows up, the moment the server first says it has, and whose it was. */
+    private readonly onWreck: (at: Vec3, seat: number) => void = () => {},
     /** Where a damaged car's smoke goes. */
     private readonly smoke: Smoke | null = null,
     /** Where their engines are heard, as far off as they are. */
     private readonly sound: Sound | null = null,
+    /** Whose car is driven from this very screen, and so is heard from its own view, not here. */
+    private readonly isLocal: (seat: number) => boolean = () => false,
   ) {}
 
   /** After the server's word has been taken in: whoever is on the map has a car, eased onto where it now is. */
@@ -62,11 +65,10 @@ export class MirrorCars {
       entry.body.render(fraction, dt)
       entry.view.applySimulatedWheels(vehicle.wheels, tuning)
       const { x, y, z } = vehicle.frame.position
-      entry.voice?.set(
-        vehicle.wrecked ? 0 : engineRev(vehicle.speed, tuning.maxSpeed, vehicle.command.throttle),
-        Math.hypot(x - ear.x, y - ear.y, z - ear.z),
-      )
-      if (vehicle.wrecked && !entry.wrecked) this.onWreck(vehicle.frame.position)
+      const off = Math.hypot(x - ear.x, y - ear.y, z - ear.z)
+      entry.voice?.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, tuning.maxSpeed, vehicle.command.throttle), off)
+      entry.skid?.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels), off)
+      if (vehicle.wrecked && !entry.wrecked) this.onWreck(vehicle.frame.position, entry.seat.id)
       entry.wrecked = vehicle.wrecked
       entry.view.setWrecked(vehicle.wrecked)
       if (!vehicle.wrecked) {
@@ -79,6 +81,7 @@ export class MirrorCars {
     for (const entry of this.entries.values()) {
       entry.view.dispose()
       entry.voice?.stop()
+      entry.skid?.stop()
     }
     this.entries.clear()
     this.object.removeFromParent()
@@ -93,6 +96,7 @@ export class MirrorCars {
         if (existing !== undefined) {
           existing.view.dispose()
           existing.voice?.stop()
+          existing.skid?.stop()
           this.entries.delete(seat.id)
         }
         continue
@@ -100,13 +104,16 @@ export class MirrorCars {
       if (existing !== undefined && existing.profile === seat.profile) continue
       existing?.view.dispose()
       existing?.voice?.stop()
+      existing?.skid?.stop()
       const view = new CarView(seat.profile, seatColor(seat.id))
       view.syncDimensions(seat.tuning)
       this.object.add(view.object)
       const body = new SmoothedBody(seat.vehicle.body, view.object)
       body.snapToBody()
-      const voice = this.sound?.engine(seat.profile) ?? null
-      this.entries.set(seat.id, { seat, profile: seat.profile, view, body, voice, wrecked: seat.vehicle.wrecked })
+      const heard = this.sound !== null && !this.isLocal(seat.id) ? this.sound : null
+      const voice = heard?.engine(seat.profile) ?? null
+      const skid = heard?.skid() ?? null
+      this.entries.set(seat.id, { seat, profile: seat.profile, view, body, voice, skid, wrecked: seat.vehicle.wrecked })
     }
   }
 }

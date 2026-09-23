@@ -19,20 +19,22 @@ const targetUp = v3()
 const pitchRollRate = v3()
 const levelTorque = v3()
 
+/**
+ * Buggies: in the air the throttle and brake pitch the nose, and that is all.
+ * The steering does nothing until the wheels are down again: a car does not
+ * turn in the air, and one that did was too easy to spin off a jump.
+ */
 export function applyAirControl(vehicle: Vehicle, tuning: VehicleTuning): void {
   const {body, command, frame} = vehicle
   const pitchDemand = command.throttle - command.brake
 
   addTorqueAbout(body, frame.right, -pitchDemand * tuning.airPitchTorque)
-  addTorqueAbout(body, frame.up, -command.steer * tuning.airYawTorque)
-  addTorqueAbout(body, frame.forward, command.steer * tuning.airRollTorque)
 }
 
 function inputAuthority(command: DriverCommand, tuning: VehicleTuning): number {
   const pitchDemand = Math.abs(command.throttle - command.brake)
-  const rollYawDemand = Math.abs(command.steer)
 
-  return 1 - tuning.airLevelInputYield * Math.max(pitchDemand, rollYawDemand)
+  return 1 - tuning.airLevelInputYield * pitchDemand
 }
 
 /**

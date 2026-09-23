@@ -10,36 +10,11 @@ import type { ModeView } from './mode.ts'
 import { Shell, continues, playersFor, type ShellMenu, type ShellModes } from './shell.ts'
 import type { ShowroomView } from './showroom-mode.ts'
 
-/** A mode that only remembers what was done to it. */
-interface StubMode extends ModeView {
+/** A game that only remembers what was done to it. */
+interface StubGame extends ModeView {
   kind: string
   disposed: boolean
   updates: { dt: number; active: boolean }[]
-  swapped: [VehicleProfileId, number][]
-}
-
-function stubMode(kind: string, hud: HudState[] = []): StubMode {
-  const mode: StubMode = {
-    kind,
-    disposed: false,
-    updates: [],
-    swapped: [],
-    camera: new THREE.PerspectiveCamera(),
-    resize() {},
-    update(dt, active) {
-      mode.updates.push({ dt, active })
-    },
-    hud() {
-      return hud
-    },
-    setVehicle(profile, player = 0) {
-      mode.swapped.push([profile, player])
-    },
-    dispose() {
-      mode.disposed = true
-    },
-  }
-  return mode
 }
 
 interface StubShowroom extends ShowroomView {
@@ -67,6 +42,7 @@ function stubShowroom(): StubShowroom {
       showroom.disposed = true
     },
   }
+  showroom.camera.name = 'showroom'
   return showroom
 }
 
@@ -91,13 +67,16 @@ class StubMenu implements ShellMenu {
   }
 }
 
-const CHOICE: Choice = { mode: 'drive', seed: 5, vehicle: 'sportsCar', vehicle2: 'raceCar', server: 'ws://x' }
+const CHOICE: Choice = { mode: 'solo', vehicle: 'sportsCar', vehicle2: 'raceCar' }
+const SERVER = 'ws://island:8787'
 
 /** A shell with nothing real behind it, and a record of everything it made. */
-function build(online: ShellModes['online'] = () => Promise.reject(new Error('no server'))) {
-  const made = { drives: [] as StubMode[], islands: [] as StubMode[], showrooms: [] as StubShowroom[] }
+function build(seed = 5, refuse: string | null = null) {
+  const games: StubGame[] = []
+  const showrooms: StubShowroom[] = []
   const generated: number[] = []
   const settled: Choice[] = []
+  const joined: string[] = []
   const hudStates: (HudState | null)[][] = [[], []]
   const rendered: string[] = []
   const menu = new StubMenu()
@@ -110,27 +89,36 @@ function build(online: ShellModes['online'] = () => Promise.reject(new Error('no
   } as unknown as THREE.WebGLRenderer
   const modes: ShellModes = {
     terrainView: () => new THREE.Group(),
-    island: (map) => {
-      const mode = stubMode(`island ${map.seed}`)
-      mode.camera.name = mode.kind
-      made.islands.push(mode)
-      return mode
-    },
     showroom: () => {
       const showroom = stubShowroom()
-      showroom.camera.name = 'showroom'
-      made.showrooms.push(showroom)
+      showrooms.push(showroom)
       return showroom
     },
-    drive: (map, _scene, players) => {
-      const mode = stubMode(`drive ${map.seed} ${players.map((player) => player.profile).join('+')}`, [
-        { title: 'driving' },
-      ])
-      mode.camera.name = mode.kind
-      made.drives.push(mode)
-      return mode
+    play: async (_scene, url, players, mapFor) => {
+      joined.push(url)
+      if (refuse !== null) throw new Error(refuse)
+      // Two players joining at once both ask for the island.
+      await Promise.all(players.map(() => mapFor(seed)))
+      const game: StubGame = {
+        kind: `${players.map((player) => player.profile).join('+')} on ${seed}`,
+        disposed: false,
+        updates: [],
+        camera: new THREE.PerspectiveCamera(),
+        resize() {},
+        update(dt, active) {
+          game.updates.push({ dt, active })
+        },
+        hud() {
+          return players.map((player) => ({ title: player.profile }))
+        },
+        dispose() {
+          game.disposed = true
+        },
+      }
+      game.camera.name = game.kind
+      games.push(game)
+      return game
     },
-    online,
   }
   const shell = new Shell(
     {
@@ -143,11 +131,12 @@ function build(online: ShellModes['online'] = () => Promise.reject(new Error('no
       })),
       sound: {} as Sound,
       islands: {
-        generate: async (seed) => {
-          generated.push(seed)
-          return fakeMap(seed)
+        generate: async (asked) => {
+          generated.push(asked)
+          return fakeMap(asked)
         },
       },
+      server: SERVER,
       createMenu: (host, choice) => {
         menu.host = host
         menu.show(choice)
@@ -159,45 +148,32 @@ function build(online: ShellModes['online'] = () => Promise.reject(new Error('no
     },
     CHOICE,
   )
-  return { shell, menu, made, generated, settled, hudStates, rendered }
-}
-
-/** Let every promise the shell is waiting on settle. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 6; i++) await Promise.resolve()
+  return { shell, menu, games, showrooms, generated, settled, joined, hudStates, rendered }
 }
 
 describe('the shell', () => {
-  it('opens the menu with the island behind it, made once', async () => {
-    const { shell, menu, made, generated } = build()
+  it('opens the menu with the vehicle turning behind it', () => {
+    const { shell, menu, showrooms } = build()
     shell.welcome()
-    await settle()
     expect(menu.open).toBe(true)
-    expect(generated).toEqual([5])
-    expect(made.islands).toHaveLength(1)
-    expect(shell.onShow).toBe('island')
-    expect(menu.notices.at(-1)).toContain('seed 5')
-    // Looking at the same island again makes nothing new.
-    await shell.showIsland(5)
-    expect(generated).toEqual([5])
-    expect(made.islands).toHaveLength(1)
-  })
-
-  it('lets go of an island asked for before something else was', async () => {
-    const { shell, made } = build()
-    const looking = shell.showIsland(9)
-    shell.showVehicle('tank')
-    expect(await looking).toBe('')
-    expect(made.islands).toHaveLength(0)
+    expect(showrooms).toHaveLength(1)
+    expect(showrooms[0]!.vehicle).toBe('sportsCar')
     expect(shell.onShow).toBe('showroom')
-    expect(made.showrooms[0]!.vehicle).toBe('tank')
+    // Another vehicle turns on the same turntable.
+    shell.showVehicle('tank')
+    expect(showrooms).toHaveLength(1)
+    expect(showrooms[0]!.vehicle).toBe('tank')
   })
 
-  it('starts a drive, keeps it behind the menu, and comes back to it', async () => {
-    const { shell, menu, made, settled } = build()
+  it('joins the server, makes the island once, and keeps the game behind the menu', async () => {
+    const { shell, menu, games, showrooms, generated, settled, joined } = build()
+    shell.welcome()
     await shell.start(CHOICE)
-    expect(made.drives).toHaveLength(1)
-    expect(made.drives[0]!.kind).toBe('drive 5 sportsCar')
+    expect(joined).toEqual([SERVER])
+    expect(games).toHaveLength(1)
+    expect(games[0]!.kind).toBe('sportsCar on 5')
+    expect(generated).toEqual([5])
+    expect(showrooms[0]!.disposed).toBe(true)
     expect(shell.playing).toBe(true)
     expect(settled).toEqual([CHOICE])
 
@@ -206,73 +182,81 @@ describe('the shell', () => {
     expect(menu.shown.at(-1)).toEqual([CHOICE, 'car'])
     shell.showVehicle('tank')
     expect(shell.onShow).toBe('showroom')
-    expect(made.drives[0]!.disposed).toBe(false)
+    expect(games[0]!.disposed).toBe(false)
     shell.frame(0.016)
-    expect(made.drives[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: false })
+    expect(games[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: false })
 
     // Escape again: the showroom goes, the game goes on, in front.
     shell.toggleMenu()
-    await settle()
     expect(menu.open).toBe(false)
-    expect(made.showrooms[0]!.disposed).toBe(true)
+    expect(showrooms[1]!.disposed).toBe(true)
     expect(shell.onShow).toBe('game')
     shell.frame(0.016)
-    expect(made.drives[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: true })
+    expect(games[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: true })
   })
 
-  it('swaps the vehicle in place on the same island, and starts over on another', async () => {
-    const { shell, made, generated } = build()
+  it('goes back to the same game, and rejoins for a different vehicle or a second player', async () => {
+    const { shell, games, joined, generated } = build()
     await shell.start(CHOICE)
+    await shell.start(CHOICE)
+    expect(joined).toHaveLength(1)
+    expect(games[0]!.disposed).toBe(false)
+
     await shell.start({ ...CHOICE, vehicle: 'tank' })
-    expect(made.drives).toHaveLength(1)
-    expect(made.drives[0]!.swapped).toEqual([['tank', 0]])
+    expect(joined).toHaveLength(2)
+    expect(games[0]!.disposed).toBe(true)
+    expect(games[1]!.kind).toBe('tank on 5')
+    // The island is the server's, made once and kept.
     expect(generated).toEqual([5])
 
-    await shell.start({ ...CHOICE, mode: 'split', vehicle: 'tank', vehicle2: 'goKart' })
-    expect(made.drives).toHaveLength(2)
-    expect(made.drives[0]!.disposed).toBe(true)
-    expect(made.drives[1]!.kind).toBe('drive 5 tank+goKart')
-    await shell.start({ ...CHOICE, mode: 'split', vehicle: 'tank', vehicle2: 'semi' })
-    expect(made.drives).toHaveLength(2)
-    expect(made.drives[1]!.swapped).toEqual([['semi', 1]])
-
-    await shell.start({ ...CHOICE, seed: 6 })
-    expect(generated).toEqual([5, 6])
-    expect(made.drives).toHaveLength(3)
-    expect(made.drives[1]!.disposed).toBe(true)
+    await shell.start({ mode: 'duo', vehicle: 'tank', vehicle2: 'goKart' })
+    expect(games[2]!.kind).toBe('tank+goKart on 5')
+    expect(generated).toEqual([5])
   })
 
-  it('draws what is in front and fills the HUDs from the game', async () => {
+  it('draws what is in front and fills a HUD a player from the game', async () => {
     const { shell, hudStates, rendered } = build()
-    await shell.start(CHOICE)
+    await shell.start({ mode: 'duo', vehicle: 'sportsCar', vehicle2: 'semi' })
     hudStates.forEach((states) => states.splice(0))
     shell.frame(0.01)
-    expect(rendered.at(-1)).toBe('drive 5 sportsCar')
-    expect(hudStates[0]!.at(-1)).toEqual({ title: 'driving' })
-    expect(hudStates[1]!.at(-1)).toBeNull()
+    expect(rendered.at(-1)).toBe('sportsCar+semi on 5')
+    expect(hudStates[0]!.at(-1)).toEqual({ title: 'sportsCar' })
+    expect(hudStates[1]!.at(-1)).toEqual({ title: 'semi' })
     shell.toggleMenu()
     shell.showVehicle('semi')
     shell.frame(0.01)
     expect(rendered.at(-1)).toBe('showroom')
     expect(hudStates[0]!.at(-1)).toBeNull()
+    expect(hudStates[1]!.at(-1)).toBeNull()
   })
 
-  it('puts the menu back up with the reason when a server cannot be joined', async () => {
-    const { shell, menu } = build(() => Promise.reject(new Error('refused')))
-    await shell.start({ ...CHOICE, mode: 'online' })
+  it('lets go of a join that something newer overtook', async () => {
+    const { shell, games } = build()
+    const first = shell.start(CHOICE)
+    const second = shell.start({ ...CHOICE, vehicle: 'tank' })
+    await Promise.all([first, second])
+    expect(games).toHaveLength(2)
+    expect(games[0]!.disposed).toBe(true)
+    expect(games[1]!.disposed).toBe(false)
+    expect(shell.playing).toBe(true)
+  })
+
+  it('puts the menu back up with the reason when the server cannot be joined', async () => {
+    const { shell, menu } = build(5, 'refused')
+    await shell.start(CHOICE)
     expect(shell.playing).toBe(false)
     expect(menu.open).toBe(true)
-    expect(menu.notices.at(-1)).toBe('could not join ws://x: refused')
+    expect(menu.notices.at(-1)).toBe(`could not join ${SERVER}: refused`)
   })
 
   it('knows when a choice is the game already on', () => {
-    expect(continues(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(true)
-    expect(continues(CHOICE, { ...CHOICE, seed: 6 })).toBe(false)
-    expect(continues(CHOICE, { ...CHOICE, mode: 'split' })).toBe(false)
-    const online: Choice = { ...CHOICE, mode: 'online' }
-    expect(continues(online, { ...online, seed: 99 })).toBe(true)
-    expect(continues(online, { ...online, vehicle: 'tank' })).toBe(false)
+    expect(continues(CHOICE, CHOICE)).toBe(true)
+    expect(continues(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(false)
+    expect(continues(CHOICE, { ...CHOICE, vehicle2: 'tank' })).toBe(true)
+    const duo: Choice = { ...CHOICE, mode: 'duo' }
+    expect(continues(duo, { ...duo, vehicle2: 'tank' })).toBe(false)
+    expect(continues(CHOICE, duo)).toBe(false)
     expect(playersFor(CHOICE).map((player) => player.profile)).toEqual(['sportsCar'])
-    expect(playersFor({ ...CHOICE, mode: 'split' }).map((player) => player.profile)).toEqual(['sportsCar', 'raceCar'])
+    expect(playersFor(duo).map((player) => player.profile)).toEqual(['sportsCar', 'raceCar'])
   })
 })

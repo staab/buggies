@@ -9,18 +9,18 @@ import {
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
 import type { TerrainMap } from '@buggies/terrain'
-import type * as THREE from 'three'
+import * as THREE from 'three'
 
-import { engineRev, type Sound } from './audio.ts'
+import { engineRev, skidAmount, type Sound } from './audio.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { SOLO_KEYS } from './driver.ts'
 import { cameraBounds, driverState, tunnelTest } from './driver-hud.ts'
 import { smokeAmount } from './damage.ts'
 import { Explosions } from './explosion.ts'
+import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
+import type { DriverKeys } from './keys.ts'
 import { MirrorCars } from './mirror-cars.ts'
-import type { ModeView } from './mode.ts'
 import { PickupField } from './pickups-view.ts'
 import { PredictedCar } from './predicted-car.ts'
 import { Smoke } from './smoke.ts'
@@ -32,28 +32,50 @@ import { WebSocketClientTransport } from './ws-transport.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-/**
- * Join a server and drive on its island with whoever else is there. The
- * server owns the map, so it is only known once the server says which one:
- * `mapFor` is asked for it then.
- */
 /** A knock that takes this much of a car's life is heard at full volume. */
 const LOUD_KNOCK = 0.25
 
-export async function createOnlineMode(
+/** Someone to put on the server: in what, and on which keys. */
+export interface OnlinePlayer {
+  profile: VehicleProfileId
+  keys: DriverKeys
+}
+
+/** One player's connection, car and camera. */
+export interface OnlineView {
+  /** Everything this view draws, to be hidden while another view of the same scene is drawn. */
+  readonly root: THREE.Group
+  readonly camera: THREE.PerspectiveCamera
+  readonly seat: number
+  resize(aspect: number): void
+  update(dt: number, active: boolean): void
+  hud(): HudState
+  dispose(): void
+}
+
+/**
+ * Join a server and drive on its island with whoever else is there. The
+ * server owns the map, so it is only known once the server says which one:
+ * `mapFor` is asked for it then. `locals` are the seats of everyone on this
+ * screen, kept between views so that a player beside you is not also heard
+ * as a stranger in the distance.
+ */
+export async function joinOnline(
   scene: THREE.Scene,
   url: string,
-  profile: VehicleProfileId,
+  player: OnlinePlayer,
+  locals: Set<number>,
   mapFor: (seed: number) => Promise<TerrainMap>,
   sound: Sound,
-): Promise<ModeView> {
+): Promise<OnlineView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
     onClosed: (reason) => {
       lost = reason
     },
   })
-  const welcome = await client.connect(profile)
+  const welcome = await client.connect(player.profile)
+  locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
 
   // A mirror of the server's arena: same map, same seats, so the local car
@@ -62,29 +84,41 @@ export async function createOnlineMode(
   takeSeat(mirror, welcome.seat, welcome.profile)
   const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
 
-  const keyboard = new Keyboard()
+  const root = new THREE.Group()
+  scene.add(root)
+  const keyboard = new Keyboard(player.keys.bindings)
   const car = new PredictedCar(
     prediction,
     (tick, input) => client.sendInput(tick, input),
     welcome.profile,
     seatColor(welcome.seat),
   )
-  scene.add(car.object)
+  root.add(car.object)
   const explosions = new Explosions()
-  scene.add(explosions.object)
+  root.add(explosions.object)
   const smoke = new Smoke()
-  scene.add(smoke.object)
+  root.add(smoke.object)
   const ear = (): Vec3 => prediction.vehicle.frame.position
   const distance = (at: Vec3): number => Math.hypot(at.x - ear().x, at.y - ear().y, at.z - ear().z)
+  const isLocal = (seat: number): boolean => locals.has(seat)
   const boom = (at: Vec3): void => {
     explosions.burst(at)
     sound.boom(distance(at))
   }
-  const others = new MirrorCars(prediction, welcome.seat, boom, smoke, sound)
-  scene.add(others.object)
+  // A player beside you blowing up is seen from here, but heard from their own view.
+  const others = new MirrorCars(
+    prediction,
+    welcome.seat,
+    (at, seat) => (isLocal(seat) ? explosions.burst(at) : boom(at)),
+    smoke,
+    sound,
+    isLocal,
+  )
+  root.add(others.object)
   const pickups = new PickupField(prediction, boom)
-  scene.add(pickups.object)
-  let voice = sound.engine(welcome.profile)
+  root.add(pickups.object)
+  const voice = sound.engine(welcome.profile)
+  const skid = sound.skid()
   let wasWrecked = false
   let lastDamage = 0
   let lastScore = 0
@@ -97,7 +131,7 @@ export async function createOnlineMode(
   const inTunnel = tunnelTest(map)
 
   const onKey = (event: KeyboardEvent): void => {
-    if (event.key === 'Enter') client.requestRespawn()
+    if (player.keys.respawn(event)) client.requestRespawn()
   }
   window.addEventListener('keydown', onKey)
 
@@ -105,7 +139,9 @@ export async function createOnlineMode(
   let chaseSnapped = false
 
   return {
+    root,
     camera: chase.camera,
+    seat: welcome.seat,
     resize(aspect) {
       chase.camera.aspect = aspect
       chase.camera.updateProjectionMatrix()
@@ -125,6 +161,7 @@ export async function createOnlineMode(
       wasWrecked = car.wrecked
       const { vehicle } = prediction
       voice.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, prediction.tuning.maxSpeed, vehicle.command.throttle))
+      skid.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels))
       const knock = vehicle.damage - lastDamage
       if (knock > 0 && !vehicle.wrecked) sound.thud(knock / LOUD_KNOCK)
       lastDamage = vehicle.damage
@@ -148,30 +185,30 @@ export async function createOnlineMode(
     hud() {
       const players = client.playerCount
       const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
-      if (lost !== null) return [{ title, state: `disconnected: ${lost}` }]
+      if (lost !== null) return { title, state: `disconnected: ${lost}` }
       const { vehicle } = prediction
-      return [
-        {
-          title,
-          state: driverState(vehicle, prediction.submersion, inTunnel(vehicle.frame.position)),
-          speed: vehicle.speed,
-          maxSpeed: prediction.tuning.maxSpeed,
-          damage: vehicle.wrecked ? 1 : vehicle.damage,
-          controls: SOLO_KEYS.controls,
-          score: prediction.score,
-        },
-      ]
+      return {
+        title,
+        state: driverState(vehicle, prediction.submersion, inTunnel(vehicle.frame.position)),
+        speed: vehicle.speed,
+        maxSpeed: prediction.tuning.maxSpeed,
+        damage: vehicle.wrecked ? 1 : vehicle.damage,
+        controls: player.keys.controls,
+        score: prediction.score,
+      }
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
       voice.stop()
+      skid.stop()
       pickups.dispose()
       others.dispose()
       car.dispose()
       explosions.dispose()
       smoke.dispose()
+      scene.remove(root)
     },
   }
 }

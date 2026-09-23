@@ -11,22 +11,22 @@ pnpm dev
 ```
 
 That starts everything: the Vite client on port 5173 and the game server on port 8787, both
-reachable from other machines on the network. Open the client, pick **Online** on the first page
-of the menu, and connect. The server field defaults to the game server next to whichever address
-the page was opened on, so a second screen just opens the same URL and connects too.
+reachable from other machines on the network. Every game is on the server: open the client, pick
+**1 player** or **2 players** on the first page of the menu, a vehicle each, and play. A second
+screen just opens the same URL. The page joins the server next to whichever address it was opened
+on; to point it elsewhere, set `VITE_SERVER_URL` when building or running the client (see
+`packages/client/.env.example`).
 
 The server chooses the island; set `SEED=42 pnpm --filter @buggies/server dev` for a particular
 one. `PORT` and `HOST` are honoured as well.
 
+**2 players** puts two of you on one keyboard, side by side, each with their own seat on the
+server: the letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to the road) and
+the arrows on the right (left `Shift` handbrake, `?` back to the road).
+
 Bananas float about every island, turning slowly; drive through one for a point, and another
 turns up somewhere else a little later. Bombs float about too, and one of those blows the car up,
-and a car blown up spills its bananas about the wreck for anyone to come and take. Online, the
-server keeps the score.
-
-**Free drive** needs no server: pick an island by its seed, looking it over from above while you
-do, then a vehicle, and go. **Split screen** puts two of you on one keyboard, side by side: the
-letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to the road) and the arrows on
-the right (left `Shift` handbrake, `?` back to the road).
+and a car blown up spills its bananas about the wreck for anyone to come and take.
 
 ## Packages
 
