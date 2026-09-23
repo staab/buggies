@@ -1,8 +1,8 @@
-import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, WEAPON_LABELS, type Seat } from '@buggies/game'
+import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, WEAPON_LABELS, burning, type Seat } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import type * as THREE from 'three'
 
-import { engineRev, skidAmount, type EngineVoice, type SkidVoice, type Sound } from './audio.ts'
+import { engineRev, skidAmount, type EngineVoice, type SkidVoice, type Sound, type ThrustVoice } from './audio.ts'
 import { CarView } from './car-view.ts'
 import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
@@ -58,6 +58,7 @@ export class CarPresence {
   private readonly view: CarView
   private readonly voice: EngineVoice | null
   private readonly skid: SkidVoice | null
+  private readonly thrust: ThrustVoice | null
   private readonly reveal = new WeaponReveal()
   private readonly mount: WeaponMount
   private aimPoint: Vec3 | null = null
@@ -78,6 +79,7 @@ export class CarPresence {
     const heard = options.heard !== false ? effects.sound : null
     this.voice = heard?.engine(seat.profile) ?? null
     this.skid = heard?.skid() ?? null
+    this.thrust = heard?.thrust() ?? null
     this.wasWrecked = seat.vehicle.wrecked
     this.lastDamage = seat.vehicle.damage
     this.lastScore = seat.score
@@ -92,12 +94,12 @@ export class CarPresence {
     return this.reveal.ready
   }
 
-  /** What the HUD says it is carrying: the name, with the machine gun's seconds left; nothing when nothing. */
+  /** What the HUD says it is carrying: the name, with the seconds left of one that lasts; nothing when nothing. */
   get weaponLabel(): string {
     const { shown } = this.reveal
     if (shown === 'none') return ''
-    if (this.reveal.rolling || shown !== 'machineGun') return WEAPON_LABELS[shown]
-    return `${WEAPON_LABELS.machineGun} ${Math.ceil(this.seat.ammoTicks * FIXED_TIMESTEP)}s`
+    if (this.reveal.rolling || this.seat.ammoTicks === 0) return WEAPON_LABELS[shown]
+    return `${WEAPON_LABELS[shown]} ${Math.ceil(this.seat.ammoTicks * FIXED_TIMESTEP)}s`
   }
 
   /** Train the gun on a point in the world, or on nothing, before the next render. */
@@ -124,7 +126,10 @@ export class CarPresence {
     this.mount.show(vehicle.wrecked ? 'none' : this.reveal.shown)
     this.mount.update(dt)
     this.mount.aim(this.aimPoint, dt)
+    const lit = burning(this.seat)
+    this.mount.burn(lit)
     const off = this.distance()
+    this.thrust?.set(lit && this.seat.weapon === 'engine' ? 1 : 0, off)
     if (vehicle.wrecked && !this.wasWrecked) {
       explosions.burst(vehicle.frame.position)
       sound?.boom(off)
@@ -172,6 +177,7 @@ export class CarPresence {
   dispose(): void {
     this.voice?.stop()
     this.skid?.stop()
+    this.thrust?.stop()
     this.mount.dispose()
     this.view.dispose()
   }

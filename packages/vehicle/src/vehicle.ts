@@ -263,8 +263,9 @@ function settleWheelTravel(
 
   // The ground is past full droop but within reach: over a
   // crest, or a bump, the car holds on to it rather than floating off. Only a
-  // corner rising faster than the lift speed is really leaving the ground.
-  if (wheel.suspensionExtensionRate > tuning.groundStickLiftSpeed) {
+  // corner rising faster than the lift speed is really leaving the ground,
+  // unless something is carrying the whole car up.
+  if (vehicle.lifted || wheel.suspensionExtensionRate > tuning.groundStickLiftSpeed) {
     markWheelAirborne(wheel, tuning, frame)
     advanceWheelSpin(wheel, vehicle.forwardSpeed, tuning, dt)
     return
@@ -349,6 +350,7 @@ function applyTyreForces(vehicle: Vehicle, tuning: VehicleTuning, dt: number): v
   driveContext.brakePedalDrivesReverse = vehicle.forwardSpeed < tuning.reverseSpeedThreshold
   driveContext.remainingDriveFraction = clamp(1 - vehicle.speed / Math.max(tuning.maxSpeed, MIN_SPEED_LIMIT), 0, 1)
   driveContext.massPerWheel = tuning.mass / WHEEL_COUNT
+  driveContext.boosted = vehicle.boosted
 
   for (const wheel of wheels) {
     if (!wheel.grounded) continue

@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   BOMB_DROP_BACK,
+  ENGINE_BURN_TICKS,
   LOOSE_MOST,
   MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
@@ -15,7 +16,9 @@ import {
   SPILL_FLIGHT_TICKS,
   SPILL_LIFE_TICKS,
   WEAPONS,
+  WINGS_FLIGHT_TICKS,
   advance,
+  ammoFor,
   arm,
   createArena,
   initPhysics,
@@ -75,7 +78,7 @@ describe('weapons', () => {
     for (let i = 0; i < 30; i++) advance(arena)
     expect(seat.score).toBe(10)
     expect(WEAPONS).toContain(seat.weapon)
-    expect(seat.ammoTicks).toBe(seat.weapon === 'machineGun' ? MACHINE_GUN_AMMO_TICKS : 0)
+    expect(seat.ammoTicks).toBe(ammoFor(seat.weapon))
     arena.world.free()
   })
 
@@ -195,6 +198,43 @@ describe('weapons', () => {
     // The rocket went first, then the forty oldest bananas.
     expect(arena.rockets).toHaveLength(0)
     expect(arena.spilled[0]!.id).toBe(40)
+    arena.world.free()
+  })
+
+  it('the rocket engine pushes the car on while the button is held, and burns out in time', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    arm(a, 'engine')
+    fire(arena, a, 120)
+    expect(a.vehicle.speed).toBeGreaterThan(8)
+    expect(a.ammoTicks).toBe(ENGINE_BURN_TICKS - 120)
+    // Let go, and it coasts; what is left keeps.
+    for (let i = 0; i < 30; i++) advance(arena)
+    expect(a.ammoTicks).toBe(ENGINE_BURN_TICKS - 120)
+    fire(arena, a, ENGINE_BURN_TICKS)
+    expect(a.weapon).toBe('none')
+    arena.world.free()
+  })
+
+  it('the wings lift the car into the air while held, let it turn up there, and set it down when let go', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    const ground = a.vehicle.frame.position.y
+    arm(a, 'wings')
+    fire(arena, a, 180)
+    expect(a.vehicle.frame.position.y - ground).toBeGreaterThan(8)
+    expect(a.vehicle.groundedCount).toBe(0)
+    expect(a.ammoTicks).toBe(WINGS_FLIGHT_TICKS - 180)
+    // Steered while aloft, it comes round.
+    const { x: fx, z: fz } = a.vehicle.frame.forward
+    for (let i = 0; i < 60; i++) advance(arena, () => ({ ...NEUTRAL_INPUT, fire: true, steer: 1 }))
+    const { x: gx, z: gz } = a.vehicle.frame.forward
+    expect(fx * gx + fz * gz).toBeLessThan(0.9)
+    // Let go: down it comes.
+    for (let i = 0; i < 60 * 6; i++) advance(arena)
+    expect(a.vehicle.groundedCount).toBeGreaterThan(0)
     arena.world.free()
   })
 
