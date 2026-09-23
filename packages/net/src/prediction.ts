@@ -371,6 +371,8 @@ export class LocalPrediction {
       if (mine !== undefined) setPickup(map, water, mine, slot, known.generation, known.spawnTick)
     })
     this.mirror.spilled = this.bananas.spilled.slice()
+    // Numbered on from where the server is, so a replay's drops get the numbers the server's will.
+    this.mirror.spilledNext = snapshot.spilledNext
   }
 
   /** Whoever the server has on the map, the mirror has too, in the same car. */

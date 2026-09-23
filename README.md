@@ -36,6 +36,7 @@ ten seconds of ammunition, which trains itself on the nearest car ahead and fire
 is held; a bomb, dropped behind the car to float there until another car runs into it; a rocket
 engine, which shoves the car along while the key is held, for ten seconds in all; or wings, which
 lift the car into the air while the key is held, for ten seconds in all, and let it turn up there.
+The tank fires its rockets and shots from its own gun, with nothing over its roof for them.
 A wreck spills at most sixteen bananas, and only so much lies loose on an island at once: past 256 things,
 the oldest go. `F` fires (or right `Shift`;
 on a split screen the arrows player has right `Shift` and the letters player `F`). Both hurt.

@@ -512,6 +512,7 @@ export class GameServer implements TransportHandlers {
       tick: room.arena.tick,
       ackInputTick: -1,
       full: false,
+      spilledNext: room.arena.spilledNext,
       vehicles: this.collectSnapshot(room),
       pickups: room.snapshotPickups,
       spilled: room.snapshotSpilled,

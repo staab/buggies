@@ -38,6 +38,7 @@ const snapshot: SnapshotMessage = {
   tick: 123456,
   ackInputTick: 123450,
   full: true,
+  spilledNext: 4321,
   vehicles: [
     {
       seat: 0,
@@ -122,6 +123,7 @@ describe('wire', () => {
     expect(decoded.tick).toBe(snapshot.tick)
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
     expect(decoded.full).toBe(true)
+    expect(decoded.spilledNext).toBe(4321)
     expect(decoded.pickups).toEqual(snapshot.pickups)
     expect(decoded.removed).toEqual(snapshot.removed)
     for (const [i, rocket] of snapshot.rockets.entries()) {

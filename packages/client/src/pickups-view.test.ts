@@ -160,4 +160,21 @@ describe('bananas as drawn', () => {
     expect(field.popping).toBe(0)
     field.dispose()
   })
+
+  it('pop a banana and burst a bomb harvested before their time, as if taken and set off', () => {
+    const spilled: Spilled[] = [
+      { id: 1, kind: 'banana', owner: NO_OWNER, from: { x: 0, y: 2, z: 0 }, position: { x: 6, y: 2, z: 0 }, bornTick: 0 },
+      { id: 2, kind: 'bomb', owner: 3, from: { x: 0, y: 2, z: 0 }, position: { x: -6, y: 2, z: 0 }, bornTick: 0 },
+    ]
+    const source = { pickups: pickups(0), spilled, tick: SPILL_FLIGHT_TICKS + 10 }
+    const wentOff: number[] = []
+    const field = new PickupField(source, (at) => wentOff.push(at.x))
+    field.update(0.1)
+    // The oldest go to make room: the same as being taken, or set off.
+    spilled.length = 0
+    field.update(0.1)
+    expect(field.popping).toBe(1)
+    expect(wentOff).toEqual([-6])
+    field.dispose()
+  })
 })

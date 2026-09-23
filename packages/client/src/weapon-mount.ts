@@ -162,12 +162,15 @@ export class WeaponMount {
   private readonly engine = buildEngine()
   private readonly wings = buildWings()
   private readonly height: number
+  /** Whether the car has a gun of its own: the rocket and the gun are not mounted over its roof. */
+  private readonly builtInGun: boolean
   private readonly desired = AHEAD.clone()
   private shownWeapon: Weapon = 'none'
   private time = 0
 
-  constructor(height: number) {
+  constructor(height: number, builtInGun = false) {
     this.height = height
+    this.builtInGun = builtInGun
     this.object.position.y = height
     this.rocket.visible = false
     this.gun.visible = false
@@ -207,8 +210,8 @@ export class WeaponMount {
   show(weapon: Weapon): void {
     if (weapon === this.shownWeapon) return
     this.shownWeapon = weapon
-    this.rocket.visible = weapon === 'rocket'
-    this.gun.visible = weapon === 'machineGun'
+    this.rocket.visible = weapon === 'rocket' && !this.builtInGun
+    this.gun.visible = weapon === 'machineGun' && !this.builtInGun
     this.bomb.visible = weapon === 'bomb'
     this.engine.model.visible = weapon === 'engine'
     this.wings.visible = weapon === 'wings'

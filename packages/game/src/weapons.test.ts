@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   BOMB_DROP_BACK,
+  BUILT_IN_GUNS,
   ENGINE_BURN_TICKS,
   LOOSE_MOST,
   MACHINE_GUN_AMMO_TICKS,
@@ -13,6 +14,7 @@ import {
   PICKUP_HEIGHT,
   ROCKET_DAMAGE,
   ROCKET_LIFE_TICKS,
+  ROCKET_SPEED,
   SPILL_FLIGHT_TICKS,
   SPILL_LIFE_TICKS,
   WEAPONS,
@@ -235,6 +237,41 @@ describe('weapons', () => {
     // Let go: down it comes.
     for (let i = 0; i < 60 * 6; i++) advance(arena)
     expect(a.vehicle.groundedCount).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
+  it('the tank fires from its own gun, not from over its roof', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'tank')
+    const b = takeSeat(arena, 1, 'sportsCar')
+    advance(arena)
+    const { position, forward, right } = a.vehicle.frame
+    const x = position.x + forward.x * 30 + right.x * 4
+    const z = position.z + forward.z * 30 + right.z * 4
+    respawn(b, { position: { x, y: sampleHeight(map.heightfield, x, z), z }, yaw: a.spawn.yaw })
+    for (let i = 0; i < 30; i++) advance(arena)
+    const gun = BUILT_IN_GUNS.tank!
+    const expected = (): { x: number; y: number; z: number } => {
+      const { position, forward, up } = a.vehicle.frame
+      return {
+        x: position.x + forward.x * gun.ahead + up.x * gun.up,
+        y: position.y + forward.y * gun.ahead + up.y * gun.up,
+        z: position.z + forward.z * gun.ahead + up.z * gun.up,
+      }
+    }
+    arm(a, 'machineGun')
+    fire(arena, a, 1)
+    const shot = arena.shots[0]!
+    const muzzle = expected()
+    expect(shot.hit).toBe(b.id)
+    expect(Math.hypot(shot.from.x - muzzle.x, shot.from.y - muzzle.y, shot.from.z - muzzle.z)).toBeLessThan(0.05)
+    arm(a, 'rocket')
+    fire(arena, a, 1)
+    const rocket = arena.rockets[0]!
+    const from = expected()
+    expect(Math.hypot(rocket.position.x - from.x, rocket.position.y - from.y, rocket.position.z - from.z)).toBeLessThan(
+      ROCKET_SPEED / 60 + 0.05,
+    )
     arena.world.free()
   })
 

@@ -41,7 +41,7 @@ export const RESPAWN_BYTES = 1
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
-export const SNAPSHOT_HEADER_BYTES = 15
+export const SNAPSHOT_HEADER_BYTES = 17
 export const SNAPSHOT_VEHICLE_BYTES = 75
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 30
@@ -138,6 +138,12 @@ export interface SnapshotMessage {
   ackInputTick: number
   /** Whether the bananas here are all of them, a fresh start, rather than what changed. */
   full: boolean
+  /**
+   * The number the next loose thing gets. A mirror numbering what it
+   * predicts from the same count gives it the same numbers the server will,
+   * so the two are one thing on screen and not one gone and another come.
+   */
+  spilledNext: number
   vehicles: VehicleSnapshot[]
   /** The slots whose banana has moved on since the snapshot before; every slot when full. */
   pickups: PickupSnapshot[]
@@ -408,6 +414,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u32(message.tick)
   writer.u32(message.ackInputTick < 0 ? NO_TICK : message.ackInputTick)
   writer.u8(message.full ? 1 : 0)
+  writer.u16(message.spilledNext)
   writer.u8(message.vehicles.length)
   writer.u8(message.pickups.length)
   writer.u8(message.spilled.length)
@@ -471,6 +478,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const tick = reader.u32()
   const ack = reader.u32()
   const full = reader.u8() === 1
+  const spilledNext = reader.u16()
   const count = reader.u8()
   const pickupCount = reader.u8()
   const spilledCount = reader.u8()
@@ -556,6 +564,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
     full,
+    spilledNext,
     vehicles,
     pickups,
     spilled,

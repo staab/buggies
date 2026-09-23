@@ -576,6 +576,22 @@ describe('a session', () => {
     expect(b.prediction.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE, 1)
     expect(aSeat.vehicle.damage).toBe(0)
 
+    // A bomb dropped is numbered the same in the sports car's own prediction as on the server, so
+    // it is one bomb on screen from the drop onward, not one gone and another come.
+    arm(aSeat, 'bomb')
+    session.run(0.5)
+    a.input.fire = true
+    session.run(0.05)
+    a.input.fire = false
+    const predicted = a.prediction.spilled.find((loose) => loose.kind === 'bomb')
+    expect(predicted).toBeDefined()
+    expect(arena.spilled.some((loose) => loose.kind === 'bomb')).toBe(false)
+    session.run(0.5)
+    const dropped = arena.spilled.find((loose) => loose.kind === 'bomb')
+    expect(dropped?.id).toBe(predicted!.id)
+    expect(a.prediction.spilled.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
+    expect(b.prediction.spilled.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
+
     // A machine gun, held for a second: shots the tank takes, and ammunition the sports car spends.
     arm(aSeat, 'machineGun')
     session.run(0.5)
