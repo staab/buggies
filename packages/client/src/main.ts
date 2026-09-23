@@ -45,12 +45,13 @@ const sun = new THREE.DirectionalLight('#fff4e0', 1.6)
 sun.position.set(-300, 500, 200)
 scene.add(sun)
 
-function randomSeed(): number {
-  return Math.floor(Math.random() * 100000)
-}
-
-/** The game server this page was served next to, unless told otherwise. */
-function defaultServer(): string {
+/**
+ * The game server: named at build time by VITE_SERVER_URL, or else the one
+ * next to whichever address the page was opened on.
+ */
+function serverUrl(): string {
+  const configured = import.meta.env.VITE_SERVER_URL as string | undefined
+  if (configured) return configured
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
   return `${scheme}://${location.hostname || 'localhost'}:8787`
 }
@@ -58,29 +59,21 @@ function defaultServer(): string {
 /** What the address bar asks for, with something sensible for whatever it leaves out. */
 function readChoice(): Choice {
   const params = new URLSearchParams(location.search)
-  const seed = Number(params.get('seed'))
-  const requested = params.get('mode')
-  const mode: Mode = requested === 'online' || requested === 'split' ? requested : 'drive'
+  const mode: Mode = params.get('mode') === 'duo' ? 'duo' : 'solo'
   const profile = (name: string, fallback: VehicleProfileId): VehicleProfileId => {
     const given = params.get(name)
     return VEHICLE_PROFILE_IDS.includes(given as VehicleProfileId) ? (given as VehicleProfileId) : fallback
   }
   return {
     mode,
-    seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
     vehicle: profile('vehicle', DEFAULT_VEHICLE_PROFILE),
     vehicle2: profile('vehicle2', VEHICLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE),
-    server: params.get('server') ?? defaultServer(),
   }
 }
 
 /** Reflect what is being played in the address bar. */
 function settle(choice: Choice): void {
-  const online = choice.mode === 'online'
-  const url = online
-    ? `?mode=online&server=${encodeURIComponent(choice.server)}&vehicle=${choice.vehicle}`
-    : `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}` +
-      (choice.mode === 'split' ? `&vehicle2=${choice.vehicle2}` : '')
+  const url = `?mode=${choice.mode}&vehicle=${choice.vehicle}` + (choice.mode === 'duo' ? `&vehicle2=${choice.vehicle2}` : '')
   history.replaceState(null, '', url)
 }
 
@@ -93,6 +86,7 @@ const shell = new Shell(
     huds: [new Hud(document.getElementById('hud')!), new Hud(document.getElementById('hud-right')!)],
     sound,
     islands: new TerrainSource(),
+    server: serverUrl(),
     createMenu: (host, choice) => new Menu(document.getElementById('menu')!, choice, host),
     settle,
   },
@@ -102,8 +96,8 @@ const shell = new Shell(
 // The physics engine is a wasm module, so it has to be ready before anything
 // can be driven. It loads in well under a frame, and getting it out of the way
 // up front beats a loading state in the middle of a session. The vehicles'
-// models come in alongside it: every one of them, since online anyone may
-// turn up in any of them.
+// models come in alongside it: every one of them, since anyone may turn up
+// in any of them.
 shell.notice('loading...')
 await Promise.all([initPhysics(), loadCarModels()])
 shell.welcome()

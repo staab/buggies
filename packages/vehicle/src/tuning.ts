@@ -66,9 +66,8 @@ export interface VehicleTuning {
   yawAssistFullSpeed: number
   yawAssistSlipCutoff: number
 
+  /** How hard the throttle and brake pitch the nose in the air. The steering does nothing there. */
   airPitchTorque: number
-  airYawTorque: number
-  airRollTorque: number
 
   airLevelTorque: number
   /** Torque against pitch and roll rate in the air, per rad/s: the damping on the levelling. */
@@ -197,8 +196,6 @@ const SPORTS_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.9,
 
   airPitchTorque: 4000,
-  airYawTorque: 3000,
-  airRollTorque: 900,
 
   airLevelTorque: 26000,
   airLevelDamping: 9000,
@@ -278,8 +275,6 @@ const PICKUP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.7,
 
   airPitchTorque: 3000,
-  airYawTorque: 2200,
-  airRollTorque: 700,
 
   airLevelTorque: 34000,
   airLevelDamping: 17000,
@@ -361,8 +356,6 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.5,
 
   airPitchTorque: 5500,
-  airYawTorque: 4500,
-  airRollTorque: 1200,
 
   airLevelTorque: 22000,
   airLevelDamping: 7000,
@@ -451,8 +444,6 @@ const POLICE_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.9,
 
   airPitchTorque: 5200,
-  airYawTorque: 3900,
-  airRollTorque: 1200,
 
   airLevelTorque: 34000,
   airLevelDamping: 12000,
@@ -536,8 +527,6 @@ const FIRETRUCK_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.7,
 
   airPitchTorque: 9000,
-  airYawTorque: 7000,
-  airRollTorque: 2500,
 
   airLevelTorque: 110000,
   airLevelDamping: 50000,
@@ -624,8 +613,6 @@ const SMALL_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.9,
 
   airPitchTorque: 3000,
-  airYawTorque: 2400,
-  airRollTorque: 700,
 
   airLevelTorque: 18000,
   airLevelDamping: 6000,
@@ -709,8 +696,6 @@ const TANK_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.9,
 
   airPitchTorque: 18000,
-  airYawTorque: 12000,
-  airRollTorque: 6000,
 
   airLevelTorque: 260000,
   airLevelDamping: 120000,
@@ -791,8 +776,6 @@ const AMBULANCE_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.7,
 
   airPitchTorque: 5000,
-  airYawTorque: 3500,
-  airRollTorque: 1200,
 
   airLevelTorque: 55000,
   airLevelDamping: 26000,
@@ -876,8 +859,6 @@ const SEMI_TUNING: Readonly<VehicleTuning> = Object.freeze({
   yawAssistSlipCutoff: 0.7,
 
   airPitchTorque: 10000,
-  airYawTorque: 8000,
-  airRollTorque: 3000,
 
   airLevelTorque: 130000,
   airLevelDamping: 60000,
@@ -903,7 +884,7 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
   chassisHalfWidth: 0.6,
   chassisHalfHeight: 0.25,
   chassisHalfLength: 0.93,
-  mass: 200,
+  mass: 320,
   centerOfMassOffsetY: -0.2,
   centerOfMassOffsetZ: 0.175,
 
@@ -913,13 +894,13 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
   suspensionMountY: -0.16,
   wheelRadius: 0.273,
 
-  suspensionRestLength: 0.08,
-  suspensionStiffness: 40000,
-  suspensionDamping: 3000,
-  maxSuspensionForce: 20000,
+  suspensionRestLength: 0.14,
+  suspensionStiffness: 30000,
+  suspensionDamping: 2600,
+  maxSuspensionForce: 30000,
   bumpStopStiffness: 300000,
-  antiRollStiffnessFront: 10000,
-  antiRollStiffnessRear: 10000,
+  antiRollStiffnessFront: 8000,
+  antiRollStiffnessRear: 8000,
 
   groundStickRange: 0.3,
   groundStickStiffness: 6000,
@@ -934,11 +915,11 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
   counterSteerSlipMin: 0.25,
   counterSteerAuthority: 0.6,
 
-  engineForce: 3600,
+  engineForce: 9000,
   driveSplit: 0.0,
-  maxSpeed: 34,
-  brakeForce: 4500,
-  handbrakeForce: 1500,
+  maxSpeed: 36,
+  brakeForce: 7500,
+  handbrakeForce: 2500,
   reverseForceScale: 0.5,
   reverseSpeedThreshold: 0.5,
   rollingResistance: 4,
@@ -955,17 +936,17 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
   rearLateralGripScale: 0.9,
 
   downforce: 0.2,
-  yawAssistTorque: 900,
+  // Little yaw assist: so light and short a kart needs no help turning in,
+  // and with more it slid wide at every full-lock corner.
+  yawAssistTorque: 800,
   yawAssistMinSpeed: 1.0,
   yawAssistFullSpeed: 10,
   yawAssistSlipCutoff: 0.7,
 
-  airPitchTorque: 700,
-  airYawTorque: 600,
-  airRollTorque: 150,
+  airPitchTorque: 1100,
 
-  airLevelTorque: 3500,
-  airLevelDamping: 1200,
+  airLevelTorque: 5600,
+  airLevelDamping: 1900,
   airLevelEngageDelay: 0.06,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
@@ -976,7 +957,7 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelLandingLookahead: 0.35,
   airLevelLandingBoostMax: 3.0,
 
-  ...selfRightTuning(200),
+  ...selfRightTuning(320),
   ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 

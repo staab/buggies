@@ -60,6 +60,25 @@ export function earshot(distance: number): number {
 /** How smoothly an engine follows its rev, in seconds. */
 const ENGINE_FOLLOW = 0.08
 
+/** Sideways slip at which tyres begin to squeal, in m/s, and at which they are at their loudest. */
+export const SKID_START = 3
+export const SKID_FULL = 9
+
+/**
+ * How hard the tyres are sliding sideways, 0 to 1: the worst of the wheels
+ * on the ground. Wheels in the air make no noise, whatever they are doing.
+ */
+export function skidAmount(wheels: readonly { grounded: boolean; slipSpeedLateral: number }[]): number {
+  let worst = 0
+  for (const wheel of wheels) {
+    if (wheel.grounded) worst = Math.max(worst, Math.abs(wheel.slipSpeedLateral))
+  }
+  return Math.min(Math.max((worst - SKID_START) / (SKID_FULL - SKID_START), 0), 1)
+}
+
+/** How quickly a squeal comes and goes, in seconds. */
+const SKID_FOLLOW = 0.05
+
 /** An engine kept running: told each frame how hard it works and how far off it is. */
 export class EngineVoice {
   private readonly oscillators: OscillatorNode[]
@@ -141,6 +160,61 @@ export class EngineVoice {
   }
 }
 
+/** Tyres sliding sideways: a squeal that rises and hardens with the slip. */
+export class SkidVoice {
+  private readonly hiss: AudioBufferSourceNode
+  private readonly band: BiquadFilterNode
+  private readonly tone: OscillatorNode
+  private readonly gain: GainNode
+  private stopped = false
+
+  constructor(
+    private readonly context: AudioContext,
+    noise: AudioBuffer,
+    output: AudioNode,
+  ) {
+    const now = context.currentTime
+    this.gain = context.createGain()
+    this.gain.gain.value = 0
+    this.gain.connect(output)
+    this.band = context.createBiquadFilter()
+    this.band.type = 'bandpass'
+    this.band.frequency.value = 1400
+    this.band.Q.value = 5
+    this.hiss = context.createBufferSource()
+    this.hiss.buffer = noise
+    this.hiss.loop = true
+    this.hiss.connect(this.band).connect(this.gain)
+    this.hiss.start(now)
+    this.tone = context.createOscillator()
+    this.tone.type = 'sawtooth'
+    this.tone.frequency.value = 900
+    const toneLevel = context.createGain()
+    toneLevel.gain.value = 0.18
+    this.tone.connect(toneLevel).connect(this.gain)
+    this.tone.start(now)
+  }
+
+  /** How hard the tyres are sliding, 0 to 1, and how far off. */
+  set(slip: number, distance = 0): void {
+    if (this.stopped) return
+    const now = this.context.currentTime
+    this.gain.gain.setTargetAtTime(0.4 * slip * earshot(distance), now, SKID_FOLLOW)
+    this.band.frequency.setTargetAtTime(1200 + 900 * slip, now, SKID_FOLLOW)
+    this.tone.frequency.setTargetAtTime(800 + 500 * slip, now, SKID_FOLLOW)
+  }
+
+  stop(): void {
+    if (this.stopped) return
+    this.stopped = true
+    const now = this.context.currentTime
+    this.gain.gain.setTargetAtTime(0, now, 0.05)
+    this.hiss.stop(now + 0.3)
+    this.tone.stop(now + 0.3)
+    setTimeout(() => this.gain.disconnect(), 400)
+  }
+}
+
 /** A second of white noise, for bangs and thuds. */
 function noiseBuffer(context: AudioContext): AudioBuffer {
   const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate)
@@ -187,6 +261,11 @@ export class Sound {
   /** An engine of this vehicle's kind, running until stopped. */
   engine(profile: VehicleProfileId): EngineVoice {
     return new EngineVoice(this.context, ENGINE_TIMBRES[profile], this.master)
+  }
+
+  /** A set of tyres, silent until they slide. */
+  skid(): SkidVoice {
+    return new SkidVoice(this.context, this.noise, this.master)
   }
 
   /** Something blowing up, this far off: a bang, a rumble, and a thump underneath. */

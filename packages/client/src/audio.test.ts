@@ -1,7 +1,7 @@
 import { VEHICLE_PROFILE_IDS, createVehicleTuning } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
-import { EARSHOT, ENGINE_TIMBRES, earshot, engineFrequency, engineRev } from './audio.ts'
+import { EARSHOT, ENGINE_TIMBRES, SKID_FULL, SKID_START, earshot, engineFrequency, engineRev, skidAmount } from './audio.ts'
 
 describe('engines', () => {
   it('have a timbre for every vehicle, the big ones low and slow, the small ones high', () => {
@@ -31,6 +31,15 @@ describe('engines', () => {
     const timbre = ENGINE_TIMBRES.sportsCar
     expect(engineFrequency(timbre, 0)).toBe(timbre.idle)
     expect(engineFrequency(timbre, 1)).toBe(timbre.idle + timbre.span)
+  })
+
+  it('squeal only for wheels on the ground sliding sideways past a point', () => {
+    const wheel = (grounded: boolean, slipSpeedLateral: number) => ({ grounded, slipSpeedLateral })
+    expect(skidAmount([wheel(true, 0), wheel(true, SKID_START)])).toBe(0)
+    expect(skidAmount([wheel(true, -(SKID_START + SKID_FULL) / 2)])).toBeCloseTo(0.5, 5)
+    expect(skidAmount([wheel(true, SKID_FULL * 3)])).toBe(1)
+    // A wheel in the air is not squealing, however fast it is going sideways.
+    expect(skidAmount([wheel(false, SKID_FULL * 3), wheel(true, 1)])).toBe(0)
   })
 
   it('are heard less the further off they are, and not at all past earshot', () => {
