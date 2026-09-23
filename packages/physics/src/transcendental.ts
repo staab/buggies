@@ -127,9 +127,22 @@ function cosNearZero(x: number, tail: number): number {
   return partial + (1 - partial - half + (square * series - x * tail))
 }
 
+/**
+ * Below this many quarter turns the reduction would leave the angle exactly
+ * as it is, so it is skipped: most angles a road or a wheel asks for are
+ * this small, and the reduction is the costly part.
+ */
+const UNREDUCED_QUARTER_TURNS = 0.49
+
+function needsNoReduction(x: number): boolean {
+  const scaled = x * TWO_OVER_PI
+  return scaled < UNREDUCED_QUARTER_TURNS && scaled > -UNREDUCED_QUARTER_TURNS
+}
+
 export function sin(x: number): number {
   if (x === 0) return x
   if (!Number.isFinite(x)) return NaN
+  if (needsNoReduction(x)) return sinNearZero(x, 0)
 
   reduceToQuarterTurn(x)
 
@@ -142,6 +155,7 @@ export function sin(x: number): number {
 
 export function cos(x: number): number {
   if (!Number.isFinite(x)) return NaN
+  if (needsNoReduction(x)) return cosNearZero(x, 0)
 
   reduceToQuarterTurn(x)
 
@@ -241,4 +255,19 @@ export function hypot(x: number, y: number): number {
   const ratio = smaller / larger
 
   return larger * Math.sqrt(1 + ratio * ratio)
+}
+
+/** The tangent, as the sine over the cosine: both are exact to the same bits everywhere. */
+export function tan(x: number): number {
+  return sin(x) / cos(x)
+}
+
+/**
+ * The arccosine, by way of the arctangent: the square root is correctly
+ * rounded on every engine, and the arctangent is ours. Out of range gives
+ * NaN, as the built-in does.
+ */
+export function acos(x: number): number {
+  if (x !== x || x > 1 || x < -1) return NaN
+  return atan2(Math.sqrt((1 - x) * (1 + x)), x)
 }

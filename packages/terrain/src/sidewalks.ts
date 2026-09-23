@@ -1,5 +1,10 @@
+import * as exact from '@buggies/physics'
 import { sampleHeight } from './heightfield.ts'
 import type { Heightfield, Sidewalk } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { cos: cosine, sin: sine } = exact
 
 /** How far a sidewalk stands above the street. */
 export const KERB_HEIGHT = 0.15
@@ -38,8 +43,8 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
     else indices.push(a, c, b, b, c, d)
   }
   for (const walk of sidewalks) {
-    const cos = Math.cos(walk.yaw)
-    const sin = Math.sin(walk.yaw)
+    const cos = cosine(walk.yaw)
+    const sin = sine(walk.yaw)
     const place = (u: number, v: number): { x: number; z: number } => ({
       x: walk.x + u * cos - v * sin,
       z: walk.z + u * sin + v * cos,

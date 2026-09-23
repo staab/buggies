@@ -1,4 +1,5 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
+import * as exact from '@buggies/physics'
 import {
   buildWaterLevels,
   DRY,
@@ -33,6 +34,10 @@ import {
   type WorldTuning,
 } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { atan2, hypot } = exact
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
@@ -179,7 +184,7 @@ function spawnAt(spot: RoadSpot): VehicleSpawn {
   return {
     position: { x: point.x, y: point.y + roadLift(road), z: point.z },
     // A chassis faces its own -Z, so a yaw of zero looks down -Z too.
-    yaw: Math.atan2(-(ahead.x - point.x), -(ahead.z - point.z)),
+    yaw: atan2(-(ahead.x - point.x), -(ahead.z - point.z)),
   }
 }
 
@@ -198,10 +203,10 @@ function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): Vehicle
     dx = point.x - behind.x
     dz = point.z - behind.z
   }
-  if (Math.hypot(dx, dz) < 1e-6) return spawnAt(spot)
+  if (hypot(dx, dz) < 1e-6) return spawnAt(spot)
   return {
     position: { x: point.x, y: point.y + roadLift(road), z: point.z },
-    yaw: Math.atan2(-dx, -dz),
+    yaw: atan2(-dx, -dz),
   }
 }
 
@@ -215,7 +220,7 @@ function nearestRoadSpotTo(map: TerrainMap, x: number, z: number): RoadSpot | nu
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] === ROAD_TUNNEL) continue
       const point = road.points[i]!
-      const distance = Math.hypot(point.x - x, point.z - z)
+      const distance = hypot(point.x - x, point.z - z)
       if (distance >= bestDistance) continue
       bestDistance = distance
       best = { road, index: i }
@@ -248,7 +253,7 @@ function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
       const point = road.points[i]!
-      const distance = Math.hypot(point.x - targetX, point.z - targetZ)
+      const distance = hypot(point.x - targetX, point.z - targetZ)
       if (distance >= bestDistance) continue
       bestDistance = distance
       best = { road, index: i }
@@ -274,7 +279,7 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
     if (road.structure[Math.min(index, next)] !== ROAD_GRADE) break
     const a = road.points[index]!
     const b = road.points[next]!
-    travelled += Math.hypot(b.x - a.x, b.z - a.z)
+    travelled += hypot(b.x - a.x, b.z - a.z)
     index = next
     if (travelled < spacing) continue
     spots.push({ road, index })

@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import type { District, Heightfield, Road } from '../types.ts'
 import {
   CROSS_REACH,
@@ -32,6 +33,10 @@ import {
 } from './geometry.ts'
 import { limitOpenGrade } from './grades.ts'
 import { sampleTerrain } from './sampling.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 /**
  * Interchanges: where the highway can be crossed on dry ground, and the ramps
@@ -171,7 +176,7 @@ export function interchangeCenters(
     let best: District | null = null
     let nearest = Infinity
     for (const district of districts) {
-      const distance = Math.hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz)
+      const distance = hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz)
       if (distance < nearest) {
         nearest = distance
         best = district
@@ -184,7 +189,7 @@ export function interchangeCenters(
   const rural = (c: number): boolean =>
     districts.every(
       (district) =>
-        Math.hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz) >
+        hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz) >
         district.radius + district.suburbWidth,
     )
 
@@ -193,7 +198,7 @@ export function interchangeCenters(
     let seed = 0
     let nearest = Infinity
     for (let i = 0; i < count; i++) {
-      const distance = Math.hypot(samples[i]!.x - district.cx, samples[i]!.z - district.cz)
+      const distance = hypot(samples[i]!.x - district.cx, samples[i]!.z - district.cz)
       if (distance < nearest) {
         nearest = distance
         seed = i
@@ -296,7 +301,7 @@ export function buildInterchanges(
   const cum = cumulativeLengths(samples)
   const total =
     cum[count - 1]! +
-    Math.hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
+    hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
   const roads: Road[] = []
   const footprints: Vec2[][] = []
   let id = nextId
@@ -347,7 +352,7 @@ export function buildInterchanges(
         const startZ = start.z + start.nz * sn * startOffset
         const startY = profile[attach]!
 
-        const reach = Math.hypot(mergeX - startX, mergeZ - startZ)
+        const reach = hypot(mergeX - startX, mergeZ - startZ)
         const handle = reach * 0.45
         // Depart toward the crossing and arrive toward it, so the ramp sweeps
         // down in one smooth motion and ends perpendicular to the cross road.

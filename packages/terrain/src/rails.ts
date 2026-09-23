@@ -6,8 +6,13 @@
  * which has walls of its own.
  */
 
+import * as exact from '@buggies/physics'
 import { RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, isSurfaceRoad, roadLift } from './roads.ts'
 import type { Road, RoadPoint } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { cos, hypot, sin } = exact
 
 /**
  * Top of the rail above the road's centreline, so a little less above its
@@ -59,7 +64,7 @@ function frameAt(road: Road, index: number): Frame {
   const next = points[road.closed ? (index + 1) % count : Math.min(index + 1, count - 1)]!
   const dx = next.x - prev.x
   const dz = next.z - prev.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   return { nx: -dz / length, nz: dx / length }
 }
 
@@ -74,7 +79,7 @@ function beside(
   const vz = b.z - a.z
   const lengthSq = vx * vx + vz * vz || 1
   const t = Math.min(Math.max(((px - a.x) * vx + (pz - a.z) * vz) / lengthSq, 0), 1)
-  const distance = Math.hypot(px - (a.x + vx * t), pz - (a.z + vz * t))
+  const distance = hypot(px - (a.x + vx * t), pz - (a.z + vz * t))
   const side = Math.sign(vx * (pz - a.z) - vz * (px - a.x)) || 1
   return { distance, side }
 }
@@ -91,15 +96,15 @@ function flared(points: RoadPoint[], side: number, atStart: boolean, atEnd: bool
     // across it, which is the run's own side of its direction of travel.
     const dx = from.x - toward.x
     const dz = from.z - toward.z
-    const length = Math.hypot(dx, dz) || 1
+    const length = hypot(dx, dz) || 1
     const ax = dx / length
     const az = dz / length
     const runX = atStart ? -ax : ax
     const runZ = atStart ? -az : az
     const outX = -runZ * side
     const outZ = runX * side
-    const along = RAIL_FLARE * Math.cos(RAIL_FLARE_ANGLE)
-    const out = RAIL_FLARE * Math.sin(RAIL_FLARE_ANGLE)
+    const along = RAIL_FLARE * cos(RAIL_FLARE_ANGLE)
+    const out = RAIL_FLARE * sin(RAIL_FLARE_ANGLE)
     return { x: from.x + ax * along + outX * out, y: from.y, z: from.z + az * along + outZ * out }
   }
   return [
@@ -183,7 +188,7 @@ function inward(run: RailRun, index: number): { x: number; z: number } {
   const next = points[Math.min(index + 1, points.length - 1)]!
   const dx = next.x - prev.x
   const dz = next.z - prev.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   // The road's left is (-dz, dx); its right edge's inside is that way, its left edge's the reverse.
   return { x: (-dz / length) * -side, z: (dx / length) * -side }
 }

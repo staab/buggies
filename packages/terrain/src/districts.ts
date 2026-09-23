@@ -1,6 +1,11 @@
 import { createRng, randomRange, type Rng } from '@buggies/physics'
+import * as exact from '@buggies/physics'
 
 import type { District, Heightfield } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { acos, hypot } = exact
 
 /** Per-cell district codes stored in `districtOf`. */
 export const DISTRICT_COUNTRY = 0
@@ -141,7 +146,7 @@ function representativeSites(candidates: number[], width: number, cellSize: numb
 /** Interior angles of a triangle with the given side lengths, in degrees. */
 function triangleAngles(a: number, b: number, c: number): [number, number, number] {
   const angle = (opposite: number, x: number, y: number): number =>
-    (Math.acos(Math.min(Math.max((x * x + y * y - opposite * opposite) / (2 * x * y), -1), 1)) * 180) / Math.PI
+    (acos(Math.min(Math.max((x * x + y * y - opposite * opposite) / (2 * x * y), -1), 1)) * 180) / Math.PI
   return [angle(a, b, c), angle(b, c, a), angle(c, a, b)]
 }
 
@@ -155,9 +160,9 @@ function triangleScore(
   level: Float32Array,
 ): number {
   const [a, b, c] = points
-  const ab = Math.hypot(a.x - b.x, a.z - b.z)
-  const bc = Math.hypot(b.x - c.x, b.z - c.z)
-  const ca = Math.hypot(c.x - a.x, c.z - a.z)
+  const ab = hypot(a.x - b.x, a.z - b.z)
+  const bc = hypot(b.x - c.x, b.z - c.z)
+  const ca = hypot(c.x - a.x, c.z - a.z)
   if (Math.min(ab, bc, ca) < MIN_TRIANGLE_SIDE) return -Infinity
   const deviation = Math.max(...triangleAngles(bc, ca, ab).map((angle) => Math.abs(angle - 60)))
   if (deviation > MAX_ANGLE_DEVIATION) return -Infinity

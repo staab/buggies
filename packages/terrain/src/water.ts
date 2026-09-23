@@ -1,5 +1,10 @@
+import * as exact from '@buggies/physics'
 import { RIVER_BANK_LAP } from './rivers.ts'
 import type { Heightfield, TerrainMap } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 /** The level reported where no water reaches. Below every possible surface. */
 export const DRY = Number.NEGATIVE_INFINITY
@@ -31,7 +36,7 @@ export function buildWaterLevels(map: TerrainMap): Float32Array {
       const maxRow = Math.min(Math.ceil((point.z + reach) / cellSize), depth - 1)
       for (let row = minRow; row <= maxRow; row++) {
         for (let col = minCol; col <= maxCol; col++) {
-          if (Math.hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
+          if (hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
           const cell = row * width + col
           if (point.y > levels[cell]!) levels[cell] = point.y
         }

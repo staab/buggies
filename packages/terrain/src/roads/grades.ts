@@ -1,4 +1,9 @@
+import * as exact from '@buggies/physics'
 import type { Vec2 } from './geometry.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 /**
  * Keeping a road drivable: grade and curvature limits applied along a run of
@@ -16,7 +21,7 @@ export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: numb
   const maxDelta = new Float32Array(count)
   for (let i = 0; i < count; i++) {
     const next = (i + 1) % count
-    maxDelta[i] = maxGrade * Math.hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z)
+    maxDelta[i] = maxGrade * hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z)
   }
 
   const cap = count * 50 + 50
@@ -55,7 +60,7 @@ export function limitVerticalCurvature(
   const lengths = new Float32Array(count)
   for (let i = 0; i < count; i++) {
     const next = (i + 1) % count
-    lengths[i] = Math.max(Math.hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z), 1e-3)
+    lengths[i] = Math.max(hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z), 1e-3)
   }
   const first = closed ? 0 : 1
   const last = closed ? count - 1 : count - 2
@@ -88,7 +93,7 @@ export function limitOpenGrade(heights: Float32Array, points: Vec2[], maxGrade: 
   for (let pass = 0; pass < count * 20; pass++) {
     let moved = false
     for (let i = 0; i + 1 < count; i++) {
-      const run = Math.hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
+      const run = hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
       const diff = heights[i + 1]! - heights[i]!
       const excess = Math.abs(diff) - maxGrade * run
       if (excess <= 1e-6) continue
@@ -112,14 +117,14 @@ export function limitSweepGrade(heights: Float32Array, points: Vec2[], maxGrade:
   const forward = Float32Array.from(heights)
   const backward = Float32Array.from(heights)
   for (let i = 1; i < count; i++) {
-    const maxDelta = maxGrade * Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+    const maxDelta = maxGrade * hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
     const high = forward[i - 1]! + maxDelta
     const low = forward[i - 1]! - maxDelta
     if (forward[i]! > high) forward[i] = high
     else if (forward[i]! < low) forward[i] = low
   }
   for (let i = count - 2; i >= 0; i--) {
-    const maxDelta = maxGrade * Math.hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
+    const maxDelta = maxGrade * hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
     const high = backward[i + 1]! + maxDelta
     const low = backward[i + 1]! - maxDelta
     if (backward[i]! > high) backward[i] = high

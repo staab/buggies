@@ -1,4 +1,5 @@
 import { createRng, randomRange, type Rng } from '@buggies/physics'
+import * as exact from '@buggies/physics'
 
 import { generateBuildings } from './buildings.ts'
 import { generateDistricts } from './districts.ts'
@@ -21,6 +22,10 @@ import type {
   TerrainMap,
   TerrainOptions,
 } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { cos, hypot, sin } = exact
 
 const DEFAULTS = {
   size: 1025,
@@ -90,21 +95,21 @@ function createMountains(
   // scattered within it rather than pinned to a single crossing.
   const clusterAngle = randomRange(rng, 0, Math.PI * 2)
   const clusterDistance = islandRadius * randomRange(rng, 0, 0.5)
-  const clusterX = mapCenter + Math.cos(clusterAngle) * clusterDistance
-  const clusterZ = mapCenter + Math.sin(clusterAngle) * clusterDistance
+  const clusterX = mapCenter + cos(clusterAngle) * clusterDistance
+  const clusterZ = mapCenter + sin(clusterAngle) * clusterDistance
 
   return Array.from({ length: count }, () => {
     const offsetAngle = randomRange(rng, 0, Math.PI * 2)
     const offset = spread * Math.sqrt(rng())
-    const cx = clusterX + Math.cos(offsetAngle) * offset
-    const cz = clusterZ + Math.sin(offsetAngle) * offset
+    const cx = clusterX + cos(offsetAngle) * offset
+    const cz = clusterZ + sin(offsetAngle) * offset
 
     const radius = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
     const rotation = randomRange(rng, 0, Math.PI * 2)
     const corners = Array.from({ length: 3 }, (_, k) => {
       const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
       const r = radius * randomRange(rng, 0.65, 1.05)
-      return { x: cx + Math.cos(angle) * r, z: cz + Math.sin(angle) * r }
+      return { x: cx + cos(angle) * r, z: cz + sin(angle) * r }
     })
 
     const a = corners[0]!
@@ -172,7 +177,7 @@ function buildHeights(
       const warpZ =
         (fbm2D(x * warpFrequency + 3.7, z * warpFrequency + 19.2, seed + 211, 4) - 0.5) +
         (fbm2D(x * warpFrequency * 3.7 + 9.4, z * warpFrequency * 3.7 + 13.8, seed + 241, 3) - 0.5) * 0.5
-      const distance = Math.hypot(x - center + warpX * warpAmplitude, z - center + warpZ * warpAmplitude)
+      const distance = hypot(x - center + warpX * warpAmplitude, z - center + warpZ * warpAmplitude)
       const mask = 1 - smoothstep(islandRadius * 0.55, islandRadius, distance)
 
       const base = fbm2D(x * baseFrequency, z * baseFrequency, seed + 1, 2)
@@ -181,7 +186,7 @@ function buildHeights(
       // of pooling into giant interior basins. It follows the plain distance
       // from the centre, not the warped one the coast is cut by: warping it
       // too would fold the coast's bays and headlands into slopes inland.
-      const dome = 1 - smoothstep(0, islandRadius * 0.85, Math.hypot(x - center, z - center))
+      const dome = 1 - smoothstep(0, islandRadius * 0.85, hypot(x - center, z - center))
       const land = base * plainsAmplitude + domeHeight * dome
 
       let mountain = 0
@@ -289,7 +294,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
         if (col < 0 || col >= width) continue
         const level = lakeLevel.get(row * width + col)
         if (level === undefined) continue
-        if (Math.hypot((col + 0.5) * cellSize - x, (row + 0.5) * cellSize - z) > reach) continue
+        if (hypot((col + 0.5) * cellSize - x, (row + 0.5) * cellSize - z) > reach) continue
         if (found === undefined || level < found) found = level
       }
     }
@@ -302,7 +307,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
     const next = points[Math.min(points.length - 1, i + 1)]!
     const dx = next.x - prev.x
     const dz = next.z - prev.z
-    const length = Math.hypot(dx, dz) || 1
+    const length = hypot(dx, dz) || 1
     return { x: -dz / length, z: dx / length }
   }
 
@@ -355,7 +360,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
           const points = rivers[other]!.points
           for (let i = 0; i < points.length; i++) {
             const mate = points[i]!
-            if (Math.hypot(mate.x - point.x, mate.z - point.z) > (point.width + mate.width) / 4) {
+            if (hypot(mate.x - point.x, mate.z - point.z) > (point.width + mate.width) / 4) {
               continue
             }
             point.y = Math.min(point.y, before[other]![i]!)
@@ -412,7 +417,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
 
         for (let row = minRow; row <= maxRow; row++) {
           for (let col = minCol; col <= maxCol; col++) {
-            const distance = Math.hypot(col * cellSize - point.x, row * cellSize - point.z)
+            const distance = hypot(col * cellSize - point.x, row * cellSize - point.z)
             if (distance > outer) continue
             const cell = row * width + col
             if (distance <= half) {

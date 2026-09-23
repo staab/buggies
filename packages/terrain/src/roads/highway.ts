@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import type { District, Heightfield } from '../types.ts'
 import {
   BOW_ANGLE,
@@ -9,6 +10,10 @@ import {
 } from './constants.ts'
 import { type Vec2, centroid, interiorAngle, polygonInradius } from './geometry.ts'
 import { pullAllInland, pullInland, sampleTerrain } from './sampling.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { atan2, cos, hypot, sin } = exact
 
 /**
  * The highway: one loop round the island's cities, shaped as a stadium or bowed
@@ -23,7 +28,7 @@ import { pullAllInland, pullInland, sampleTerrain } from './sampling.ts'
 function stadiumLoop(a: Vec2, b: Vec2, halfWidth: number): Vec2[] {
   const dx = b.x - a.x
   const dz = b.z - a.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   const ux = dx / length
   const uz = dz / length
   const nx = -uz
@@ -37,8 +42,8 @@ function stadiumLoop(a: Vec2, b: Vec2, halfWidth: number): Vec2[] {
   for (let k = 1; k < STADIUM_SEGMENTS; k++) {
     const angle = (Math.PI * k) / STADIUM_SEGMENTS
     points.push({
-      x: b.x + nx * halfWidth * Math.cos(angle) + ux * halfWidth * Math.sin(angle),
-      z: b.z + nz * halfWidth * Math.cos(angle) + uz * halfWidth * Math.sin(angle),
+      x: b.x + nx * halfWidth * cos(angle) + ux * halfWidth * sin(angle),
+      z: b.z + nz * halfWidth * cos(angle) + uz * halfWidth * sin(angle),
     })
   }
   for (let k = 0; k <= STADIUM_SEGMENTS; k++) {
@@ -48,8 +53,8 @@ function stadiumLoop(a: Vec2, b: Vec2, halfWidth: number): Vec2[] {
   for (let k = 1; k < STADIUM_SEGMENTS; k++) {
     const angle = (Math.PI * k) / STADIUM_SEGMENTS
     points.push({
-      x: a.x - nx * halfWidth * Math.cos(angle) - ux * halfWidth * Math.sin(angle),
-      z: a.z - nz * halfWidth * Math.cos(angle) - uz * halfWidth * Math.sin(angle),
+      x: a.x - nx * halfWidth * cos(angle) - ux * halfWidth * sin(angle),
+      z: a.z - nz * halfWidth * cos(angle) - uz * halfWidth * sin(angle),
     })
   }
   return points
@@ -65,7 +70,7 @@ function stadiumFor(ordered: District[], turnRadius: number): Vec2[] | null {
   let farthest = -1
   for (let i = 0; i < ordered.length; i++) {
     for (let j = i + 1; j < ordered.length; j++) {
-      const distance = Math.hypot(ordered[i]!.cx - ordered[j]!.cx, ordered[i]!.cz - ordered[j]!.cz)
+      const distance = hypot(ordered[i]!.cx - ordered[j]!.cx, ordered[i]!.cz - ordered[j]!.cz)
       if (distance > farthest) {
         farthest = distance
         a = ordered[i]!
@@ -75,7 +80,7 @@ function stadiumFor(ordered: District[], turnRadius: number): Vec2[] | null {
   }
   const dx = b.cx - a.cx
   const dz = b.cz - a.cz
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   const nx = -dz / length
   const nz = dx / length
   let maxOffset = 0
@@ -90,8 +95,8 @@ function stadiumFor(ordered: District[], turnRadius: number): Vec2[] | null {
 /** Districts in angular order around their centroid, so the loop never crosses itself. */
 function orderedCities(districts: District[], centerX: number, centerZ: number): District[] {
   return districts.slice().sort((a, b) => {
-    const angleA = Math.atan2(a.cz - centerZ, a.cx - centerX)
-    const angleB = Math.atan2(b.cz - centerZ, b.cx - centerX)
+    const angleA = atan2(a.cz - centerZ, a.cx - centerX)
+    const angleB = atan2(b.cz - centerZ, b.cx - centerX)
     return angleA - angleB || a.id - b.id
   })
 }
@@ -139,10 +144,10 @@ function bowControls(
     const midZ = (a.z + b.z) / 2
     let outX = midX - center.x
     let outZ = midZ - center.z
-    const length = Math.hypot(outX, outZ) || 1
+    const length = hypot(outX, outZ) || 1
     outX /= length
     outZ /= length
-    const bow = Math.hypot(b.x - a.x, b.z - a.z) * fraction
+    const bow = hypot(b.x - a.x, b.z - a.z) * fraction
     points.push(pullInland(midX + outX * bow, midZ + outZ * bow, center.x, center.z, field, seaLevel))
   }
   return points
@@ -163,7 +168,7 @@ function offsetLoop(control: Vec2[], radius: number, step: number): Vec2[] {
     const b = control[(i + 1) % count]!
     const dx = b.x - a.x
     const dz = b.z - a.z
-    const length = Math.hypot(dx, dz)
+    const length = hypot(dx, dz)
     if (length < 1e-6) {
       normals.push(normals[i - 1] ?? { x: 1, z: 0 })
       continue
@@ -186,21 +191,21 @@ function offsetLoop(control: Vec2[], radius: number, step: number): Vec2[] {
     const outgoing = normals[i]!
     const start = { x: city.x + incoming.x * radius, z: city.z + incoming.z * radius }
     const end = { x: city.x + outgoing.x * radius, z: city.z + outgoing.z * radius }
-    const startAngle = Math.atan2(start.z - city.z, start.x - city.x)
-    let sweep = Math.atan2(end.z - city.z, end.x - city.x) - startAngle
+    const startAngle = atan2(start.z - city.z, start.x - city.x)
+    let sweep = atan2(end.z - city.z, end.x - city.x) - startAngle
     while (sweep <= -Math.PI) sweep += Math.PI * 2
     while (sweep > Math.PI) sweep -= Math.PI * 2
     const arcSteps = Math.max(1, Math.ceil((Math.abs(sweep) * radius) / step))
     for (let k = 0; k <= arcSteps; k++) {
       const angle = startAngle + sweep * (k / arcSteps)
-      points.push({ x: city.x + Math.cos(angle) * radius, z: city.z + Math.sin(angle) * radius })
+      points.push({ x: city.x + cos(angle) * radius, z: city.z + sin(angle) * radius })
     }
 
     const next = control[(i + 1) % count]!
     const nextStart = { x: next.x + outgoing.x * radius, z: next.z + outgoing.z * radius }
     const runX = nextStart.x - end.x
     const runZ = nextStart.z - end.z
-    const runSteps = Math.max(1, Math.ceil(Math.hypot(runX, runZ) / step))
+    const runSteps = Math.max(1, Math.ceil(hypot(runX, runZ) / step))
     for (let k = 1; k < runSteps; k++) {
       const t = k / runSteps
       points.push({ x: end.x + runX * t, z: end.z + runZ * t })
@@ -229,7 +234,7 @@ function controlPoints(
     const radius = Math.max(40, district.radius + district.suburbWidth + 24)
     const ring = Array.from({ length: RING_POINTS }, (_, k) => {
       const angle = (k / RING_POINTS) * Math.PI * 2
-      return { x: district.cx + Math.cos(angle) * radius, z: district.cz + Math.sin(angle) * radius }
+      return { x: district.cx + cos(angle) * radius, z: district.cz + sin(angle) * radius }
     })
     return pullAllInland(ring, district.cx, district.cz, field, seaLevel)
   }
@@ -237,7 +242,7 @@ function controlPoints(
   if (count === 2) {
     const a = ordered[0]!
     const b = ordered[1]!
-    const length = Math.hypot(b.cx - a.cx, b.cz - a.cz) || 1
+    const length = hypot(b.cx - a.cx, b.cz - a.cz) || 1
     const turnRadius = Math.min(...districts.map((district) => district.radius)) * TURN_RADIUS_FRACTION
     const width = Math.min(Math.max(length * 0.35, turnRadius), Math.min(a.radius, b.radius) * 0.9)
     const loop = stadiumLoop({ x: a.cx, z: a.cz }, { x: b.cx, z: b.cz }, width)
@@ -302,15 +307,15 @@ function sampleLoop(control: Vec2[], step: number): Vec2[] {
     const p2 = control[(i + 1) % count]!
     const p3 = control[(i + 2) % count]!
 
-    const d1 = Math.max(Math.hypot(p1.x - p0.x, p1.z - p0.z), 1e-3) ** alpha
-    const d2 = Math.max(Math.hypot(p2.x - p1.x, p2.z - p1.z), 1e-3) ** alpha
-    const d3 = Math.max(Math.hypot(p3.x - p2.x, p3.z - p2.z), 1e-3) ** alpha
+    const d1 = Math.max(hypot(p1.x - p0.x, p1.z - p0.z), 1e-3) ** alpha
+    const d2 = Math.max(hypot(p2.x - p1.x, p2.z - p1.z), 1e-3) ** alpha
+    const d3 = Math.max(hypot(p3.x - p2.x, p3.z - p2.z), 1e-3) ** alpha
     const t0 = 0
     const t1 = t0 + d1
     const t2 = t1 + d2
     const t3 = t2 + d3
     const span = Math.max(t2 - t1, 1e-6)
-    const steps = Math.max(2, Math.round(Math.hypot(p2.x - p1.x, p2.z - p1.z) / step))
+    const steps = Math.max(2, Math.round(hypot(p2.x - p1.x, p2.z - p1.z) / step))
 
     for (let k = 0; k < steps; k++) {
       const t = t1 + (k / steps) * span

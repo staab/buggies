@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { FIXED_TIMESTEP, atan2, cos, qrotate, quatFromYaw, sin, v3, vadd, vcross, vdot, vscale } from './index.ts'
+import { FIXED_TIMESTEP, acos, atan2, cos, qrotate, quatFromYaw, sin, tan, v3, vadd, vcross, vdot, vscale } from './index.ts'
 
 describe('physics', () => {
   it('adds and scales vectors', () => {
@@ -36,5 +36,23 @@ describe('physics', () => {
 
   it('uses a fixed timestep', () => {
     expect(FIXED_TIMESTEP).toBeCloseTo(1 / 60)
+  })
+})
+
+describe('the deterministic tangent and arccosine', () => {
+  it('agree with the built-ins to the last few bits across their range', () => {
+    for (let i = -200; i <= 200; i++) {
+      const x = i / 200
+      expect(Math.abs(acos(x) - Math.acos(x))).toBeLessThan(4e-16 * (1 + Math.abs(Math.acos(x))))
+    }
+    for (let i = -150; i <= 150; i++) {
+      const x = i / 100
+      expect(Math.abs(tan(x) - Math.tan(x))).toBeLessThan(1e-14 * (1 + Math.abs(Math.tan(x))))
+    }
+    expect(acos(1)).toBe(0)
+    expect(Math.abs(acos(-1) - Math.PI)).toBeLessThan(1e-15)
+    expect(acos(1.0000001)).toBeNaN()
+    expect(acos(Number.NaN)).toBeNaN()
+    expect(tan(0)).toBe(0)
   })
 })
