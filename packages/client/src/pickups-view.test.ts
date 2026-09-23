@@ -1,8 +1,8 @@
-import { SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Spilled } from '@buggies/game'
+import { NO_OWNER, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Spilled } from '@buggies/game'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
-import { BANANA_LENGTH, PickupField, POP_LIFE, bananaGeometry } from './pickups-view.ts'
+import { BANANA_LENGTH, BOMB_RADIUS, PickupField, POP_LIFE, bananaGeometry, bombGeometry } from './pickups-view.ts'
 
 function pickups(count: number): Pickup[] {
   return Array.from({ length: count }, (_, slot) => ({
@@ -65,10 +65,11 @@ describe('bananas as drawn', () => {
     source.pickups[0]!.spawnTick = 480
     field.update(0.1)
     expect(field.popping).toBe(1)
-    expect(field.object.children.length).toBe(3)
+    // The three meshes of the field, and the pop.
+    expect(field.object.children.length).toBe(4)
     field.update(POP_LIFE)
     expect(field.popping).toBe(0)
-    expect(field.object.children.length).toBe(2)
+    expect(field.object.children.length).toBe(3)
     // Its next turning up is not a taking.
     source.tick = 480
     field.update(0.1)
@@ -83,7 +84,9 @@ describe('bananas as drawn', () => {
   })
 
   it('fling spilled bananas out of the blast in an arc, lie them where they land, and pop them when taken', () => {
-    const spilled: Spilled[] = [{ id: 1, from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 }]
+    const spilled: Spilled[] = [
+      { id: 1, kind: 'banana', owner: NO_OWNER, from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 },
+    ]
     const source = { pickups: pickups(0), spilled, tick: 100 + SPILL_FLIGHT_TICKS / 2 }
     const field = new PickupField(source)
     const loose = field.object.children[1] as THREE.InstancedMesh
@@ -109,11 +112,51 @@ describe('bananas as drawn', () => {
     expect(field.popping).toBe(1)
     field.update(POP_LIFE)
     // Gone at its time: faded, no pop.
-    spilled.push({ id: 2, from: { x: 0, y: 2, z: 0 }, position: { x: -8, y: 3, z: 4 }, bornTick: 100 })
+    spilled.push({
+      id: 2,
+      kind: 'banana',
+      owner: NO_OWNER,
+      from: { x: 0, y: 2, z: 0 },
+      position: { x: -8, y: 3, z: 4 },
+      bornTick: 100,
+    })
     field.update(0.1)
     source.tick = 100 + SPILL_LIFE_TICKS
     spilled.length = 0
     field.update(0.1)
+    expect(field.popping).toBe(0)
+    field.dispose()
+  })
+
+  it('draw bombs where they float, and say where one went off', () => {
+    const geometry = bombGeometry()
+    geometry.computeBoundingBox()
+    const size = geometry.boundingBox!.getSize(new THREE.Vector3())
+    expect(size.x).toBeCloseTo(BOMB_RADIUS * 2, 1)
+    expect(size.y).toBeGreaterThan(BOMB_RADIUS * 2)
+    geometry.dispose()
+
+    const spilled: Spilled[] = [
+      { id: 5, kind: 'bomb', owner: 2, from: { x: 0, y: 2, z: 0 }, position: { x: -5, y: 2, z: 0 }, bornTick: 0 },
+    ]
+    const source = { pickups: pickups(0), spilled, tick: SPILL_FLIGHT_TICKS + 10 }
+    const wentOff: { x: number; y: number; z: number }[] = []
+    const field = new PickupField(source, (at) => wentOff.push({ x: at.x, y: at.y, z: at.z }))
+    field.update(0.1)
+    const [, loose, bombs] = field.object.children as THREE.InstancedMesh[]
+    expect(loose!.count).toBe(0)
+    expect(bombs!.count).toBe(1)
+    const matrix = new THREE.Matrix4()
+    const position = new THREE.Vector3()
+    bombs!.getMatrixAt(0, matrix)
+    position.setFromMatrixPosition(matrix)
+    expect(position.x).toBeCloseTo(-5, 3)
+    // Gone: it went off where it was, and it is no banana to pop.
+    spilled.length = 0
+    field.update(0.1)
+    expect(bombs!.count).toBe(0)
+    expect(wentOff).toHaveLength(1)
+    expect(wentOff[0]!.x).toBeCloseTo(-5, 3)
     expect(field.popping).toBe(0)
     field.dispose()
   })

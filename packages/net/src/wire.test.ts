@@ -11,6 +11,7 @@ import {
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_REMOVED_BYTES,
+  SNAPSHOT_ROCKET_BYTES,
   SNAPSHOT_SPILLED_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
   decodeHello,
@@ -49,7 +50,9 @@ const snapshot: SnapshotMessage = {
       damage: 1,
       wrecked: true,
       score: 60000,
-      appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true },
+      weapon: 'machineGun',
+      ammoTicks: 1234,
+      appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, fire: true },
     },
     {
       seat: 5,
@@ -62,7 +65,9 @@ const snapshot: SnapshotMessage = {
       damage: 0.4,
       wrecked: false,
       score: 3,
-      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false },
+      weapon: 'none',
+      ammoTicks: 0,
+      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, fire: false },
     },
   ],
   pickups: [
@@ -71,10 +76,14 @@ const snapshot: SnapshotMessage = {
     { slot: 63, generation: 65535, ticksUntilOut: 12 },
   ],
   spilled: [
-    { id: 0, from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
-    { id: 65535, from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
+    { id: 0, kind: 'banana', owner: -1, from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
+    { id: 65535, kind: 'bomb', owner: 6, from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
   ],
   removed: [3, 65000],
+  rockets: [
+    { id: 9, owner: 2, target: 5, position: { x: 1, y: 2, z: 3 }, velocity: { x: 40, y: -1, z: 20 }, age: 12 },
+    { id: 65535, owner: 7, target: -1, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, age: 0 },
+  ],
 }
 
 describe('wire', () => {
@@ -91,10 +100,10 @@ describe('wire', () => {
   })
 
   it('round-trips an input with its tick', () => {
-    const input = { steer: -0.25, throttle: 0.5, brake: 0, handbrake: true }
+    const input = { steer: -0.25, throttle: 0.5, brake: 0, handbrake: true, fire: false }
     const payload = encodeInput(77, input)
     expect(payload.length).toBe(INPUT_BYTES)
-    const out = { steer: 9, throttle: 9, brake: 9, handbrake: false }
+    const out = { steer: 9, throttle: 9, brake: 9, handbrake: false, fire: true }
     expect(decodeInput(payload, out)).toBe(77)
     expect(out).toEqual(input)
   })
@@ -106,7 +115,8 @@ describe('wire', () => {
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
         2 * SNAPSHOT_SPILLED_BYTES +
-        2 * SNAPSHOT_REMOVED_BYTES,
+        2 * SNAPSHOT_REMOVED_BYTES +
+        2 * SNAPSHOT_ROCKET_BYTES,
     )
     const decoded = decodeSnapshot(payload)!
     expect(decoded.tick).toBe(snapshot.tick)
@@ -114,13 +124,21 @@ describe('wire', () => {
     expect(decoded.full).toBe(true)
     expect(decoded.pickups).toEqual(snapshot.pickups)
     expect(decoded.removed).toEqual(snapshot.removed)
+    for (const [i, rocket] of snapshot.rockets.entries()) {
+      const got = decoded.rockets[i]!
+      expect(got).toMatchObject({ id: rocket.id, owner: rocket.owner, target: rocket.target, age: rocket.age })
+      for (const axis of ['x', 'y', 'z'] as const) {
+        expect(got.position[axis]).toBeCloseTo(rocket.position[axis], 4)
+        expect(got.velocity[axis]).toBeCloseTo(rocket.velocity[axis], 4)
+      }
+    }
     // With nothing changed, a snapshot is its vehicles alone.
-    const quiet = { ...snapshot, full: false, pickups: [], spilled: [], removed: [] }
+    const quiet = { ...snapshot, full: false, pickups: [], spilled: [], removed: [], rockets: [] }
     expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], spilled: [], removed: [] })
     for (const [i, spilled] of snapshot.spilled.entries()) {
       const got = decoded.spilled[i]!
-      expect(got.age).toBe(spilled.age)
+      expect(got).toMatchObject({ id: spilled.id, kind: spilled.kind, owner: spilled.owner, age: spilled.age })
       for (const axis of ['x', 'y', 'z'] as const) {
         expect(got.from[axis]).toBeCloseTo(spilled.from[axis], 4)
         expect(got.position[axis]).toBeCloseTo(spilled.position[axis], 4)
@@ -131,6 +149,8 @@ describe('wire', () => {
       expect(got.seat).toBe(vehicle.seat)
       expect(got.epoch).toBe(vehicle.epoch)
       expect(got.profile).toBe(vehicle.profile)
+      expect(got.weapon).toBe(vehicle.weapon)
+      expect(got.ammoTicks).toBe(vehicle.ammoTicks)
       expect(got.wrecked).toBe(vehicle.wrecked)
       expect(got.score).toBe(vehicle.score)
       expect(got.damage).toBeCloseTo(vehicle.damage, 2)

@@ -26,6 +26,7 @@ import {
   restingRideHeight,
   stepVehicle,
   worldGravity,
+  wreckVehicle,
   type Vehicle,
   type VehicleInput,
   type VehicleProfileId,
@@ -53,6 +54,7 @@ export {
   DAMAGE_SMOKING,
   DEFAULT_WORLD_TUNING,
   DEFAULT_VEHICLE_PROFILE,
+  hurtVehicle,
   initPhysics,
   NEUTRAL_INPUT,
   readVehicleStepState,
@@ -85,9 +87,12 @@ export {
   SPILL_FLIGHT_TICKS,
   SPILL_LIFE_TICKS,
   SPILL_MOST,
-  SPILL_MOST_OUT,
   SPILL_NEAR,
   SPILLED_IDS,
+  SPILLED_KINDS,
+  BOMB_REACH,
+  LOOSE_MOST,
+  NO_OWNER,
   pickupOut,
   pickupSeed,
   pickupSpot,
@@ -99,8 +104,51 @@ export {
   spilledOut,
   type Pickup,
   type Spilled,
+  type SpilledKind,
 } from './pickups.ts'
+export {
+  BANANAS_PER_WEAPON,
+  BOMB_DROP_BACK,
+  MACHINE_GUN_AMMO_TICKS,
+  MACHINE_GUN_DAMAGE,
+  MACHINE_GUN_RANGE,
+  MACHINE_GUN_SHOT_TICKS,
+  MACHINE_GUN_SWEEP_COS,
+  MOUNT_HEIGHT,
+  NO_TARGET,
+  ROCKET_DAMAGE,
+  ROCKET_LIFE_TICKS,
+  ROCKET_LOCK_RANGE,
+  ROCKET_REACH,
+  ROCKET_SPEED,
+  WEAPON_LABELS,
+  WEAPONS,
+  arm,
+  disarm,
+  fireWeapons,
+  flyRockets,
+  mountPoint,
+  rocketId,
+  weaponWon,
+  type Battlefield,
+  type Gunner,
+  type Rocket,
+  type Shot,
+  type Weapon,
+} from './weapons.ts'
 
+import {
+  BANANAS_PER_WEAPON,
+  NO_TARGET,
+  arm,
+  disarm,
+  fireWeapons,
+  flyRockets,
+  weaponWon,
+  type Rocket,
+  type Shot,
+  type Weapon,
+} from './weapons.ts'
 import {
   createPickups,
   pickupOut,
@@ -112,7 +160,7 @@ import {
   spilledOut,
   PICKUP_RESPAWN_TICKS,
   SPILL_MOST,
-  SPILL_MOST_OUT,
+  LOOSE_MOST,
   SPILLED_IDS,
   type Pickup,
   type Spilled,
@@ -147,6 +195,11 @@ export interface Seat {
   lostTicks: number
   /** Bananas taken since sitting down. */
   score: number
+  /** What it is carrying over its roof, won with bananas, and how long the machine gun has left. */
+  weapon: Weapon
+  ammoTicks: number
+  /** The seat the machine gun is trained on, or none. */
+  aimTarget: number
 }
 
 /**
@@ -163,10 +216,14 @@ export interface Arena {
   readonly water: Float32Array
   /** The map's bananas, a slot each, for the taking. */
   readonly pickups: readonly Pickup[]
-  /** Bananas spilled from wrecks, lying about until taken. Replaced whole by the server's word. */
+  /** What lies loose: bananas spilled from wrecks, until taken, and bombs dropped from cars, until set off. */
   spilled: Spilled[]
   /** The number the next banana spilled gets. */
   spilledNext: number
+  /** Rockets in the air. Replaced whole by the server's word. */
+  rockets: Rocket[]
+  /** The machine gun shots of the last tick, for drawing. */
+  readonly shots: Shot[]
   tick: number
 }
 
@@ -339,6 +396,9 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       submersion: 0,
       lostTicks: 0,
       score: 0,
+      weapon: 'none',
+      ammoTicks: 0,
+      aimTarget: NO_TARGET,
     }
   })
 
@@ -357,6 +417,8 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     pickups: createPickups(map, water),
     spilled: [],
     spilledNext: 0,
+    rockets: [],
+    shots: [],
     tick: 0,
   }
 }
@@ -420,6 +482,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   reshape(arena, seat, profile)
   seat.occupied = true
   seat.score = 0
+  disarm(seat)
   seat.vehicle.body.setEnabled(true)
   respawn(seat)
   return seat
@@ -431,6 +494,7 @@ export function leaveSeat(arena: Arena, id: number): void {
   if (seat === undefined || !seat.occupied) return
   seat.occupied = false
   seat.score = 0
+  disarm(seat)
   seat.vehicle.body.setEnabled(false)
 }
 
@@ -472,6 +536,28 @@ export function advance(
   arena.tick += 1
   collectPickups(arena)
   spillBananas(arena)
+  fireWeapons(arena)
+  flyRockets(arena, dt)
+  trimLoose(arena)
+}
+
+/**
+ * Only so much lies loose on a map at once, bananas, bombs and rockets
+ * together; past that the oldest go, whichever they are.
+ */
+function trimLoose(arena: Arena): void {
+  while (arena.spilled.length + arena.rockets.length > LOOSE_MOST) {
+    const loose = arena.spilled[0]
+    const rocket = arena.rockets[0]
+    if (rocket === undefined || (loose !== undefined && loose.bornTick <= rocket.bornTick)) arena.spilled.shift()
+    else arena.rockets.shift()
+  }
+}
+
+/** A banana taken: a point, and every so many of them something to fire. */
+function score(arena: Arena, seat: Seat): void {
+  seat.score += 1
+  if (seat.score % BANANAS_PER_WEAPON === 0) arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score))
 }
 
 /**
@@ -489,7 +575,6 @@ function spillBananas(arena: Arena): void {
     arena.spilledNext = (arena.spilledNext + count) % SPILLED_IDS
     seat.score = 0
   }
-  if (arena.spilled.length > SPILL_MOST_OUT) arena.spilled.splice(0, arena.spilled.length - SPILL_MOST_OUT)
 }
 
 /**
@@ -502,13 +587,15 @@ function collectPickups(arena: Arena): void {
     if (!pickupOut(pickup, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesPickup(pickup, seat.vehicle.frame.position)) continue
-      seat.score += 1
+      score(arena, seat)
       setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
       break
     }
   }
-  // Spilled bananas go the same way, or fade if nobody comes for them. Walked
-  // from the end, so taking one out moves nothing still to come, and i stays within the list.
+  // Spilled bananas go the same way, or fade if nobody comes for them; a
+  // bomb goes off on the first car to reach it that is not the one that
+  // dropped it. Walked from the end, so taking one out moves nothing still
+  // to come, and i stays within the list.
   for (let i = arena.spilled.length - 1; i >= 0; i--) {
     const spilled = arena.spilled[i]!
     if (spilledGone(spilled, arena.tick)) {
@@ -518,7 +605,12 @@ function collectPickups(arena: Arena): void {
     if (!spilledOut(spilled, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesSpilled(spilled, seat.vehicle.frame.position)) continue
-      seat.score += 1
+      if (spilled.kind === 'bomb') {
+        if (seat.id === spilled.owner) continue
+        wreckVehicle(seat.vehicle, seat.tuning)
+      } else {
+        score(arena, seat)
+      }
       arena.spilled.splice(i, 1)
       break
     }

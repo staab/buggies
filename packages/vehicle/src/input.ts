@@ -8,6 +8,8 @@ export interface VehicleInput {
   throttle: number
   brake: number
   handbrake: boolean
+  /** The fire button: whatever the car is carrying goes. */
+  fire: boolean
 }
 
 export interface DriverCommand {
@@ -15,6 +17,7 @@ export interface DriverCommand {
   throttle: number
   brake: number
   handbrake: boolean
+  fire: boolean
 }
 
 export const NEUTRAL_INPUT: Readonly<VehicleInput> = Object.freeze({
@@ -22,6 +25,7 @@ export const NEUTRAL_INPUT: Readonly<VehicleInput> = Object.freeze({
   throttle: 0,
   brake: 0,
   handbrake: false,
+  fire: false,
 } satisfies VehicleInput)
 
 export function createVehicleInput(): VehicleInput {
@@ -38,6 +42,7 @@ export function copyVehicleInput(out: VehicleInput, source: VehicleInput): Vehic
     throttle: source.throttle,
     brake: source.brake,
     handbrake: source.handbrake,
+    fire: source.fire,
   } satisfies VehicleInput)
 }
 
@@ -46,6 +51,7 @@ export function readDriverCommand(out: DriverCommand, input: VehicleInput): Driv
   out.throttle = clamp(input.throttle, 0, 1)
   out.brake = clamp(input.brake, 0, 1)
   out.handbrake = input.handbrake
+  out.fire = input.fire
 
   return out
 }

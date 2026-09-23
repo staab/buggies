@@ -11,6 +11,7 @@ import {
   writeVehicleStepState,
   type Arena,
   type Pickup,
+  type Rocket,
   type Spilled,
   type Seat,
   type Vehicle,
@@ -195,6 +196,16 @@ export class LocalPrediction {
     return this.mirror.spilled
   }
 
+  /** Rockets in the air, as the mirror has them: the server's word, run ahead. */
+  get rockets(): readonly Rocket[] {
+    return this.mirror.rockets
+  }
+
+  /** The machine gun shots of the mirror's last tick. */
+  get shots(): Arena['shots'] {
+    return this.mirror.shots
+  }
+
   /** Bananas taken, as predicted; the server's count catches up with it. */
   get score(): number {
     return this.seat.score
@@ -340,7 +351,17 @@ export class LocalPrediction {
       seat.vehicle.damage = vehicle.damage
       seat.vehicle.wrecked = vehicle.wrecked
       seat.score = vehicle.score
+      seat.weapon = vehicle.weapon
+      seat.ammoTicks = vehicle.ammoTicks
     }
+    this.mirror.rockets = snapshot.rockets.map((rocket) => ({
+      id: rocket.id,
+      owner: rocket.owner,
+      target: rocket.target,
+      position: { ...rocket.position },
+      velocity: { ...rocket.velocity },
+      bornTick: snapshot.tick - rocket.age,
+    }))
     // The bananas are the server's word alone: whatever the mirror took or
     // spilled since is put back as the server has it, to be taken again in
     // the replay if it was right.

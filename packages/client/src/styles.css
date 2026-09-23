@@ -89,6 +89,32 @@ body {
   width: 22px;
   height: 22px;
 }
+/* What the car is carrying, in a slot of its own: empty when nothing. */
+.weapon {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 3px 10px;
+  border: 1px dashed var(--edge);
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.weapon::before {
+  content: 'power-up';
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  color: var(--dim);
+}
+.weapon.rolling {
+  color: var(--accent);
+  border-style: solid;
+}
 .gauges {
   display: flex;
   justify-content: space-evenly;

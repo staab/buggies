@@ -1,4 +1,5 @@
-import { SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, SPILL_MOST_OUT, pickupOut, type Pickup, type Spilled } from '@buggies/game'
+import { LOOSE_MOST, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, pickupOut, type Pickup, type Spilled } from '@buggies/game'
+import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 /** Tip to tip, in metres: big enough to be seen from a chase camera. */
@@ -75,14 +76,60 @@ export interface PickupSource {
   readonly tick: number
 }
 
-/** What a spilled banana is known by from one frame to the next, and where it was last drawn. */
-interface Loose {
-  position: THREE.Vector3
-  goneTick: number
+/** How wide a bomb is, and how fast it turns as it floats. */
+export const BOMB_RADIUS = 0.9
+const BOMB_SPIN = 0.5
+
+const IRON = new THREE.Color('#202226')
+const FUSE = new THREE.Color('#8a7a5a')
+const EMBER = new THREE.Color('#ff9a3c')
+
+/** A bomb: a black ball with a short fuse and a glowing end, coloured by vertex. Built once and shared. */
+export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
+  const paint = (geometry: THREE.BufferGeometry, colour: THREE.Color): THREE.BufferGeometry => {
+    const count = geometry.getAttribute('position').count
+    const colours = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) colour.toArray(colours, i * 3)
+    geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3))
+    return geometry
+  }
+  const parts = [
+    paint(new THREE.SphereGeometry(radius, 14, 10), IRON),
+    paint(new THREE.CylinderGeometry(radius * 0.08, radius * 0.08, radius * 0.5, 6).translate(0, radius * 1.2, 0), FUSE),
+    paint(new THREE.SphereGeometry(radius * 0.14, 6, 5).translate(0, radius * 1.45, 0), EMBER),
+  ]
+  const positions: number[] = []
+  const normals: number[] = []
+  const colours: number[] = []
+  const indices: number[] = []
+  let vertices = 0
+  for (const part of parts) {
+    const position = part.getAttribute('position')
+    const normal = part.getAttribute('normal')
+    const colour = part.getAttribute('color')
+    const index = part.getIndex()
+    for (let i = 0; i < position.count; i++) {
+      positions.push(position.getX(i), position.getY(i), position.getZ(i))
+      normals.push(normal.getX(i), normal.getY(i), normal.getZ(i))
+      colours.push(colour.getX(i), colour.getY(i), colour.getZ(i))
+    }
+    if (index !== null) for (let i = 0; i < index.count; i++) indices.push(index.getX(i) + vertices)
+    vertices += position.count
+    part.dispose()
+  }
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  merged.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3))
+  merged.setIndex(indices)
+  return merged
 }
 
-function looseKey(spilled: Spilled): string {
-  return `${spilled.bornTick}:${spilled.position.x.toFixed(2)}:${spilled.position.z.toFixed(2)}`
+/** What a loose thing is known by from one frame to the next: what it is, where it was last drawn, and when it would fade. */
+interface Loose {
+  kind: Spilled['kind']
+  position: THREE.Vector3
+  goneTick: number
 }
 
 interface Pop {
@@ -99,9 +146,11 @@ interface Pop {
 
 /**
  * The map's bananas, drawn where the simulation has them, turning slowly
- * and bobbing, and the bananas spilled from wrecks: each flies out of the
- * blast in an arc, spinning, and lies where it lands. A banana taken pops:
- * it shoots up spinning and shrinks away in a ring of sparks.
+ * and bobbing; the bananas spilled from wrecks, each flying out of the
+ * blast in an arc, spinning, to lie where it lands; and the bombs dropped
+ * behind cars, floating where they were left. A banana taken pops: it
+ * shoots up spinning and shrinks away in a ring of sparks. A bomb gone
+ * went off, and whoever draws the field is told where.
  */
 export class PickupField {
   readonly object = new THREE.Group()
@@ -117,7 +166,11 @@ export class PickupField {
   })
   private readonly bananas: THREE.InstancedMesh
   private readonly loose: THREE.InstancedMesh
-  private looseSeen = new Map<string, Loose>()
+  private readonly bombShape = bombGeometry()
+  private readonly bombMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.3 })
+  private readonly bombs: THREE.InstancedMesh
+  private readonly onBomb: (at: Vec3) => void
+  private looseSeen = new Map<number, Loose>()
   private readonly spark = new THREE.OctahedronGeometry(0.12)
   private readonly ringGeometry = new THREE.TorusGeometry(1, 0.05, 6, 40).rotateX(Math.PI / 2)
   private readonly placer = new THREE.Object3D()
@@ -127,17 +180,20 @@ export class PickupField {
   private pops: Pop[] = []
   private time = 0
 
-  constructor(source: PickupSource) {
+  constructor(source: PickupSource, onBomb: (at: Vec3) => void = () => {}) {
     this.source = source
+    this.onBomb = onBomb
     this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(source.pickups.length, 1))
-    this.loose = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, SPILL_MOST_OUT)
-    for (const mesh of [this.bananas, this.loose]) {
+    this.loose = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST)
+    this.bombs = new THREE.InstancedMesh(this.bombShape, this.bombMaterial, LOOSE_MOST)
+    for (const mesh of [this.bananas, this.loose, this.bombs]) {
       mesh.castShadow = true
       mesh.frustumCulled = false
       this.object.add(mesh)
     }
     this.bananas.count = source.pickups.length
     this.loose.count = 0
+    this.bombs.count = 0
     this.seen = source.pickups.map((pickup) => pickup.generation)
     this.wasOut = source.pickups.map(() => false)
     this.lastPositions = source.pickups.map((pickup) => new THREE.Vector3().copy(pickup.position))
@@ -178,17 +234,25 @@ export class PickupField {
    * The spilled bananas: in the air for a while after the blast, then lying
    * where they land. One that goes before its time was taken, and pops.
    */
+  /**
+   * The loose things: bananas in the air for a while after the blast, then
+   * lying where they land, and bombs floating where they were dropped. A
+   * banana that goes before its time was taken, and pops; a bomb that goes
+   * went off.
+   */
   private updateLoose(): void {
     const { spilled, tick } = this.source
-    const seen = new Map<string, Loose>()
-    let count = 0
-    for (const banana of spilled) {
-      if (count >= SPILL_MOST_OUT) break
-      const key = looseKey(banana)
-      const flight = Math.min(Math.max((tick - banana.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
-      const { from, position } = banana
+    const seen = new Map<number, Loose>()
+    let bananas = 0
+    let bombs = 0
+    for (const loose of spilled) {
+      const bomb = loose.kind === 'bomb'
+      const slot = bomb ? bombs : bananas
+      if (slot >= LOOSE_MOST) continue
+      const flight = Math.min(Math.max((tick - loose.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
+      const { from, position } = loose
       if (flight < 1) {
-        // Out of the blast in an arc, tumbling.
+        // Out of the blast, or off the back of the car, in an arc, tumbling.
         const across = Math.hypot(position.x - from.x, position.z - from.z)
         const lift = Math.sin(Math.PI * flight) * (FLING_HEIGHT + FLING_LIFT * across)
         this.placer.position.set(
@@ -196,28 +260,42 @@ export class PickupField {
           from.y + (position.y - from.y) * flight + lift,
           from.z + (position.z - from.z) * flight,
         )
-        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + banana.bornTick, TILT, 'YXZ')
+        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + loose.bornTick, bomb ? 0 : TILT, 'YXZ')
         this.placer.scale.setScalar(0.4 + 0.6 * Math.min(flight * 4, 1))
       } else {
-        const phase = this.time * BOB_RATE + count * 1.7
+        const phase = this.time * BOB_RATE + slot * 1.7
         this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
-        this.placer.rotation.set(0, this.time * SPIN_RATE + count * 0.9, TILT, 'YXZ')
+        if (bomb) this.placer.rotation.set(0, this.time * BOMB_SPIN + slot * 0.9, 0, 'YXZ')
+        else this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, TILT, 'YXZ')
         this.placer.scale.setScalar(1)
       }
       this.placer.updateMatrix()
-      this.loose.setMatrixAt(count, this.placer.matrix)
-      const known = this.looseSeen.get(key)
+      if (bomb) {
+        this.bombs.setMatrixAt(bombs, this.placer.matrix)
+        bombs += 1
+      } else {
+        this.loose.setMatrixAt(bananas, this.placer.matrix)
+        bananas += 1
+      }
+      const known = this.looseSeen.get(loose.id)
       const drawn = known?.position ?? new THREE.Vector3()
       drawn.copy(this.placer.position)
-      seen.set(key, { position: drawn, goneTick: banana.bornTick + SPILL_LIFE_TICKS })
-      count += 1
+      seen.set(loose.id, {
+        kind: loose.kind,
+        position: drawn,
+        goneTick: bomb ? Number.POSITIVE_INFINITY : loose.bornTick + SPILL_LIFE_TICKS,
+      })
     }
-    for (const [key, known] of this.looseSeen) {
-      if (!seen.has(key) && tick < known.goneTick) this.pop(known.position)
+    for (const [id, known] of this.looseSeen) {
+      if (seen.has(id)) continue
+      if (known.kind === 'bomb') this.onBomb(known.position)
+      else if (tick < known.goneTick) this.pop(known.position)
     }
     this.looseSeen = seen
-    this.loose.count = count
+    this.loose.count = bananas
     this.loose.instanceMatrix.needsUpdate = true
+    this.bombs.count = bombs
+    this.bombs.instanceMatrix.needsUpdate = true
   }
 
   dispose(): void {
@@ -227,8 +305,11 @@ export class PickupField {
     this.object.clear()
     this.bananas.dispose()
     this.loose.dispose()
+    this.bombs.dispose()
     this.bananaShape.dispose()
     this.bananaMaterial.dispose()
+    this.bombShape.dispose()
+    this.bombMaterial.dispose()
     this.spark.dispose()
     this.ringGeometry.dispose()
   }

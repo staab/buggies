@@ -124,6 +124,12 @@ export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
   wreck(vehicle, tuning)
 }
 
+/** Hurt a car from outside, by this much of its life. Enough of it blows the car up. */
+export function hurtVehicle(vehicle: Vehicle, tuning: VehicleTuning, amount: number): void {
+  vehicle.damage = Math.min(vehicle.damage + amount, 1)
+  if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
+}
+
 function wreck(vehicle: Vehicle, tuning: VehicleTuning): void {
   const { body, frame } = vehicle
   vehicle.wrecked = true

@@ -12,7 +12,7 @@ import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
-import type { PresenceEffects } from './car-presence.ts'
+import { aimPointOf, type PresenceEffects } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds, tunnelTest } from './driver-hud.ts'
@@ -23,8 +23,10 @@ import type { DriverKeys } from './keys.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import { PickupField } from './pickups-view.ts'
 import { PredictedCar } from './predicted-car.ts'
+import { RocketsView } from './rockets-view.ts'
 import { Smoke } from './smoke.ts'
 import { SUN_DISTANCE } from './sun.ts'
+import { Tracers } from './tracers.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -98,8 +100,17 @@ export async function joinOnline(
   // A player beside you is seen from here, but heard from their own view.
   const others = new MirrorCars(prediction, welcome.seat, effects, (seat) => locals.has(seat))
   root.add(others.object)
-  const pickups = new PickupField(prediction)
+  const ear = (): Vec3 => prediction.vehicle.frame.position
+  const pickups = new PickupField(prediction, (at) => {
+    explosions.burst(at)
+    const from = ear()
+    sound.boom(Math.hypot(at.x - from.x, at.y - from.y, at.z - from.z))
+  })
   root.add(pickups.object)
+  const rockets = new RocketsView(prediction, effects, ear)
+  root.add(rockets.object)
+  const tracers = new Tracers(sound, ear)
+  root.add(tracers.object)
 
   const cameraTuning = createCameraTuning()
   // Far enough to take in the whole island, and the sun beyond it.
@@ -131,15 +142,22 @@ export async function joinOnline(
     update(dt, active) {
       // With the menu up the car is not driven, but the world does not wait:
       // the server keeps going, and so must the mirror.
-      const input = active ? keyboard.read() : NEUTRAL_INPUT
+      const held = active ? keyboard.read() : null
+      // Nothing goes while the roll that reveals what was won is still on.
+      if (held !== null && !car.presence.armed) held.fire = false
+      const input = held ?? NEUTRAL_INPUT
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
         if (car.tick(client.pump(input), others) === 'resynced') chaseSnapped = false
         owed -= FIXED_TIMESTEP
       }
       others.render(owed / FIXED_TIMESTEP, dt)
+      car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       pickups.update(dt)
+      tracers.fire(prediction.shots, prediction.tick)
+      tracers.update(dt)
+      rockets.update(dt)
       smoke.update(dt)
       explosions.update(dt)
       car.presence.aim(target)
@@ -159,6 +177,8 @@ export async function joinOnline(
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
+      tracers.dispose()
+      rockets.dispose()
       pickups.dispose()
       others.dispose()
       car.dispose()
