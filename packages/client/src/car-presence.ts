@@ -1,4 +1,4 @@
-import type { Seat } from '@buggies/game'
+import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, WEAPON_LABELS, type Seat } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import type * as THREE from 'three'
 
@@ -11,9 +11,17 @@ import type { Explosions } from './explosion.ts'
 import type { ControlHint, HudState } from './hud.ts'
 import type { Smoke } from './smoke.ts'
 import { SmoothedBody } from './smoothed-body.ts'
+import { WeaponMount } from './weapon-mount.ts'
+import { WeaponReveal } from './weapon-reveal.ts'
 
 /** A knock that takes this much of a car's life is heard at full volume. */
 const LOUD_KNOCK = 0.25
+
+/** Where a seat's gun is trained: the middle of the car it has picked out, if any. */
+export function aimPointOf(seat: Seat, seats: readonly Seat[]): Vec3 | null {
+  if (seat.weapon !== 'machineGun' || seat.aimTarget === NO_TARGET) return null
+  return seats[seat.aimTarget]?.vehicle.frame.position ?? null
+}
 
 /** What every car on a screen feeds: one set for the whole view. */
 export interface PresenceEffects {
@@ -50,6 +58,9 @@ export class CarPresence {
   private readonly view: CarView
   private readonly voice: EngineVoice | null
   private readonly skid: SkidVoice | null
+  private readonly reveal = new WeaponReveal()
+  private readonly mount: WeaponMount
+  private aimPoint: Vec3 | null = null
   private wasWrecked: boolean
   private lastDamage: number
   private lastScore: number
@@ -61,6 +72,8 @@ export class CarPresence {
     this.view = new CarView(seat.profile, color)
     this.view.syncDimensions(seat.tuning)
     this.object = this.view.object
+    this.mount = new WeaponMount(seat.tuning.chassisHalfHeight + MOUNT_HEIGHT)
+    this.object.add(this.mount.object)
     this.body = new SmoothedBody(seat.vehicle.body, this.object)
     const heard = options.heard !== false ? effects.sound : null
     this.voice = heard?.engine(seat.profile) ?? null
@@ -72,6 +85,24 @@ export class CarPresence {
 
   get wrecked(): boolean {
     return this.seat.vehicle.wrecked
+  }
+
+  /** Whether what it carries may be fired: not while the roll that reveals it is on. */
+  get armed(): boolean {
+    return this.reveal.ready
+  }
+
+  /** What the HUD says it is carrying: the name, with the machine gun's seconds left; nothing when nothing. */
+  get weaponLabel(): string {
+    const { shown } = this.reveal
+    if (shown === 'none') return ''
+    if (this.reveal.rolling || shown !== 'machineGun') return WEAPON_LABELS[shown]
+    return `${WEAPON_LABELS.machineGun} ${Math.ceil(this.seat.ammoTicks * FIXED_TIMESTEP)}s`
+  }
+
+  /** Train the gun on a point in the world, or on nothing, before the next render. */
+  aimAt(point: Vec3 | null): void {
+    this.aimPoint = point
   }
 
   /** How far off it is from whoever is listening. */
@@ -89,6 +120,10 @@ export class CarPresence {
     const sound = this.voice !== null ? this.effects.sound : null
     this.body.render(fraction, dt)
     this.view.applySimulatedWheels(vehicle.wheels, tuning)
+    this.reveal.update(this.seat.weapon, dt)
+    this.mount.show(vehicle.wrecked ? 'none' : this.reveal.shown)
+    this.mount.update(dt)
+    this.mount.aim(this.aimPoint, dt)
     const off = this.distance()
     if (vehicle.wrecked && !this.wasWrecked) {
       explosions.burst(vehicle.frame.position)
@@ -129,12 +164,15 @@ export class CarPresence {
       damage: vehicle.wrecked ? 1 : vehicle.damage,
       controls,
       score,
+      weapon: this.weaponLabel,
+      rolling: this.reveal.rolling,
     }
   }
 
   dispose(): void {
     this.voice?.stop()
     this.skid?.stop()
+    this.mount.dispose()
     this.view.dispose()
   }
 }

@@ -16,6 +16,7 @@ export const SOLO_KEYS: DriverKeys = {
   controls: [
     { keys: ['W', 'A', 'S', 'D'], does: 'or arrows to drive' },
     { keys: ['Space'], does: 'handbrake' },
+    { keys: ['F'], does: 'or right shift to fire' },
     { keys: ['Enter'], does: 'back to the road' },
     { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },
@@ -29,6 +30,7 @@ export const LEFT_KEYS: DriverKeys = {
   controls: [
     { keys: ['W', 'A', 'S', 'D'], does: 'to drive' },
     { keys: ['Space'], does: 'handbrake' },
+    { keys: ['F'], does: 'fire' },
     { keys: ['Q'], does: 'back to the road' },
     { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },
@@ -42,6 +44,7 @@ export const RIGHT_KEYS: DriverKeys = {
   controls: [
     { keys: ['↑', '←', '↓', '→'], does: 'to drive' },
     { keys: ['Left Shift'], does: 'handbrake' },
+    { keys: ['Right Shift'], does: 'fire' },
     { keys: ['?'], does: 'back to the road' },
     { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },

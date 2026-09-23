@@ -1,8 +1,14 @@
 import {
+  NO_OWNER,
+  NO_TARGET,
+  SPILLED_KINDS,
   VEHICLE_PROFILE_IDS,
+  WEAPONS,
   createVehicleInput,
+  type SpilledKind,
   type VehicleInput,
   type VehicleProfileId,
+  type Weapon,
 } from '@buggies/game'
 import type { Quat, Vec3 } from '@buggies/physics'
 
@@ -35,11 +41,18 @@ export const RESPAWN_BYTES = 1
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
-export const SNAPSHOT_HEADER_BYTES = 14
-export const SNAPSHOT_VEHICLE_BYTES = 72
+export const SNAPSHOT_HEADER_BYTES = 15
+export const SNAPSHOT_VEHICLE_BYTES = 75
 export const SNAPSHOT_PICKUP_BYTES = 5
-export const SNAPSHOT_SPILLED_BYTES = 28
+export const SNAPSHOT_SPILLED_BYTES = 30
 export const SNAPSHOT_REMOVED_BYTES = 2
+export const SNAPSHOT_ROCKET_BYTES = 30
+
+/** What a vehicle can carry, by the byte that says so: nothing first. */
+const WEAPON_CODES: readonly Weapon[] = ['none', ...WEAPONS]
+
+/** A rocket or shot with no target, or a loose thing with no owner, on the wire. */
+const NOBODY_BYTE = 0xff
 
 export interface HelloMessage {
   protocolVersion: number
@@ -82,8 +95,23 @@ export interface VehicleSnapshot {
   wrecked: boolean
   /** Bananas taken since sitting down. */
   score: number
+  /** What it is carrying, and how long the machine gun has left. */
+  weapon: Weapon
+  ammoTicks: number
   /** What the driver was asking for on the tick this was taken. */
   appliedInput: VehicleInput
+}
+
+/** A rocket in the air, as the server has it. */
+export interface RocketSnapshot {
+  id: number
+  owner: number
+  /** The seat it is after, or NO_TARGET. */
+  target: number
+  position: Vec3
+  velocity: Vec3
+  /** How many ticks before the snapshot's it went. */
+  age: number
 }
 
 /** One of the map's pickup slots, as the server has it. */
@@ -117,11 +145,16 @@ export interface SnapshotMessage {
   spilled: SpilledSnapshot[]
   /** The spilled bananas gone since the snapshot before, taken or faded, by number. */
   removed: number[]
+  /** Every rocket in the air. */
+  rockets: RocketSnapshot[]
 }
 
-/** A banana spilled from a wreck, as the server has it. */
+/** Something loose on the map, a banana or a bomb, as the server has it. */
 export interface SpilledSnapshot {
   id: number
+  kind: SpilledKind
+  /** Whose car dropped it, or NO_OWNER. */
+  owner: number
   from: Vec3
   position: Vec3
   /** How many ticks before the snapshot's it was spilled. */
@@ -175,7 +208,7 @@ class Writer {
     this.f32(value.steer)
     this.f32(value.throttle)
     this.f32(value.brake)
-    this.u8(value.handbrake ? 1 : 0)
+    this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0))
   }
 }
 
@@ -224,7 +257,9 @@ class Reader {
     out.steer = within(this.f32(), -1, 1)
     out.throttle = within(this.f32(), 0, 1)
     out.brake = within(this.f32(), 0, 1)
-    out.handbrake = this.u8() === 1
+    const buttons = this.u8()
+    out.handbrake = (buttons & 1) === 1
+    out.fire = (buttons & 2) === 2
     return out
   }
 }
@@ -366,7 +401,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
       message.vehicles.length * SNAPSHOT_VEHICLE_BYTES +
       message.pickups.length * SNAPSHOT_PICKUP_BYTES +
       message.spilled.length * SNAPSHOT_SPILLED_BYTES +
-      message.removed.length * SNAPSHOT_REMOVED_BYTES,
+      message.removed.length * SNAPSHOT_REMOVED_BYTES +
+      message.rockets.length * SNAPSHOT_ROCKET_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
@@ -376,6 +412,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.pickups.length)
   writer.u8(message.spilled.length)
   writer.u8(message.removed.length)
+  writer.u8(message.rockets.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -387,6 +424,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(Math.round(Math.min(Math.max(vehicle.damage, 0), 1) * 255))
     writer.u8(vehicle.wrecked ? 1 : 0)
     writer.u16(Math.min(vehicle.score, 0xffff))
+    writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
+    writer.u16(Math.min(Math.max(vehicle.ammoTicks, 0), 0xffff))
     writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
@@ -396,11 +435,21 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   }
   for (const spilled of message.spilled) {
     writer.u16(spilled.id)
+    writer.u8(Math.max(SPILLED_KINDS.indexOf(spilled.kind), 0))
+    writer.u8(spilled.owner === NO_OWNER ? NOBODY_BYTE : spilled.owner)
     writer.vec3(spilled.from)
     writer.vec3(spilled.position)
     writer.u16(Math.min(Math.max(spilled.age, 0), 0xffff))
   }
   for (const id of message.removed) writer.u16(id)
+  for (const rocket of message.rockets) {
+    writer.u16(rocket.id)
+    writer.u8(rocket.owner)
+    writer.u8(rocket.target === NO_TARGET ? NOBODY_BYTE : rocket.target)
+    writer.vec3(rocket.position)
+    writer.vec3(rocket.velocity)
+    writer.u16(Math.min(Math.max(rocket.age, 0), 0xffff))
+  }
   return writer.bytes
 }
 
@@ -426,12 +475,14 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const pickupCount = reader.u8()
   const spilledCount = reader.u8()
   const removedCount = reader.u8()
+  const rocketCount = reader.u8()
   const expected =
     SNAPSHOT_HEADER_BYTES +
     count * SNAPSHOT_VEHICLE_BYTES +
     pickupCount * SNAPSHOT_PICKUP_BYTES +
     spilledCount * SNAPSHOT_SPILLED_BYTES +
-    removedCount * SNAPSHOT_REMOVED_BYTES
+    removedCount * SNAPSHOT_REMOVED_BYTES +
+    rocketCount * SNAPSHOT_ROCKET_BYTES
   if (payload.length !== expected) return null
 
   const vehicles: VehicleSnapshot[] = []
@@ -440,17 +491,29 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const epoch = reader.u8()
     const profile = VEHICLE_PROFILE_IDS[reader.u8()]
     if (profile === undefined) return null
+    const position = reader.vec3()
+    const rotation = reader.quat()
+    const linearVelocity = reader.vec3()
+    const angularVelocity = reader.vec3()
+    const damage = reader.u8() / 255
+    const wrecked = reader.u8() === 1
+    const score = reader.u16()
+    const weapon = WEAPON_CODES[reader.u8()]
+    if (weapon === undefined) return null
+    const ammoTicks = reader.u16()
     vehicles.push({
       seat,
       epoch,
       profile,
-      position: reader.vec3(),
-      rotation: reader.quat(),
-      linearVelocity: reader.vec3(),
-      angularVelocity: reader.vec3(),
-      damage: reader.u8() / 255,
-      wrecked: reader.u8() === 1,
-      score: reader.u16(),
+      position,
+      rotation,
+      linearVelocity,
+      angularVelocity,
+      damage,
+      wrecked,
+      score,
+      weapon,
+      ammoTicks,
       appliedInput: reader.input(createVehicleInput()),
     })
   }
@@ -460,10 +523,35 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   }
   const spilled: SpilledSnapshot[] = []
   for (let i = 0; i < spilledCount; i++) {
-    spilled.push({ id: reader.u16(), from: reader.vec3(), position: reader.vec3(), age: reader.u16() })
+    const id = reader.u16()
+    const kind = SPILLED_KINDS[reader.u8()]
+    if (kind === undefined) return null
+    const owner = reader.u8()
+    spilled.push({
+      id,
+      kind,
+      owner: owner === NOBODY_BYTE ? NO_OWNER : owner,
+      from: reader.vec3(),
+      position: reader.vec3(),
+      age: reader.u16(),
+    })
   }
   const removed: number[] = []
   for (let i = 0; i < removedCount; i++) removed.push(reader.u16())
+  const rockets: RocketSnapshot[] = []
+  for (let i = 0; i < rocketCount; i++) {
+    const id = reader.u16()
+    const owner = reader.u8()
+    const target = reader.u8()
+    rockets.push({
+      id,
+      owner,
+      target: target === NOBODY_BYTE ? NO_TARGET : target,
+      position: reader.vec3(),
+      velocity: reader.vec3(),
+      age: reader.u16(),
+    })
+  }
   return {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
@@ -472,5 +560,6 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     pickups,
     spilled,
     removed,
+    rockets,
   }
 }

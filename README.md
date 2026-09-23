@@ -30,6 +30,14 @@ Bananas float about every island, turning slowly; drive through one for a point,
 turns up somewhere else a little later. A car wrecked spills its bananas about the wreck for
 anyone to come and take.
 
+Every tenth banana wins a power-up, rolled for like a fruit machine and carried over the roof for
+everyone to see: a rocket, which goes after the nearest car ahead when fired; a machine gun with
+ten seconds of ammunition, which trains itself on the nearest car ahead and fires as long as the key
+is held; or a bomb, dropped behind the car to float there until another car runs into it. A wreck
+spills at most sixteen bananas, and only so much lies loose on an island at once: past 256 things,
+the oldest go. `F` fires (or right `Shift`;
+on a split screen the arrows player has right `Shift` and the letters player `F`). Both hurt.
+
 ## Packages
 
 - `physics` — vectors, quaternions, a seeded RNG, the fixed timestep.

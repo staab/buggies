@@ -233,7 +233,7 @@ export class Menu {
     const keys = line('keys')
     keys.innerHTML =
       '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive &nbsp; ' +
-      '<kbd>Space</kbd> handbrake<br />' +
+      '<kbd>Space</kbd> handbrake &nbsp; <kbd>F</kbd> fire<br />' +
       '<kbd>Enter</kbd> back to the road &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>Esc</kbd> this menu'
 
     // Whose models the vehicles are. One of them asks to be credited, and

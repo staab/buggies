@@ -35,6 +35,7 @@ export {
   decodeSnapshot,
   decodeWelcome,
   encodeSnapshot,
+  type RocketSnapshot,
   type RoomSummary,
   type SnapshotMessage,
   type VehicleSnapshot,

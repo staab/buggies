@@ -6,6 +6,7 @@ interface Held {
   left: boolean
   right: boolean
   handbrake: boolean
+  fire: boolean
 }
 
 /** Which key (by its `code`) does what. */
@@ -22,6 +23,8 @@ export const SOLO_BINDINGS: KeyBindings = {
   KeyD: 'right',
   ArrowRight: 'right',
   Space: 'handbrake',
+  KeyF: 'fire',
+  ShiftRight: 'fire',
 }
 
 /** The letters, for whoever has the left of a shared keyboard. */
@@ -31,6 +34,7 @@ export const LEFT_BINDINGS: KeyBindings = {
   KeyA: 'left',
   KeyD: 'right',
   Space: 'handbrake',
+  KeyF: 'fire',
 }
 
 /** The arrows, for whoever has the right. */
@@ -40,6 +44,7 @@ export const RIGHT_BINDINGS: KeyBindings = {
   ArrowLeft: 'left',
   ArrowRight: 'right',
   ShiftLeft: 'handbrake',
+  ShiftRight: 'fire',
 }
 
 const RELEASED: Held = {
@@ -48,6 +53,7 @@ const RELEASED: Held = {
   left: false,
   right: false,
   handbrake: false,
+  fire: false,
 }
 
 /**
@@ -76,11 +82,12 @@ export class Keyboard {
   }
 
   read(): VehicleInput {
-    const { forward, back, left, right, handbrake } = this.held
+    const { forward, back, left, right, handbrake, fire } = this.held
     this.command.throttle = forward ? 1 : 0
     this.command.brake = back ? 1 : 0
     this.command.steer = (right ? 1 : 0) - (left ? 1 : 0)
     this.command.handbrake = handbrake
+    this.command.fire = fire
     return this.command
   }
 

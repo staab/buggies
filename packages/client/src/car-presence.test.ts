@@ -2,6 +2,7 @@ import {
   DEFAULT_VEHICLE_PROFILE,
   FIXED_TIMESTEP,
   NEUTRAL_INPUT,
+  NO_TARGET,
   addHeightfield,
   createPhysicsWorld,
   createVehicle,
@@ -42,6 +43,9 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     submersion: 0,
     lostTicks: 0,
     score: 0,
+    weapon: 'none',
+    ammoTicks: 0,
+    aimTarget: NO_TARGET,
   }
   return { seat, free: () => world.free() }
 }

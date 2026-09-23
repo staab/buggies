@@ -351,6 +351,58 @@ export class Sound {
     })
   }
 
+  /** One round out of the gun, this far off: a short crack with a little weight under it. */
+  shot(distance = 0): void {
+    const loudness = 0.45 * earshot(distance)
+    if (loudness <= 0.01) return
+    const { context } = this
+    const now = context.currentTime
+    const crack = context.createBufferSource()
+    crack.buffer = this.noise
+    const filter = context.createBiquadFilter()
+    filter.type = 'bandpass'
+    filter.frequency.value = 1500
+    filter.Q.value = 0.7
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(loudness, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07)
+    crack.connect(filter).connect(gain).connect(this.master)
+    crack.start(now)
+    crack.stop(now + 0.08)
+    const thump = context.createOscillator()
+    thump.type = 'sine'
+    thump.frequency.setValueAtTime(170, now)
+    thump.frequency.exponentialRampToValueAtTime(60, now + 0.05)
+    const thumpGain = context.createGain()
+    thumpGain.gain.setValueAtTime(0.5 * loudness, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06)
+    thump.connect(thumpGain).connect(this.master)
+    thump.start(now)
+    thump.stop(now + 0.06)
+  }
+
+  /** A rocket going, this far off: a rush of air that rises and tails away. */
+  whoosh(distance = 0): void {
+    const loudness = 0.7 * earshot(distance)
+    if (loudness <= 0.01) return
+    const { context } = this
+    const now = context.currentTime
+    const rush = context.createBufferSource()
+    rush.buffer = this.noise
+    const filter = context.createBiquadFilter()
+    filter.type = 'lowpass'
+    filter.frequency.setValueAtTime(300, now)
+    filter.frequency.exponentialRampToValueAtTime(3200, now + 0.2)
+    filter.frequency.exponentialRampToValueAtTime(350, now + 0.8)
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.exponentialRampToValueAtTime(loudness, now + 0.06)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.85)
+    rush.connect(filter).connect(gain).connect(this.master)
+    rush.start(now)
+    rush.stop(now + 0.9)
+  }
+
   /** A knock, this hard (0 to 1) and this far off: a thud with a little crunch on it. */
   thud(strength: number, distance = 0): void {
     const loudness = Math.min(Math.max(strength, 0), 1) * earshot(distance)

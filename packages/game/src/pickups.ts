@@ -142,7 +142,7 @@ export function reachesPickup(pickup: Pickup, point: Vec3): boolean {
 }
 
 /** How many of a wreck's bananas spill out, at most; the rest are lost in the blast. */
-export const SPILL_MOST = 24
+export const SPILL_MOST = 16
 
 /** How far from the wreck a spilled banana lands, in metres, at the nearest and the furthest. */
 export const SPILL_NEAR = 5
@@ -154,19 +154,34 @@ export const SPILL_FLIGHT_TICKS = 60
 /** How long a spilled banana lies about before it is gone, in ticks. */
 export const SPILL_LIFE_TICKS = 60 * 90
 
-/** How many spilled bananas a map holds at once; past that the oldest go. */
-export const SPILL_MOST_OUT = 120
+/** How many loose things a map holds at once, bananas, bombs and rockets together; past that the oldest go. */
+export const LOOSE_MOST = 256
+
+/** What lies loose on the map: a banana spilled from a wreck, or a bomb dropped from a car. */
+export type SpilledKind = 'banana' | 'bomb'
+export const SPILLED_KINDS: readonly SpilledKind[] = ['banana', 'bomb']
+
+/** A loose thing nobody in particular dropped. */
+export const NO_OWNER = -1
+
+/** How close a chassis has to come to a bomb to set it off. */
+export const BOMB_REACH = 3.2
 
 /** Spilled bananas are numbered as they come, and the numbers come round after this many: far more than are ever out at once. */
 export const SPILLED_IDS = 0x10000
 
 /**
- * A banana spilled from a wreck: thrown from where the car blew up to
- * where it lands, to lie there for the taking until it is taken or fades.
+ * Something loose on the map: a banana spilled from a wreck, thrown from
+ * where the car blew up to where it lands, to lie there for the taking
+ * until it is taken or fades; or a bomb dropped behind a car, to float
+ * there until another car runs into it.
  */
 export interface Spilled {
   /** Its number, by which it is spoken of on the wire; no two out at once share one. */
   readonly id: number
+  readonly kind: SpilledKind
+  /** Whose car dropped it, for a bomb, which spares them; nobody's for a banana. */
+  readonly owner: number
   readonly from: Vec3
   readonly position: Vec3
   readonly bornTick: number
@@ -195,6 +210,8 @@ export function spillFrom(
     const z = from.z + sin(angle) * radius
     spilled.push({
       id: (firstId + i) % SPILLED_IDS,
+      kind: 'banana',
+      owner: NO_OWNER,
       from: origin,
       position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z),
       bornTick: tick,
@@ -208,14 +225,15 @@ export function spilledOut(spilled: Spilled, tick: number): boolean {
   return tick >= spilled.bornTick + SPILL_FLIGHT_TICKS
 }
 
-/** Whether a spilled banana has lain about long enough to be gone. */
+/** Whether a spilled banana has lain about long enough to be gone. A bomb lies there until it goes off. */
 export function spilledGone(spilled: Spilled, tick: number): boolean {
-  return tick >= spilled.bornTick + SPILL_LIFE_TICKS
+  return spilled.kind === 'banana' && tick >= spilled.bornTick + SPILL_LIFE_TICKS
 }
 
-/** Whether something at this point has reached a spilled banana. */
+/** Whether something at this point has reached a loose banana, or set off a bomb. */
 export function reachesSpilled(spilled: Spilled, point: Vec3): boolean {
+  const reach = spilled.kind === 'bomb' ? BOMB_REACH : BANANA_REACH
   const dx = point.x - spilled.position.x
   const dz = point.z - spilled.position.z
-  return Math.abs(point.y - spilled.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= BANANA_REACH * BANANA_REACH
+  return Math.abs(point.y - spilled.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= reach * reach
 }

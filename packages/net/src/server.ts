@@ -1,4 +1,5 @@
 import {
+  NO_OWNER,
   advance,
   takeSeat,
   createVehicleInput,
@@ -37,6 +38,7 @@ import {
   encodeRooms,
   encodeSnapshot,
   type PickupSnapshot,
+  type RocketSnapshot,
   type RoomSummary,
   type SnapshotMessage,
   type SpilledSnapshot,
@@ -120,6 +122,7 @@ export interface Room {
   readonly snapshotPickups: PickupSnapshot[]
   readonly snapshotSpilled: SpilledSnapshot[]
   readonly snapshotRemoved: number[]
+  readonly snapshotRockets: RocketSnapshot[]
   /** The bananas as the last snapshot told of them: each slot's generation, and which spilled were out. */
   readonly toldGenerations: number[]
   readonly toldSpilled: Set<number>
@@ -306,6 +309,7 @@ export class GameServer implements TransportHandlers {
       snapshotPickups: [],
       snapshotSpilled: [],
       snapshotRemoved: [],
+      snapshotRockets: [],
       toldGenerations: [],
       toldSpilled: new Set(),
       spilledNow: new Set(),
@@ -410,8 +414,10 @@ export class GameServer implements TransportHandlers {
     let count = 0
     for (const banana of room.arena.spilled) {
       if (!all && room.toldSpilled.has(banana.id)) continue
-      const out = (spilled[count] ??= { id: 0, from: v3(), position: v3(), age: 0 })
+      const out = (spilled[count] ??= { id: 0, kind: 'banana', owner: NO_OWNER, from: v3(), position: v3(), age: 0 })
       out.id = banana.id
+      out.kind = banana.kind
+      out.owner = banana.owner
       vcopy(out.from, banana.from)
       vcopy(out.position, banana.position)
       out.age = room.arena.tick - banana.bornTick
@@ -429,6 +435,24 @@ export class GameServer implements TransportHandlers {
     for (const banana of room.arena.spilled) room.spilledNow.add(banana.id)
     for (const id of room.toldSpilled) if (!room.spilledNow.has(id)) removed.push(id)
     return removed
+  }
+
+  /** Every rocket in the air: few, and short-lived, so all of them every time. */
+  private collectRockets(room: Room): RocketSnapshot[] {
+    const rockets = room.snapshotRockets
+    let count = 0
+    for (const rocket of room.arena.rockets) {
+      const out = (rockets[count] ??= { id: 0, owner: 0, target: 0, position: v3(), velocity: v3(), age: 0 })
+      out.id = rocket.id
+      out.owner = rocket.owner
+      out.target = rocket.target
+      vcopy(out.position, rocket.position)
+      vcopy(out.velocity, rocket.velocity)
+      out.age = room.arena.tick - rocket.bornTick
+      count += 1
+    }
+    rockets.length = count
+    return rockets
   }
 
   /** What this snapshot told of the bananas, for the next to tell only what differs. */
@@ -454,6 +478,8 @@ export class GameServer implements TransportHandlers {
         damage: 0,
         wrecked: false,
         score: 0,
+        weapon: 'none',
+        ammoTicks: 0,
         appliedInput: createVehicleInput(),
       })
       vehicle.seat = seat.id
@@ -466,6 +492,8 @@ export class GameServer implements TransportHandlers {
       vehicle.damage = seat.vehicle.damage
       vehicle.wrecked = seat.vehicle.wrecked
       vehicle.score = seat.score
+      vehicle.weapon = seat.weapon
+      vehicle.ammoTicks = seat.ammoTicks
       Object.assign(vehicle.appliedInput, this.playerIn(room, seat)?.timeline.appliedInput ?? this.scratchInput)
       count += 1
     }
@@ -488,6 +516,7 @@ export class GameServer implements TransportHandlers {
       pickups: room.snapshotPickups,
       spilled: room.snapshotSpilled,
       removed: room.snapshotRemoved,
+      rockets: this.collectRockets(room),
     }
     // Each is encoded at most once, whoever asks first, from the same scratch.
     let changes: Uint8Array | null = null

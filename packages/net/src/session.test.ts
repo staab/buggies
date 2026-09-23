@@ -1,8 +1,14 @@
 import {
+  MACHINE_GUN_AMMO_TICKS,
+  MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
+  NO_OWNER,
   PICKUP_SLOTS,
+  ROCKET_DAMAGE,
+  arm,
   createArena,
   initPhysics,
+  respawnNearby,
   setPickup,
   takeSeat,
   type Arena,
@@ -502,7 +508,14 @@ describe('a session', () => {
     // A slot moves on, and a banana is spilled: told once, and the mirror has them.
     const { arena } = session
     setPickup(arena.map, arena.water, arena.pickups[3]!, 3, 1, arena.tick + 480)
-    arena.spilled.push({ id: 7, from: { x: 1, y: 2, z: 3 }, position: { x: 4, y: 5, z: 6 }, bornTick: arena.tick })
+    arena.spilled.push({
+      id: 7,
+      kind: 'banana',
+      owner: NO_OWNER,
+      from: { x: 1, y: 2, z: 3 },
+      position: { x: 4, y: 5, z: 6 },
+      bornTick: arena.tick,
+    })
     session.run(0.5)
     expect(a.client.bananas.pickups[3]).toEqual({ generation: 1, spawnTick: arena.pickups[3]!.spawnTick })
     expect(a.prediction.pickups[3]!.generation).toBe(1)
@@ -529,6 +542,53 @@ describe('a session', () => {
     session.dispose()
   }, 120_000)
 
+  it('fires what a player is holding: everyone sees the rocket go, and the car it is after feels it', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    const b = await session.join('tank')
+    const { arena } = session
+    const aSeat = arena.seats[a.client.welcome!.seat]!
+    const bSeat = arena.seats[b.client.welcome!.seat]!
+    session.run(0.5)
+    // The tank is put down on the road thirty metres ahead of the sports car, which is handed a rocket.
+    const { position, forward } = aSeat.vehicle.frame
+    bSeat.vehicle.body.setTranslation({ x: position.x + forward.x * 30, y: position.y, z: position.z + forward.z * 30 }, true)
+    session.step()
+    respawnNearby(arena, bSeat)
+    arm(aSeat, 'rocket')
+    session.run(0.5)
+    expect(a.prediction.ownSeat.weapon).toBe('rocket')
+    expect(b.prediction.seats[aSeat.id]!.weapon).toBe('rocket')
+
+    // The button goes down: the rocket goes, after the tank, and the tank's mirror has it in the air too.
+    a.input.fire = true
+    session.run(0.3)
+    a.input.fire = false
+    expect(aSeat.weapon).toBe('none')
+    expect(a.prediction.ownSeat.weapon).toBe('none')
+    expect(arena.rockets).toHaveLength(1)
+    expect(arena.rockets[0]!.target).toBe(bSeat.id)
+    expect(b.prediction.rockets).toHaveLength(1)
+    expect(b.prediction.rockets[0]!.id).toBe(arena.rockets[0]!.id)
+    session.run(1.5)
+    expect(arena.rockets).toHaveLength(0)
+    expect(bSeat.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE, 5)
+    expect(b.prediction.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE, 1)
+    expect(aSeat.vehicle.damage).toBe(0)
+
+    // A machine gun, held for a second: shots the tank takes, and ammunition the sports car spends.
+    arm(aSeat, 'machineGun')
+    session.run(0.5)
+    a.input.fire = true
+    session.run(1)
+    a.input.fire = false
+    session.run(0.3)
+    expect(bSeat.vehicle.damage).toBeGreaterThan(ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE)
+    expect(aSeat.ammoTicks).toBeLessThan(MACHINE_GUN_AMMO_TICKS - 50)
+    expect(a.prediction.ownSeat.ammoTicks).toBe(aSeat.ammoTicks)
+    session.dispose()
+  }, 120_000)
+
   it('keeps inputs to their ranges, drops a flood of them, and lets go of a player heard nothing from', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
@@ -540,7 +600,7 @@ describe('a session', () => {
     session.run(0.5)
     const seat = a.client.welcome!.seat
     const seen = b.client.pump(b.input).newestSnapshot!.vehicles.find((vehicle) => vehicle.seat === seat)!
-    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false })
+    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, fire: false })
 
     // Inputs past what an honest client could send are dropped, not driven, and not held against them.
     const before = session.server.stats().inputsDropped

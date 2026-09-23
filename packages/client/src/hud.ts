@@ -16,6 +16,10 @@ export interface HudState {
   controls?: readonly ControlHint[]
   /** Bananas taken. */
   score?: number
+  /** What the car is carrying, by name; nothing when nothing. */
+  weapon?: string
+  /** Whether the name is still rolling past. */
+  rolling?: boolean
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -152,6 +156,7 @@ export class Hud {
   private readonly root: HTMLElement
   private readonly title = div('title')
   private readonly score = div('score')
+  private readonly weapon = div('weapon')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
   private readonly damage = buildDial('damage')
@@ -161,18 +166,35 @@ export class Hud {
   private shownState = ''
   private shownControls = ''
   private shownScore = ''
+  private shownWeapon = ''
   private readonly scoreCount = document.createElement('span')
+  private readonly weaponName = document.createElement('span')
 
   constructor(root: HTMLElement) {
     this.root = root
     root.replaceChildren()
 
     this.gauges.append(this.speedo.element, this.damage.element)
+    // A banana: a thick crescent tapering to its ends, tilted, with a stem at
+    // one end, a browned tip at the other and a ridge along its back.
     const banana = svg('svg', { class: 'banana', viewBox: '0 0 24 24' })
-    banana.append(svg('path', { d: 'M3 13c3 6 12 7 17-1-1 4-7 8-13 5-2-1-3-2-4-4z', fill: '#f6d23c' }))
-    banana.append(svg('path', { d: 'M19 11.5l1.6-2.2-1-.3z', fill: '#6b4a1e' }))
+    const tilted = svg('g', { transform: 'rotate(-35 12 12)' })
+    tilted.append(svg('path', { d: 'M3 8 C3 22 21 22 21 8 C20 12 4 12 3 8 Z', fill: '#f6d23c' }))
+    tilted.append(svg('path', { d: 'M2.2 8.6 L2.6 5.2 L4.6 5.4 L4.4 8.6 Z', fill: '#6b4a1e' }))
+    tilted.append(svg('path', { d: 'M19.4 9.8 L21 8 L21.4 10.4 Z', fill: '#6b4a1e' }))
+    tilted.append(
+      svg('path', {
+        d: 'M5 9.5 C8 15.5 16 15.5 19 9.5',
+        fill: 'none',
+        stroke: '#d9b12a',
+        'stroke-width': 0.7,
+        'stroke-linecap': 'round',
+      }),
+    )
+    banana.append(tilted)
     this.score.append(banana, this.scoreCount)
-    root.append(this.title, this.score, this.gauges, this.state, this.controls)
+    this.weapon.append(this.weaponName)
+    root.append(this.title, this.score, this.weapon, this.gauges, this.state, this.controls)
     this.render(null)
   }
 
@@ -202,6 +224,13 @@ export class Hud {
 
     const { speed, maxSpeed, damage: wear } = state
     const driving = speed !== undefined && maxSpeed !== undefined && wear !== undefined
+    const weapon = state.weapon ?? ''
+    if (weapon !== this.shownWeapon) {
+      this.shownWeapon = weapon
+      this.weaponName.textContent = weapon
+    }
+    this.weapon.classList.toggle('rolling', state.rolling === true)
+    this.weapon.hidden = !driving
     this.gauges.hidden = !driving
     this.controls.hidden = !driving || state.controls === undefined
     if (!driving) return
