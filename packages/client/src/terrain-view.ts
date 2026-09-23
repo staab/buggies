@@ -606,7 +606,9 @@ function buildTerrainMesh(
   geometry.computeVertexNormals()
 
   const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95, metalness: 0 })
-  return new THREE.Mesh(geometry, material)
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = 'ground'
+  return mesh
 }
 
 function quadIndices(base: number): number[] {
@@ -845,6 +847,7 @@ function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
   const panel = new THREE.BoxGeometry(0.5, 0.12, 2.2)
   const glow = new THREE.MeshBasicMaterial({ color: TUNNEL_LIGHT_COLOR })
   const mesh = new THREE.InstancedMesh(panel, glow, spots.length)
+  mesh.name = 'lights'
   const matrix = new THREE.Matrix4()
   const position = new THREE.Vector3()
   const rotation = new THREE.Quaternion()
@@ -1004,6 +1007,7 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   )
 
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
+  sea.name = 'water'
   sea.rotation.x = -Math.PI / 2
   sea.position.set(worldSize / 2, map.seaLevel + 0.02, worldSize / 2)
   group.add(sea)
@@ -1077,6 +1081,17 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     })
     group.add(new THREE.Mesh(buildRampGeometry(map.ramps), rampMaterial))
   }
+
+  // Everything on the island takes the sun's shadows; everything but the
+  // ground itself, the water and the tunnel lights throws them. The ground
+  // is one mesh the size of the island, and drawing it into every shadow
+  // map would cost more than its own shadows are worth.
+  group.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return
+    if (node.name === 'lights' || node.material === waterMaterial) return
+    node.receiveShadow = true
+    node.castShadow = node.name !== 'ground'
+  })
 
   return group
 }

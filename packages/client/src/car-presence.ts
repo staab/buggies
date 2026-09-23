@@ -100,7 +100,7 @@ export class CarPresence {
       smoke.trail(vehicle.frame.position, vehicle.frame.linearVelocity, smokeAmount(vehicle.damage), dt)
     }
     this.voice?.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, tuning.maxSpeed, vehicle.command.throttle), off)
-    this.skid?.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels), off)
+    this.skid?.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels, tuning), off)
     const knock = vehicle.damage - this.lastDamage
     if (knock > 0 && !vehicle.wrecked) sound?.thud(knock / LOUD_KNOCK, off)
     this.lastDamage = vehicle.damage

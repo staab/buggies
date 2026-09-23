@@ -9,6 +9,7 @@ import type { Choice, MenuHost, Step } from './menu.ts'
 import type { ModeView } from './mode.ts'
 import type { OnlinePlayer } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
+import type { Sun } from './sun.ts'
 import { createTeamMode } from './team-mode.ts'
 import { createTerrainView } from './terrain-view.ts'
 
@@ -44,6 +45,7 @@ export interface ShellModes {
     players: readonly OnlinePlayer[],
     mapFor: (seed: number) => Promise<TerrainMap>,
     sound: Sound,
+    sun: Sun,
   ): Promise<ModeView>
 }
 
@@ -61,6 +63,8 @@ export interface ShellDeps {
   container: { readonly clientWidth: number; readonly clientHeight: number }
   huds: readonly ShellHud[]
   sound: Sound
+  /** The light over the island, and its shadows, which follow the play. */
+  sun: Sun
   islands: IslandSource
   /** The game server everyone on this screen joins. */
   server: string
@@ -131,6 +135,7 @@ export class Shell implements MenuHost {
   private readonly container: ShellDeps['container']
   private readonly huds: readonly ShellHud[]
   private readonly sound: Sound
+  private readonly sun: Sun
   private readonly islands: IslandSource
   private readonly server: string
   private readonly modes: ShellModes
@@ -152,6 +157,7 @@ export class Shell implements MenuHost {
     this.container = deps.container
     this.huds = deps.huds
     this.sound = deps.sound
+    this.sun = deps.sun
     this.islands = deps.islands
     this.server = deps.server
     this.modes = deps.modes ?? MODES
@@ -234,6 +240,7 @@ export class Shell implements MenuHost {
         playersFor(next),
         (seed) => this.mapFor(seed),
         this.sound,
+        this.sun,
       )
       if (stamp !== this.generation) {
         mode.dispose()
@@ -306,6 +313,7 @@ export class Shell implements MenuHost {
       // View distances ride the world scale so the framing stays the same.
       const worldSize = made.size * made.cellSize
       this.scene.fog = new THREE.Fog('#a9cbe6', worldSize * 0.65, worldSize * 2.34)
+      this.sun.centreOn({ x: worldSize / 2, y: 0, z: worldSize / 2 })
       return made
     })
     this.making = { seed, island }

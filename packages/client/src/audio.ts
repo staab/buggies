@@ -60,20 +60,35 @@ export function earshot(distance: number): number {
 /** How smoothly an engine follows its rev, in seconds. */
 const ENGINE_FOLLOW = 0.08
 
-/** Sideways slip at which tyres begin to squeal, in m/s, and at which they are at their loudest. */
-export const SKID_START = 3
-export const SKID_FULL = 9
+/** How loud engines are against everything else: they run all the time, so they sit well back. */
+const ENGINE_LEVEL = 0.6
+
+/** The tyres' grip curve, as far as the squeal needs it: where the grip stops rising, and how far past that it falls. */
+export interface SkidTuning {
+  lateralPlateauEndSlip: number
+  lateralFalloffRange: number
+}
+
+/** How far into the grip's fall-off the squeal is at its loudest, as a fraction of the fall-off. */
+const SKID_FULL_FALLOFF = 0.5
 
 /**
- * How hard the tyres are sliding sideways, 0 to 1: the worst of the wheels
- * on the ground. Wheels in the air make no noise, whatever they are doing.
+ * How hard the tyres are sliding, 0 to 1: the worst of the wheels on the
+ * ground, and only once it is past the end of its grip and letting go. A
+ * tyre working hard in a bend is still gripping, and makes no noise.
+ * Wheels in the air make none either, whatever they are doing.
  */
-export function skidAmount(wheels: readonly { grounded: boolean; slipSpeedLateral: number }[]): number {
+export function skidAmount(
+  wheels: readonly { grounded: boolean; slipSpeedLateral: number }[],
+  tuning: SkidTuning,
+): number {
   let worst = 0
   for (const wheel of wheels) {
     if (wheel.grounded) worst = Math.max(worst, Math.abs(wheel.slipSpeedLateral))
   }
-  return Math.min(Math.max((worst - SKID_START) / (SKID_FULL - SKID_START), 0), 1)
+  const start = tuning.lateralPlateauEndSlip
+  const full = start + tuning.lateralFalloffRange * SKID_FULL_FALLOFF
+  return Math.min(Math.max((worst - start) / (full - start), 0), 1)
 }
 
 /** How quickly a squeal comes and goes, in seconds. */
@@ -139,7 +154,7 @@ export class EngineVoice {
     this.oscillators[1]!.frequency.setTargetAtTime(frequency * 1.5, now, ENGINE_FOLLOW)
     this.oscillators[2]!.frequency.setTargetAtTime(frequency * 1.003, now, ENGINE_FOLLOW)
     this.filter.frequency.setTargetAtTime(timbre.cutoff * (0.3 + 0.7 * rev), now, ENGINE_FOLLOW)
-    const loudness = timbre.volume * (0.45 + 0.55 * rev) * earshot(distance)
+    const loudness = ENGINE_LEVEL * timbre.volume * (0.45 + 0.55 * rev) * earshot(distance)
     this.gain.gain.setTargetAtTime(loudness, now, ENGINE_FOLLOW)
     if (this.beat !== null && this.beatDepth !== null) {
       // The beat is a diesel's idle: it smooths out as the revs come up.
@@ -160,7 +175,11 @@ export class EngineVoice {
   }
 }
 
-/** Tyres sliding sideways: a squeal that rises and hardens with the slip. */
+/**
+ * Tyres sliding sideways: a low, breathy squeal that rises and hardens with
+ * the slip. Kept well down the range, and broad, so it reads as rubber on
+ * a road rather than a whistle.
+ */
 export class SkidVoice {
   private readonly hiss: AudioBufferSourceNode
   private readonly band: BiquadFilterNode
@@ -179,8 +198,8 @@ export class SkidVoice {
     this.gain.connect(output)
     this.band = context.createBiquadFilter()
     this.band.type = 'bandpass'
-    this.band.frequency.value = 1400
-    this.band.Q.value = 5
+    this.band.frequency.value = 800
+    this.band.Q.value = 1.6
     this.hiss = context.createBufferSource()
     this.hiss.buffer = noise
     this.hiss.loop = true
@@ -188,10 +207,13 @@ export class SkidVoice {
     this.hiss.start(now)
     this.tone = context.createOscillator()
     this.tone.type = 'sawtooth'
-    this.tone.frequency.value = 900
+    this.tone.frequency.value = 380
+    const mellow = context.createBiquadFilter()
+    mellow.type = 'lowpass'
+    mellow.frequency.value = 1400
     const toneLevel = context.createGain()
-    toneLevel.gain.value = 0.18
-    this.tone.connect(toneLevel).connect(this.gain)
+    toneLevel.gain.value = 0.1
+    this.tone.connect(mellow).connect(toneLevel).connect(this.gain)
     this.tone.start(now)
   }
 
@@ -199,9 +221,9 @@ export class SkidVoice {
   set(slip: number, distance = 0): void {
     if (this.stopped) return
     const now = this.context.currentTime
-    this.gain.gain.setTargetAtTime(0.4 * slip * earshot(distance), now, SKID_FOLLOW)
-    this.band.frequency.setTargetAtTime(1200 + 900 * slip, now, SKID_FOLLOW)
-    this.tone.frequency.setTargetAtTime(800 + 500 * slip, now, SKID_FOLLOW)
+    this.gain.gain.setTargetAtTime(0.3 * slip * earshot(distance), now, SKID_FOLLOW)
+    this.band.frequency.setTargetAtTime(800 + 450 * slip, now, SKID_FOLLOW)
+    this.tone.frequency.setTargetAtTime(380 + 220 * slip, now, SKID_FOLLOW)
   }
 
   stop(): void {

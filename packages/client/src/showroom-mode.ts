@@ -73,13 +73,24 @@ export function createShowroomMode(sound: Sound | null = null): ShowroomView {
   scene.add(new THREE.HemisphereLight('#cfe6ff', '#4a5a3a', 0.9))
   const sun = new THREE.DirectionalLight('#fff4e0', 1.6)
   sun.position.set(-30, 50, 20)
-  scene.add(sun)
+  sun.castShadow = true
+  sun.shadow.mapSize.set(1024, 1024)
+  sun.shadow.camera.left = -12
+  sun.shadow.camera.right = 12
+  sun.shadow.camera.top = 12
+  sun.shadow.camera.bottom = -12
+  sun.shadow.camera.near = 1
+  sun.shadow.camera.far = 150
+  sun.shadow.bias = -0.0004
+  sun.shadow.normalBias = 0.4
+  scene.add(sun, sun.target)
 
   const floor = new THREE.Mesh(
     new THREE.CircleGeometry(80, 64).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({ color: '#7a8a62', roughness: 1 }),
   )
   floor.position.y = -0.02
+  floor.receiveShadow = true
   scene.add(floor)
   const plinthMaterial = new THREE.MeshStandardMaterial({ color: '#2b3440', roughness: 0.8 })
   let plinth: THREE.Mesh | null = null
@@ -138,6 +149,7 @@ export function createShowroomMode(sound: Sound | null = null): ShowroomView {
       const radius = Math.hypot(tuning.chassisHalfWidth, tuning.chassisHalfLength) + 0.6
       plinth = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.3, 64), plinthMaterial)
       plinth.position.y = -0.15
+      plinth.receiveShadow = true
       scene.add(plinth)
       turntable.rotation.y = START_YAW
       frame()
