@@ -1,8 +1,8 @@
 import type { Shot } from '@buggies/game'
-import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
+import { distanceFrom, type Ear } from './ear.ts'
 
 /** How long a tracer is seen, in seconds. */
 export const TRACER_LIFE = 0.1
@@ -23,11 +23,11 @@ export class Tracers {
   readonly object = new THREE.Group()
 
   private readonly sound: Sound | null
-  private readonly ear: () => Vec3
+  private readonly ear: Ear
   private readonly live: Tracer[] = []
   private lastTick = -1
 
-  constructor(sound: Sound | null, ear: () => Vec3) {
+  constructor(sound: Sound | null, ear: Ear) {
     this.sound = sound
     this.ear = ear
   }
@@ -49,8 +49,7 @@ export class Tracers {
       const line = new THREE.Line(geometry, material)
       this.object.add(line)
       this.live.push({ line, material, age: 0 })
-      const ear = this.ear()
-      this.sound?.shot(Math.hypot(shot.from.x - ear.x, shot.from.y - ear.y, shot.from.z - ear.z))
+      this.sound?.shot(distanceFrom(this.ear, shot.from))
     }
   }
 

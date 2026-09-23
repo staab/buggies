@@ -1,9 +1,10 @@
 import { ROCKET_LIFE_TICKS, type Rocket } from '@buggies/game'
-import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import type { PresenceEffects } from './car-presence.ts'
-import { buildRocket } from './weapon-mount.ts'
+import { disposeObject } from './dispose.ts'
+import { distanceFrom, type Ear } from './ear.ts'
+import { buildRocket } from './weapon-models.ts'
 
 /** How much smoke a rocket leaves behind it, as a share of a burning car's. */
 const TRAIL = 0.6
@@ -32,10 +33,10 @@ export class RocketsView {
 
   private readonly source: RocketSource
   private readonly effects: PresenceEffects
-  private readonly ear: () => Vec3
+  private readonly ear: Ear
   private readonly flights = new Map<number, Flight>()
 
-  constructor(source: RocketSource, effects: PresenceEffects, ear: () => Vec3) {
+  constructor(source: RocketSource, effects: PresenceEffects, ear: Ear) {
     this.source = source
     this.effects = effects
     this.ear = ear
@@ -43,11 +44,6 @@ export class RocketsView {
 
   get flying(): number {
     return this.flights.size
-  }
-
-  private distance(at: Vec3): number {
-    const ear = this.ear()
-    return Math.hypot(at.x - ear.x, at.y - ear.y, at.z - ear.z)
   }
 
   update(dt: number): void {
@@ -59,7 +55,7 @@ export class RocketsView {
         flight = { model: buildRocket(), last: new THREE.Vector3(), bornTick: rocket.bornTick }
         this.object.add(flight.model)
         this.flights.set(rocket.id, flight)
-        sound?.whoosh(this.distance(rocket.position))
+        sound?.whoosh(distanceFrom(this.ear, rocket.position))
       }
       const { position, velocity } = rocket
       flight.model.position.set(position.x, position.y, position.z)
@@ -75,22 +71,14 @@ export class RocketsView {
       this.object.remove(flight.model)
       if (tick - flight.bornTick < ROCKET_LIFE_TICKS) {
         explosions.burst(flight.last)
-        sound?.boom(this.distance(flight.last))
+        sound?.boom(distanceFrom(this.ear, flight.last))
       }
-      this.free(flight)
+      disposeObject(flight.model)
     }
   }
 
-  private free(flight: Flight): void {
-    flight.model.traverse((node) => {
-      if (!(node instanceof THREE.Mesh)) return
-      node.geometry.dispose()
-      if (node.material instanceof THREE.Material) node.material.dispose()
-    })
-  }
-
   dispose(): void {
-    for (const flight of this.flights.values()) this.free(flight)
+    for (const flight of this.flights.values()) disposeObject(flight.model)
     this.flights.clear()
     this.object.removeFromParent()
     this.object.clear()

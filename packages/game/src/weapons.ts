@@ -22,7 +22,7 @@ import {
   type VehicleTuning,
 } from '@buggies/vehicle'
 
-import { PICKUP_HEIGHT, SPILLED_IDS, pickupSeed, type Spilled } from './pickups.ts'
+import { PICKUP_HEIGHT, LOOSE_IDS, pickupSeed, type Loose } from './pickups.ts'
 
 /** What a car can be carrying over its roof: nothing, or something won with bananas. */
 export type Weapon = 'none' | 'rocket' | 'machineGun' | 'bomb' | 'engine' | 'wings'
@@ -157,8 +157,8 @@ export interface Battlefield {
   readonly seats: readonly Gunner[]
   readonly rockets: Rocket[]
   /** What lies loose on the map: bombs are dropped among the bananas. */
-  readonly spilled: Spilled[]
-  spilledNext: number
+  readonly loose: Loose[]
+  looseNext: number
   /** The shots fired this tick. */
   readonly shots: Shot[]
   readonly tick: number
@@ -343,14 +343,14 @@ function drop(arena: Battlefield, seat: Gunner): void {
   const x = position.x - forward.x * BOMB_DROP_BACK
   const z = position.z - forward.z * BOMB_DROP_BACK
   const level = Math.max(sampleHeight(arena.map.heightfield, x, z), position.y - seat.tuning.chassisHalfHeight)
-  arena.spilled.push({
-    id: arena.spilledNext,
+  arena.loose.push({
+    id: arena.looseNext,
     kind: 'bomb',
     from: vcopy(v3(), position),
     position: v3(x, level + PICKUP_HEIGHT, z),
     bornTick: arena.tick,
   })
-  arena.spilledNext = (arena.spilledNext + 1) % SPILLED_IDS
+  arena.looseNext = (arena.looseNext + 1) % LOOSE_IDS
   disarm(seat)
 }
 

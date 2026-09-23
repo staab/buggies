@@ -24,7 +24,7 @@ import {
   createArena,
   initPhysics,
   respawn,
-  spilledGone,
+  looseGone,
   takeSeat,
   weaponWon,
   wreckVehicle,
@@ -146,24 +146,24 @@ describe('weapons', () => {
     arm(a, 'bomb')
     fire(arena, a, 1)
     expect(a.weapon).toBe('none')
-    expect(arena.spilled).toHaveLength(1)
-    const bomb = arena.spilled[0]!
+    expect(arena.loose).toHaveLength(1)
+    const bomb = arena.loose[0]!
     expect(bomb.kind).toBe('bomb')
     // Behind the car, floating over the ground, and there for good until it goes off.
     const { position, forward } = a.vehicle.frame
     const behind = { x: position.x - forward.x * BOMB_DROP_BACK, z: position.z - forward.z * BOMB_DROP_BACK }
     expect(Math.hypot(bomb.position.x - behind.x, bomb.position.z - behind.z)).toBeLessThan(0.5)
     expect(bomb.position.y).toBeGreaterThan(sampleHeight(map.heightfield, bomb.position.x, bomb.position.z))
-    expect(spilledGone(bomb, bomb.bornTick + SPILL_LIFE_TICKS * 10)).toBe(false)
+    expect(looseGone(bomb, bomb.bornTick + SPILL_LIFE_TICKS * 10)).toBe(false)
     // The car that dropped it is safe while the bomb is still in the air, and no longer once it has landed.
     respawn(a, { position: { x: bomb.position.x, y: bomb.position.y - PICKUP_HEIGHT, z: bomb.position.z }, yaw: 0 })
     for (let i = 0; i < SPILL_FLIGHT_TICKS - 10; i++) advance(arena)
     expect(a.vehicle.wrecked).toBe(false)
-    expect(arena.spilled).toHaveLength(1)
+    expect(arena.loose).toHaveLength(1)
     for (let i = 0; i < 20; i++) advance(arena)
     expect(a.vehicle.wrecked).toBe(true)
     expect(b.vehicle.wrecked).toBe(false)
-    expect(arena.spilled.filter((loose) => loose.kind === 'bomb')).toHaveLength(0)
+    expect(arena.loose.filter((loose) => loose.kind === 'bomb')).toHaveLength(0)
     arena.world.free()
   })
 
@@ -181,7 +181,7 @@ describe('weapons', () => {
       bornTick: arena.tick - 2,
     })
     for (let i = 0; i < LOOSE_MOST + 40; i++) {
-      arena.spilled.push({
+      arena.loose.push({
         id: i,
         kind: i % 5 === 0 ? 'bomb' : 'banana',
         from: { x: 0, y: 0, z: 0 },
@@ -190,10 +190,10 @@ describe('weapons', () => {
       })
     }
     advance(arena)
-    expect(arena.spilled.length + arena.rockets.length).toBe(LOOSE_MOST)
+    expect(arena.loose.length + arena.rockets.length).toBe(LOOSE_MOST)
     // The rocket went first, then the forty oldest bananas.
     expect(arena.rockets).toHaveLength(0)
-    expect(arena.spilled[0]!.id).toBe(40)
+    expect(arena.loose[0]!.id).toBe(40)
     arena.world.free()
   })
 

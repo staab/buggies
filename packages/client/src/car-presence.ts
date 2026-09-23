@@ -7,6 +7,7 @@ import { CarView } from './car-view.ts'
 import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
 import { driverState } from './driver-hud.ts'
+import { distanceFrom, type Ear } from './ear.ts'
 import type { Explosions } from './explosion.ts'
 import type { ControlHint, HudState } from './hud.ts'
 import type { Smoke } from './smoke.ts'
@@ -36,7 +37,7 @@ export interface PresenceOptions {
    * Whose ear its sounds fall on, for how far off they are. Left out, the
    * car is its own ear and is heard at full volume.
    */
-  ear?: () => Vec3
+  ear?: Ear
   /** Whether it is heard from here at all: a car driven from another view of this screen is not. */
   heard?: boolean
 }
@@ -54,7 +55,7 @@ export class CarPresence {
 
   private readonly seat: Seat
   private readonly effects: PresenceEffects
-  private readonly ear: (() => Vec3) | null
+  private readonly ear: Ear | null
   private readonly view: CarView
   private readonly voice: EngineVoice | null
   private readonly skid: SkidVoice | null
@@ -109,10 +110,7 @@ export class CarPresence {
 
   /** How far off it is from whoever is listening. */
   private distance(): number {
-    if (this.ear === null) return 0
-    const at = this.seat.vehicle.frame.position
-    const ear = this.ear()
-    return Math.hypot(at.x - ear.x, at.y - ear.y, at.z - ear.z)
+    return this.ear === null ? 0 : distanceFrom(this.ear, this.seat.vehicle.frame.position)
   }
 
   /** Draw it between the last two steps, feed its effects, and hear it. */

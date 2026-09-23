@@ -158,14 +158,14 @@ export const SPILL_LIFE_TICKS = 60 * 90
 export const LOOSE_MOST = 256
 
 /** What lies loose on the map: a banana spilled from a wreck, or a bomb dropped from a car. */
-export type SpilledKind = 'banana' | 'bomb'
-export const SPILLED_KINDS: readonly SpilledKind[] = ['banana', 'bomb']
+export type LooseKind = 'banana' | 'bomb'
+export const LOOSE_KINDS: readonly LooseKind[] = ['banana', 'bomb']
 
 /** How close a chassis has to come to a bomb to set it off. */
 export const BOMB_REACH = 3.2
 
 /** Spilled bananas are numbered as they come, and the numbers come round after this many: far more than are ever out at once. */
-export const SPILLED_IDS = 0x10000
+export const LOOSE_IDS = 0x10000
 
 /**
  * Something loose on the map: a banana spilled from a wreck, thrown from
@@ -174,10 +174,10 @@ export const SPILLED_IDS = 0x10000
  * there until any car runs into it, the one that dropped it included once
  * it has landed.
  */
-export interface Spilled {
+export interface Loose {
   /** Its number, by which it is spoken of on the wire; no two out at once share one. */
   readonly id: number
-  readonly kind: SpilledKind
+  readonly kind: LooseKind
   readonly from: Vec3
   readonly position: Vec3
   readonly bornTick: number
@@ -195,40 +195,40 @@ export function spillFrom(
   seat: number,
   tick: number,
   firstId: number,
-): Spilled[] {
+): Loose[] {
   const rng = createRng(pickupSeed(map.seed, PICKUP_SLOTS + seat, tick))
-  const spilled: Spilled[] = []
+  const loose: Loose[] = []
   const origin = v3(from.x, from.y, from.z)
   for (let i = 0; i < count; i++) {
     const angle = rng() * Math.PI * 2
     const radius = SPILL_NEAR + rng() * (SPILL_FAR - SPILL_NEAR)
     const x = from.x + cos(angle) * radius
     const z = from.z + sin(angle) * radius
-    spilled.push({
-      id: (firstId + i) % SPILLED_IDS,
+    loose.push({
+      id: (firstId + i) % LOOSE_IDS,
       kind: 'banana',
       from: origin,
       position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z),
       bornTick: tick,
     })
   }
-  return spilled
+  return loose
 }
 
 /** Whether a spilled banana has landed, and can be taken. */
-export function spilledOut(spilled: Spilled, tick: number): boolean {
-  return tick >= spilled.bornTick + SPILL_FLIGHT_TICKS
+export function looseOut(loose: Loose, tick: number): boolean {
+  return tick >= loose.bornTick + SPILL_FLIGHT_TICKS
 }
 
 /** Whether a spilled banana has lain about long enough to be gone. A bomb lies there until it goes off. */
-export function spilledGone(spilled: Spilled, tick: number): boolean {
-  return spilled.kind === 'banana' && tick >= spilled.bornTick + SPILL_LIFE_TICKS
+export function looseGone(loose: Loose, tick: number): boolean {
+  return loose.kind === 'banana' && tick >= loose.bornTick + SPILL_LIFE_TICKS
 }
 
 /** Whether something at this point has reached a loose banana, or set off a bomb. */
-export function reachesSpilled(spilled: Spilled, point: Vec3): boolean {
-  const reach = spilled.kind === 'bomb' ? BOMB_REACH : BANANA_REACH
-  const dx = point.x - spilled.position.x
-  const dz = point.z - spilled.position.z
-  return Math.abs(point.y - spilled.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= reach * reach
+export function reachesLoose(loose: Loose, point: Vec3): boolean {
+  const reach = loose.kind === 'bomb' ? BOMB_REACH : BANANA_REACH
+  const dx = point.x - loose.position.x
+  const dz = point.z - loose.position.z
+  return Math.abs(point.y - loose.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= reach * reach
 }

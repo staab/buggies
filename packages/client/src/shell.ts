@@ -4,6 +4,7 @@ import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
+import { disposeObject } from './dispose.ts'
 import type { HudState } from './hud.ts'
 import { createIslandMode, islandSummary } from './island-mode.ts'
 import { LEFT_KEYS, RIGHT_KEYS, SOLO_KEYS } from './keys.ts'
@@ -117,19 +118,7 @@ export function playersFor(choice: Choice): OnlinePlayer[] {
 }
 
 function disposeView(scene: THREE.Scene, group: THREE.Group): void {
-  const materials = new Set<THREE.Material>()
-  const geometries = new Set<THREE.BufferGeometry>()
-  group.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return
-    geometries.add(object.geometry)
-    if (Array.isArray(object.material)) object.material.forEach((entry) => materials.add(entry))
-    else materials.add(object.material)
-  })
-  geometries.forEach((geometry) => geometry.dispose())
-  materials.forEach((material) => {
-    if (material instanceof THREE.MeshStandardMaterial) material.map?.dispose()
-    material.dispose()
-  })
+  disposeObject(group)
   scene.remove(group)
 }
 

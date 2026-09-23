@@ -11,22 +11,18 @@ import type { Vec3 } from '@buggies/physics'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
-import { aimPointOf, type PresenceEffects } from './car-presence.ts'
+import { aimPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds, tunnelTest } from './driver-hud.ts'
-import { Explosions } from './explosion.ts'
 import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
 import type { DriverKeys } from './keys.ts'
 import { MirrorCars } from './mirror-cars.ts'
-import { PickupField } from './pickups-view.ts'
 import { PredictedCar } from './predicted-car.ts'
-import { RocketsView } from './rockets-view.ts'
-import { Smoke } from './smoke.ts'
 import { SUN_DISTANCE } from './sun.ts'
-import { Tracers } from './tracers.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -90,27 +86,14 @@ export async function joinOnline(
   const root = new THREE.Group()
   scene.add(root)
   const keyboard = new Keyboard(player.keys.bindings)
-  const explosions = new Explosions()
-  root.add(explosions.object)
-  const smoke = new Smoke()
-  root.add(smoke.object)
-  const effects: PresenceEffects = { explosions, smoke, sound }
-  const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), effects)
+  // The island around the cars, heard from the local car.
+  const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position)
+  root.add(arena.object)
+  const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), arena.effects)
   root.add(car.object)
   // A player beside you is seen from here, but heard from their own view.
-  const others = new MirrorCars(prediction, welcome.seat, effects, (seat) => locals.has(seat))
+  const others = new MirrorCars(prediction, welcome.seat, arena.effects, (seat) => locals.has(seat))
   root.add(others.object)
-  const ear = (): Vec3 => prediction.vehicle.frame.position
-  const pickups = new PickupField(prediction, (at) => {
-    explosions.burst(at)
-    const from = ear()
-    sound.boom(Math.hypot(at.x - from.x, at.y - from.y, at.z - from.z))
-  })
-  root.add(pickups.object)
-  const rockets = new RocketsView(prediction, effects, ear)
-  root.add(rockets.object)
-  const tracers = new Tracers(sound, ear)
-  root.add(tracers.object)
 
   const cameraTuning = createCameraTuning()
   // Far enough to take in the whole island, and the sun beyond it.
@@ -154,12 +137,7 @@ export async function joinOnline(
       others.render(owed / FIXED_TIMESTEP, dt)
       car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
-      pickups.update(dt)
-      tracers.fire(prediction.shots, prediction.tick)
-      tracers.update(dt)
-      rockets.update(dt)
-      smoke.update(dt)
-      explosions.update(dt)
+      arena.update(dt)
       car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
       else {
@@ -177,13 +155,9 @@ export async function joinOnline(
       window.removeEventListener('keydown', onKey)
       keyboard.dispose()
       client.close('left')
-      tracers.dispose()
-      rockets.dispose()
-      pickups.dispose()
       others.dispose()
       car.dispose()
-      explosions.dispose()
-      smoke.dispose()
+      arena.dispose()
       scene.remove(root)
     },
   }

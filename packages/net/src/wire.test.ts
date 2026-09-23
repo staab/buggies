@@ -38,7 +38,7 @@ const snapshot: SnapshotMessage = {
   tick: 123456,
   ackInputTick: 123450,
   full: true,
-  spilledNext: 4321,
+  looseNext: 4321,
   vehicles: [
     {
       seat: 0,
@@ -76,7 +76,7 @@ const snapshot: SnapshotMessage = {
     { slot: 1, generation: 7, ticksUntilOut: 480 },
     { slot: 63, generation: 65535, ticksUntilOut: 12 },
   ],
-  spilled: [
+  loose: [
     { id: 0, kind: 'banana', from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
     { id: 65535, kind: 'bomb', from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
   ],
@@ -123,7 +123,7 @@ describe('wire', () => {
     expect(decoded.tick).toBe(snapshot.tick)
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
     expect(decoded.full).toBe(true)
-    expect(decoded.spilledNext).toBe(4321)
+    expect(decoded.looseNext).toBe(4321)
     expect(decoded.pickups).toEqual(snapshot.pickups)
     expect(decoded.removed).toEqual(snapshot.removed)
     for (const [i, rocket] of snapshot.rockets.entries()) {
@@ -135,15 +135,15 @@ describe('wire', () => {
       }
     }
     // With nothing changed, a snapshot is its vehicles alone.
-    const quiet = { ...snapshot, full: false, pickups: [], spilled: [], removed: [], rockets: [] }
+    const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [] }
     expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
-    expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], spilled: [], removed: [] })
-    for (const [i, spilled] of snapshot.spilled.entries()) {
-      const got = decoded.spilled[i]!
-      expect(got).toMatchObject({ id: spilled.id, kind: spilled.kind, age: spilled.age })
+    expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
+    for (const [i, loose] of snapshot.loose.entries()) {
+      const got = decoded.loose[i]!
+      expect(got).toMatchObject({ id: loose.id, kind: loose.kind, age: loose.age })
       for (const axis of ['x', 'y', 'z'] as const) {
-        expect(got.from[axis]).toBeCloseTo(spilled.from[axis], 4)
-        expect(got.position[axis]).toBeCloseTo(spilled.position[axis], 4)
+        expect(got.from[axis]).toBeCloseTo(loose.from[axis], 4)
+        expect(got.position[axis]).toBeCloseTo(loose.position[axis], 4)
       }
     }
     for (const [i, vehicle] of snapshot.vehicles.entries()) {
