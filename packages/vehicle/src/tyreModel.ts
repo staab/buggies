@@ -1,9 +1,9 @@
-// Ported from the seattle project (src/physics/tyreModel.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// How a tyre grips: the lateral force curve, the drive and retarding
+// forces, and the friction circle that bounds them together.
 
-import {clamp, hypot, inverseLerpClamped} from '@buggies/physics'
-import type {VehicleTuning} from './tuning.ts'
-import {WHEEL_COUNT, WHEELS_PER_AXLE, type WheelState} from './vehicleBody.ts'
+import { clamp, hypot, inverseLerpClamped } from '@buggies/physics'
+import type { VehicleTuning } from './tuning.ts'
+import { WHEEL_COUNT, WHEELS_PER_AXLE, type WheelState } from './vehicleBody.ts'
 
 const MIN_PEAK_SLIP_SPEED = 1e-4
 const MIN_FALLOFF_RANGE = 1e-4
@@ -30,9 +30,7 @@ export function createTyreDriveContext(): TyreDriveContext {
 }
 
 function gripRisingToPeak(slipSpeed: number, tuning: VehicleTuning): number {
-  return (
-    tuning.lateralPeakGrip * (slipSpeed / Math.max(tuning.lateralPeakSlip, MIN_PEAK_SLIP_SPEED))
-  )
+  return tuning.lateralPeakGrip * (slipSpeed / Math.max(tuning.lateralPeakSlip, MIN_PEAK_SLIP_SPEED))
 }
 
 function gripFallingToTail(slipSpeed: number, tuning: VehicleTuning): number {
@@ -54,22 +52,13 @@ export function lateralGripCurve(lateralSlipSpeed: number, tuning: VehicleTuning
   return gripFallingToTail(slipSpeed, tuning)
 }
 
-function forceThatCancelsSlipInOneStep(
-  slipSpeed: number,
-  massPerWheel: number,
-  dt: number,
-): number {
+function forceThatCancelsSlipInOneStep(slipSpeed: number, massPerWheel: number, dt: number): number {
   return (Math.abs(slipSpeed) * massPerWheel) / dt
 }
 
-function driveForce(
-  wheel: WheelState,
-  drive: TyreDriveContext,
-  tuning: VehicleTuning,
-): number {
+function driveForce(wheel: WheelState, drive: TyreDriveContext, tuning: VehicleTuning): number {
   const shareOfAxle = wheel.isFront ? tuning.driveSplit : 1 - tuning.driveSplit
-  const available =
-    tuning.engineForce * (shareOfAxle / WHEELS_PER_AXLE) * drive.remainingDriveFraction
+  const available = tuning.engineForce * (shareOfAxle / WHEELS_PER_AXLE) * drive.remainingDriveFraction
   const forward = drive.throttle * available
 
   if (drive.brake > 0 && drive.brakePedalDrivesReverse) {
@@ -79,12 +68,7 @@ function driveForce(
   return forward
 }
 
-function retardingForce(
-  wheel: WheelState,
-  drive: TyreDriveContext,
-  tuning: VehicleTuning,
-  dt: number,
-): number {
+function retardingForce(wheel: WheelState, drive: TyreDriveContext, tuning: VehicleTuning, dt: number): number {
   let force = tuning.rollingResistance * Math.abs(wheel.slipSpeedLongitudinal)
 
   if (drive.brake > 0 && !drive.brakePedalDrivesReverse) {
@@ -95,17 +79,10 @@ function retardingForce(
     force += tuning.handbrakeForce / WHEELS_PER_AXLE
   }
 
-  return Math.min(
-    force,
-    forceThatCancelsSlipInOneStep(wheel.slipSpeedLongitudinal, drive.massPerWheel, dt),
-  )
+  return Math.min(force, forceThatCancelsSlipInOneStep(wheel.slipSpeedLongitudinal, drive.massPerWheel, dt))
 }
 
-function lateralGrip(
-  wheel: WheelState,
-  drive: TyreDriveContext,
-  tuning: VehicleTuning,
-): number {
+function lateralGrip(wheel: WheelState, drive: TyreDriveContext, tuning: VehicleTuning): number {
   const grip = lateralGripCurve(wheel.slipSpeedLateral, tuning)
 
   if (wheel.isFront) return grip
@@ -117,12 +94,7 @@ function lateralGrip(
   return rearGrip
 }
 
-export function solveTyreForces(
-  wheel: WheelState,
-  drive: TyreDriveContext,
-  tuning: VehicleTuning,
-  dt: number,
-): void {
+export function solveTyreForces(wheel: WheelState, drive: TyreDriveContext, tuning: VehicleTuning, dt: number): void {
   const load = wheel.suspensionForce
   const longitudinalCeiling = tuning.longitudinalGrip * load
 

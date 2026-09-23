@@ -1,10 +1,9 @@
-// Ported from the seattle project (src/core/math), less its random stream,
-// which buggies already has in rng.ts. Kept in its original shape and
-// formatting so the two can be compared and resynced.
+// Vectors and quaternions, without allocation: every operation writes into
+// an `out` it is given.
 
-import {cos, sin} from './transcendental.ts'
+import { cos, sin } from './transcendental.ts'
 
-export {atan2, cos, hypot, sin} from './transcendental.ts'
+export { atan2, cos, hypot, sin } from './transcendental.ts'
 
 export interface Vec3 {
   x: number
@@ -19,9 +18,9 @@ export interface Quat {
   w: number
 }
 
-export const v3 = (x = 0, y = 0, z = 0): Vec3 => ({x, y, z})
+export const v3 = (x = 0, y = 0, z = 0): Vec3 => ({ x, y, z })
 
-export const quat = (x = 0, y = 0, z = 0, w = 1): Quat => ({x, y, z, w})
+export const quat = (x = 0, y = 0, z = 0, w = 1): Quat => ({ x, y, z, w })
 
 export function vset(out: Vec3, x: number, y: number, z: number): Vec3 {
   out.x = x
@@ -98,8 +97,7 @@ export function qrotate(out: Vec3, q: Quat, v: Vec3): Vec3 {
   )
 }
 
-export const clamp = (x: number, min: number, max: number): number =>
-  x < min ? min : x > max ? max : x
+export const clamp = (x: number, min: number, max: number): number => (x < min ? min : x > max ? max : x)
 
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 
@@ -134,7 +132,7 @@ export function rotateAboutAxis(out: Vec3, v: Vec3, unitAxis: Vec3, angle: numbe
 }
 
 export function quatFromYaw(yaw: number): Quat {
-  return {x: 0, y: sin(yaw / 2), z: 0, w: cos(yaw / 2)}
+  return { x: 0, y: sin(yaw / 2), z: 0, w: cos(yaw / 2) }
 }
 
 export function quatFromYawPitch(yaw: number, pitch: number): Quat {

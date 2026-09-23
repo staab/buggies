@@ -1,10 +1,10 @@
-// Ported from the seattle project (src/game/bodyView.ts). Kept in its original shape
-// and formatting so the two can be compared and resynced.
+// An object that follows a rigid body, drawn between its last two steps so
+// that a fixed-rate simulation is smooth at any frame rate.
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 import * as THREE from 'three'
 
-import {quat, v3} from '@buggies/physics'
+import { quat, v3 } from '@buggies/physics'
 
 const scratchTranslation = v3()
 const scratchRotation = quat()
@@ -32,12 +32,7 @@ export class BodyView {
     this.body.rotation(scratchRotation)
 
     this.currentPosition.set(scratchTranslation.x, scratchTranslation.y, scratchTranslation.z)
-    this.currentRotation.set(
-      scratchRotation.x,
-      scratchRotation.y,
-      scratchRotation.z,
-      scratchRotation.w,
-    )
+    this.currentRotation.set(scratchRotation.x, scratchRotation.y, scratchRotation.z, scratchRotation.w)
   }
 
   reset(): void {
@@ -48,13 +43,7 @@ export class BodyView {
   }
 
   apply(accumulatorFraction: number): void {
-    this.object.position.lerpVectors(
-      this.previousPosition,
-      this.currentPosition,
-      accumulatorFraction,
-    )
-    this.object.quaternion
-      .copy(this.previousRotation)
-      .slerp(this.currentRotation, accumulatorFraction)
+    this.object.position.lerpVectors(this.previousPosition, this.currentPosition, accumulatorFraction)
+    this.object.quaternion.copy(this.previousRotation).slerp(this.currentRotation, accumulatorFraction)
   }
 }

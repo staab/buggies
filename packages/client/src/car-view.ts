@@ -1,25 +1,19 @@
-// Ported from the seattle project (src/game/carView.ts). Kept in its original shape
-// and formatting so the two can be compared and resynced. Buggies draws each
-// vehicle with its model when one has loaded, and falls back to seattle's boxes.
+// A car as drawn: its model, when one has loaded, or a body of boxes, with
+// wheels that follow the simulation's.
 
 import * as THREE from 'three'
 
-import {v3, type Vec3} from '@buggies/physics'
-import type {VehicleProfileId, VehicleTuning} from '@buggies/game'
-import {
-  wheelMountLocal,
-  WHEEL_CORNERS,
-  WHEEL_COUNT,
-  type WheelState,
-} from '@buggies/game'
+import { v3, type Vec3 } from '@buggies/physics'
+import type { VehicleProfileId, VehicleTuning } from '@buggies/game'
+import { wheelMountLocal, WHEEL_CORNERS, WHEEL_COUNT, type WheelState } from '@buggies/game'
 
-import {carModelFor, type CarModel} from './car-model.ts'
+import { carModelFor, type CarModel } from './car-model.ts'
 
 export const PLAYER_BODY_COLOR = 0xd8452f
 export const REMOTE_BODY_COLOR = 0x3f6fb5
 export const BOT_BODY_COLOR = 0x3f8f5c
 
-/** Buggies addition: one colour per seat, so everyone sees the same cars. */
+/** One colour per seat, so everyone sees the same cars. */
 const SEAT_COLORS = [
   PLAYER_BODY_COLOR,
   REMOTE_BODY_COLOR,
@@ -35,7 +29,7 @@ export function seatColor(seat: number): number {
   return SEAT_COLORS[seat % SEAT_COLORS.length]!
 }
 
-/** Buggies: a colour each, for when a vehicle has to be drawn as boxes. */
+/** A colour each, for when a vehicle has to be drawn as boxes. */
 const PROFILE_COLORS: Record<VehicleProfileId, number> = {
   raceCar: 0xe8a33a,
   police: 0xf4f4f4,
@@ -67,7 +61,7 @@ const LOADED_SUSPENSION_FRACTION = 0.7
 const unitBoxGeometry = new THREE.BoxGeometry(1, 1, 1)
 const unitWheelGeometry = new THREE.CylinderGeometry(1, 1, 1, 20).rotateZ(Math.PI / 2)
 
-/** Buggies: a drawn wheel, and which of the simulated wheels it follows. */
+/** A drawn wheel, and which of the simulated wheels it follows. */
 interface DrawnWheel {
   pivot: THREE.Object3D
   /** Which simulated wheel it follows, in `WHEEL_CORNERS` order. */
@@ -90,7 +84,7 @@ export class CarView {
   private readonly drawnWheels: DrawnWheel[] = []
   private readonly materials: THREE.Material[] = []
   private readonly mountLocal: Vec3 = v3()
-  /** Buggies: whether the wheels sit where the model has them or where the tuning does. */
+  /** Whether the wheels sit where the model has them or where the tuning does. */
   private readonly modelled: boolean
 
   constructor(profile: VehicleProfileId, bodyColor: number, model: CarModel | null = carModelFor(profile)) {
@@ -124,7 +118,7 @@ export class CarView {
       roughness: 0.3,
       metalness: 0.2,
     })
-    const wheelMaterial = new THREE.MeshStandardMaterial({color: WHEEL_COLOR, roughness: 0.85})
+    const wheelMaterial = new THREE.MeshStandardMaterial({ color: WHEEL_COLOR, roughness: 0.85 })
 
     this.materials.push(bodyMaterial, cabinMaterial, wheelMaterial)
 
@@ -144,11 +138,11 @@ export class CarView {
       mesh.rotation.order = 'YXZ'
       this.wheelMeshes.push(mesh)
       this.object.add(mesh)
-      this.drawnWheels.push({pivot: mesh, corner: index, x: 0, z: 0})
+      this.drawnWheels.push({ pivot: mesh, corner: index, x: 0, z: 0 })
     }
   }
 
-  /** Buggies addition: a blown-up car is gone, nothing left to draw, until it is put back. */
+  /** A blown-up car is gone, nothing left to draw, until it is put back. */
   setWrecked(wrecked: boolean): void {
     this.object.visible = !wrecked
   }
@@ -201,13 +195,13 @@ export class CarView {
   }
 
   /**
-   * Buggies: a wheel hangs below its mount by its suspension's length. A
+   * A wheel hangs below its mount by its suspension's length. A
    * model's wheel keeps the model's place for it across and along the
    * chassis, so it stays in its arch; the boxes' wheels take the tuning's.
    */
   private placeWheel(
     drawn: DrawnWheel,
-    corner: {readonly isFront: boolean; readonly isLeft: boolean},
+    corner: { readonly isFront: boolean; readonly isLeft: boolean },
     tuning: VehicleTuning,
     suspensionLength: number,
   ): void {

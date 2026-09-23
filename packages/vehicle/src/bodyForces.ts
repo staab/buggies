@@ -1,9 +1,8 @@
-// Ported from the seattle project (src/physics/bodyForces.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// Forces and torques applied to a body along a direction or about an axis.
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import {v3, vscale, type Vec3} from '@buggies/physics'
+import { v3, vscale, type Vec3 } from '@buggies/physics'
 
 const appliedForce = v3()
 const appliedTorque = v3()

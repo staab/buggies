@@ -1,14 +1,13 @@
-// Ported from the seattle project (src/physics/world.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// The physics world the vehicles live in, and the fixed things put into it.
 
 import * as RAPIER from '@dimforge/rapier3d-compat'
 
-import {FIXED_TIMESTEP, quatFromYaw, quatFromYawPitch, type Vec3} from '@buggies/physics'
-import {GROUND_GROUPS} from './groups.ts'
+import { FIXED_TIMESTEP, quatFromYaw, quatFromYawPitch, type Vec3 } from '@buggies/physics'
+import { GROUND_GROUPS } from './groups.ts'
 
-export {FIXED_TIMESTEP} from '@buggies/physics'
+export { FIXED_TIMESTEP } from '@buggies/physics'
 
-export const WORLD_UP: Vec3 = {x: 0, y: 1, z: 0}
+export const WORLD_UP: Vec3 = { x: 0, y: 1, z: 0 }
 
 const SOLVER_ITERATIONS = 8
 const CCD_SUBSTEPS = 8
@@ -28,7 +27,7 @@ export const DEFAULT_WORLD_TUNING: Readonly<WorldTuning> = Object.freeze({
 } satisfies WorldTuning)
 
 export function createWorldTuning(): WorldTuning {
-  return {...DEFAULT_WORLD_TUNING}
+  return { ...DEFAULT_WORLD_TUNING }
 }
 
 export function resetWorldTuning(tuning: WorldTuning): void {
@@ -65,7 +64,7 @@ export function worldGravity(world: RAPIER.World): number {
 }
 
 export function createPhysicsWorld(tuning: WorldTuning = DEFAULT_WORLD_TUNING): RAPIER.World {
-  const world = new RAPIER.World({x: 0, y: 0, z: 0})
+  const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
 
   applyWorldTuning(world, tuning)
 
@@ -87,12 +86,10 @@ export interface BoxOptions {
 }
 
 export function addStaticBox(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
-  const {halfExtents, position, yaw = 0, friction = 1.0, restitution = 0} = options
+  const { halfExtents, position, yaw = 0, friction = 1.0, restitution = 0 } = options
 
   const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(position.x, position.y, position.z)
-      .setRotation(quatFromYaw(yaw)),
+    RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z).setRotation(quatFromYaw(yaw)),
   )
 
   world.createCollider(
@@ -108,12 +105,10 @@ export function addStaticBox(world: RAPIER.World, options: BoxOptions): RAPIER.R
 
 /** A fixed box that is not ground: a wall, met by the chassis and counted as a crash. */
 export function addStaticWall(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
-  const {halfExtents, position, yaw = 0, friction = 1.0, restitution = 0} = options
+  const { halfExtents, position, yaw = 0, friction = 1.0, restitution = 0 } = options
 
   const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(position.x, position.y, position.z)
-      .setRotation(quatFromYaw(yaw)),
+    RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z).setRotation(quatFromYaw(yaw)),
   )
 
   world.createCollider(
@@ -127,7 +122,7 @@ export function addStaticWall(world: RAPIER.World, options: BoxOptions): RAPIER.
 }
 
 export function addDynamicBox(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
-  const {halfExtents, position, yaw = 0, friction = 0.8, restitution = 0.2, mass = 40} = options
+  const { halfExtents, position, yaw = 0, friction = 0.8, restitution = 0.2, mass = 40 } = options
 
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
@@ -157,7 +152,7 @@ export interface RampOptions {
 }
 
 export function addRamp(world: RAPIER.World, options: RampOptions): RAPIER.RigidBody {
-  const {halfExtents, position, pitch, yaw = 0} = options
+  const { halfExtents, position, pitch, yaw = 0 } = options
 
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.fixed()

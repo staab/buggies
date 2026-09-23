@@ -1,5 +1,5 @@
-// Ported from the seattle project (src/physics/selfRighting.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// A car on its roof or its side rights itself: once it has come to rest
+// upside down, it is lifted a little and turned back onto its wheels.
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
@@ -16,14 +16,14 @@ import {
   vset,
   type Vec3,
 } from '@buggies/physics'
-import {addTorqueAbout} from './bodyForces.ts'
-import type {VehicleTuning} from './tuning.ts'
-import type {Vehicle} from './vehicleBody.ts'
-import {WORLD_UP} from './world.ts'
+import { addTorqueAbout } from './bodyForces.ts'
+import type { VehicleTuning } from './tuning.ts'
+import type { Vehicle } from './vehicleBody.ts'
+import { WORLD_UP } from './world.ts'
 
 const SELF_RIGHT_AXIS_EPSILON = 1e-4
 
-const ZERO_VELOCITY: Vec3 = {x: 0, y: 0, z: 0}
+const ZERO_VELOCITY: Vec3 = { x: 0, y: 0, z: 0 }
 
 const angularVelocity = v3()
 const selfRightAxis = v3()
@@ -62,7 +62,7 @@ function applySelfRightTorque(vehicle: Vehicle, tuning: VehicleTuning): void {
 }
 
 function applySelfRightLift(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const {body, frame} = vehicle
+  const { body, frame } = vehicle
 
   vset(
     selfRightLiftVelocity,
@@ -74,7 +74,7 @@ function applySelfRightLift(vehicle: Vehicle, tuning: VehicleTuning): void {
 }
 
 function snapUpright(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const {body, frame} = vehicle
+  const { body, frame } = vehicle
 
   vaddScaled(selfRightSnapPosition, frame.position, WORLD_UP, tuning.selfRightSnapLift)
 
@@ -91,7 +91,7 @@ export function updateSelfRighting(
   dt: number,
   grounded: boolean,
 ): boolean {
-  const {body, frame} = vehicle
+  const { body, frame } = vehicle
 
   if (grounded) {
     vehicle.invertedRestTime = 0
@@ -108,9 +108,7 @@ export function updateSelfRighting(
   if (vehicle.selfRighting) {
     vehicle.selfRightElapsed += dt
 
-    const recovered =
-      uprightDot > tuning.selfRightRecoveredDot &&
-      angularSpeed < tuning.selfRightRestAngularSpeed
+    const recovered = uprightDot > tuning.selfRightRecoveredDot && angularSpeed < tuning.selfRightRestAngularSpeed
     const timedOut = vehicle.selfRightElapsed > tuning.selfRightMaxDuration
 
     if (recovered || timedOut) {
@@ -129,9 +127,7 @@ export function updateSelfRighting(
   }
 
   const tipped = uprightDot < tuning.selfRightUprightDot
-  const atRest =
-    vehicle.speed < tuning.selfRightRestLinearSpeed &&
-    angularSpeed < tuning.selfRightRestAngularSpeed
+  const atRest = vehicle.speed < tuning.selfRightRestLinearSpeed && angularSpeed < tuning.selfRightRestAngularSpeed
   const resting = tipped && atRest && chassisHasContact(world, vehicle)
 
   vehicle.invertedRestTime = resting ? vehicle.invertedRestTime + dt : 0
