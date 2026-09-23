@@ -2,7 +2,7 @@ import { DRY, generateTerrain, sampleHeight, waterLevelAt, type TerrainMap } fro
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
-  BANANA_SLOTS,
+  BANANA_REACH,
   NEUTRAL_INPUT,
   PICKUP_HEIGHT,
   PICKUP_RESPAWN_TICKS,
@@ -22,6 +22,7 @@ import {
   spilledOut,
   takeSeat,
   type Arena,
+  type Spilled,
 } from './index.ts'
 
 let map: TerrainMap
@@ -35,8 +36,6 @@ describe('pickups', () => {
   it('are put out over the map, above dry land or a road, the same every time', () => {
     const arena = createArena(map)
     expect(arena.pickups).toHaveLength(PICKUP_SLOTS)
-    expect(arena.pickups.filter((pickup) => pickup.kind === 'banana')).toHaveLength(BANANA_SLOTS)
-    expect(arena.pickups[BANANA_SLOTS]!.kind).toBe('bomb')
     const extent = map.size * map.cellSize
     let onRoads = 0
     let moved = 0
@@ -95,21 +94,6 @@ describe('pickups', () => {
     arena.world.free()
   })
 
-  it('bombs blow up a vehicle that reaches them, and are gone until the next', () => {
-    const arena = createArena(map)
-    const seat = driveOnto(arena, BANANA_SLOTS + 2)
-    const bomb = arena.pickups[BANANA_SLOTS + 2]!
-    for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
-    expect(seat.vehicle.wrecked).toBe(true)
-    expect(seat.vehicle.damage).toBe(1)
-    expect(seat.score).toBe(0)
-    expect(bomb.generation).toBe(1)
-    expect(pickupOut(bomb, arena.tick)).toBe(false)
-    // Thrown into the air by it.
-    expect(seat.vehicle.frame.linearVelocity.y).not.toBe(0)
-    arena.world.free()
-  })
-
   it('spill from a car blown up, flying out to land about the wreck for anyone to take', () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'sportsCar')
@@ -136,8 +120,16 @@ describe('pickups', () => {
     advance(arena, () => NEUTRAL_INPUT)
     expect(arena.spilled).toHaveLength(5)
 
-    // Once one has landed, someone driving onto it takes it, and it is gone.
-    const target = arena.spilled[2]!
+    // Once one has landed, someone driving onto it takes it, and it is gone:
+    // the one lying furthest from the others, so that it is the only one taken.
+    const apart = (banana: Spilled): number =>
+      Math.min(
+        ...arena.spilled
+          .filter((other) => other !== banana)
+          .map((other) => Math.hypot(other.position.x - banana.position.x, other.position.z - banana.position.z)),
+      )
+    const target = arena.spilled.reduce((best, banana) => (apart(banana) > apart(best) ? banana : best))
+    expect(apart(target)).toBeGreaterThan(BANANA_REACH + 1)
     respawn(b, { position: { x: target.position.x, y: target.position.y - PICKUP_HEIGHT, z: target.position.z }, yaw: 0 })
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(b.score).toBe(0)

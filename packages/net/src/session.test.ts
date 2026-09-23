@@ -12,6 +12,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
 import { LocalPrediction } from './prediction.ts'
+import { fetchRooms } from './rooms.ts'
 import { INPUT_TIMELINE_TICKS, MS_PER_TICK, TICKS_PER_SECOND, TICKS_PER_SNAPSHOT } from './protocol.ts'
 import { GameServer } from './server.ts'
 import type {
@@ -106,16 +107,6 @@ const DELAY_TICKS = 3
 
 let map: TerrainMap
 
-/**
- * Bombs would blow up a car driven flat out along the road, which is not
- * what these tests are about: none goes off in them.
- */
-function defuse(arena: Arena): void {
-  for (const pickup of arena.pickups) {
-    if (pickup.kind === 'bomb') pickup.spawnTick = Number.MAX_SAFE_INTEGER
-  }
-}
-
 /** A server and a way of putting players on it, all on one fake clock. */
 class Session {
   readonly clock = { tick: 0 }
@@ -125,18 +116,14 @@ class Session {
 
   constructor() {
     this.server = new GameServer(
-      (seed) => {
-        const arena = createArena(seed === map.seed ? map : generateTerrain(seed, { size: 257 }))
-        defuse(arena)
-        return arena
-      },
+      (seed) => createArena(seed === map.seed ? map : generateTerrain(seed, { size: 257 })),
       {
-      onJoined: (seat) => this.events.push(`joined ${seat.id}`),
-      onLeft: (seat) => this.events.push(`left ${seat.id}`),
-      onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
-      onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
-      onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
-      onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
+        onJoined: (seat) => this.events.push(`joined ${seat.id}`),
+        onLeft: (seat) => this.events.push(`left ${seat.id}`),
+        onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
+        onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
+        onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
+        onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
       },
     )
   }
@@ -163,7 +150,6 @@ class Session {
     }
     const welcome = await welcoming
     const mirror = createArena(welcome.seed === map.seed ? map : generateTerrain(welcome.seed, { size: 257 }))
-    defuse(mirror)
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
     const player: Player = {
@@ -238,6 +224,39 @@ function offRoad(map: TerrainMap, position: { x: number; z: number }): number {
 
 function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
   return Math.hypot(a.x - b.x, a.z - b.z)
+}
+
+/**
+ * A wire with nothing in it: each side hears the other at once, and in
+ * order, so a message sent before a hanging-up lands before it, as it does
+ * over a socket.
+ */
+function direct(server: TransportHandlers): ClientTransport {
+  let handlers: ClientTransportHandlers | null = null
+  let closed = false
+  const connection: TransportConnection = {
+    id: 9999,
+    send: (payload) => handlers?.onMessage(payload.slice()),
+    close: (reason) => {
+      closed = true
+      handlers?.onClose(reason)
+    },
+  }
+  return {
+    connect: async (given) => {
+      handlers = given
+      server.onOpen(connection)
+    },
+    send: (payload) => {
+      if (!closed) server.onMessage(connection, payload)
+    },
+    close: (reason) => {
+      if (closed) return
+      closed = true
+      server.onClose(connection)
+      handlers?.onClose(reason)
+    },
+  }
 }
 
 describe('a session', () => {
@@ -459,6 +478,37 @@ describe('a session', () => {
     session.run(0.2)
     expect(session.server.roomCount).toBe(1)
     expect(session.events).toContain(`closed ${map.seed + 1}`)
+    session.dispose()
+  }, 120_000)
+
+  it('tells anyone asking which islands are busy, busiest first, and lets them go', async () => {
+    const session = new Session()
+    await session.join('sportsCar', 0, map.seed + 1)
+    await session.join('tank')
+    await session.join('pickup')
+    expect(session.server.popularRooms()).toEqual([
+      { seed: map.seed, players: 2 },
+      { seed: map.seed + 1, players: 1 },
+    ])
+    // Asked over the wire: told the same, and not seated.
+    expect(await fetchRooms(direct(session.server))).toEqual([
+      { seed: map.seed, players: 2 },
+      { seed: map.seed + 1, players: 1 },
+    ])
+    expect(session.server.playerCount).toBe(3)
+    expect(session.events.filter((event) => event.startsWith('joined'))).toHaveLength(3)
+    // A connection that goes before the answer leaves nothing to offer.
+    const gone = direct(session.server)
+    const empty = fetchRooms(gone)
+    gone.close('gone')
+    expect(await empty).toEqual([])
+    // Nor does a server that cannot be reached.
+    const unreachable: ClientTransport = {
+      connect: () => Promise.reject(new Error('could not reach')),
+      send: () => {},
+      close: () => {},
+    }
+    expect(await fetchRooms(unreachable)).toEqual([])
     session.dispose()
   }, 120_000)
 })

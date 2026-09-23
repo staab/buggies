@@ -178,7 +178,7 @@ export class LocalPrediction {
     return this.seat.tuning
   }
 
-  /** The map's bananas and bombs as the mirror has them: the server's word, run ahead. */
+  /** The map's bananas as the mirror has them: the server's word, run ahead. */
   get pickups(): readonly Pickup[] {
     return this.mirror.pickups
   }

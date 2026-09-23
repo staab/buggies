@@ -15,15 +15,19 @@ import {
   decodeHello,
   decodeInput,
   decodeReject,
+  decodeRooms,
   decodeSnapshot,
   decodeWelcome,
   encodeHello,
   encodeInput,
   encodeReject,
   encodeRespawn,
+  encodeRooms,
+  encodeRoomsRequest,
   encodeSnapshot,
   encodeWelcome,
   isRespawn,
+  isRoomsRequest,
   withAck,
   type SnapshotMessage,
 } from './wire.ts'
@@ -131,6 +135,22 @@ describe('wire', () => {
     expect(decodeSnapshot(withAck(shared, 42))!.ackInputTick).toBe(42)
     // The original was not touched.
     expect(decodeSnapshot(shared)!.ackInputTick).toBe(UNACKNOWLEDGED_INPUT_TICK)
+  })
+
+  it('carries which islands are busy, and the asking after them', () => {
+    expect(isRoomsRequest(encodeRoomsRequest())).toBe(true)
+    expect(isRoomsRequest(encodeRespawn())).toBe(false)
+    expect(decodeHello(encodeRoomsRequest())).toBeNull()
+    const rooms = [
+      { seed: 4_000_000_000, players: 12 },
+      { seed: 7, players: 1 },
+    ]
+    expect(decodeRooms(encodeRooms(rooms))).toEqual(rooms)
+    expect(decodeRooms(encodeRooms([]))).toEqual([])
+    // A crowd beyond a byte is a byte's worth.
+    expect(decodeRooms(encodeRooms([{ seed: 1, players: 900 }]))).toEqual([{ seed: 1, players: 255 }])
+    expect(decodeRooms(encodeRooms(rooms).subarray(0, 6))).toBeNull()
+    expect(decodeRooms(encodeRoomsRequest())).toBeNull()
   })
 
   it('refuses anything the wrong shape', () => {

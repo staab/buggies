@@ -6,23 +6,18 @@ import { DRY, roadLift, sampleHeight, waterLevelAt, type TerrainMap } from '@bug
 // is several times slower under the test runner's module loader, and these run hot.
 const { cos, hypot, sin } = exact
 
-/** What floats about the map to be driven into: a banana for a point, or a bomb. */
-export type PickupKind = 'banana' | 'bomb'
-
-/** How many bananas are out on a map at once, and how many bombs. */
+/** How many bananas are out on a map at once. */
 export const BANANA_SLOTS = 64
-export const BOMB_SLOTS = 24
-export const PICKUP_SLOTS = BANANA_SLOTS + BOMB_SLOTS
+export const PICKUP_SLOTS = BANANA_SLOTS
 
 /** How far above the ground a pickup floats, to be seen from a car. */
 export const PICKUP_HEIGHT = 1.4
 
 /**
  * How close a chassis has to come, across the ground and up it, to take a
- * banana or set off a bomb: about as far as they are drawn out to.
+ * banana: about as far as one is drawn out to.
  */
 export const BANANA_REACH = 3.4
-export const BOMB_REACH = 3.2
 export const PICKUP_REACH_UP = 2.8
 
 /** How long a taken pickup's slot stays empty before another turns up elsewhere, in ticks. */
@@ -41,24 +36,17 @@ const LAND_MARGIN = 40
 const LAND_TRIES = 12
 
 /**
- * One of the map's pickup slots. Each pickup a slot has had is somewhere
+ * One of the map's banana slots. Each banana a slot has had is somewhere
  * else, worked out from the map's seed, the slot and how many it has had,
  * so that everyone with the map agrees where it is without being told.
- * The first slots are bananas, the rest bombs.
  */
 export interface Pickup {
-  readonly kind: PickupKind
-  /** How many pickups this slot has had. */
+  /** How many bananas this slot has had. */
   generation: number
   /** The tick the slot's current pickup appears on, or did. */
   spawnTick: number
   /** Where it is, or will be. */
   readonly position: Vec3
-}
-
-/** What a slot holds: the first so many are bananas, the rest bombs. */
-export function pickupKind(slot: number): PickupKind {
-  return slot < BANANA_SLOTS ? 'banana' : 'bomb'
 }
 
 /** A different 32-bit seed for every pickup a map ever has. */
@@ -112,7 +100,6 @@ export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, g
 /** A map's pickups, each slot's first, all out from the start. */
 export function createPickups(map: TerrainMap, water: Float32Array): Pickup[] {
   return Array.from({ length: PICKUP_SLOTS }, (_, slot) => ({
-    kind: pickupKind(slot),
     generation: 0,
     spawnTick: 0,
     position: pickupSpot(map, water, slot, 0),
@@ -140,10 +127,9 @@ export function pickupOut(pickup: Pickup, tick: number): boolean {
 
 /** Whether something at this point has reached a pickup. */
 export function reachesPickup(pickup: Pickup, point: Vec3): boolean {
-  const reach = pickup.kind === 'bomb' ? BOMB_REACH : BANANA_REACH
   const dx = point.x - pickup.position.x
   const dz = point.z - pickup.position.z
-  return Math.abs(point.y - pickup.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= reach * reach
+  return Math.abs(point.y - pickup.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= BANANA_REACH * BANANA_REACH
 }
 
 /** How many of a wreck's bananas spill out, at most; the rest are lost in the blast. */

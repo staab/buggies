@@ -98,11 +98,7 @@ export async function joinOnline(
   // A player beside you is seen from here, but heard from their own view.
   const others = new MirrorCars(prediction, welcome.seat, effects, (seat) => locals.has(seat))
   root.add(others.object)
-  const ear = (): Vec3 => prediction.vehicle.frame.position
-  const pickups = new PickupField(prediction, (at) => {
-    explosions.burst(at)
-    sound.boom(Math.hypot(at.x - ear().x, at.y - ear().y, at.z - ear().z))
-  })
+  const pickups = new PickupField(prediction)
   root.add(pickups.object)
 
   const cameraTuning = createCameraTuning()
