@@ -16,6 +16,7 @@ export {
   TICKS_PER_SNAPSHOT,
   rejectLabel,
 } from './protocol.ts'
+export { fetchRooms } from './rooms.ts'
 export { GameServer, type GameServerEvents, type GameServerStats } from './server.ts'
 export {
   INTERPOLATION_DELAY_MS,
@@ -33,6 +34,7 @@ export {
   decodeSnapshot,
   decodeWelcome,
   encodeSnapshot,
+  type RoomSummary,
   type SnapshotMessage,
   type VehicleSnapshot,
   type WelcomeMessage,

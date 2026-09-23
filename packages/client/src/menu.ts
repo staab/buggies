@@ -1,4 +1,5 @@
 import { VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
+import type { RoomSummary } from '@buggies/net'
 
 import { modelCredits } from './car-model.ts'
 
@@ -26,6 +27,8 @@ export interface MenuHost {
    * something else was asked for in the meantime.
    */
   showIsland(seed: number): Promise<string>
+  /** Which islands have people on them, busiest first; none if the server cannot say. */
+  listRooms(): Promise<RoomSummary[]>
   /** Put this vehicle behind the panel, turning on the spot. */
   showVehicle(vehicle: VehicleProfileId): void
   /** Set off. */
@@ -42,6 +45,9 @@ const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
     note: 'Split screen mode lets two people drive at once, with one keyboard, same island.',
   },
 }
+
+/** How many of the busiest islands the island page offers. */
+export const POPULAR_ISLANDS = 4
 
 const STEP_NAMES: Record<Step, string> = {
   mode: 'Players',
@@ -111,6 +117,10 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 100000)
 }
 
+function driving(players: number): string {
+  return players === 1 ? '1 driving' : `${players} driving`
+}
+
 /**
  * The one place a player picks anything, a page at a time: how many are
  * playing, then which island (looked over from above while it is chosen),
@@ -126,6 +136,9 @@ export class Menu {
   private readonly back = document.createElement('button')
   private readonly next = document.createElement('button')
   private readonly seedField = field('Island seed')
+  private readonly popular: HTMLFieldSetElement
+  private readonly popularCards: HTMLDivElement
+  private readonly popularButtons = new Map<number, HTMLButtonElement>()
   private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
@@ -136,6 +149,8 @@ export class Menu {
   private islands = 0
   /** Whether the island asked for last is still being made: there is no moving on until it is. */
   private generating = false
+  /** Each asking after the busy islands outranks the one before. */
+  private listings = 0
 
   constructor(root: HTMLElement, choice: Choice, host: MenuHost) {
     this.root = root
@@ -176,8 +191,11 @@ export class Menu {
       void this.generate()
     })
     mapRow.append(this.seedField, shuffle)
+    // The islands with people on them, a card each, for joining in.
+    ;[this.popular, this.popularCards] = group('Popular islands')
+    this.popular.hidden = true
     const mapPage = document.createElement('div')
-    mapPage.append(mapGroup)
+    mapPage.append(mapGroup, this.popular)
 
     // Page three, and with two players four: the vehicle, turning on the
     // spot beside the panel. One page serves both drivers in turn.
@@ -275,7 +293,10 @@ export class Menu {
     this.step = step
     this.notice('')
     this.render()
-    if (step === 'map') void this.generate()
+    if (step === 'map') {
+      void this.generate()
+      void this.listPopular()
+    }
     if (step === 'car' || step === 'car2') this.host.showVehicle(this.choice[vehicleKey(step)])
   }
 
@@ -311,6 +332,26 @@ export class Menu {
     this.render()
   }
 
+  /** Ask which islands are busy, and offer the busiest few; the cards go when there are none. */
+  private async listPopular(): Promise<void> {
+    const stamp = ++this.listings
+    const rooms = await this.host.listRooms()
+    if (stamp !== this.listings) return
+    this.popularButtons.clear()
+    this.popularCards.replaceChildren()
+    for (const room of rooms.slice(0, POPULAR_ISLANDS)) {
+      const button = card(`Island ${room.seed}`, driving(room.players))
+      button.addEventListener('click', () => {
+        this.seedField.value = String(room.seed)
+        void this.generate()
+      })
+      this.popularButtons.set(room.seed, button)
+      this.popularCards.append(button)
+    }
+    this.popular.hidden = this.popularButtons.size === 0
+    this.render()
+  }
+
   private render(): void {
     const steps = stepsFor(this.choice.mode)
     const duo = this.choice.mode === 'duo'
@@ -332,6 +373,9 @@ export class Menu {
     const picking = this.choice[vehicleKey(this.step)]
     for (const [vehicle, button] of this.vehicleButtons) {
       button.setAttribute('aria-pressed', String(vehicle === picking))
+    }
+    for (const [seed, button] of this.popularButtons) {
+      button.setAttribute('aria-pressed', String(seed === this.choice.seed))
     }
     this.back.hidden = this.step === steps[0]
     this.next.disabled = this.step === 'map' && this.generating

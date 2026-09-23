@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 7
+export const PROTOCOL_VERSION = 8
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND
@@ -23,10 +23,16 @@ export const UNACKNOWLEDGED_INPUT_TICK = -1
 export const CLIENT_HELLO = 0x01
 export const CLIENT_INPUT = 0x02
 export const CLIENT_RESPAWN = 0x03
+/** Instead of a hello: which islands have people on them. The answer ends the connection. */
+export const CLIENT_ROOMS = 0x04
 
 export const SERVER_WELCOME = 0x81
 export const SERVER_REJECT = 0x82
 export const SERVER_SNAPSHOT = 0x83
+export const SERVER_ROOMS = 0x84
+
+/** How many of the busiest islands the server tells of. */
+export const ROOMS_LISTED = 8
 
 export const REJECT_PROTOCOL_MISMATCH = 1
 export const REJECT_SERVER_FULL = 2

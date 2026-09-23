@@ -26,8 +26,8 @@ server: the letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to
 the arrows on the right (left `Shift` handbrake, `?` back to the road).
 
 Bananas float about every island, turning slowly; drive through one for a point, and another
-turns up somewhere else a little later. Bombs float about too, and one of those blows the car up,
-and a car blown up spills its bananas about the wreck for anyone to come and take.
+turns up somewhere else a little later. A car wrecked spills its bananas about the wreck for
+anyone to come and take.
 
 ## Packages
 

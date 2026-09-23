@@ -1,4 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
+import { fetchRooms, type RoomSummary } from '@buggies/net'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -13,6 +14,7 @@ import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 import { createTeamMode } from './team-mode.ts'
 import { createTerrainView } from './terrain-view.ts'
+import { WebSocketClientTransport } from './ws-transport.ts'
 
 /** The menu, as the shell drives it. */
 export interface ShellMenu {
@@ -41,6 +43,8 @@ export interface ShellModes {
   terrainView(map: TerrainMap): THREE.Group
   island(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView
   showroom(sound: Sound): ShowroomView
+  /** Which islands on the server have people on them, busiest first. */
+  rooms(url: string): Promise<RoomSummary[]>
   play(
     scene: THREE.Scene,
     url: string,
@@ -57,6 +61,7 @@ export const MODES: ShellModes = {
   terrainView: createTerrainView,
   island: createIslandMode,
   showroom: createShowroomMode,
+  rooms: (url) => fetchRooms(new WebSocketClientTransport(url)),
   play: createTeamMode,
 }
 
@@ -226,6 +231,11 @@ export class Shell implements MenuHost {
     if (stamp !== this.generation) return ''
     this.setBackdrop({ kind: 'island', seed, mode: this.modes.island(island, this.scene, this.renderer.domElement) })
     return islandSummary(island)
+  }
+
+  /** Which islands have people on them, busiest first; none if the server cannot say. */
+  listRooms(): Promise<RoomSummary[]> {
+    return this.modes.rooms(this.server).catch(() => [])
   }
 
   /** Put this vehicle on show, turning on the spot. */

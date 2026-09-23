@@ -116,8 +116,8 @@ const blast = v3()
  * simulation blows it up the same way.
  */
 /**
- * Blow a car up from outside, a bomb having gone off under it. It
- * is as wrecked as a crash would leave it, and thrown up and over the same.
+ * Blow a car up from outside. It is as wrecked as a crash would leave it,
+ * and thrown up and over the same.
  */
 export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
   vehicle.damage = 1

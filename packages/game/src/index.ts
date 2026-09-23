@@ -77,8 +77,6 @@ export type { Vec3 as Point } from '@buggies/physics'
 export {
   BANANA_REACH,
   BANANA_SLOTS,
-  BOMB_REACH,
-  BOMB_SLOTS,
   PICKUP_HEIGHT,
   PICKUP_REACH_UP,
   PICKUP_RESPAWN_TICKS,
@@ -89,7 +87,6 @@ export {
   SPILL_MOST,
   SPILL_MOST_OUT,
   SPILL_NEAR,
-  pickupKind,
   pickupOut,
   pickupSeed,
   pickupSpot,
@@ -100,7 +97,6 @@ export {
   spilledGone,
   spilledOut,
   type Pickup,
-  type PickupKind,
   type Spilled,
 } from './pickups.ts'
 
@@ -119,7 +115,6 @@ import {
   type Pickup,
   type Spilled,
 } from './pickups.ts'
-import { wreckVehicle } from '@buggies/vehicle'
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
 export const MAX_PLAYERS = 8
@@ -164,7 +159,7 @@ export interface Arena {
   readonly seats: readonly Seat[]
   /** Water surface per terrain cell, for whatever a vehicle is sitting in. */
   readonly water: Float32Array
-  /** The map's bananas and bombs, a slot each, for the taking. */
+  /** The map's bananas, a slot each, for the taking. */
   readonly pickups: readonly Pickup[]
   /** Bananas spilled from wrecks, lying about until taken. Replaced whole by the server's word. */
   spilled: Spilled[]
@@ -474,18 +469,16 @@ function spillBananas(arena: Arena): void {
 }
 
 /**
- * Every pickup a vehicle has reached goes: a banana is taken, a point to
- * whoever reached it, and a bomb goes off under them. Either way the slot
- * moves on to its next, to turn up elsewhere in a while. A wreck takes
- * nothing, and sets nothing off.
+ * Every banana a vehicle has reached is taken, a point to whoever reached
+ * it, and its slot moves on to the next, to turn up elsewhere in a while.
+ * A wreck takes nothing.
  */
 function collectPickups(arena: Arena): void {
   for (const [slot, pickup] of arena.pickups.entries()) {
     if (!pickupOut(pickup, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesPickup(pickup, seat.vehicle.frame.position)) continue
-      if (pickup.kind === 'banana') seat.score += 1
-      else wreckVehicle(seat.vehicle, seat.tuning)
+      seat.score += 1
       setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
       break
     }

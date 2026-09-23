@@ -10,9 +10,11 @@ import {
   CLIENT_HELLO,
   CLIENT_INPUT,
   CLIENT_RESPAWN,
+  CLIENT_ROOMS,
   NO_TICK,
   PROTOCOL_VERSION,
   SERVER_REJECT,
+  SERVER_ROOMS,
   SERVER_SNAPSHOT,
   SERVER_WELCOME,
   UNACKNOWLEDGED_INPUT_TICK,
@@ -30,6 +32,9 @@ export const WELCOME_BYTES = 15
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
+export const ROOMS_REQUEST_BYTES = 1
+export const ROOMS_HEADER_BYTES = 2
+export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 12
 export const SNAPSHOT_VEHICLE_BYTES = 72
 export const SNAPSHOT_PICKUP_BYTES = 4
@@ -54,6 +59,12 @@ export interface WelcomeMessage {
 
 export interface RejectMessage {
   reason: number
+}
+
+/** An island with people on it. */
+export interface RoomSummary {
+  seed: number
+  players: number
 }
 
 export interface VehicleSnapshot {
@@ -293,6 +304,36 @@ export function encodeRespawn(): Uint8Array {
 
 export function isRespawn(payload: Uint8Array): boolean {
   return payload.length === RESPAWN_BYTES && messageTypeOf(payload) === CLIENT_RESPAWN
+}
+
+export function encodeRoomsRequest(): Uint8Array {
+  return Uint8Array.of(CLIENT_ROOMS)
+}
+
+export function isRoomsRequest(payload: Uint8Array): boolean {
+  return payload.length === ROOMS_REQUEST_BYTES && messageTypeOf(payload) === CLIENT_ROOMS
+}
+
+export function encodeRooms(rooms: readonly RoomSummary[]): Uint8Array {
+  const writer = new Writer(ROOMS_HEADER_BYTES + rooms.length * ROOM_BYTES)
+  writer.u8(SERVER_ROOMS)
+  writer.u8(rooms.length)
+  for (const room of rooms) {
+    writer.u32(room.seed)
+    writer.u8(Math.min(room.players, 0xff))
+  }
+  return writer.bytes
+}
+
+export function decodeRooms(payload: Uint8Array): RoomSummary[] | null {
+  if (payload.length < ROOMS_HEADER_BYTES || messageTypeOf(payload) !== SERVER_ROOMS) return null
+  const reader = new Reader(payload)
+  reader.u8()
+  const count = reader.u8()
+  if (payload.length !== ROOMS_HEADER_BYTES + count * ROOM_BYTES) return null
+  const rooms: RoomSummary[] = []
+  for (let i = 0; i < count; i++) rooms.push({ seed: reader.u32(), players: reader.u8() })
+  return rooms
 }
 
 export function encodeSnapshot(message: SnapshotMessage): Uint8Array {

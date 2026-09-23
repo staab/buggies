@@ -22,6 +22,7 @@ import {
   REJECT_MALFORMED_MESSAGE,
   REJECT_PROTOCOL_MISMATCH,
   REJECT_SERVER_FULL,
+  ROOMS_LISTED,
   TICKS_PER_SECOND,
   TICKS_PER_SNAPSHOT,
   rejectLabel,
@@ -31,11 +32,14 @@ import {
   decodeHello,
   decodeInput,
   encodeReject,
+  encodeRooms,
   encodeSnapshot,
   type PickupSnapshot,
+  type RoomSummary,
   type SpilledSnapshot,
   encodeWelcome,
   isRespawn,
+  isRoomsRequest,
   messageTypeOf,
   withAck,
   type VehicleSnapshot,
@@ -131,6 +135,15 @@ export class GameServer implements TransportHandlers {
   /** The room for a seed, if anyone is on it. */
   roomFor(seed: number): Room | undefined {
     return this.rooms.get(seed)
+  }
+
+  /** The islands with the most people on them, busiest first, and the lower seed among equals. */
+  popularRooms(limit = ROOMS_LISTED): RoomSummary[] {
+    return [...this.rooms.values()]
+      .map((room) => ({ seed: room.seed, players: room.players.size }))
+      .filter((room) => room.players > 0)
+      .sort((a, b) => b.players - a.players || a.seed - b.seed)
+      .slice(0, limit)
   }
 
   stats(): GameServerStats {
@@ -254,6 +267,13 @@ export class GameServer implements TransportHandlers {
   }
 
   private completeHandshake(connection: TransportConnection, payload: Uint8Array): void {
+    // Someone only asking which islands are busy is told, and let go.
+    if (isRoomsRequest(payload)) {
+      this.handshaking.delete(connection.id)
+      connection.send(encodeRooms(this.popularRooms()))
+      connection.close('rooms listed')
+      return
+    }
     if (messageTypeOf(payload) !== CLIENT_HELLO) {
       this.reject(connection, REJECT_HANDSHAKE_ORDER)
       return

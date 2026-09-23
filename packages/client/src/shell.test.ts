@@ -120,6 +120,10 @@ function build(refuse: string | null = null) {
       showrooms.push(showroom)
       return showroom
     },
+    rooms: async (url) => {
+      if (refuse !== null) throw new Error(refuse)
+      return [{ seed: url.length, players: 3 }]
+    },
     play: async (_scene, url, seed, players, mapFor) => {
       joined.push(`${url}#${seed}`)
       if (refuse !== null) throw new Error(refuse)
@@ -304,6 +308,11 @@ describe('the shell', () => {
     expect(shell.playing).toBe(false)
     expect(menu.open).toBe(true)
     expect(menu.notices.at(-1)).toBe(`could not join ${SERVER}: refused`)
+  })
+
+  it('asks the server which islands are busy, and has none to offer when it cannot say', async () => {
+    expect(await build().shell.listRooms()).toEqual([{ seed: SERVER.length, players: 3 }])
+    expect(await build('down').shell.listRooms()).toEqual([])
   })
 
   it('knows when a choice is the game already on', () => {
