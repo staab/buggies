@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import type { Sound } from './audio.ts'
 import type { ModeView } from './mode.ts'
 import { joinOnline, type OnlinePlayer, type OnlineView } from './online-mode.ts'
+import type { Sun } from './sun.ts'
 
 /**
  * Everyone on this screen, on the server: one player with the whole screen,
@@ -17,6 +18,7 @@ export async function createTeamMode(
   players: readonly OnlinePlayer[],
   mapFor: (seed: number) => Promise<TerrainMap>,
   sound: Sound,
+  sun: Sun,
 ): Promise<ModeView> {
   const locals = new Set<number>()
   const joins = await Promise.allSettled(players.map((player) => joinOnline(scene, url, player, locals, mapFor, sound)))
@@ -39,7 +41,9 @@ export async function createTeamMode(
       for (const view of views) view.update(dt, active)
     },
     render(renderer) {
+      // The sun's shadows are drawn afresh for each view, around its own car.
       if (!split) {
+        sun.follow(views[0]!.focus)
         renderer.render(scene, views[0]!.camera)
         return
       }
@@ -49,6 +53,7 @@ export async function createTeamMode(
       renderer.setScissorTest(true)
       views.forEach((view, side) => {
         for (const other of views) other.root.visible = other === view
+        sun.follow(view.focus)
         const left = x + side * each
         renderer.setViewport(left, y, each, height)
         renderer.setScissor(left, y, each, height)

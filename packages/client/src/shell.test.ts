@@ -9,6 +9,7 @@ import type { Choice, MenuHost, Step } from './menu.ts'
 import type { ModeView } from './mode.ts'
 import { Shell, continues, playersFor, type ShellMenu, type ShellModes } from './shell.ts'
 import type { ShowroomView } from './showroom-mode.ts'
+import { Sun } from './sun.ts'
 
 /** A game that only remembers what was done to it. */
 interface StubGame extends ModeView {
@@ -130,6 +131,7 @@ function build(seed = 5, refuse: string | null = null) {
         notice: (text: string) => void states.push({ title: text }),
       })),
       sound: {} as Sound,
+      sun: new Sun(),
       islands: {
         generate: async (asked) => {
           generated.push(asked)

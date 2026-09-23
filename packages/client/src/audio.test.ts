@@ -1,7 +1,7 @@
 import { VEHICLE_PROFILE_IDS, createVehicleTuning } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
-import { EARSHOT, ENGINE_TIMBRES, SKID_FULL, SKID_START, earshot, engineFrequency, engineRev, skidAmount } from './audio.ts'
+import { EARSHOT, ENGINE_TIMBRES, earshot, engineFrequency, engineRev, skidAmount } from './audio.ts'
 
 describe('engines', () => {
   it('have a timbre for every vehicle, the big ones low and slow, the small ones high', () => {
@@ -33,13 +33,18 @@ describe('engines', () => {
     expect(engineFrequency(timbre, 1)).toBe(timbre.idle + timbre.span)
   })
 
-  it('squeal only for wheels on the ground sliding sideways past a point', () => {
+  it('squeal only once a wheel on the ground has slid past the end of its grip', () => {
+    const tuning = createVehicleTuning('sportsCar')
     const wheel = (grounded: boolean, slipSpeedLateral: number) => ({ grounded, slipSpeedLateral })
-    expect(skidAmount([wheel(true, 0), wheel(true, SKID_START)])).toBe(0)
-    expect(skidAmount([wheel(true, -(SKID_START + SKID_FULL) / 2)])).toBeCloseTo(0.5, 5)
-    expect(skidAmount([wheel(true, SKID_FULL * 3)])).toBe(1)
+    // Working the tyre up to and along its peak is not sliding.
+    expect(skidAmount([wheel(true, tuning.lateralPeakSlip)], tuning)).toBe(0)
+    expect(skidAmount([wheel(true, tuning.lateralPlateauEndSlip)], tuning)).toBe(0)
+    // Past it, the squeal comes up over the first half of the fall-off, either way round.
+    const end = tuning.lateralPlateauEndSlip
+    expect(skidAmount([wheel(true, -(end + tuning.lateralFalloffRange * 0.25))], tuning)).toBeCloseTo(0.5, 5)
+    expect(skidAmount([wheel(true, end + tuning.lateralFalloffRange)], tuning)).toBe(1)
     // A wheel in the air is not squealing, however fast it is going sideways.
-    expect(skidAmount([wheel(false, SKID_FULL * 3), wheel(true, 1)])).toBe(0)
+    expect(skidAmount([wheel(false, end + tuning.lateralFalloffRange), wheel(true, 1)], tuning)).toBe(0)
   })
 
   it('are heard less the further off they are, and not at all past earshot', () => {

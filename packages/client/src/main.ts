@@ -13,6 +13,7 @@ import { loadCarModels } from './car-model.ts'
 import { Hud } from './hud.ts'
 import { Menu, type Choice, type Mode } from './menu.ts'
 import { Shell } from './shell.ts'
+import { Sun } from './sun.ts'
 import { TerrainSource } from './terrain-source.ts'
 
 const container = document.getElementById('app')!
@@ -38,14 +39,14 @@ muteButton.addEventListener('click', () => {
 
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
 container.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color('#a9cbe6')
-scene.add(new THREE.HemisphereLight('#cfe6ff', '#4a5a3a', 0.9))
-const sun = new THREE.DirectionalLight('#fff4e0', 1.6)
-sun.position.set(-300, 500, 200)
-scene.add(sun)
+const sun = new Sun()
+scene.add(sun.object)
 
 /**
  * The game server: named at build time by VITE_SERVER_URL, or else the one
@@ -87,6 +88,7 @@ const shell = new Shell(
     // One HUD a viewport: the left, or only, and the right of a split screen.
     huds: [new Hud(document.getElementById('hud')!), new Hud(document.getElementById('hud-right')!)],
     sound,
+    sun,
     islands: new TerrainSource(),
     server: serverUrl(),
     createMenu: (host, choice) => new Menu(document.getElementById('menu')!, choice, host),

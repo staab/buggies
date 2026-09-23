@@ -668,9 +668,11 @@ const TANK_TUNING: Readonly<VehicleTuning> = Object.freeze({
   counterSteerSlipMin: 0.3,
   counterSteerAuthority: 0.3,
 
-  engineForce: 150000,
+  // The pull to climb anything at all: on an 80% grade it still makes
+  // 10m/s, where half this had it stall on 65%. The top speed keeps it a tank.
+  engineForce: 400000,
   driveSplit: 0.5,
-  maxSpeed: 16,
+  maxSpeed: 18,
   brakeForce: 260000,
   handbrakeForce: 120000,
   reverseForceScale: 0.8,

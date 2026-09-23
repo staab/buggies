@@ -24,6 +24,7 @@ import { MirrorCars } from './mirror-cars.ts'
 import { PickupField } from './pickups-view.ts'
 import { PredictedCar } from './predicted-car.ts'
 import { Smoke } from './smoke.ts'
+import { SUN_DISTANCE } from './sun.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -44,6 +45,8 @@ export interface OnlineView {
   readonly root: THREE.Group
   readonly camera: THREE.PerspectiveCamera
   readonly seat: number
+  /** Where the play is: the car. */
+  readonly focus: Vec3
   resize(aspect: number): void
   update(dt: number, active: boolean): void
   hud(): HudState
@@ -102,7 +105,8 @@ export async function joinOnline(
   root.add(pickups.object)
 
   const cameraTuning = createCameraTuning()
-  cameraTuning.far = map.size * map.cellSize * 2
+  // Far enough to take in the whole island, and the sun beyond it.
+  cameraTuning.far = Math.max(map.size * map.cellSize * 2, SUN_DISTANCE * 1.5)
   const chase = new ChaseCamera(cameraTuning)
   chase.setBoundsAt(cameraBounds(map))
   const target = createChaseTarget()
@@ -120,6 +124,9 @@ export async function joinOnline(
     root,
     camera: chase.camera,
     seat: welcome.seat,
+    get focus() {
+      return prediction.vehicle.frame.position
+    },
     resize(aspect) {
       chase.camera.aspect = aspect
       chase.camera.updateProjectionMatrix()
