@@ -1,5 +1,10 @@
 import { createRng, v3, type Vec3 } from '@buggies/physics'
+import * as exact from '@buggies/physics'
 import { DRY, roadLift, sampleHeight, waterLevelAt, type TerrainMap } from '@buggies/terrain'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { cos, hypot, sin } = exact
 
 /** What floats about the map to be driven into: a banana for a point, or a bomb. */
 export type PickupKind = 'banana' | 'bomb'
@@ -70,7 +75,7 @@ function roadSpot(map: TerrainMap, rng: () => number, out: Vec3): Vec3 {
   const prior = road.points[road.closed ? (at - 1 + count) % count : Math.max(at - 1, 0)] ?? point
   const dx = next.x - prior.x
   const dz = next.z - prior.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   // Across the road, anywhere but the very edge.
   const across = (rng() * 2 - 1) * Math.max(road.width / 2 - ROAD_VERGE, 0)
   out.x = point.x + (-dz / length) * across
@@ -185,8 +190,8 @@ export function spillFrom(
   for (let i = 0; i < count; i++) {
     const angle = rng() * Math.PI * 2
     const radius = SPILL_NEAR + rng() * (SPILL_FAR - SPILL_NEAR)
-    const x = from.x + Math.cos(angle) * radius
-    const z = from.z + Math.sin(angle) * radius
+    const x = from.x + cos(angle) * radius
+    const z = from.z + sin(angle) * radius
     spilled.push({ from: origin, position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z), bornTick: tick })
   }
   return spilled

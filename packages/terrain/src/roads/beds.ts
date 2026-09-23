@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import type { Heightfield, Road, RoadPoint } from '../types.ts'
 import {
   BRIDGE_SHOULDER_DROP,
@@ -19,6 +20,10 @@ import {
 import { smoothstep } from './geometry.ts'
 import { limitVerticalCurvature } from './grades.ts'
 import { sampleTerrain } from './sampling.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 /**
  * Surface roads on the terrain: how they sit on it, how the ground is cut and
@@ -99,7 +104,7 @@ export function carveRoadBeds(
           const x = col * cellSize
           const z = row * cellSize
           const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
-          const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
+          const distance = hypot(x - (a.x + vx * t), z - (a.z + vz * t))
           if (distance > reach) continue
           const cell = row * width + col
           if (keep[cell] === 1 || distance >= nearest[cell]!) continue
@@ -150,7 +155,7 @@ function builtRoadCells(field: Heightfield, roads: Road[]): Uint8Array {
           const x = col * cellSize
           const z = row * cellSize
           const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
-          if (Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t)) <= half) cells[row * width + col] = 1
+          if (hypot(x - (a.x + vx * t), z - (a.z + vz * t)) <= half) cells[row * width + col] = 1
         }
       }
     }
@@ -176,7 +181,7 @@ function shoresOf(road: Road): Shore[] {
     if (road.structure[i] !== ROAD_BRIDGE) continue
     const a = road.points[i]!
     const b = road.points[(i + 1) % count]!
-    const length = Math.hypot(b.x - a.x, b.z - a.z) || 1
+    const length = hypot(b.x - a.x, b.z - a.z) || 1
     const dx = (b.x - a.x) / length
     const dz = (b.z - a.z) / length
     if (structureAt(i - 1) === ROAD_GRADE) shores.push({ x: a.x, z: a.z, dx, dz })
@@ -224,7 +229,7 @@ export function surfaceRoadCells(field: Heightfield, roads: Road[]): Uint8Array 
           const x = col * cellSize
           const z = row * cellSize
           const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
-          if (Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t)) > flat) continue
+          if (hypot(x - (a.x + vx * t), z - (a.z + vz * t)) > flat) continue
           if (shores.length > 0 && pastAShore(x, z)) continue
           cells[row * width + col] = 1
         }
@@ -282,7 +287,7 @@ function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array): 
           const x = col * cellSize
           const z = row * cellSize
           const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
-          const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
+          const distance = hypot(x - (a.x + vx * t), z - (a.z + vz * t))
           if (distance > reach) continue
           const cell = row * width + col
           if (distance >= nearest[cell]!) continue
@@ -331,7 +336,7 @@ function resampleSurfaceRoad(road: Road, spacing: number): void {
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!
     const b = points[i]!
-    cumulative.push(cumulative[i - 1]! + Math.hypot(b.x - a.x, b.z - a.z))
+    cumulative.push(cumulative[i - 1]! + hypot(b.x - a.x, b.z - a.z))
   }
   const total = cumulative[cumulative.length - 1]!
   const steps = Math.max(1, Math.ceil(total / spacing))
@@ -371,7 +376,7 @@ function limitRunGrade(points: RoadPoint[], from: number, to: number, maxGrade: 
   const forward = points.slice(from, to + 1).map((point) => point.y)
   const backward = forward.slice()
   const step = (i: number, j: number): number =>
-    maxGrade * Math.hypot(points[from + i]!.x - points[from + j]!.x, points[from + i]!.z - points[from + j]!.z)
+    maxGrade * hypot(points[from + i]!.x - points[from + j]!.x, points[from + i]!.z - points[from + j]!.z)
   for (let i = 1; i < forward.length; i++) {
     const delta = step(i, i - 1)
     forward[i] = Math.min(Math.max(forward[i]!, forward[i - 1]! - delta), forward[i - 1]! + delta)
@@ -433,7 +438,7 @@ function holdBridgeDecks(road: Road): void {
   if (road.closed) return
   const grade = surfaceGradeLimit(road)
   const step = (i: number, j: number): number =>
-    Math.hypot(points[i]!.x - points[j]!.x, points[i]!.z - points[j]!.z)
+    hypot(points[i]!.x - points[j]!.x, points[i]!.z - points[j]!.z)
   let start = 0
   for (let i = 0; i <= structure.length; i++) {
     if (i < structure.length && structure[i] === ROAD_BRIDGE) continue
@@ -498,7 +503,7 @@ export function deckShouldered(road: Road, field: Heightfield, segment: number):
     const next = road.points[road.closed ? (index + 1) % count : Math.min(index + 1, count - 1)]!
     const dx = next.x - prev.x
     const dz = next.z - prev.z
-    const length = Math.hypot(dx, dz) || 1
+    const length = hypot(dx, dz) || 1
     const nx = -dz / length
     const nz = dx / length
     const foot = road.width / 2 + ROAD_SKIRT

@@ -1,5 +1,10 @@
+import * as exact from '@buggies/physics'
 import { footprintCorners, type Footprint } from './roads.ts'
 import type { Road } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 interface Point {
   x: number
@@ -43,7 +48,7 @@ export function interchangeZones(roads: Road[]): Point[][] {
       const b = bounds[j]!
       const gapX = Math.max(a.minX - b.maxX, b.minX - a.maxX, 0)
       const gapZ = Math.max(a.minZ - b.maxZ, b.minZ - a.maxZ, 0)
-      if (Math.hypot(gapX, gapZ) <= INTERCHANGE_REACH) group[find(i)] = find(j)
+      if (hypot(gapX, gapZ) <= INTERCHANGE_REACH) group[find(i)] = find(j)
     }
   }
   const members = new Map<number, Point[]>()

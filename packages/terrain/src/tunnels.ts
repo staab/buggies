@@ -7,8 +7,13 @@
  * drives into a hill that is not on screen, or through one that is.
  */
 
+import * as exact from '@buggies/physics'
 import type { Heightfield, Road } from './types.ts'
 import { ROAD_SURFACE, ROAD_TUNNEL } from './roads.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { cos, hypot, sin } = exact
 
 /** How thick the shell around a bore is, buried in the hill it cuts through. */
 export const TUNNEL_WALL = 3
@@ -264,8 +269,8 @@ export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | nul
     for (let j = 0; j <= ARCH_SEGMENTS; j++) {
       const angle = Math.PI - (Math.PI * j) / ARCH_SEGMENTS
       points.push({
-        across: radius * Math.cos(angle),
-        up: TUNNEL_WALL_HEIGHT + radius * Math.sin(angle),
+        across: radius * cos(angle),
+        up: TUNNEL_WALL_HEIGHT + radius * sin(angle),
       })
     }
     points.push({ across: radius, up: TUNNEL_WALL_HEIGHT }, { across: radius, up: -SHELL_FOOTING })
@@ -290,7 +295,7 @@ export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | nul
       const next = road.points[(index + 1) % count]!
       let dx = next.x - prev.x
       let dz = next.z - prev.z
-      const length = Math.hypot(dx, dz) || 1
+      const length = hypot(dx, dz) || 1
       dx /= length
       dz /= length
       const nx = -dz

@@ -8,6 +8,7 @@
  */
 
 import { createRng, randomInt, randomRange, type Rng } from '@buggies/physics'
+import * as exact from '@buggies/physics'
 
 import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts'
 import { sampleHeight } from './heightfield.ts'
@@ -28,6 +29,10 @@ import {
   type Footprint,
 } from './roads.ts'
 import type {Building, District, Heightfield, Lake, Mountain, Ramp, River, Road, Sidewalk, Tree} from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { atan2, cos: cosine, hypot, sin: sine } = exact
 
 const BUILDING_SALT = 0x6b1d
 
@@ -175,7 +180,7 @@ class Placed {
 
   /** Whether the footprint would stand on, or within `gap` of, anything placed. */
   meets(footprint: Footprint, gap: number): boolean {
-    const reach = Math.hypot(footprint.width, footprint.depth) / 2 + gap
+    const reach = hypot(footprint.width, footprint.depth) / 2 + gap
     for (const key of this.cells(footprint, reach)) {
       for (const other of this.buckets.get(key) ?? []) {
         if (footprintsOverlap(footprint, other, gap)) return true
@@ -185,7 +190,7 @@ class Placed {
   }
 
   add(footprint: Footprint): void {
-    const reach = Math.hypot(footprint.width, footprint.depth) / 2
+    const reach = hypot(footprint.width, footprint.depth) / 2
     for (const key of this.cells(footprint, reach)) {
       const bucket = this.buckets.get(key)
       if (bucket) bucket.push(footprint)
@@ -206,8 +211,8 @@ function groundUnder(
   wet: (x: number, z: number) => boolean,
   footprint: Footprint,
 ): Ground {
-  const cos = Math.cos(footprint.yaw)
-  const sin = Math.sin(footprint.yaw)
+  const cos = cosine(footprint.yaw)
+  const sin = sine(footprint.yaw)
   let low = Infinity
   let high = -Infinity
   let anyWet = false
@@ -255,7 +260,7 @@ function wetTest(
       const maxRow = Math.min(Math.ceil((point.z + reach) / cellSize), depth - 1)
       for (let row = minRow; row <= maxRow; row++) {
         for (let col = minCol; col <= maxCol; col++) {
-          if (Math.hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
+          if (hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
           wet[row * width + col] = 1
         }
       }
@@ -356,8 +361,8 @@ function fillCities(
    */
   const plantPark = (lot: Footprint): void => {
     const area = (lot.width * lot.depth) / 100
-    const cos = Math.cos(lot.yaw)
-    const sin = Math.sin(lot.yaw)
+    const cos = cosine(lot.yaw)
+    const sin = sine(lot.yaw)
     const somewhere = (inset: number): { x: number; z: number } | null => {
       if (lot.width < 2 * inset || lot.depth < 2 * inset) return null
       const u = randomRange(rng, -lot.width / 2 + inset, lot.width / 2 - inset)
@@ -396,7 +401,7 @@ function fillCities(
     const ringSides = (blockU: number, blockV: number): [boolean, boolean, boolean, boolean] => {
       const half = STREET_SPACING / 2 - STREET_WIDTH / 2
       const band = SIDEWALK_BAND
-      const yaw = -Math.atan2(sin, cos)
+      const yaw = -atan2(sin, cos)
       const groundAt = (u: number, v: number): number =>
         sampleHeight(field, cx + u * cos - v * sin, cz + u * sin + v * cos)
       /** Whether the ground under a side is level enough to lay a slab on. */
@@ -452,7 +457,7 @@ function fillCities(
             sidewalks.push({
               ...block,
               // The frame's own turn: the ring is placed the way the block is.
-              yaw: Math.atan2(sin, cos),
+              yaw: atan2(sin, cos),
               half: STREET_SPACING / 2 - STREET_WIDTH / 2,
               band: SIDEWALK_BAND,
               sides,
@@ -467,7 +472,7 @@ function fillCities(
               const lot: Footprint = {
                 x: cx + ((uFrom + uTo) / 2) * cos - ((vFrom + vTo) / 2) * sin,
                 z: cz + ((uFrom + uTo) / 2) * sin + ((vFrom + vTo) / 2) * cos,
-                yaw: -Math.atan2(sin, cos),
+                yaw: -atan2(sin, cos),
                 width: uTo - uFrom,
                 depth: vTo - vFrom,
               }
@@ -481,13 +486,13 @@ function fillCities(
             const footprint: Footprint = {
               x: cx + u * cos - v * sin,
               z: cz + u * sin + v * cos,
-              yaw: -Math.atan2(sin, cos),
+              yaw: -atan2(sin, cos),
               width: uTo - uFrom - 2 * insetU,
               depth: vTo - vFrom - 2 * insetV,
             }
             const core = Math.max(
               0,
-              1 - Math.hypot(footprint.x - district.cx, footprint.z - district.cz) / district.radius,
+              1 - hypot(footprint.x - district.cx, footprint.z - district.cz) / district.radius,
             )
             const height = storeys(
               BLOCK_HEIGHT.min +
@@ -522,7 +527,7 @@ function frameAlong(road: Road, index: number): { dx: number; dz: number; nx: nu
   const next = points[Math.min(index + 1, points.length - 1)]!
   const dx = next.x - prev.x
   const dz = next.z - prev.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   return { dx: dx / length, dz: dz / length, nx: -dz / length, nz: dx / length }
 }
 
@@ -553,7 +558,7 @@ function lineArterials(
   }
   const clearings: { x: number; z: number }[] = []
   const inClearing = (x: number, z: number): boolean =>
-    clearings.some((house) => Math.hypot(house.x - x, house.z - z) < CLEARING)
+    clearings.some((house) => hypot(house.x - x, house.z - z) < CLEARING)
 
   /** A house beside the road at this sample, facing it, if it fits there in `zone`. */
   const placeHouse = (road: Road, index: number, side: number, zone: number): boolean => {
@@ -568,7 +573,7 @@ function lineArterials(
       x: point.x + nx * side * setback,
       z: point.z + nz * side * setback,
       // Broadside to the road: local X along it.
-      yaw: -Math.atan2(dz, dx),
+      yaw: -atan2(dz, dx),
       width: houseWidth,
       depth: houseDepth,
     }
@@ -620,7 +625,7 @@ function lineArterials(
       let nextSlot = 0
       let nextHouse = randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
       for (let i = 1; i < points.length; i++) {
-        travelled += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+        travelled += hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
         if (travelled < nextSlot) continue
         // Nothing beside a bridge: there is a river or a valley there.
         if (road.structure[i - 1] === ROAD_BRIDGE || road.structure[Math.min(i, points.length - 2)] === ROAD_BRIDGE) {
@@ -688,7 +693,7 @@ function lineRamps(
     let travelled = 0
     let next = randomRange(rng, RAMP_SPACING.min / 2, RAMP_SPACING.max / 2)
     for (let i = 1; i < points.length; i++) {
-      travelled += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+      travelled += hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
       if (travelled < next) continue
       next = travelled + randomRange(rng, RAMP_SPACING.min, RAMP_SPACING.max)
       if (road.structure[i - 1] !== ROAD_GRADE || road.structure[Math.min(i, points.length - 2)] !== ROAD_GRADE) continue
@@ -708,7 +713,7 @@ function lineRamps(
         x: middle.x,
         z: middle.z,
         // Local X along the road.
-        yaw: -Math.atan2(dz, dx),
+        yaw: -atan2(dz, dx),
         width: RAMP_LENGTH,
         depth: RAMP_WIDTH,
       }
@@ -775,7 +780,7 @@ function plantWilds(
     const step = cellSize
     const dx = sampleHeight(field, x + step, z) - sampleHeight(field, x - step, z)
     const dz = sampleHeight(field, x, z + step) - sampleHeight(field, x, z - step)
-    return Math.hypot(dx, dz) / (2 * step)
+    return hypot(dx, dz) / (2 * step)
   }
   const districtAt = (x: number, z: number): number => {
     const col = Math.floor(x / cellSize)

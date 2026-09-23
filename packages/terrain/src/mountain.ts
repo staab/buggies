@@ -1,4 +1,9 @@
+import * as exact from '@buggies/physics'
 import type { Mountain } from './types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 export interface Triangle {
   ax: number
@@ -20,7 +25,7 @@ export function orientedTriangle(mountain: Mountain): Triangle {
 function edgeDistance(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {
   const ex = bx - ax
   const ez = bz - az
-  const length = Math.hypot(ex, ez) || 1
+  const length = hypot(ex, ez) || 1
   return (ex * (pz - az) - ez * (px - ax)) / length
 }
 
@@ -35,9 +40,9 @@ export function signedDistanceToTriangle(px: number, pz: number, triangle: Trian
 
 /** Radius of the largest circle that fits inside the triangle. */
 export function triangleInradius(triangle: Triangle): number {
-  const ab = Math.hypot(triangle.bx - triangle.ax, triangle.bz - triangle.az)
-  const bc = Math.hypot(triangle.cx - triangle.bx, triangle.cz - triangle.bz)
-  const ca = Math.hypot(triangle.ax - triangle.cx, triangle.az - triangle.cz)
+  const ab = hypot(triangle.bx - triangle.ax, triangle.bz - triangle.az)
+  const bc = hypot(triangle.cx - triangle.bx, triangle.cz - triangle.bz)
+  const ca = hypot(triangle.ax - triangle.cx, triangle.az - triangle.cz)
   const perimeter = ab + bc + ca
   const doubleArea = Math.abs(
     (triangle.bx - triangle.ax) * (triangle.cz - triangle.az) -

@@ -1,7 +1,12 @@
+import * as exact from '@buggies/physics'
 import type { Road } from '../types.ts'
 import { isSurfaceRoad } from './beds.ts'
 import { ROAD_SKIRT, SEGMENT_CELL, STREET_WIDTH } from './constants.ts'
 import type { Vec2 } from './geometry.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { cos: cosine, hypot, sin: sine } = exact
 
 /**
  * What a road claims of the ground, and how far a footprint stands from it.
@@ -28,7 +33,7 @@ export function claimedSegments(road: Road, reach: number): ClaimedSegment[] {
   for (let i = 0; i < count; i++) {
     const a = points[i]!
     const b = points[(i + 1) % points.length]!
-    const length = Math.hypot(b.x - a.x, b.z - a.z) || 1
+    const length = hypot(b.x - a.x, b.z - a.z) || 1
     segments.push({
       ax: a.x,
       az: a.z,
@@ -105,8 +110,8 @@ export interface Footprint {
 
 /** The four corners of a footprint. */
 export function footprintCorners(footprint: Footprint): Vec2[] {
-  const cos = Math.cos(footprint.yaw)
-  const sin = Math.sin(footprint.yaw)
+  const cos = cosine(footprint.yaw)
+  const sin = sine(footprint.yaw)
   const corners: Vec2[] = []
   for (const su of [-1, 1]) {
     for (const sv of [-1, 1]) {
@@ -123,8 +128,8 @@ export function footprintsOverlap(a: Footprint, b: Footprint, gap = 0): boolean 
   const cornersA = footprintCorners(a)
   const cornersB = footprintCorners(b)
   for (const footprint of [a, b]) {
-    const cos = Math.cos(footprint.yaw)
-    const sin = Math.sin(footprint.yaw)
+    const cos = cosine(footprint.yaw)
+    const sin = sine(footprint.yaw)
     for (const axis of [
       { x: cos, z: -sin },
       { x: sin, z: cos },
@@ -149,15 +154,15 @@ export function footprintsOverlap(a: Footprint, b: Footprint, gap = 0): boolean 
 
 /** Distance from a point to the nearest point of a footprint, zero inside it. */
 function footprintDistance(footprint: Footprint, px: number, pz: number): number {
-  const cos = Math.cos(footprint.yaw)
-  const sin = Math.sin(footprint.yaw)
+  const cos = cosine(footprint.yaw)
+  const sin = sine(footprint.yaw)
   const dx = px - footprint.x
   const dz = pz - footprint.z
   const u = dx * cos - dz * sin
   const v = dx * sin + dz * cos
   const outU = Math.max(Math.abs(u) - footprint.width / 2, 0)
   const outV = Math.max(Math.abs(v) - footprint.depth / 2, 0)
-  return Math.hypot(outU, outV)
+  return hypot(outU, outV)
 }
 
 /**
@@ -202,7 +207,7 @@ export function roadClearance(
   }
   const near = indexSegments(segments)
   return (footprint, margin) => {
-    const half = Math.hypot(footprint.width, footprint.depth) / 2 + margin + reachMost
+    const half = hypot(footprint.width, footprint.depth) / 2 + margin + reachMost
     return !near(
       footprint.x - half,
       footprint.z - half,

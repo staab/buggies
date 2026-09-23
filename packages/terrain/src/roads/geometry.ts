@@ -1,4 +1,9 @@
+import * as exact from '@buggies/physics'
 import type { Road, RoadPoint } from '../types.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { acos, hypot } = exact
 
 /**
  * Plain 2D geometry the road stages share: segments, polygons, distances along
@@ -34,7 +39,7 @@ export function distanceToSegment(
   const vz = bz - az
   const lengthSq = vx * vx + vz * vz || 1
   const t = Math.min(Math.max(((px - ax) * vx + (pz - az) * vz) / lengthSq, 0), 1)
-  return Math.hypot(px - (ax + vx * t), pz - (az + vz * t))
+  return hypot(px - (ax + vx * t), pz - (az + vz * t))
 }
 
 /**
@@ -104,10 +109,10 @@ export function interiorAngle(prev: Vec2, cur: Vec2, next: Vec2): number {
   const az = prev.z - cur.z
   const bx = next.x - cur.x
   const bz = next.z - cur.z
-  const la = Math.hypot(ax, az) || 1
-  const lb = Math.hypot(bx, bz) || 1
+  const la = hypot(ax, az) || 1
+  const lb = hypot(bx, bz) || 1
   const dot = (ax * bx + az * bz) / (la * lb)
-  return (Math.acos(Math.min(Math.max(dot, -1), 1)) * 180) / Math.PI
+  return (acos(Math.min(Math.max(dot, -1), 1)) * 180) / Math.PI
 }
 
 /**
@@ -122,7 +127,7 @@ export function polygonInradius(points: Vec2[]): number {
     const a = points[i]!
     const b = points[(i + 1) % count]!
     area += a.x * b.z - b.x * a.z
-    perimeter += Math.hypot(b.x - a.x, b.z - a.z)
+    perimeter += hypot(b.x - a.x, b.z - a.z)
   }
   return perimeter < 1e-6 ? 0 : Math.abs(area) / perimeter
 }
@@ -133,7 +138,7 @@ export function cumulativeLengths(points: Vec2[]): Float32Array {
   const cum = new Float32Array(count)
   for (let i = 1; i < count; i++) {
     cum[i] =
-      cum[i - 1]! + Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+      cum[i - 1]! + hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
   }
   return cum
 }
@@ -163,7 +168,7 @@ export function frameAt(
   const next = points[(index + 1) % count]!
   let dx = next.x - prev.x
   let dz = next.z - prev.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   dx /= length
   dz /= length
   return { x: point.x, z: point.z, dx, dz, nx: dz, nz: -dx }
@@ -213,6 +218,6 @@ export function leavingDirection(points: RoadPoint[], fromStart: boolean): { x: 
   const b = fromStart ? points[1]! : points[points.length - 2]!
   const dx = b.x - a.x
   const dz = b.z - a.z
-  const length = Math.hypot(dx, dz) || 1
+  const length = hypot(dx, dz) || 1
   return { x: dx / length, z: dz / length }
 }

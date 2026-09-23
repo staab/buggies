@@ -1,4 +1,5 @@
-import { type Rng, createRng } from '@buggies/physics'
+import { createRng, type Rng } from '@buggies/physics'
+import * as exact from '@buggies/physics'
 import type { Heightfield, Road, RoadPoint } from '../types.ts'
 import {
   ARTERIAL_ACCESS_AVOID,
@@ -33,6 +34,10 @@ import {
 import { leavingDirection, roadBounds, segmentGap, segmentsCross } from './geometry.ts'
 import { limitSweepGrade } from './grades.ts'
 import { sampleTerrain } from './sampling.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { acos, hypot, tan } = exact
 
 /**
  * Arterials: the roads between cities, routed cell by cell over a navigation
@@ -100,7 +105,7 @@ function buildNavGrid(
     const maxRow = Math.min(Math.ceil((z + radius) / cell), rows - 1)
     for (let row = minRow; row <= maxRow; row++) {
       for (let col = minCol; col <= maxCol; col++) {
-        if (Math.hypot((col + 0.5) * cell - x, (row + 0.5) * cell - z) > radius) continue
+        if (hypot((col + 0.5) * cell - x, (row + 0.5) * cell - z) > radius) continue
         charged[row * cols + col] = 1
       }
     }
@@ -140,7 +145,7 @@ function labelAnchors(grid: NavGrid, nodes: ArterialNode[]): Int16Array {
       let best = -1
       let bestDistance = Infinity
       for (let n = 0; n < nodes.length; n++) {
-        const distance = Math.hypot(nodes[n]!.x - x, nodes[n]!.z - z)
+        const distance = hypot(nodes[n]!.x - x, nodes[n]!.z - z)
         if (distance < bestDistance) {
           bestDistance = distance
           best = n
@@ -250,7 +255,7 @@ function routeCells(
   }
 
   const heuristic = (index: number): number =>
-    Math.hypot((index % cols) - (goal % cols), ((index / cols) | 0) - ((goal / cols) | 0)) * cell
+    hypot((index % cols) - (goal % cols), ((index / cols) | 0) - ((goal / cols) | 0)) * cell
 
   gScore[start] = 0
   priority[start] = heuristic(start)
@@ -279,7 +284,7 @@ function routeCells(
         const next = nrow * cols + ncol
         if (closed[next]) continue
 
-        const run = Math.hypot(dx, dz) * cell
+        const run = hypot(dx, dz) * cell
         const grade = Math.abs(height[next]! - height[current]!) / run
         const wetMove = wet[current] === 1 || wet[next] === 1
         if (grade > (wetMove ? ARTERIAL_BRIDGE_GRADE : MAX_ARTERIAL_GRADE)) continue
@@ -343,8 +348,8 @@ function roundCorners(points: PathPoint[], minRadius: number, maxTurn: number): 
     const inZ = b.z - a.z
     const outX = c.x - b.x
     const outZ = c.z - b.z
-    const inLength = Math.hypot(inX, inZ)
-    const outLength = Math.hypot(outX, outZ)
+    const inLength = hypot(inX, inZ)
+    const outLength = hypot(outX, outZ)
     if (inLength < 1e-6 || outLength < 1e-6) {
       result.push(b)
       continue
@@ -354,13 +359,13 @@ function roundCorners(points: PathPoint[], minRadius: number, maxTurn: number): 
     const inDz = inZ / inLength
     const outDx = outX / outLength
     const outDz = outZ / outLength
-    const turn = Math.acos(Math.min(Math.max(inDx * outDx + inDz * outDz, -1), 1))
+    const turn = acos(Math.min(Math.max(inDx * outDx + inDz * outDz, -1), 1))
     if (turn <= maxTurn) {
       result.push(b)
       continue
     }
 
-    const trim = Math.min(minRadius * Math.tan(turn / 2), inLength * 0.5, outLength * 0.5)
+    const trim = Math.min(minRadius * tan(turn / 2), inLength * 0.5, outLength * 0.5)
     const startX = b.x - inDx * trim
     const startY = b.y - ((b.y - a.y) / inLength) * trim
     const startZ = b.z - inDz * trim
@@ -395,20 +400,20 @@ function dedupePath(points: PathPoint[], minDistance: number): PathPoint[] {
   for (let i = 1; i < points.length; i++) {
     const point = points[i]!
     const last = result[result.length - 1]!
-    if (Math.hypot(point.x - last.x, point.z - last.z) < minDistance) {
+    if (hypot(point.x - last.x, point.z - last.z) < minDistance) {
       if (i === points.length - 1) result[result.length - 1] = point
       continue
     }
     result.push(point)
   }
   // The tail replacement above can leave a stub; drop it so no segment is tiny.
-  while (result.length >= 2 && Math.hypot(
+  while (result.length >= 2 && hypot(
     result[result.length - 1]!.x - result[result.length - 2]!.x,
     result[result.length - 1]!.z - result[result.length - 2]!.z,
   ) < minDistance) {
     result.splice(result.length - 2, 1)
   }
-  while (result.length >= 2 && Math.hypot(
+  while (result.length >= 2 && hypot(
     result[1]!.x - result[0]!.x,
     result[1]!.z - result[0]!.z,
   ) < minDistance) {
@@ -443,14 +448,14 @@ function sampleOpenSpline(points: PathPoint[], step: number): PathPoint[] {
     const p2 = points[i + 1]!
     const p3 = points[Math.min(i + 2, count - 1)]!
 
-    const d1 = Math.max(Math.hypot(p1.x - p0.x, p1.z - p0.z), 1e-3) ** alpha
-    const d2 = Math.max(Math.hypot(p2.x - p1.x, p2.z - p1.z), 1e-3) ** alpha
-    const d3 = Math.max(Math.hypot(p3.x - p2.x, p3.z - p2.z), 1e-3) ** alpha
+    const d1 = Math.max(hypot(p1.x - p0.x, p1.z - p0.z), 1e-3) ** alpha
+    const d2 = Math.max(hypot(p2.x - p1.x, p2.z - p1.z), 1e-3) ** alpha
+    const d3 = Math.max(hypot(p3.x - p2.x, p3.z - p2.z), 1e-3) ** alpha
     const t1 = d1
     const t2 = t1 + d2
     const t3 = t2 + d3
     const span = Math.max(t2 - t1, 1e-6)
-    const steps = Math.max(1, Math.round(Math.hypot(p2.x - p1.x, p2.z - p1.z) / step))
+    const steps = Math.max(1, Math.round(hypot(p2.x - p1.x, p2.z - p1.z) / step))
 
     for (let k = 0; k < steps; k++) {
       const t = t1 + (k / steps) * span
@@ -506,7 +511,7 @@ function buildArterialNodes(
       const z = gz + (rng() - 0.5) * ARTERIAL_FIELD_SPACING * 0.35
       const ground = sampleTerrain(field, x, z)
       if (ground <= seaLevel || wetAt(x, z)) continue
-      if (nodes.some((node) => Math.hypot(node.x - x, node.z - z) < ARTERIAL_FIELD_SPACING * 0.45)) continue
+      if (nodes.some((node) => hypot(node.x - x, node.z - z) < ARTERIAL_FIELD_SPACING * 0.45)) continue
       nodes.push({ x, z, y: ground, cross: -1 })
     }
   }
@@ -525,7 +530,7 @@ function buildArterialEdges(nodes: ArterialNode[], adjacency: [number, number][]
   const pairs: { a: number; b: number; d: number }[] = []
   for (const [a, b] of adjacency) {
     if (nodes[a]!.cross >= 0 && nodes[a]!.cross === nodes[b]!.cross) continue
-    pairs.push({ a, b, d: Math.hypot(nodes[a]!.x - nodes[b]!.x, nodes[a]!.z - nodes[b]!.z) })
+    pairs.push({ a, b, d: hypot(nodes[a]!.x - nodes[b]!.x, nodes[a]!.z - nodes[b]!.z) })
   }
   pairs.sort((x, y) => x.d - y.d || x.a - y.a || x.b - y.b)
 
@@ -599,7 +604,7 @@ function nearestUntried(nodes: ArterialNode[], index: number, tried: Set<number>
     if (nodes[index]!.cross >= 0 && nodes[index]!.cross === nodes[j]!.cross) continue
     const key = index < j ? index * nodes.length + j : j * nodes.length + index
     if (tried.has(key)) continue
-    const distance = Math.hypot(nodes[index]!.x - nodes[j]!.x, nodes[index]!.z - nodes[j]!.z)
+    const distance = hypot(nodes[index]!.x - nodes[j]!.x, nodes[index]!.z - nodes[j]!.z)
     if (distance < bestDistance) {
       bestDistance = distance
       best = j
@@ -652,8 +657,8 @@ function clashesWithBuilt(points: RoadPoint[], roads: Road[], mergeReach: number
     const midX = (a.x + b.x) / 2
     const midZ = (a.z + b.z) / 2
     const merging =
-      Math.hypot(midX - head.x, midZ - head.z) < mergeReach ||
-      Math.hypot(midX - tail.x, midZ - tail.z) < mergeReach
+      hypot(midX - head.x, midZ - head.z) < mergeReach ||
+      hypot(midX - tail.x, midZ - tail.z) < mergeReach
     for (const road of near) {
       const count = road.closed ? road.points.length : road.points.length - 1
       const clear = merging && !road.closed ? 0 : (ARTERIAL_WIDTH + road.width) / 2
@@ -680,7 +685,7 @@ function nearestNode(nodes: ArterialNode[], index: number, exclude?: Set<number>
   for (let j = 0; j < nodes.length; j++) {
     if (j === index || exclude?.has(j)) continue
     if (nodes[index]!.cross >= 0 && nodes[index]!.cross === nodes[j]!.cross) continue
-    const distance = Math.hypot(nodes[index]!.x - nodes[j]!.x, nodes[index]!.z - nodes[j]!.z)
+    const distance = hypot(nodes[index]!.x - nodes[j]!.x, nodes[index]!.z - nodes[j]!.z)
     if (distance < bestDistance) {
       bestDistance = distance
       best = j
@@ -697,7 +702,7 @@ export function sharpestTurn(points: RoadPoint[]): number {
   const marks: number[] = [0]
   for (let i = 1; i < points.length; i++) {
     const last = points[marks[marks.length - 1]!]!
-    if (Math.hypot(points[i]!.x - last.x, points[i]!.z - last.z) >= TURN_WINDOW) marks.push(i)
+    if (hypot(points[i]!.x - last.x, points[i]!.z - last.z) >= TURN_WINDOW) marks.push(i)
   }
   if (marks.length < 3) return 0
   let sharpest = 0
@@ -709,11 +714,11 @@ export function sharpestTurn(points: RoadPoint[]): number {
     const inZ = b.z - a.z
     const outX = c.x - b.x
     const outZ = c.z - b.z
-    const inLength = Math.hypot(inX, inZ)
-    const outLength = Math.hypot(outX, outZ)
+    const inLength = hypot(inX, inZ)
+    const outLength = hypot(outX, outZ)
     if (inLength < 1e-6 || outLength < 1e-6) continue
     const dot = (inX * outX + inZ * outZ) / (inLength * outLength)
-    sharpest = Math.max(sharpest, Math.acos(Math.min(Math.max(dot, -1), 1)))
+    sharpest = Math.max(sharpest, acos(Math.min(Math.max(dot, -1), 1)))
   }
   return sharpest
 }
@@ -826,7 +831,7 @@ export function buildArterials(
         const [from, to] = endpoints[k]!
         if (from !== node && to !== node) continue
         const other = leavingDirection(roads[k]!.points, from === node)
-        const apart = Math.acos(
+        const apart = acos(
           Math.min(Math.max(heading.x * other.x + heading.z * other.z, -1), 1),
         )
         if (apart < ARTERIAL_MIN_JUNCTION_ANGLE) return true

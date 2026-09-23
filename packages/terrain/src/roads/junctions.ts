@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import type { Road, RoadPoint } from '../types.ts'
 import { sharpestTurn } from './arterials.ts'
 import {
@@ -9,6 +10,10 @@ import {
 } from './constants.ts'
 import { leavingDirection, segmentsCross } from './geometry.ts'
 import { limitSweepGrade } from './grades.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { acos, atan2, cos: cosine, hypot, sin: sine } = exact
 
 /**
  * Where roads meet: ends turned and smoothed so that junctions are square and
@@ -36,16 +41,16 @@ function rotateEnd(end: RoadEnd, tx: number, tz: number): void {
   const points = end.road.points
   const node = endPoint(end)
   const current = endDirection(end)
-  const angle = Math.atan2(current.x * tz - current.z * tx, current.x * tx + current.z * tz)
+  const angle = atan2(current.x * tz - current.z * tx, current.x * tx + current.z * tz)
   const reach = Math.min(2, points.length - 1)
   for (let k = 1; k <= reach; k++) {
-    const weight = 0.5 * (1 + Math.cos((Math.PI * (k - 1)) / reach))
+    const weight = 0.5 * (1 + cosine((Math.PI * (k - 1)) / reach))
     const index = end.start ? k : points.length - 1 - k
     const point = points[index]!
     const dx = point.x - node.x
     const dz = point.z - node.z
-    const cos = Math.cos(angle * weight)
-    const sin = Math.sin(angle * weight)
+    const cos = cosine(angle * weight)
+    const sin = sine(angle * weight)
     point.x = node.x + dx * cos - dz * sin
     point.z = node.z + dx * sin + dz * cos
   }
@@ -115,7 +120,7 @@ export function alignJunctions(roads: Road[]): void {
     for (let j = i + 1; j < ends.length; j++) {
       if (used[j]) continue
       const point = endPoint(ends[j]!)
-      if (Math.hypot(point.x - origin.x, point.z - origin.z) < 1.5) {
+      if (hypot(point.x - origin.x, point.z - origin.z) < 1.5) {
         cluster.push(j)
         used[j] = true
       }
@@ -155,7 +160,7 @@ export function alignJunctions(roads: Road[]): void {
       const fixedB = ends[cluster[ib]!]!.road.kind === 'cross'
       let axisX = fixedA ? da.x : fixedB ? -db.x : da.x - db.x
       let axisZ = fixedA ? da.z : fixedB ? -db.z : da.z - db.z
-      const axis = Math.hypot(axisX, axisZ) || 1
+      const axis = hypot(axisX, axisZ) || 1
       axisX /= axis
       axisZ /= axis
       pairs.push({ ia, ib, axisX, axisZ })
@@ -172,7 +177,7 @@ export function alignJunctions(roads: Road[]): void {
     for (let a = 0; a < planned.length && !crowded; a++) {
       for (let b = a + 1; b < planned.length; b++) {
         const dot = planned[a]!.x * planned[b]!.x + planned[a]!.z * planned[b]!.z
-        if (Math.acos(Math.min(Math.max(dot, -1), 1)) < ARTERIAL_MIN_JUNCTION_ANGLE) {
+        if (acos(Math.min(Math.max(dot, -1), 1)) < ARTERIAL_MIN_JUNCTION_ANGLE) {
           crowded = true
           break
         }
@@ -212,7 +217,7 @@ export function alignJunctions(roads: Road[]): void {
       let best = 0
       let bestDistance = Infinity
       for (let j = 0; j < original.length; j++) {
-        const distance = Math.hypot(road.points[i]!.x - original[j]!.x, road.points[i]!.z - original[j]!.z)
+        const distance = hypot(road.points[i]!.x - original[j]!.x, road.points[i]!.z - original[j]!.z)
         if (distance < bestDistance) {
           bestDistance = distance
           best = j

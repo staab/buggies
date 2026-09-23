@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import { DISTRICT_CITY } from '../districts.ts'
 import type { District, Heightfield, Road, RoadPoint } from '../types.ts'
 import { claimedSegments, indexSegments } from './clearance.ts'
@@ -23,6 +24,10 @@ import {
 } from './geometry.ts'
 import { limitSweepGrade } from './grades.ts'
 import { sampleTerrain } from './sampling.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { atan2, cos: cosine, hypot, sin: sine } = exact
 
 /**
  * City streets: laid out on a grid per city, trimmed where they meet arterials,
@@ -86,7 +91,7 @@ export function cityFrame(
     if (districtOf[cell] !== DISTRICT_CITY) continue
     const x = ((cell % width) + 0.5) * cellSize
     const z = (((cell / width) | 0) + 0.5) * cellSize
-    if (Math.hypot(x - district.cx, z - district.cz) <= district.radius) local.push({ x, z })
+    if (hypot(x - district.cx, z - district.cz) <= district.radius) local.push({ x, z })
   }
   if (local.length < 8) return null
 
@@ -109,9 +114,9 @@ export function cityFrame(
     szz += dz * dz
     sxz += dx * dz
   }
-  const angle = 0.5 * Math.atan2(2 * sxz, sxx - szz)
-  const cos = Math.cos(angle)
-  const sin = Math.sin(angle)
+  const angle = 0.5 * atan2(2 * sxz, sxx - szz)
+  const cos = cosine(angle)
+  const sin = sine(angle)
 
   let uMin = Infinity
   let uMax = -Infinity
@@ -245,7 +250,7 @@ export function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[]
   const near = indexSegments(
     arterials.flatMap((road) => claimedSegments(road, STREET_ARTERIAL_TOUCH)),
   )
-  const square = Math.cos(STREET_ARTERIAL_ANGLE)
+  const square = cosine(STREET_ARTERIAL_ANGLE)
 
   /**
    * True where the span `a`-`b` would overlap an arterial it meets too shallowly.
@@ -253,7 +258,7 @@ export function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[]
    * two samples, and the sliver of smear that leaves is exactly what this is for.
    */
   const clashes = (ax: number, az: number, bx: number, bz: number): boolean => {
-    const length = Math.hypot(bx - ax, bz - az) || 1
+    const length = hypot(bx - ax, bz - az) || 1
     const dx = (bx - ax) / length
     const dz = (bz - az) / length
     return near(

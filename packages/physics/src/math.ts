@@ -3,7 +3,7 @@
 
 import { cos, sin } from './transcendental.ts'
 
-export { atan2, cos, hypot, sin } from './transcendental.ts'
+export { acos, atan2, cos, hypot, sin, tan } from './transcendental.ts'
 
 export interface Vec3 {
   x: number

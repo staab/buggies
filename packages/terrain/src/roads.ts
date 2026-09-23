@@ -6,6 +6,7 @@
  * rest of the package knows them by.
  */
 
+import * as exact from '@buggies/physics'
 import { RIVER_BANK_LAP } from './rivers.ts'
 import type { District, Heightfield, Lake, River, Road, RoadPoint } from './types.ts'
 import { buildArterials } from './roads/arterials.ts'
@@ -43,6 +44,10 @@ import {
   streetKeepOut,
   trimStreetsAlongArterials,
 } from './roads/streets.ts'
+
+// The exact trigonometry, copied into this module: called through the import binding it
+// is several times slower under the test runner's module loader, and these run hot.
+const { hypot } = exact
 
 export {
   ROAD_SURFACE,
@@ -111,7 +116,7 @@ export function generateRoads(
       const maxRow = Math.min(Math.ceil((point.z + reach) / cellSize), depth - 1)
       for (let row = minRow; row <= maxRow; row++) {
         for (let col = minCol; col <= maxCol; col++) {
-          if (Math.hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
+          if (hypot(col * cellSize - point.x, row * cellSize - point.z) > reach) continue
           const cell = row * width + col
           const known = riverLevels.get(cell)
           if (known === undefined || point.y > known) riverLevels.set(cell, point.y)
@@ -174,7 +179,7 @@ export function generateRoads(
   const cum = cumulativeLengths(samples)
   const total =
     cum[count - 1]! +
-    Math.hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
+    hypot(samples[0]!.x - samples[count - 1]!.x, samples[0]!.z - samples[count - 1]!.z)
   // What the deck comes to before any crossing has had a say. Sites are judged
   // against this rather than against the raw aim above, which ignores the grade
   // limit and so says nothing about how high the highway really stands.

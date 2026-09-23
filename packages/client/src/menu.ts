@@ -35,11 +35,11 @@ export interface MenuHost {
 const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
   solo: {
     name: '1 player',
-    note: 'The whole screen, and whoever else is on the island.',
+    note: 'Pick a seed and drive with other people on the island.',
   },
   duo: {
     name: '2 players',
-    note: 'Two of you on one keyboard, side by side: the letters on the left, the arrows on the right.',
+    note: 'Split screen mode lets two people drive at once, with one keyboard, same island.',
   },
 }
 
@@ -148,7 +148,7 @@ export class Menu {
     const title = document.createElement('h1')
     title.textContent = 'Buggies'
     const blurb = line('blurb')
-    blurb.textContent = 'Procedurally generated islands, with roads worth driving.'
+    blurb.textContent = 'Enjoy driving around a low-poly procedurally generated island.'
     this.steps.className = 'steps'
 
     // Page one: how many are playing.
