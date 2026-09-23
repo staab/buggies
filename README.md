@@ -33,7 +33,8 @@ anyone to come and take.
 Every tenth banana wins a power-up, rolled for like a fruit machine and carried over the roof for
 everyone to see: a rocket, which goes after the nearest car ahead when fired; a machine gun with
 ten seconds of ammunition, which trains itself on the nearest car ahead and fires as long as the key
-is held; a bomb, dropped behind the car to float there until another car runs into it; a rocket
+is held; a bomb, dropped behind the car to float there until a car runs into it, the one that dropped
+it included once it has landed; a rocket
 engine, which shoves the car along while the key is held, for ten seconds in all; or wings, which
 lift the car into the air while the key is held, for ten seconds in all, and let it turn up there.
 The tank fires its rockets and shots from its own gun, with nothing over its roof for them.

@@ -78,6 +78,16 @@ body {
 #hud-right > [hidden] {
   display: none;
 }
+/* The bananas taken and what the car is carrying, side by side. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.row .weapon {
+  flex: 1;
+  min-width: 0;
+}
 .score {
   display: flex;
   align-items: center;
@@ -164,6 +174,19 @@ body {
 .state {
   color: var(--dim);
 }
+/* The keys, in a drawer that slides open under the dials and shut again. */
+.drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 240ms ease;
+}
+.drawer > .controls {
+  overflow: hidden;
+  min-height: 0;
+}
+.expanded .drawer {
+  grid-template-rows: 1fr;
+}
 .controls {
   font-size: 11px;
   line-height: 1.9;
@@ -172,6 +195,29 @@ body {
 .controls .hint {
   display: inline-block;
   margin-right: 8px;
+}
+/* The caret that pulls the drawer: the one thing on the HUD to click. */
+.toggle {
+  pointer-events: auto;
+  align-self: center;
+  margin: -4px 0 -6px;
+  padding: 2px 12px;
+  border: 0;
+  background: none;
+  color: var(--dim);
+  line-height: 0;
+}
+.toggle:hover {
+  color: var(--ink);
+  border: 0;
+}
+.toggle svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 240ms ease;
+}
+.expanded .toggle svg {
+  transform: rotate(180deg);
 }
 /* The menu stands to one side and lets everything behind it be seen,
    and touched: the island is looked over past it. */

@@ -1,5 +1,4 @@
 import {
-  NO_OWNER,
   advance,
   takeSeat,
   createVehicleInput,
@@ -414,10 +413,9 @@ export class GameServer implements TransportHandlers {
     let count = 0
     for (const banana of room.arena.spilled) {
       if (!all && room.toldSpilled.has(banana.id)) continue
-      const out = (spilled[count] ??= { id: 0, kind: 'banana', owner: NO_OWNER, from: v3(), position: v3(), age: 0 })
+      const out = (spilled[count] ??= { id: 0, kind: 'banana', from: v3(), position: v3(), age: 0 })
       out.id = banana.id
       out.kind = banana.kind
-      out.owner = banana.owner
       vcopy(out.from, banana.from)
       vcopy(out.position, banana.position)
       out.age = room.arena.tick - banana.bornTick

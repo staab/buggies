@@ -333,10 +333,10 @@ function launch(arena: Battlefield, seat: Gunner): void {
 
 /**
  * A bomb goes down behind the car, to float over the ground there, or
- * over the road the car is on where that is higher, until another car
- * runs into it. It is thrown out like a spilled banana, and cannot go off
- * until it has landed, which gives the car that dropped it a moment to get
- * clear, though it is never that car it goes off on.
+ * over the road the car is on where that is higher, until a car runs into
+ * it. It is thrown out like a spilled banana, and cannot go off until it
+ * has landed, which gives the car that dropped it a moment to get clear;
+ * after that it goes off on anyone, that car too.
  */
 function drop(arena: Battlefield, seat: Gunner): void {
   const { position, forward } = seat.vehicle.frame
@@ -346,7 +346,6 @@ function drop(arena: Battlefield, seat: Gunner): void {
   arena.spilled.push({
     id: arena.spilledNext,
     kind: 'bomb',
-    owner: seat.id,
     from: vcopy(v3(), position),
     position: v3(x, level + PICKUP_HEIGHT, z),
     bornTick: arena.tick,

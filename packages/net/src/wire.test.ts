@@ -77,8 +77,8 @@ const snapshot: SnapshotMessage = {
     { slot: 63, generation: 65535, ticksUntilOut: 12 },
   ],
   spilled: [
-    { id: 0, kind: 'banana', owner: -1, from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
-    { id: 65535, kind: 'bomb', owner: 6, from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
+    { id: 0, kind: 'banana', from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
+    { id: 65535, kind: 'bomb', from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
   ],
   removed: [3, 65000],
   rockets: [
@@ -140,7 +140,7 @@ describe('wire', () => {
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], spilled: [], removed: [] })
     for (const [i, spilled] of snapshot.spilled.entries()) {
       const got = decoded.spilled[i]!
-      expect(got).toMatchObject({ id: spilled.id, kind: spilled.kind, owner: spilled.owner, age: spilled.age })
+      expect(got).toMatchObject({ id: spilled.id, kind: spilled.kind, age: spilled.age })
       for (const axis of ['x', 'y', 'z'] as const) {
         expect(got.from[axis]).toBeCloseTo(spilled.from[axis], 4)
         expect(got.position[axis]).toBeCloseTo(spilled.position[axis], 4)

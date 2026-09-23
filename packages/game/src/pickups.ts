@@ -161,9 +161,6 @@ export const LOOSE_MOST = 256
 export type SpilledKind = 'banana' | 'bomb'
 export const SPILLED_KINDS: readonly SpilledKind[] = ['banana', 'bomb']
 
-/** A loose thing nobody in particular dropped. */
-export const NO_OWNER = -1
-
 /** How close a chassis has to come to a bomb to set it off. */
 export const BOMB_REACH = 3.2
 
@@ -174,14 +171,13 @@ export const SPILLED_IDS = 0x10000
  * Something loose on the map: a banana spilled from a wreck, thrown from
  * where the car blew up to where it lands, to lie there for the taking
  * until it is taken or fades; or a bomb dropped behind a car, to float
- * there until another car runs into it.
+ * there until any car runs into it, the one that dropped it included once
+ * it has landed.
  */
 export interface Spilled {
   /** Its number, by which it is spoken of on the wire; no two out at once share one. */
   readonly id: number
   readonly kind: SpilledKind
-  /** Whose car dropped it, for a bomb, which spares them; nobody's for a banana. */
-  readonly owner: number
   readonly from: Vec3
   readonly position: Vec3
   readonly bornTick: number
@@ -211,7 +207,6 @@ export function spillFrom(
     spilled.push({
       id: (firstId + i) % SPILLED_IDS,
       kind: 'banana',
-      owner: NO_OWNER,
       from: origin,
       position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z),
       bornTick: tick,

@@ -9,7 +9,6 @@ import {
   MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
-  NO_OWNER,
   NO_TARGET,
   PICKUP_HEIGHT,
   ROCKET_DAMAGE,
@@ -141,7 +140,7 @@ describe('weapons', () => {
     arena.world.free()
   })
 
-  it('a bomb is dropped behind the car to float there, and goes off on the next car to reach it, never its own', () => {
+  it('a bomb is dropped behind the car to float there, and goes off on the first car to reach it once landed, its own too', () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 40, 0)
     arm(a, 'bomb')
@@ -150,24 +149,20 @@ describe('weapons', () => {
     expect(arena.spilled).toHaveLength(1)
     const bomb = arena.spilled[0]!
     expect(bomb.kind).toBe('bomb')
-    expect(bomb.owner).toBe(a.id)
     // Behind the car, floating over the ground, and there for good until it goes off.
     const { position, forward } = a.vehicle.frame
     const behind = { x: position.x - forward.x * BOMB_DROP_BACK, z: position.z - forward.z * BOMB_DROP_BACK }
     expect(Math.hypot(bomb.position.x - behind.x, bomb.position.z - behind.z)).toBeLessThan(0.5)
     expect(bomb.position.y).toBeGreaterThan(sampleHeight(map.heightfield, bomb.position.x, bomb.position.z))
     expect(spilledGone(bomb, bomb.bornTick + SPILL_LIFE_TICKS * 10)).toBe(false)
-    // The car that dropped it can sit on it all day.
+    // The car that dropped it is safe while the bomb is still in the air, and no longer once it has landed.
     respawn(a, { position: { x: bomb.position.x, y: bomb.position.y - PICKUP_HEIGHT, z: bomb.position.z }, yaw: 0 })
-    for (let i = 0; i < SPILL_FLIGHT_TICKS + 60; i++) advance(arena)
+    for (let i = 0; i < SPILL_FLIGHT_TICKS - 10; i++) advance(arena)
     expect(a.vehicle.wrecked).toBe(false)
     expect(arena.spilled).toHaveLength(1)
-    // Anyone else is blown up, and the bomb is spent.
-    respawn(a, a.spawn)
-    respawn(b, { position: { x: bomb.position.x, y: bomb.position.y - PICKUP_HEIGHT, z: bomb.position.z }, yaw: 0 })
-    for (let i = 0; i < 30; i++) advance(arena)
-    expect(b.vehicle.wrecked).toBe(true)
-    expect(a.vehicle.wrecked).toBe(false)
+    for (let i = 0; i < 20; i++) advance(arena)
+    expect(a.vehicle.wrecked).toBe(true)
+    expect(b.vehicle.wrecked).toBe(false)
     expect(arena.spilled.filter((loose) => loose.kind === 'bomb')).toHaveLength(0)
     arena.world.free()
   })
@@ -189,7 +184,6 @@ describe('weapons', () => {
       arena.spilled.push({
         id: i,
         kind: i % 5 === 0 ? 'bomb' : 'banana',
-        owner: NO_OWNER,
         from: { x: 0, y: 0, z: 0 },
         position: { x: 10, y: 500, z: 10 },
         bornTick: arena.tick - 1 + Math.floor(i / 100),

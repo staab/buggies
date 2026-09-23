@@ -230,16 +230,9 @@ export class Menu {
     this.next.addEventListener('click', () => this.advance(1))
     nav.append(this.back, this.next)
 
-    const keys = line('keys')
-    keys.innerHTML =
-      '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive &nbsp; ' +
-      '<kbd>Space</kbd> handbrake &nbsp; <kbd>F</kbd> fire<br />' +
-      '<kbd>Enter</kbd> back to the road &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>Esc</kbd> this menu'
-
     // Whose models the vehicles are. One of them asks to be credited, and
     // the rest deserve it.
     const credits = line('keys')
-    credits.append('Vehicles: ')
     modelCredits().forEach((credit, index) => {
       if (index > 0) credits.append(' · ')
       const model = document.createElement('a')
@@ -255,7 +248,7 @@ export class Menu {
       credits.append(model, ' (', licence, ')')
     })
 
-    panel.append(title, blurb, this.steps, modePage, mapPage, carPage, this.status, nav, keys, credits)
+    panel.append(title, blurb, this.steps, modePage, mapPage, carPage, this.status, nav, credits)
     // Enter moves on, unless it is pressing a button, which does its own thing.
     panel.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) this.advance(1)
