@@ -21,6 +21,8 @@ export function buildWaterLevels(map: TerrainMap): Float32Array {
   const { width, depth, cellSize, heights } = heightfield
   const levels = new Float32Array(width * depth).fill(DRY)
 
+  // The cells read here are all within the field: its own, a lake's, or
+  // ones under a river clamped to it.
   for (let cell = 0; cell < levels.length; cell++) {
     if (heights[cell]! <= seaLevel) levels[cell] = seaLevel
   }

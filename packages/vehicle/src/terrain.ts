@@ -57,6 +57,7 @@ export function addHeightfield(
   const { width, depth, cellSize } = field
   const columns = width - 1
   const rows = depth - 1
+  // The field has a height a cell, read here by row and column within it.
   const packed = new Float32Array(width * depth)
   for (let row = 0; row < depth; row++) {
     for (let col = 0; col < width; col++) {
@@ -108,6 +109,7 @@ function crossSection(
   lift: number,
 ): void {
   const count = road.points.length
+  // The sample is one of the road's points, and its neighbours are wrapped round a loop or held at an end.
   const point = road.points[index]!
   const previous = road.points[road.closed ? (index - 1 + count) % count : Math.max(index - 1, 0)]!
   const next = road.points[road.closed ? (index + 1) % count : Math.min(index + 1, count - 1)]!
@@ -160,6 +162,7 @@ function addRoads(world: RAPIER.World, map: TerrainMap): void {
     const segmentCount = road.closed ? count : count - 1
     const lift = roadLift(road)
     const painted = isSurfaceRoad(road)
+    // A segment's structure is within the road's: there is one a segment.
     for (let i = 0; i < segmentCount; i++) {
       const structure = road.structure[i]!
       if (painted && structure === ROAD_GRADE) continue
@@ -234,8 +237,8 @@ function boredGround(map: TerrainMap): Float32Array {
 
   const heights = Float32Array.from(map.heightfield.heights)
   const floors = tunnelCutFloors(map.heightfield, segments, cutMargin(map))
-  for (let cell = 0; cell < floors.length; cell++) {
-    const floor = floors[cell]!
+  // The floors cover the field, cell for cell.
+  for (const [cell, floor] of floors.entries()) {
     if (Number.isNaN(floor)) continue
     // The bed is cut clear of the deck across the whole bore: the deck runs
     // out to the wall in a tunnel, so nothing drives on the ground here.
@@ -358,9 +361,9 @@ export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
     const sz = ramp.dx * (ramp.width / 2)
     const under = ramp.bottom - 1
     const facets = rampFacets(ramp)
-    for (let i = 0; i + 1 < facets.length; i++) {
-      const a = facets[i]!
-      const b = facets[i + 1]!
+    for (const [i, a] of facets.entries()) {
+      const b = facets[i + 1]
+      if (b === undefined) break
       const ax = ramp.x + ramp.dx * a.along
       const az = ramp.z + ramp.dz * a.along
       const bx = ramp.x + ramp.dx * b.along

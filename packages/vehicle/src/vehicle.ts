@@ -193,6 +193,7 @@ function markWheelAirborne(wheel: WheelState, tuning: VehicleTuning, frame: Chas
   wheel.forceLateral = 0
   wheel.slipSpeedLongitudinal = 0
   wheel.slipSpeedLateral = 0
+  wheel.held = false
 
   vaddScaled(wheel.wheelCenter, wheel.rayOrigin, frame.down, tuning.suspensionRestLength)
   vcopy(wheel.contactPoint, wheel.rayEnd)

@@ -106,15 +106,15 @@ function createMountains(
 
     const radius = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
     const rotation = randomRange(rng, 0, Math.PI * 2)
-    const corners = Array.from({ length: 3 }, (_, k) => {
+    const corner = (k: number): { x: number; z: number } => {
       const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
       const r = radius * randomRange(rng, 0.65, 1.05)
       return { x: cx + cos(angle) * r, z: cz + sin(angle) * r }
-    })
+    }
 
-    const a = corners[0]!
-    let b = corners[1]!
-    let c = corners[2]!
+    const a = corner(0)
+    let b = corner(1)
+    let c = corner(2)
     // Orient counter-clockwise for consistent edge distances.
     if ((b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x) < 0) {
       const swap = b
@@ -238,6 +238,7 @@ function selectLakes(
     .filter((lake) => {
       if (lake.cells.length < minCells) return false
       let lowest = Infinity
+      // A lake's cells are cells of the field.
       for (const cell of lake.cells) lowest = Math.min(lowest, field.heights[cell]!)
       if (lake.level - lowest < minDepth) return false
       return lake.cells.some((cell) => traversed.has(cell))
@@ -264,6 +265,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
 
   // Bilinear, because the ground is drawn as an interpolated mesh: what the
   // water has to clear is the surface between the samples, not the samples.
+  // The column and row are clamped into the field, so all four corners are there.
   const groundAt = (x: number, z: number): number => {
     const gx = Math.min(Math.max(x / cellSize, 0), width - 1)
     const gz = Math.min(Math.max(z / cellSize, 0), depth - 1)
@@ -302,9 +304,9 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
   }
 
   /** Unit normal to the course at sample `i`, pointing across the channel. */
-  const across = (points: RiverPoint[], i: number): { x: number; z: number } => {
-    const prev = points[Math.max(0, i - 1)]!
-    const next = points[Math.min(points.length - 1, i + 1)]!
+  const across = (points: RiverPoint[], i: number, point: RiverPoint): { x: number; z: number } => {
+    const prev = points[i - 1] ?? point
+    const next = points[i + 1] ?? point
     const dx = next.x - prev.x
     const dz = next.z - prev.z
     const length = hypot(dx, dz) || 1
@@ -316,10 +318,8 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
 
   /** Drop every water line to the land its own channel runs through. */
   const seat = (): void => {
-    for (let r = 0; r < rivers.length; r++) {
-      const river = rivers[r]!
-      for (let i = 0; i < river.points.length; i++) {
-        const point = river.points[i]!
+    for (const [r, river] of rivers.entries()) {
+      for (const [i, point] of river.points.entries()) {
         // A lake is a body of water with a surface of its own; a river crossing
         // one, or running up to its shore, is that lake rather than a ribbon at
         // a height of its own.
@@ -328,7 +328,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
           point.y = lake
           continue
         }
-        const normal = across(river.points, i)
+        const normal = across(river.points, i, point)
         const half = point.width / 2
         // The lowest ground the channel touches, taken across the ribbon and out
         // to the foot of each bank: water standing above any of it would leave
@@ -342,6 +342,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
             groundAt(point.x - normal.x * offset, point.z - normal.z * offset),
           )
         }
+        // The trace was taken from these rivers, point for point.
         point.y = Math.max(Math.min(point.y, lip) - RIVER_INSET, traced[r]![i]! - RIVER_DROP_MAX)
       }
     }
@@ -352,17 +353,16 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
     // Read from a snapshot, so levelling one river cannot drag another down
     // through it in the same pass.
     const before = rivers.map((river) => river.points.map((point) => point.y))
-    for (let r = 0; r < rivers.length; r++) {
-      for (const point of rivers[r]!.points) {
+    for (const river of rivers) {
+      for (const point of river.points) {
         if (lakeAt(point.x, point.z) !== undefined) continue
-        for (let other = 0; other < rivers.length; other++) {
-          if (other === r) continue
-          const points = rivers[other]!.points
-          for (let i = 0; i < points.length; i++) {
-            const mate = points[i]!
+        for (const [other, otherRiver] of rivers.entries()) {
+          if (otherRiver === river) continue
+          for (const [i, mate] of otherRiver.points.entries()) {
             if (hypot(mate.x - point.x, mate.z - point.z) > (point.width + mate.width) / 4) {
               continue
             }
+            // The snapshot was taken from these rivers, point for point.
             point.y = Math.min(point.y, before[other]![i]!)
           }
         }
@@ -381,7 +381,10 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
     for (const river of rivers) {
       const points = river.points
       for (let i = points.length - 2; i >= 0; i--) {
-        points[i]!.y = Math.max(points[i]!.y, points[i + 1]!.y)
+        const point = points[i]
+        const downstream = points[i + 1]
+        if (point === undefined || downstream === undefined) continue
+        point.y = Math.max(point.y, downstream.y)
       }
     }
   }
@@ -398,6 +401,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
   const carve = (): void => {
     const bedOf = new Map<number, number>()
     const bankOf = new Map<number, number>()
+    // Every cell stamped or cut is within the field: the stamp is clamped to it.
 
     for (const river of rivers) {
       for (const point of river.points) {
@@ -468,7 +472,7 @@ function scaleWorld(map: TerrainMap, scale: number): void {
   map.heightfield.cellSize = map.cellSize
 
   const { heights } = map.heightfield
-  for (let i = 0; i < heights.length; i++) heights[i] = heights[i]! * scale
+  for (const [i, height] of heights.entries()) heights[i] = height * scale
 
   for (const mountain of map.mountains) {
     mountain.ax *= scale

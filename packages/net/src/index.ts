@@ -16,6 +16,7 @@ export {
   TICKS_PER_SNAPSHOT,
   rejectLabel,
 } from './protocol.ts'
+export { BananaLedger, type KnownPickup } from './ledger.ts'
 export { fetchRooms } from './rooms.ts'
 export { GameServer, type GameServerEvents, type GameServerStats } from './server.ts'
 export {

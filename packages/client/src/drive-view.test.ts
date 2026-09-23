@@ -29,6 +29,8 @@ function restingWheels(travel: number, steer = 0, spin = 0): WheelState[] {
     slipSpeedLateral: 0,
     forceLongitudinal: 0,
     forceLateral: 0,
+    held: false,
+    holdPoint: v3(),
     spin,
   }))
 }

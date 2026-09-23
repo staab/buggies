@@ -32,11 +32,13 @@ export async function createTeamMode(
     throw failed.reason instanceof Error ? failed.reason : new Error(String(failed.reason))
   }
   const views = joins.map((join) => (join as PromiseFulfilledResult<OnlineView>).value)
+  const first = views[0]
+  if (first === undefined) throw new Error('nobody to put on the screen')
   const split = views.length > 1
   const viewport = new THREE.Vector4()
 
   return {
-    camera: views[0]!.camera,
+    camera: first.camera,
     resize(aspect) {
       for (const view of views) view.resize(split ? aspect / views.length : aspect)
     },
@@ -46,8 +48,8 @@ export async function createTeamMode(
     render(renderer) {
       // The sun's shadows are drawn afresh for each view, around its own car.
       if (!split) {
-        sun.follow(views[0]!.focus)
-        renderer.render(scene, views[0]!.camera)
+        sun.follow(first.focus)
+        renderer.render(scene, first.camera)
         return
       }
       renderer.getViewport(viewport)

@@ -19,7 +19,8 @@ asks for it and closed when the last leaves. A second screen just opens the same
 
 The page joins the server next to whichever address it was opened on; to point it elsewhere, set
 `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The
-server honours `PORT` and `HOST`.
+server honours `PORT` and `HOST`, and `TRUST_PROXY=1` behind a reverse proxy, so that it tells
+players apart by the address the proxy forwards rather than the proxy's own.
 
 **2 players** puts two of you on one keyboard, side by side, each with their own seat on the
 server: the letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to the road) and

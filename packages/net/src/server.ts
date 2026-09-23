@@ -17,8 +17,10 @@ import { InputTimeline } from './input-timeline.ts'
 import {
   CLIENT_HELLO,
   CLIENT_INPUT,
+  INPUT_TIMELINE_TICKS,
   PROTOCOL_VERSION,
   REJECT_HANDSHAKE_ORDER,
+  REJECT_IDLE,
   REJECT_MALFORMED_MESSAGE,
   REJECT_PROTOCOL_MISMATCH,
   REJECT_SERVER_FULL,
@@ -36,6 +38,7 @@ import {
   encodeSnapshot,
   type PickupSnapshot,
   type RoomSummary,
+  type SnapshotMessage,
   type SpilledSnapshot,
   encodeWelcome,
   isRespawn,
@@ -49,6 +52,18 @@ const HANDSHAKE_TIMEOUT_TICKS = TICKS_PER_SECOND * 5
 
 /** A player asking to be put back more often than this is just held down. */
 const RESPAWN_COOLDOWN_TICKS = TICKS_PER_SECOND
+
+/**
+ * How many inputs a player may have in hand to send at once, and how many
+ * more they get each tick. An honest client sends one a tick, and a burst
+ * of a second's worth after a stall, so this is twice what it needs; past
+ * it, inputs are dropped on the floor rather than driven.
+ */
+const INPUT_ALLOWANCE = INPUT_TIMELINE_TICKS * 2
+const INPUTS_PER_TICK = 2
+
+/** A player heard nothing from for this long is let go: a tab left behind is not a driver. */
+const IDLE_TIMEOUT_TICKS = TICKS_PER_SECOND * 15
 
 export interface GameServerEvents {
   onJoined(seat: Seat, connectionId: number, seed: number): void
@@ -68,6 +83,8 @@ export interface GameServerStats {
   inputsHeld: number
   inputsLate: number
   inputsAhead: number
+  /** Inputs past a player's allowance, thrown away. */
+  inputsDropped: number
   snapshotBytes: number
 }
 
@@ -77,6 +94,13 @@ interface Player {
   seat: Seat
   timeline: InputTimeline
   respawnedTick: number
+  /** Whether they have had the bananas in full yet: until then, changes would mean nothing to them. */
+  told: boolean
+  /** How many inputs they may still send just now, and how many they sent past that. */
+  allowance: number
+  dropped: number
+  /** The server tick they were last heard from. */
+  heardTick: number
 }
 
 interface Handshake {
@@ -95,6 +119,11 @@ export interface Room {
   readonly snapshotVehicles: VehicleSnapshot[]
   readonly snapshotPickups: PickupSnapshot[]
   readonly snapshotSpilled: SpilledSnapshot[]
+  readonly snapshotRemoved: number[]
+  /** The bananas as the last snapshot told of them: each slot's generation, and which spilled were out. */
+  readonly toldGenerations: number[]
+  readonly toldSpilled: Set<number>
+  readonly spilledNow: Set<number>
   lastSnapshotBytes: number
 }
 
@@ -155,13 +184,15 @@ export class GameServer implements TransportHandlers {
       inputsHeld: 0,
       inputsLate: 0,
       inputsAhead: 0,
+      inputsDropped: 0,
       snapshotBytes: 0,
     }
-    for (const { timeline } of this.players.values()) {
+    for (const { timeline, dropped } of this.players.values()) {
       stats.inputsApplied += timeline.applied
       stats.inputsHeld += timeline.held
       stats.inputsLate += timeline.late
       stats.inputsAhead += timeline.ahead
+      stats.inputsDropped += dropped
     }
     for (const room of this.rooms.values()) stats.snapshotBytes += room.lastSnapshotBytes
     return stats
@@ -177,6 +208,7 @@ export class GameServer implements TransportHandlers {
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
     this.expireHandshakes()
+    this.tendPlayers()
   }
 
   dispose(): void {
@@ -198,6 +230,7 @@ export class GameServer implements TransportHandlers {
     const player = this.players.get(connection.id)
     if (player === undefined) return
     const { arena } = player.room
+    player.heardTick = this.clock
 
     if (isRespawn(payload)) {
       if (arena.tick - player.respawnedTick < RESPAWN_COOLDOWN_TICKS) return
@@ -211,6 +244,11 @@ export class GameServer implements TransportHandlers {
       this.reject(connection, REJECT_MALFORMED_MESSAGE)
       return
     }
+    if (player.allowance <= 0) {
+      player.dropped += 1
+      return
+    }
+    player.allowance -= 1
     const tick = decodeInput(payload, this.scratchInput)
     if (tick === null) {
       this.reject(connection, REJECT_MALFORMED_MESSAGE)
@@ -241,6 +279,14 @@ export class GameServer implements TransportHandlers {
     return undefined
   }
 
+  /** Each tick a player may send a couple more inputs, and one silent for too long is let go. */
+  private tendPlayers(): void {
+    for (const player of this.players.values()) {
+      player.allowance = Math.min(INPUT_ALLOWANCE, player.allowance + INPUTS_PER_TICK)
+      if (this.clock - player.heardTick > IDLE_TIMEOUT_TICKS) this.reject(player.connection, REJECT_IDLE)
+    }
+  }
+
   private expireHandshakes(): void {
     for (const handshake of this.handshaking.values()) {
       if (this.clock - handshake.openedTick < HANDSHAKE_TIMEOUT_TICKS) continue
@@ -259,6 +305,10 @@ export class GameServer implements TransportHandlers {
       snapshotVehicles: [],
       snapshotPickups: [],
       snapshotSpilled: [],
+      snapshotRemoved: [],
+      toldGenerations: [],
+      toldSpilled: new Set(),
+      spilledNow: new Set(),
       lastSnapshotBytes: 0,
     }
     this.rooms.set(seed, room)
@@ -304,6 +354,10 @@ export class GameServer implements TransportHandlers {
       seat,
       timeline: new InputTimeline(arena.tick),
       respawnedTick: arena.tick,
+      told: false,
+      allowance: INPUT_ALLOWANCE,
+      dropped: 0,
+      heardTick: this.clock,
     }
     this.players.set(connection.id, player)
     room.players.set(connection.id, player)
@@ -334,27 +388,54 @@ export class GameServer implements TransportHandlers {
     this.events.onRejected?.(connection.id, rejectLabel(reason))
   }
 
-  private collectPickups(room: Room): PickupSnapshot[] {
+  /** The slots whose banana has moved on since the last snapshot told of them, or every slot. */
+  private collectPickups(room: Room, all: boolean): PickupSnapshot[] {
     const pickups = room.snapshotPickups
+    let count = 0
     room.arena.pickups.forEach((pickup, slot) => {
-      const out = (pickups[slot] ??= { generation: 0, ticksUntilOut: 0 })
+      if (!all && pickup.generation === room.toldGenerations[slot]) return
+      const out = (pickups[count] ??= { slot: 0, generation: 0, ticksUntilOut: 0 })
+      out.slot = slot
       out.generation = pickup.generation
       out.ticksUntilOut = Math.max(pickup.spawnTick - room.arena.tick, 0)
+      count += 1
     })
-    pickups.length = room.arena.pickups.length
+    pickups.length = count
     return pickups
   }
 
-  private collectSpilled(room: Room): SpilledSnapshot[] {
+  /** The bananas spilled since the last snapshot told of them, or every one out. */
+  private collectSpilled(room: Room, all: boolean): SpilledSnapshot[] {
     const spilled = room.snapshotSpilled
-    room.arena.spilled.forEach((banana, at) => {
-      const out = (spilled[at] ??= { from: v3(), position: v3(), age: 0 })
+    let count = 0
+    for (const banana of room.arena.spilled) {
+      if (!all && room.toldSpilled.has(banana.id)) continue
+      const out = (spilled[count] ??= { id: 0, from: v3(), position: v3(), age: 0 })
+      out.id = banana.id
       vcopy(out.from, banana.from)
       vcopy(out.position, banana.position)
       out.age = room.arena.tick - banana.bornTick
-    })
-    spilled.length = room.arena.spilled.length
+      count += 1
+    }
+    spilled.length = count
     return spilled
+  }
+
+  /** The spilled bananas the last snapshot told of that are gone since, taken or faded. */
+  private collectRemoved(room: Room): number[] {
+    const removed = room.snapshotRemoved
+    removed.length = 0
+    room.spilledNow.clear()
+    for (const banana of room.arena.spilled) room.spilledNow.add(banana.id)
+    for (const id of room.toldSpilled) if (!room.spilledNow.has(id)) removed.push(id)
+    return removed
+  }
+
+  /** What this snapshot told of the bananas, for the next to tell only what differs. */
+  private rememberTold(room: Room): void {
+    room.arena.pickups.forEach((pickup, slot) => (room.toldGenerations[slot] = pickup.generation))
+    room.toldSpilled.clear()
+    for (const banana of room.arena.spilled) room.toldSpilled.add(banana.id)
   }
 
   private collectSnapshot(room: Room): VehicleSnapshot[] {
@@ -392,18 +473,50 @@ export class GameServer implements TransportHandlers {
     return vehicles
   }
 
+  /**
+   * Where everything is, to everyone in the room. The vehicles go every
+   * time; of the bananas, a newcomer gets the whole word once and everyone
+   * else only what changed since the last, which is nothing as a rule.
+   */
   private broadcastSnapshot(room: Room): void {
     if (room.players.size === 0) return
-    const encoded = encodeSnapshot({
+    const message: SnapshotMessage = {
       tick: room.arena.tick,
       ackInputTick: -1,
+      full: false,
       vehicles: this.collectSnapshot(room),
-      pickups: this.collectPickups(room),
-      spilled: this.collectSpilled(room),
-    })
-    room.lastSnapshotBytes = encoded.length
+      pickups: room.snapshotPickups,
+      spilled: room.snapshotSpilled,
+      removed: room.snapshotRemoved,
+    }
+    // Each is encoded at most once, whoever asks first, from the same scratch.
+    let changes: Uint8Array | null = null
+    let whole: Uint8Array | null = null
     for (const player of room.players.values()) {
+      let encoded: Uint8Array
+      if (player.told) {
+        if (changes === null) {
+          message.full = false
+          this.collectPickups(room, false)
+          this.collectSpilled(room, false)
+          this.collectRemoved(room)
+          changes = encodeSnapshot(message)
+        }
+        encoded = changes
+      } else {
+        if (whole === null) {
+          message.full = true
+          this.collectPickups(room, true)
+          this.collectSpilled(room, true)
+          room.snapshotRemoved.length = 0
+          whole = encodeSnapshot(message)
+        }
+        encoded = whole
+        player.told = true
+      }
       player.connection.send(withAck(encoded, player.timeline.receivedTick))
     }
+    room.lastSnapshotBytes = (changes ?? whole ?? encodeSnapshot(message)).length
+    this.rememberTold(room)
   }
 }

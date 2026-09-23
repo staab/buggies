@@ -200,14 +200,15 @@ export class Hud {
     }
     this.score.hidden = score === ''
 
-    const driving = state.speed !== undefined && state.maxSpeed !== undefined && state.damage !== undefined
+    const { speed, maxSpeed, damage: wear } = state
+    const driving = speed !== undefined && maxSpeed !== undefined && wear !== undefined
     this.gauges.hidden = !driving
     this.controls.hidden = !driving || state.controls === undefined
     if (!driving) return
     if (state.controls !== undefined) this.showControls(state.controls)
 
-    turnDial(this.speedo, dialFraction(state.speed!, state.maxSpeed!), String(Math.round(Math.abs(state.speed!) * TO_KPH)))
-    const damage = THREE.MathUtils.clamp(state.damage!, 0, 1)
+    turnDial(this.speedo, dialFraction(speed, maxSpeed), String(Math.round(Math.abs(speed) * TO_KPH)))
+    const damage = THREE.MathUtils.clamp(wear, 0, 1)
     turnDial(this.damage, damage, `${Math.round(damage * 100)}%`, damageColor(damage))
   }
 

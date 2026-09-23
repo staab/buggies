@@ -1,7 +1,9 @@
 import {
   NEUTRAL_INPUT,
+  PICKUP_SLOTS,
   createArena,
   initPhysics,
+  setPickup,
   takeSeat,
   type Arena,
   type VehicleInput,
@@ -12,8 +14,15 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
 import { LocalPrediction } from './prediction.ts'
+import {
+  INPUT_TIMELINE_TICKS,
+  MS_PER_TICK,
+  REJECT_IDLE,
+  TICKS_PER_SECOND,
+  TICKS_PER_SNAPSHOT,
+  rejectLabel,
+} from './protocol.ts'
 import { fetchRooms } from './rooms.ts'
-import { INPUT_TIMELINE_TICKS, MS_PER_TICK, TICKS_PER_SECOND, TICKS_PER_SNAPSHOT } from './protocol.ts'
 import { GameServer } from './server.ts'
 import type {
   ClientTransport,
@@ -21,6 +30,7 @@ import type {
   TransportConnection,
   TransportHandlers,
 } from './transport.ts'
+import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
 
 /**
  * A wire made of queues. Messages are delivered when `deliver` is called,
@@ -151,7 +161,7 @@ class Session {
     const welcome = await welcoming
     const mirror = createArena(welcome.seed === map.seed ? map : generateTerrain(welcome.seed, { size: 257 }))
     takeSeat(mirror, welcome.seat, welcome.profile)
-    const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
+    const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
     const player: Player = {
       client,
       prediction,
@@ -478,6 +488,73 @@ describe('a session', () => {
     session.run(0.2)
     expect(session.server.roomCount).toBe(1)
     expect(session.events).toContain(`closed ${map.seed + 1}`)
+    session.dispose()
+  }, 120_000)
+
+  it('tells of the bananas in full once, then only what changes, and the whole again to a newcomer', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    session.run(0.5)
+    // The whole word, then nothing but the vehicles while nothing changes.
+    expect(a.client.bananas.pickups).toHaveLength(PICKUP_SLOTS)
+    expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_BYTES)
+
+    // A slot moves on, and a banana is spilled: told once, and the mirror has them.
+    const { arena } = session
+    setPickup(arena.map, arena.water, arena.pickups[3]!, 3, 1, arena.tick + 480)
+    arena.spilled.push({ id: 7, from: { x: 1, y: 2, z: 3 }, position: { x: 4, y: 5, z: 6 }, bornTick: arena.tick })
+    session.run(0.5)
+    expect(a.client.bananas.pickups[3]).toEqual({ generation: 1, spawnTick: arena.pickups[3]!.spawnTick })
+    expect(a.prediction.pickups[3]!.generation).toBe(1)
+    expect(a.prediction.spilled.map((spilled) => spilled.id)).toEqual([7])
+    expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_BYTES)
+
+    // A banana the mirror takes on its own is put back as the server has it.
+    setPickup(arena.map, arena.water, a.prediction.pickups[5]!, 5, 9, 0)
+    session.run(0.2)
+    expect(a.prediction.pickups[5]!.generation).toBe(0)
+
+    // A newcomer is told the whole of it, as it stands now.
+    const b = await session.join('tank')
+    session.run(0.5)
+    expect(b.client.bananas.pickups).toHaveLength(PICKUP_SLOTS)
+    expect(b.prediction.pickups[3]!.generation).toBe(1)
+    expect(b.prediction.spilled.map((spilled) => spilled.id)).toEqual([7])
+
+    // Gone on the server, gone from everyone.
+    arena.spilled.length = 0
+    session.run(0.5)
+    expect(a.prediction.spilled).toHaveLength(0)
+    expect(b.client.bananas.spilled).toHaveLength(0)
+    session.dispose()
+  }, 120_000)
+
+  it('keeps inputs to their ranges, drops a flood of them, and lets go of a player heard nothing from', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    const b = await session.join('tank')
+    // Whatever is asked for, the car is driven within its ranges.
+    a.input.steer = 5
+    a.input.throttle = -3
+    a.input.brake = Number.NaN
+    session.run(0.5)
+    const seat = a.client.welcome!.seat
+    const seen = b.client.pump(b.input).newestSnapshot!.vehicles.find((vehicle) => vehicle.seat === seat)!
+    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false })
+
+    // Inputs past what an honest client could send are dropped, not driven, and not held against them.
+    const before = session.server.stats().inputsDropped
+    for (let i = 0; i < 400; i++) a.wire.client.send(encodeInput(session.arena.tick + 1 + (i % 32), NEUTRAL_INPUT))
+    session.run(0.2)
+    expect(session.server.stats().inputsDropped - before).toBeGreaterThan(200)
+    expect(a.client.closed).toBeNull()
+
+    // Nothing heard for long enough, and the seat is given up.
+    a.paused = true
+    session.run(16)
+    expect(a.client.closed).toBe(rejectLabel(REJECT_IDLE))
+    expect(session.events).toContain(`left ${seat}`)
+    expect(b.client.closed).toBeNull()
     session.dispose()
   }, 120_000)
 

@@ -8,6 +8,7 @@
  */
 
 import * as exact from '@buggies/physics'
+import { at } from './at.ts'
 import type { Heightfield, Road } from './types.ts'
 import { ROAD_SURFACE, ROAD_TUNNEL } from './roads.ts'
 
@@ -47,6 +48,7 @@ export function tunnelSegments(roads: Road[]): BoreSegment[] {
   for (const road of roads) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
+    // Within the road: i runs over its segments, and the point after the last is a loop's first.
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_TUNNEL) continue
       const a = road.points[i]!
@@ -144,6 +146,7 @@ export function buildTunnelHoles(field: Heightfield, segments: BoreSegment[], wa
         const dx = x - (segment.ax + vx * t)
         const dz = z - (segment.az + vz * t)
         const distanceSq = dx * dx + dz * dz
+        // The rows and columns are clamped to the field, which these arrays cover.
         const cell = row * width + col
         if (distanceSq < bestDistanceSq[cell]!) {
           bestDistanceSq[cell] = distanceSq
@@ -154,6 +157,7 @@ export function buildTunnelHoles(field: Heightfield, segments: BoreSegment[], wa
     }
   }
 
+  // All of these cover the field, a value a cell.
   const hole = new Uint8Array(width * depth)
   for (let cell = 0; cell < hole.length; cell++) {
     const distanceSq = bestDistanceSq[cell]!
@@ -195,6 +199,7 @@ export function tunnelCutFloors(field: Heightfield, segments: BoreSegment[], mar
         const dz = z - (segment.az + vz * t)
         const distanceSq = dx * dx + dz * dz
         if (distanceSq > reach * reach) continue
+        // The rows and columns are clamped to the field, which these arrays cover.
         const cell = row * width + col
         if (distanceSq >= bestDistanceSq[cell]!) continue
         bestDistanceSq[cell] = distanceSq
@@ -286,9 +291,14 @@ export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | nul
     const samples =
       run.length === count
         ? run
-        : [(run[0]! - 1 + count) % count, ...run, (run[run.length - 1]! + 1) % count]
+        : [
+            (at(run, 0, 'tunnel run sample') - 1 + count) % count,
+            ...run,
+            (at(run, run.length - 1, 'tunnel run sample') + 1) % count,
+          ]
 
     const base = positions.length / 3
+    // Every sample is one of the road's points, and its neighbours wrap round the loop.
     for (const index of samples) {
       const point = road.points[index]!
       const prev = road.points[(index - 1 + count) % count]!

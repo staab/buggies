@@ -42,7 +42,10 @@ interface ColorStop {
   color: THREE.Color
 }
 
-const LAND_STOPS: ColorStop[] = [
+/** A ramp of colours: always at least the one to start from. */
+type Stops = [ColorStop, ...ColorStop[]]
+
+const LAND_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#c8b98a') },
   { t: 0.06, color: new THREE.Color('#6f8f3f') },
   { t: 0.32, color: new THREE.Color('#4f7a34') },
@@ -61,21 +64,21 @@ const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
 const RAIL_COLOR = new THREE.Color('#c9cdd2')
 /** City buildings run from warm stone to cool concrete and glass. */
-const BLOCK_STOPS: ColorStop[] = [
+const BLOCK_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#b9a58c') },
   { t: 0.35, color: new THREE.Color('#d8d3c8') },
   { t: 0.7, color: new THREE.Color('#8f979f') },
   { t: 1, color: new THREE.Color('#5d6f80') },
 ]
 /** Houses come in a few colours of render and brick, each a plain box under a pitched roof. */
-const HOUSE_COLORS = [
+const HOUSE_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#e8dcc0'),
   new THREE.Color('#d9c9a3'),
   new THREE.Color('#b8624a'),
   new THREE.Color('#c9d3d8'),
   new THREE.Color('#e3c9b0'),
 ]
-const ROOF_COLORS = [
+const ROOF_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#6b3f34'),
   new THREE.Color('#4d4a48'),
   new THREE.Color('#7a5230'),
@@ -83,7 +86,7 @@ const ROOF_COLORS = [
 /** The pitch of a house's roof, as a fraction of its width. */
 const ROOF_PITCH = 0.3
 const TRUNK_COLOR = new THREE.Color('#5a4030')
-const CROWN_STOPS: ColorStop[] = [
+const CROWN_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#2f6b2a') },
   { t: 0.5, color: new THREE.Color('#4a8a35') },
   { t: 1, color: new THREE.Color('#7a9a3a') },
@@ -230,17 +233,17 @@ const TUNNEL_CUT_SUBDIVISIONS = 4
  */
 const TEXELS_PER_METRE = 1
 
-function sampleRamp(t: number, stops: ColorStop[], out: THREE.Color): THREE.Color {
-  if (t <= stops[0]!.t) return out.copy(stops[0]!.color)
-  for (let i = 1; i < stops.length; i++) {
-    const hi = stops[i]!
+function sampleRamp(t: number, stops: Stops, out: THREE.Color): THREE.Color {
+  let lo = stops[0]
+  if (t <= lo.t) return out.copy(lo.color)
+  for (const hi of stops) {
     if (t <= hi.t) {
-      const lo = stops[i - 1]!
       const span = hi.t - lo.t || 1
       return out.copy(lo.color).lerp(hi.color, (t - lo.t) / span)
     }
+    lo = hi
   }
-  return out.copy(stops[stops.length - 1]!.color)
+  return out.copy(lo.color)
 }
 
 function terrainColor(
@@ -283,6 +286,7 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
   const corner = new Float32Array(width * depth * 3)
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
+  // The heights and districts cover the field, a value a cell.
   for (let cell = 0; cell < width * depth; cell++) {
     terrainColor(heights[cell]!, min, max, seaLevel, districtOf[cell]!, color)
     color.getRGB(rgb, THREE.SRGBColorSpace)
@@ -292,7 +296,7 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
   }
 
   ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
-  const asphalt = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  const asphalt: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
   const city = cityBlocks(map)
 
   const texels = Math.ceil(width * cellSize * TEXELS_PER_METRE)
@@ -312,12 +316,13 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
       // streets and every gap between them alike, one crisp grey. Inside the
       // sidewalk the ground keeps its own colour.
       if (districtOf[Math.round(gz) * width + Math.round(gx)] === DISTRICT_CITY && !city.insideBlock(x, z)) {
-        data[at] = asphalt[0]!
-        data[at + 1] = asphalt[1]!
-        data[at + 2] = asphalt[2]!
+        data[at] = asphalt[0]
+        data[at + 1] = asphalt[1]
+        data[at + 2] = asphalt[2]
         data[at + 3] = 255
         continue
       }
+      // The four corners of a cell within the field: the row and column were held one short of its edge.
       const a = (row * width + col) * 3
       const b = a + 3
       const c = a + width * 3
@@ -337,6 +342,7 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
     const half = road.width / 2
+    // Within the road: i runs over its segments, and the point after the last is a loop's first.
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
       const a = road.points[i]!
@@ -373,7 +379,7 @@ function paintSegment(
   a: { x: number; z: number },
   b: { x: number; z: number },
   half: number,
-  rgb: number[],
+  rgb: [number, number, number],
 ): void {
   const vx = b.x - a.x
   const vz = b.z - a.z
@@ -393,9 +399,11 @@ function paintSegment(
       const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
       const coverage = Math.min(Math.max((half + edge - distance) * TEXELS_PER_METRE, 0), 1)
       if (coverage <= 0) continue
+      // Within the texture: the texel was held inside it above.
       const at = (ty * texels + tx) * 4
-      for (let channel = 0; channel < 3; channel++) {
-        data[at + channel] = Math.round(data[at + channel]! + (rgb[channel]! - data[at + channel]!) * coverage)
+      for (const [channel, level] of rgb.entries()) {
+        const was = data[at + channel]!
+        data[at + channel] = Math.round(was + (level - was) * coverage)
       }
     }
   }
@@ -476,8 +484,9 @@ function rampMouths(roads: Road[]): Mouth[] {
   const highways = roads.filter((road) => road.kind === 'highway')
   const mouths: Mouth[] = []
   for (const road of roads) {
-    if (road.kind !== 'ramp' || road.points.length < 2) continue
-    const [start, next] = [road.points[0]!, road.points[1]!]
+    const start = road.points[0]
+    const next = road.points[1]
+    if (road.kind !== 'ramp' || start === undefined || next === undefined) continue
     const length = Math.hypot(next.x - start.x, next.z - start.z) || 1
     let nearest = { x: start.x, z: start.z }
     let best = Infinity
@@ -539,6 +548,7 @@ function buildTerrainMesh(
     return positions.length / 3 - 1
   }
 
+  // The heights cover the field, one a cell, read by row and column within it.
   for (let row = 0; row < depth; row++) {
     for (let col = 0; col < width; col++) {
       vertex(col * cellSize, heights[row * width + col]!, row * cellSize)
@@ -549,6 +559,7 @@ function buildTerrainMesh(
   const steps = TUNNEL_CUT_SUBDIVISIONS
   for (let row = 0; row < depth - 1; row++) {
     for (let col = 0; col < width - 1; col++) {
+      // The cell's four corners, all within the field: the loops stop a cell short of its edges.
       const topLeft = row * width + col
       const topRight = topLeft + 1
       const bottomLeft = topLeft + width
@@ -563,7 +574,8 @@ function buildTerrainMesh(
       }
 
       // This facet straddles the bore. Split it and test each piece, so the cut
-      // hugs the tunnel wall instead of snapping to whole cells.
+      // hugs the tunnel wall instead of snapping to whole cells. The pieces
+      // are a grid of steps plus one each way, read within that below.
       const vertices: number[][] = []
       for (let sv = 0; sv <= steps; sv++) {
         const line: number[] = []
@@ -644,10 +656,9 @@ function buildRiverGeometry(river: River): THREE.BufferGeometry {
   const positions: number[] = []
   const indices: number[] = []
 
-  for (let i = 0; i < points.length; i++) {
-    const point = points[i]!
-    const prev = points[Math.max(0, i - 1)]!
-    const next = points[Math.min(points.length - 1, i + 1)]!
+  for (const [i, point] of points.entries()) {
+    const prev = points[i - 1] ?? point
+    const next = points[i + 1] ?? point
     let dx = next.x - prev.x
     let dz = next.z - prev.z
     const length = Math.hypot(dx, dz) || 1
@@ -710,10 +721,10 @@ function buildRoadGeometry(road: Road, field: Heightfield, mouths: Mouth[]): THR
   const isGrade = (segment: number): boolean => drawn(segment) && deckShouldered(road, field, segment)
   const isTunnel = (segment: number): boolean => road.structure[segment] === ROAD_TUNNEL
 
-  for (let i = 0; i < count; i++) {
-    const point = points[i]!
-    const prev = points[road.closed ? (i - 1 + count) % count : Math.max(i - 1, 0)]!
-    const next = points[road.closed ? (i + 1) % count : Math.min(i + 1, count - 1)]!
+  for (const [i, point] of points.entries()) {
+    // Round a loop the neighbours wrap; at the end of an open road they stop at the point.
+    const prev = points[road.closed ? (i - 1 + count) % count : i - 1] ?? point
+    const next = points[road.closed ? (i + 1) % count : i + 1] ?? point
     let dx = next.x - prev.x
     let dz = next.z - prev.z
     const length = Math.hypot(dx, dz) || 1
@@ -754,6 +765,7 @@ function buildRoadGeometry(road: Road, field: Heightfield, mouths: Mouth[]): THR
       point.z - nz * verge,
     )
 
+    // A point's colour is its segment's, the last point taking the last segment's.
     const color = structureColor(road.structure[Math.min(i, segmentCount - 1)]!)
     colors.push(color.r, color.g, color.b, color.r, color.g, color.b)
     const leftSkirt = pavedLeft ? color : ROAD_SKIRT_COLOR
@@ -823,6 +835,7 @@ function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
     const crown = TUNNEL_WALL_HEIGHT + road.width / 2 + TUNNEL_CLEARANCE - TUNNEL_LIGHT_DROP
     const lift = roadLift(road)
     let owed = TUNNEL_LIGHT_SPACING / 2
+    // Within the road: i runs over its segments, and the point after the last is a loop's first.
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_TUNNEL) {
         owed = TUNNEL_LIGHT_SPACING / 2
@@ -887,9 +900,9 @@ function instanced<T>(
   const mesh = new THREE.InstancedMesh(geometry, material, items.length)
   const matrix = new THREE.Matrix4()
   const color = new THREE.Color()
-  for (let i = 0; i < items.length; i++) {
+  for (const [i, item] of items.entries()) {
     matrix.identity()
-    place(items[i]!, matrix, color)
+    place(item, matrix, color)
     mesh.setMatrixAt(i, matrix)
     mesh.setColorAt(i, color)
   }
@@ -933,7 +946,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
     instanced(box, walled(houseWall, houseWall), houses, (building, matrix, color) => {
       boxAt(building, matrix)
-      color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length]!)
+      color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length] ?? HOUSE_COLORS[0])
     }),
   )
 
@@ -950,7 +963,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), house.yaw),
         new THREE.Vector3(house.width + 0.6, span * ROOF_PITCH, house.depth + 0.6),
       )
-      color.copy(ROOF_COLORS[Math.floor(house.tone * ROOF_COLORS.length) % ROOF_COLORS.length]!)
+      color.copy(ROOF_COLORS[Math.floor(house.tone * ROOF_COLORS.length) % ROOF_COLORS.length] ?? ROOF_COLORS[0])
     }),
   )
 
@@ -1008,10 +1021,10 @@ function buildCar(): THREE.Group {
     [1.0, 1.4],
     [-1.0, -1.4],
     [1.0, -1.4],
-  ]) {
+  ] as const) {
     const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial)
     wheel.rotation.z = Math.PI / 2
-    wheel.position.set(x!, CAR_WHEEL_RADIUS, z!)
+    wheel.position.set(x, CAR_WHEEL_RADIUS, z)
     car.add(wheel)
   }
 
@@ -1030,6 +1043,7 @@ export function createScaleCar(map: TerrainMap, passenger: THREE.Object3D = buil
   const road = map.roads[0]
 
   if (road && road.points.length > 1) {
+    // A quarter of the way along, and the point after: both within the road, whose length was just checked.
     const index = Math.floor(road.points.length * 0.25)
     const point = road.points[index]!
     const next = road.points[(index + 1) % road.points.length]!

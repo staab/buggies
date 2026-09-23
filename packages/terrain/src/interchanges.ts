@@ -21,6 +21,7 @@ const INTERCHANGE_REACH = 90
  */
 export function interchangeZones(roads: Road[]): Point[][] {
   const ramps = roads.filter((road) => road.kind === 'ramp')
+  // Each ramp's group is another ramp's index, so every step of the walk lands within the ramps.
   const group = ramps.map((_, i) => i)
   const find = (i: number): number => {
     while (group[i] !== i) {
@@ -42,10 +43,9 @@ export function interchangeZones(roads: Road[]): Point[][] {
     }
     return { minX, maxX, minZ, maxZ }
   })
-  for (let i = 0; i < ramps.length; i++) {
-    for (let j = i + 1; j < ramps.length; j++) {
-      const a = bounds[i]!
-      const b = bounds[j]!
+  for (const [i, a] of bounds.entries()) {
+    for (const [j, b] of bounds.entries()) {
+      if (j <= i) continue
       const gapX = Math.max(a.minX - b.maxX, b.minX - a.maxX, 0)
       const gapZ = Math.max(a.minZ - b.maxZ, b.minZ - a.maxZ, 0)
       if (hypot(gapX, gapZ) <= INTERCHANGE_REACH) group[find(i)] = find(j)
@@ -66,15 +66,20 @@ function convexHull(points: Point[]): Point[] {
   const sorted = [...points].sort((a, b) => a.x - b.x || a.z - b.z)
   if (sorted.length < 3) return sorted
   const cross = (o: Point, a: Point, b: Point): number => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x)
+  /** Whether a chain's last two points and the next fail to turn left, so the middle one is off the hull. */
+  const bends = (chain: Point[], point: Point): boolean => {
+    const a = chain.at(-2)
+    const b = chain.at(-1)
+    return a !== undefined && b !== undefined && cross(a, b, point) <= 0
+  }
   const lower: Point[] = []
   for (const point of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2]!, lower[lower.length - 1]!, point) <= 0) lower.pop()
+    while (bends(lower, point)) lower.pop()
     lower.push(point)
   }
   const upper: Point[] = []
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const point = sorted[i]!
-    while (upper.length >= 2 && cross(upper[upper.length - 2]!, upper[upper.length - 1]!, point) <= 0) upper.pop()
+  for (const point of sorted.reverse()) {
+    while (bends(upper, point)) upper.pop()
     upper.push(point)
   }
   lower.pop()
@@ -85,10 +90,12 @@ function convexHull(points: Point[]): Point[] {
 /** Whether a point lies inside a polygon, by casting a ray. */
 export function insidePolygon(polygon: Point[], x: number, z: number): boolean {
   let inside = false
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const a = polygon[i]!
-    const b = polygon[j]!
+  // Each edge runs from the point before to this one, the first's from the last.
+  let b = polygon.at(-1)
+  if (b === undefined) return false
+  for (const a of polygon) {
     if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside
+    b = a
   }
   return inside
 }
@@ -102,12 +109,8 @@ export function meetsInterchange(zones: Point[][], footprint: Footprint): boolea
   if (zones.length === 0) return false
   const corners = footprintCorners(footprint)
   const samples: Point[] = [{ x: footprint.x, z: footprint.z }, ...corners]
-  for (let i = 0; i < corners.length; i++) {
-    for (let j = i + 1; j < corners.length; j++) {
-      const a = corners[i]!
-      const b = corners[j]!
-      samples.push({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 })
-    }
+  for (const [i, a] of corners.entries()) {
+    for (const b of corners.slice(i + 1)) samples.push({ x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 })
   }
   return zones.some((zone) => samples.some((sample) => insidePolygon(zone, sample.x, sample.z)))
 }

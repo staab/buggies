@@ -29,7 +29,8 @@ function findSource(field: Heightfield, mountain: Mountain, seaLevel: number, us
     return dx * dx + dz * dz <= radius * radius
   }
 
-  // The summit is only needed to measure how far down to start.
+  // The summit is only needed to measure how far down to start. The rows and
+  // columns walked here are within the field, so every height is there.
   let summitY = -Infinity
   for (let row = minRow; row <= maxRow; row++) {
     for (let col = minCol; col <= maxCol; col++) {
@@ -70,6 +71,7 @@ function traceCourse(field: Heightfield, routing: FlowRouting, source: number, s
   const { filled, flow } = routing
   const points: RiverPoint[] = []
   const maxSteps = width * width
+  // The source is a cell of the field, and so is everything the flow leads to.
   const sourceY = filled[source]!
   const drop = Math.max(sourceY - seaLevel, 1e-3)
   let cell = source
@@ -88,7 +90,7 @@ function traceCourse(field: Heightfield, routing: FlowRouting, source: number, s
 
     if (heights[cell]! <= seaLevel) break
 
-    const next = flow[cell]!
+    const next = flow[cell] ?? -1
     if (next < 0 || next === cell) break
     cell = next
   }

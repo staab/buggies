@@ -28,7 +28,19 @@ import {
   STREET_WIDTH,
   type Footprint,
 } from './roads.ts'
-import type {Building, District, Heightfield, Lake, Mountain, Ramp, River, Road, Sidewalk, Tree} from './types.ts'
+import type {
+  Building,
+  District,
+  Heightfield,
+  Lake,
+  Mountain,
+  Ramp,
+  River,
+  Road,
+  RoadPoint,
+  Sidewalk,
+  Tree,
+} from './types.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
@@ -520,11 +532,11 @@ function fillCities(
   }
 }
 
-/** A road's heading and left-hand normal at a sample. */
-function frameAlong(road: Road, index: number): { dx: number; dz: number; nx: number; nz: number } {
+/** A road's heading and left-hand normal at one of its samples. */
+function frameAlong(road: Road, index: number, point: RoadPoint): { dx: number; dz: number; nx: number; nz: number } {
   const points = road.points
-  const prev = points[Math.max(index - 1, 0)]!
-  const next = points[Math.min(index + 1, points.length - 1)]!
+  const prev = points[index - 1] ?? point
+  const next = points[index + 1] ?? point
   const dx = next.x - prev.x
   const dz = next.z - prev.z
   const length = hypot(dx, dz) || 1
@@ -554,16 +566,15 @@ function lineArterials(
     const col = Math.floor(x / cellSize)
     const row = Math.floor(z / cellSize)
     if (col < 0 || col >= width || row < 0 || row >= field.depth) return -1
-    return districtOf[row * width + col]!
+    return districtOf[row * width + col] ?? -1
   }
   const clearings: { x: number; z: number }[] = []
   const inClearing = (x: number, z: number): boolean =>
     clearings.some((house) => hypot(house.x - x, house.z - z) < CLEARING)
 
   /** A house beside the road at this sample, facing it, if it fits there in `zone`. */
-  const placeHouse = (road: Road, index: number, side: number, zone: number): boolean => {
-    const point = road.points[index]!
-    const { dx, dz, nx, nz } = frameAlong(road, index)
+  const placeHouse = (road: Road, index: number, point: RoadPoint, side: number, zone: number): Building | null => {
+    const { dx, dz, nx, nz } = frameAlong(road, index, point)
     const houseWidth = randomRange(rng, HOUSE_WIDTH.min, HOUSE_WIDTH.max)
     const houseDepth = randomRange(rng, HOUSE_DEPTH.min, HOUSE_DEPTH.max)
     const height = randomRange(rng, HOUSE_HEIGHT.min, HOUSE_HEIGHT.max)
@@ -577,19 +588,20 @@ function lineArterials(
       width: houseWidth,
       depth: houseDepth,
     }
-    if (districtAt(footprint.x, footprint.z) !== zone) return false
-    if (!clear(footprint, ROAD_MARGIN)) return false
+    if (districtAt(footprint.x, footprint.z) !== zone) return null
+    if (!clear(footprint, ROAD_MARGIN)) return null
     const ground = groundUnder(field, wet, footprint)
-    if (ground.wet || ground.high - ground.low > HOUSE_RELIEF) return false
-    if (placed.meets(footprint, BUILDING_GAP)) return false
+    if (ground.wet || ground.high - ground.low > HOUSE_RELIEF) return null
+    if (placed.meets(footprint, BUILDING_GAP)) return null
     placed.add(footprint)
-    buildings.push({
+    const house: Building = {
       kind: 'house',
       ...footprint,
       bottom: ground.low - BURY,
       top: ground.high + height,
       tone,
-    })
+    }
+    buildings.push(house)
     // A garden: shrubs along the front, between the house and the road, and
     // a tree or two behind it, within its own width so the house next door
     // is not crowded out of its lot.
@@ -603,13 +615,12 @@ function lineArterials(
       const back = side * (houseDepth / 2 + TREE_RADIUS.max + randomRange(rng, 1, 6))
       plant(footprint.x + dx * along + nx * back, footprint.z + dz * along + nz * back, 'tree', wet)
     }
-    return true
+    return house
   }
 
   /** A tree beside the road at this sample, `setback` from its edge, if the ground there is free. */
-  const placeTree = (road: Road, index: number, side: number, setback: number): void => {
-    const point = road.points[index]!
-    const { nx, nz } = frameAlong(road, index)
+  const placeTree = (road: Road, index: number, point: RoadPoint, side: number, setback: number): void => {
+    const { nx, nz } = frameAlong(road, index, point)
     const x = point.x + nx * side * (road.width / 2 + setback)
     const z = point.z + nz * side * (road.width / 2 + setback)
     if (districtAt(x, z) !== DISTRICT_COUNTRY) return
@@ -624,33 +635,35 @@ function lineArterials(
       let travelled = 0
       let nextSlot = 0
       let nextHouse = randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
-      for (let i = 1; i < points.length; i++) {
-        travelled += hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+      let previous: RoadPoint | undefined
+      for (const [i, point] of points.entries()) {
+        const behind = previous
+        previous = point
+        if (behind === undefined) continue
+        travelled += hypot(point.x - behind.x, point.z - behind.z)
         if (travelled < nextSlot) continue
         // Nothing beside a bridge: there is a river or a valley there.
         if (road.structure[i - 1] === ROAD_BRIDGE || road.structure[Math.min(i, points.length - 2)] === ROAD_BRIDGE) {
           nextSlot = travelled + TREE_SPACING.min
           continue
         }
-        const { nx, nz } = frameAlong(road, i)
-        const beside = districtAt(points[i]!.x + nx * side * road.width, points[i]!.z + nz * side * road.width)
+        const { nx, nz } = frameAlong(road, i, point)
+        const beside = districtAt(point.x + nx * side * road.width, point.z + nz * side * road.width)
         if (beside === DISTRICT_SUBURB) {
-          placeHouse(road, i, side, DISTRICT_SUBURB)
+          placeHouse(road, i, point, side, DISTRICT_SUBURB)
           nextSlot = travelled + randomRange(rng, SUBURB_SPACING.min, SUBURB_SPACING.max)
         } else if (beside === DISTRICT_COUNTRY) {
           if (travelled >= nextHouse) {
-            if (placeHouse(road, i, side, DISTRICT_COUNTRY)) {
-              const house = buildings[buildings.length - 1]!
-              clearings.push({ x: house.x, z: house.z })
-            }
+            const house = placeHouse(road, i, point, side, DISTRICT_COUNTRY)
+            if (house !== null) clearings.push({ x: house.x, z: house.z })
             nextHouse = travelled + randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
             nextSlot = travelled + TREE_SPACING.max
           } else {
             if (randomInt(rng, 1, TREE_GAP_ODDS) !== 1) {
-              placeTree(road, i, side, randomRange(rng, TREE_SETBACK.min, TREE_SETBACK.max))
+              placeTree(road, i, point, side, randomRange(rng, TREE_SETBACK.min, TREE_SETBACK.max))
             }
             if (randomInt(rng, 1, 2) === 1) {
-              placeTree(road, i, side, randomRange(rng, TREE_BACK_SETBACK.min, TREE_BACK_SETBACK.max))
+              placeTree(road, i, point, side, randomRange(rng, TREE_BACK_SETBACK.min, TREE_BACK_SETBACK.max))
             }
             nextSlot = travelled + randomRange(rng, TREE_SPACING.min, TREE_SPACING.max)
           }
@@ -685,23 +698,26 @@ function lineRamps(
     const col = Math.floor(x / cellSize)
     const row = Math.floor(z / cellSize)
     if (col < 0 || col >= width || row < 0 || row >= field.depth) return -1
-    return districtOf[row * width + col]!
+    return districtOf[row * width + col] ?? -1
   }
   for (const road of roads) {
     if (road.kind !== 'arterial' && road.kind !== 'cross') continue
     const points = road.points
     let travelled = 0
     let next = randomRange(rng, RAMP_SPACING.min / 2, RAMP_SPACING.max / 2)
-    for (let i = 1; i < points.length; i++) {
-      travelled += hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+    let previous: RoadPoint | undefined
+    for (const [i, point] of points.entries()) {
+      const behind = previous
+      previous = point
+      if (behind === undefined) continue
+      travelled += hypot(point.x - behind.x, point.z - behind.z)
       if (travelled < next) continue
       next = travelled + randomRange(rng, RAMP_SPACING.min, RAMP_SPACING.max)
       if (road.structure[i - 1] !== ROAD_GRADE || road.structure[Math.min(i, points.length - 2)] !== ROAD_GRADE) continue
       const side = randomInt(rng, 1, 2) === 1 ? 1 : -1
       const along = randomInt(rng, 1, 2) === 1 ? 1 : -1
-      const { dx, dz, nx, nz } = frameAlong(road, i)
+      const { dx, dz, nx, nz } = frameAlong(road, i, point)
       const out = road.width / 2 + RAMP_VERGE + RAMP_WIDTH / 2
-      const point = points[i]!
       const middle = { x: point.x + nx * side * out, z: point.z + nz * side * out }
       if (districtAt(middle.x, middle.z) === DISTRICT_CITY) continue
       const foot = { x: middle.x - dx * along * (RAMP_LENGTH / 2), z: middle.z - dz * along * (RAMP_LENGTH / 2) }
@@ -786,7 +802,7 @@ function plantWilds(
     const col = Math.floor(x / cellSize)
     const row = Math.floor(z / cellSize)
     if (col < 0 || col >= width || row < 0 || row >= depth) return -1
-    return districtOf[row * width + col]!
+    return districtOf[row * width + col] ?? -1
   }
 
   const noiseSeed = (seed ^ WILD_SALT) >>> 0

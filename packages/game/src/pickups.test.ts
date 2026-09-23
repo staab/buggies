@@ -104,6 +104,8 @@ describe('pickups', () => {
     advance(arena, () => NEUTRAL_INPUT)
     expect(a.score).toBe(0)
     expect(arena.spilled).toHaveLength(5)
+    // Numbered as they come.
+    expect(arena.spilled.map((spilled) => spilled.id)).toEqual([0, 1, 2, 3, 4])
     for (const spilled of arena.spilled) {
       expect(spilled.from.x).toBeCloseTo(wreck.x, 1)
       const flung = Math.hypot(spilled.position.x - wreck.x, spilled.position.z - wreck.z)
@@ -147,6 +149,7 @@ describe('pickups', () => {
     a.score = SPILL_MOST + 10
     advance(arena, () => NEUTRAL_INPUT)
     expect(arena.spilled).toHaveLength(SPILL_MOST)
+    expect(arena.spilled[0]!.id).toBe(5)
     arena.world.free()
   })
 

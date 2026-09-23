@@ -10,6 +10,7 @@ import {
   INPUT_BYTES,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_PICKUP_BYTES,
+  SNAPSHOT_REMOVED_BYTES,
   SNAPSHOT_SPILLED_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
   decodeHello,
@@ -35,6 +36,7 @@ import {
 const snapshot: SnapshotMessage = {
   tick: 123456,
   ackInputTick: 123450,
+  full: true,
   vehicles: [
     {
       seat: 0,
@@ -64,14 +66,15 @@ const snapshot: SnapshotMessage = {
     },
   ],
   pickups: [
-    { generation: 0, ticksUntilOut: 0 },
-    { generation: 7, ticksUntilOut: 480 },
-    { generation: 65535, ticksUntilOut: 12 },
+    { slot: 0, generation: 0, ticksUntilOut: 0 },
+    { slot: 1, generation: 7, ticksUntilOut: 480 },
+    { slot: 63, generation: 65535, ticksUntilOut: 12 },
   ],
   spilled: [
-    { from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
-    { from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
-  ]
+    { id: 0, from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
+    { id: 65535, from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
+  ],
+  removed: [3, 65000],
 }
 
 describe('wire', () => {
@@ -99,12 +102,22 @@ describe('wire', () => {
   it('round-trips a snapshot, every vehicle and field', () => {
     const payload = encodeSnapshot(snapshot)
     expect(payload.length).toBe(
-      SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 3 * SNAPSHOT_PICKUP_BYTES + 2 * SNAPSHOT_SPILLED_BYTES,
+      SNAPSHOT_HEADER_BYTES +
+        2 * SNAPSHOT_VEHICLE_BYTES +
+        3 * SNAPSHOT_PICKUP_BYTES +
+        2 * SNAPSHOT_SPILLED_BYTES +
+        2 * SNAPSHOT_REMOVED_BYTES,
     )
     const decoded = decodeSnapshot(payload)!
     expect(decoded.tick).toBe(snapshot.tick)
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
+    expect(decoded.full).toBe(true)
     expect(decoded.pickups).toEqual(snapshot.pickups)
+    expect(decoded.removed).toEqual(snapshot.removed)
+    // With nothing changed, a snapshot is its vehicles alone.
+    const quiet = { ...snapshot, full: false, pickups: [], spilled: [], removed: [] }
+    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
+    expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], spilled: [], removed: [] })
     for (const [i, spilled] of snapshot.spilled.entries()) {
       const got = decoded.spilled[i]!
       expect(got.age).toBe(spilled.age)

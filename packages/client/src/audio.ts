@@ -96,7 +96,8 @@ const SKID_FOLLOW = 0.05
 
 /** An engine kept running: told each frame how hard it works and how far off it is. */
 export class EngineVoice {
-  private readonly oscillators: OscillatorNode[]
+  /** The wave, and the ratio to the engine's frequency each is kept at. */
+  private readonly voices: { oscillator: OscillatorNode; ratio: number }[]
   private readonly filter: BiquadFilterNode
   private readonly gain: GainNode
   private readonly chug: GainNode
@@ -120,7 +121,7 @@ export class EngineVoice {
     this.gain.gain.value = 0
     this.filter.connect(this.chug).connect(this.gain).connect(output)
     // Two of the wave a fifth apart, one a hair off tune, so it is not a pure buzz.
-    this.oscillators = [1, 1.5, 1.003].map((ratio, index) => {
+    this.voices = [1, 1.5, 1.003].map((ratio, index) => {
       const oscillator = context.createOscillator()
       oscillator.type = timbre.wave
       oscillator.frequency.value = timbre.idle * ratio
@@ -128,7 +129,7 @@ export class EngineVoice {
       level.gain.value = index === 0 ? 1 : 0.35
       oscillator.connect(level).connect(this.filter)
       oscillator.start(now)
-      return oscillator
+      return { oscillator, ratio }
     })
     if (timbre.chug > 0) {
       this.beat = context.createOscillator()
@@ -150,9 +151,9 @@ export class EngineVoice {
     const { timbre, context } = this
     const now = context.currentTime
     const frequency = engineFrequency(timbre, rev)
-    this.oscillators[0]!.frequency.setTargetAtTime(frequency, now, ENGINE_FOLLOW)
-    this.oscillators[1]!.frequency.setTargetAtTime(frequency * 1.5, now, ENGINE_FOLLOW)
-    this.oscillators[2]!.frequency.setTargetAtTime(frequency * 1.003, now, ENGINE_FOLLOW)
+    for (const { oscillator, ratio } of this.voices) {
+      oscillator.frequency.setTargetAtTime(frequency * ratio, now, ENGINE_FOLLOW)
+    }
     this.filter.frequency.setTargetAtTime(timbre.cutoff * (0.3 + 0.7 * rev), now, ENGINE_FOLLOW)
     const loudness = ENGINE_LEVEL * timbre.volume * (0.45 + 0.55 * rev) * earshot(distance)
     this.gain.gain.setTargetAtTime(loudness, now, ENGINE_FOLLOW)
@@ -169,7 +170,7 @@ export class EngineVoice {
     const now = this.context.currentTime
     this.gain.gain.setTargetAtTime(0, now, 0.05)
     const stopAt = now + 0.3
-    for (const oscillator of this.oscillators) oscillator.stop(stopAt)
+    for (const { oscillator } of this.voices) oscillator.stop(stopAt)
     this.beat?.stop(stopAt)
     setTimeout(() => this.gain.disconnect(), 400)
   }

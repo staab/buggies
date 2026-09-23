@@ -9,6 +9,8 @@ export interface FlowRouting {
   order: Int32Array
 }
 
+// The cells on the heap are all within the field, and the heap is only ever
+// read below its length, so none of these reads comes back empty.
 function compareCells(a: number, b: number, filled: Float32Array): number {
   const diff = filled[a]! - filled[b]!
   return diff !== 0 ? diff : a - b
@@ -26,10 +28,12 @@ function heapPush(heap: number[], cell: number, filled: Float32Array): void {
   heap[pos] = cell
 }
 
-function heapPop(heap: number[], filled: Float32Array): number {
-  const top = heap[0]!
-  const last = heap.pop()!
-  if (heap.length === 0) return top
+/** The lowest cell on the heap, or nothing when it is empty. */
+function heapPop(heap: number[], filled: Float32Array): number | undefined {
+  const last = heap.pop()
+  if (last === undefined) return undefined
+  const top = heap[0]
+  if (top === undefined) return last
 
   const length = heap.length
   let pos = 0
@@ -64,6 +68,7 @@ export function computeFlowRouting(field: Heightfield, seaLevel: number): FlowRo
   const heap: number[] = []
   let processed = 0
 
+  // Every cell here is within the field, so its height is there to read.
   const seed = (cell: number): void => {
     if (visited[cell]) return
     visited[cell] = 1
@@ -80,8 +85,7 @@ export function computeFlowRouting(field: Heightfield, seaLevel: number): FlowRo
     seed(row * width + width - 1)
   }
 
-  while (heap.length > 0) {
-    const cell = heapPop(heap, filled)
+  for (let cell = heapPop(heap, filled); cell !== undefined; cell = heapPop(heap, filled)) {
     order[cell] = processed++
     const row = (cell / width) | 0
     const col = cell - row * width
@@ -117,6 +121,7 @@ export function findLakes(field: Heightfield, routing: FlowRouting, seaLevel: nu
   const lakes: Lake[] = []
   const stack: number[] = []
 
+  // Only cells within the field are asked about.
   const isDepression = (cell: number): boolean =>
     heights[cell]! > seaLevel && filled[cell]! - heights[cell]! > 1e-3
 
@@ -128,8 +133,7 @@ export function findLakes(field: Heightfield, routing: FlowRouting, seaLevel: nu
     stack.push(start)
     visited[start] = 1
 
-    while (stack.length > 0) {
-      const cell = stack.pop()!
+    for (let cell = stack.pop(); cell !== undefined; cell = stack.pop()) {
       cells.push(cell)
       level = Math.max(level, filled[cell]!)
       const row = (cell / width) | 0

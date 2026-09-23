@@ -45,6 +45,10 @@ export interface WheelState {
   forceLongitudinal: number
   forceLateral: number
 
+  /** Whether the tyre has taken hold of the ground at rest, and where it did. */
+  held: boolean
+  holdPoint: Vec3
+
   spin: number
 }
 
@@ -89,7 +93,16 @@ export interface VehicleSpawn {
 }
 
 type WheelFrame =
-  'isFront' | 'isLeft' | 'rayOrigin' | 'rayEnd' | 'contactPoint' | 'contactNormal' | 'wheelCenter' | 'forward' | 'right'
+  | 'isFront'
+  | 'isLeft'
+  | 'rayOrigin'
+  | 'rayEnd'
+  | 'contactPoint'
+  | 'contactNormal'
+  | 'wheelCenter'
+  | 'forward'
+  | 'right'
+  | 'holdPoint'
 
 type WheelMotion = Omit<WheelState, WheelFrame>
 
@@ -106,6 +119,7 @@ const NEUTRAL_WHEEL_MOTION: Readonly<WheelMotion> = Object.freeze({
   slipSpeedLateral: 0,
   forceLongitudinal: 0,
   forceLateral: 0,
+  held: false,
   spin: 0,
 })
 
@@ -120,6 +134,7 @@ function createWheelState(isFront: boolean, isLeft: boolean): WheelState {
     wheelCenter: v3(),
     forward: v3(0, 0, 1),
     right: v3(1, 0, 0),
+    holdPoint: v3(),
     ...NEUTRAL_WHEEL_MOTION,
   }
 }
