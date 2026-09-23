@@ -72,7 +72,11 @@ const snapshot: SnapshotMessage = {
 
 describe('wire', () => {
   it('round-trips the handshake', () => {
-    expect(decodeHello(encodeHello('raceCar'))).toEqual({ protocolVersion: PROTOCOL_VERSION, profile: 'raceCar' })
+    expect(decodeHello(encodeHello('raceCar', 4_000_000_000))).toEqual({
+      protocolVersion: PROTOCOL_VERSION,
+      profile: 'raceCar',
+      seed: 4_000_000_000,
+    })
     const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const }
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })
@@ -131,8 +135,8 @@ describe('wire', () => {
 
   it('refuses anything the wrong shape', () => {
     expect(decodeHello(new Uint8Array(0))).toBeNull()
-    expect(decodeHello(encodeHello('sportsCar').subarray(0, 3))).toBeNull()
-    expect(decodeWelcome(encodeHello('sportsCar'))).toBeNull()
+    expect(decodeHello(encodeHello('sportsCar', 1).subarray(0, 3))).toBeNull()
+    expect(decodeWelcome(encodeHello('sportsCar', 1))).toBeNull()
     expect(decodeInput(encodeInput(1, snapshot.vehicles[0]!.appliedInput).subarray(0, 10), { ...snapshot.vehicles[0]!.appliedInput })).toBeNull()
     expect(decodeSnapshot(encodeSnapshot(snapshot).subarray(0, SNAPSHOT_HEADER_BYTES + 3))).toBeNull()
 

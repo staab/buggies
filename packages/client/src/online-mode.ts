@@ -54,15 +54,16 @@ export interface OnlineView {
 }
 
 /**
- * Join a server and drive on its island with whoever else is there. The
- * server owns the map, so it is only known once the server says which one:
- * `mapFor` is asked for it then. `locals` are the seats of everyone on this
- * screen, kept between views so that a player beside you is not also heard
- * as a stranger in the distance.
+ * Join the server's room for an island and drive on it with whoever else is
+ * there. The server has the last word on which island, so the map is asked
+ * for once it has said: `mapFor` is asked for it then. `locals` are the
+ * seats of everyone on this screen, kept between views so that a player
+ * beside you is not also heard as a stranger in the distance.
  */
 export async function joinOnline(
   scene: THREE.Scene,
   url: string,
+  seed: number,
   player: OnlinePlayer,
   locals: Set<number>,
   mapFor: (seed: number) => Promise<TerrainMap>,
@@ -74,7 +75,7 @@ export async function joinOnline(
       lost = reason
     },
   })
-  const welcome = await client.connect(player.profile)
+  const welcome = await client.connect(player.profile, seed)
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
 

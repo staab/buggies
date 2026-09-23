@@ -12,13 +12,14 @@ pnpm dev
 
 That starts everything: the Vite client on port 5173 and the game server on port 8787, both
 reachable from other machines on the network. Every game is on the server: open the client, pick
-**1 player** or **2 players** on the first page of the menu, a vehicle each, and play. A second
-screen just opens the same URL. The page joins the server next to whichever address it was opened
-on; to point it elsewhere, set `VITE_SERVER_URL` when building or running the client (see
-`packages/client/.env.example`).
+**1 player** or **2 players** on the first page of the menu, an island by its seed (looking it
+over from above while you choose), a vehicle each, and play. Everyone who picks the same seed
+shares that island; each seed is a room of its own on the server, made when the first player
+asks for it and closed when the last leaves. A second screen just opens the same URL.
 
-The server chooses the island; set `SEED=42 pnpm --filter @buggies/server dev` for a particular
-one. `PORT` and `HOST` are honoured as well.
+The page joins the server next to whichever address it was opened on; to point it elsewhere, set
+`VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The
+server honours `PORT` and `HOST`.
 
 **2 players** puts two of you on one keyboard, side by side, each with their own seat on the
 server: the letters on the left (`W` `A` `S` `D`, `Space` handbrake, `Q` back to the road) and

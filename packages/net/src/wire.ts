@@ -25,7 +25,7 @@ import {
  * anything the wrong length is refused rather than read past.
  */
 
-export const HELLO_BYTES = 4
+export const HELLO_BYTES = 8
 export const WELCOME_BYTES = 15
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
@@ -38,6 +38,8 @@ export const SNAPSHOT_SPILLED_BYTES = 26
 export interface HelloMessage {
   protocolVersion: number
   profile: VehicleProfileId
+  /** Which island: the room to be seated in. */
+  seed: number
 }
 
 export interface WelcomeMessage {
@@ -208,11 +210,12 @@ function profileIndex(profile: VehicleProfileId): number {
   return VEHICLE_PROFILE_IDS.indexOf(profile)
 }
 
-export function encodeHello(profile: VehicleProfileId): Uint8Array {
+export function encodeHello(profile: VehicleProfileId, seed: number): Uint8Array {
   const writer = new Writer(HELLO_BYTES)
   writer.u8(CLIENT_HELLO)
   writer.u16(PROTOCOL_VERSION)
   writer.u8(profileIndex(profile))
+  writer.u32(seed)
   return writer.bytes
 }
 
@@ -222,7 +225,8 @@ export function decodeHello(payload: Uint8Array): HelloMessage | null {
   reader.u8()
   const protocolVersion = reader.u16()
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
-  return profile === undefined ? null : { protocolVersion, profile }
+  const seed = reader.u32()
+  return profile === undefined ? null : { protocolVersion, profile, seed }
 }
 
 export function encodeWelcome(message: WelcomeMessage): Uint8Array {

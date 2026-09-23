@@ -120,29 +120,40 @@ function defuse(arena: Arena): void {
 class Session {
   readonly clock = { tick: 0 }
   readonly server: GameServer
-  readonly arena: Arena
   readonly players: Player[] = []
   readonly events: string[] = []
 
   constructor() {
-    this.arena = createArena(map)
-    defuse(this.arena)
-    this.server = new GameServer(this.arena, {
+    this.server = new GameServer(
+      (seed) => {
+        const arena = createArena(seed === map.seed ? map : generateTerrain(seed, { size: 257 }))
+        defuse(arena)
+        return arena
+      },
+      {
       onJoined: (seat) => this.events.push(`joined ${seat.id}`),
       onLeft: (seat) => this.events.push(`left ${seat.id}`),
       onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
       onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
-    })
+      onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
+      onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
+      },
+    )
+  }
+
+  /** The server's arena for the map every test plays on. */
+  get arena(): Arena {
+    return this.server.roomFor(map.seed)!.arena
   }
 
   get nowMs(): number {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0): Promise<Player> {
+  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed): Promise<Player> {
     const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
     const client = new NetClient(wire.client, () => this.nowMs)
-    const welcoming = client.connect(profile)
+    const welcoming = client.connect(profile, seed)
     welcoming.catch(() => undefined)
     // The hello goes out once connect() has had a turn; then it has to get
     // there and the welcome has to come back. A refusal comes back the same way.
@@ -151,7 +162,7 @@ class Session {
       this.step([wire])
     }
     const welcome = await welcoming
-    const mirror = createArena(map)
+    const mirror = createArena(welcome.seed === map.seed ? map : generateTerrain(welcome.seed, { size: 257 }))
     defuse(mirror)
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
@@ -241,7 +252,7 @@ describe('a session', () => {
     const b = await session.join('raceCar')
     expect(a.client.welcome!.seat).not.toBe(b.client.welcome!.seat)
     expect(a.client.welcome!.seed).toBe(map.seed)
-    expect(session.events).toEqual(['joined 0', 'joined 1'])
+    expect(session.events).toEqual([`opened ${map.seed}`, 'joined 0', 'joined 1'])
 
     a.input.throttle = 1
     session.run(4)
@@ -428,4 +439,26 @@ describe('a session', () => {
     expect(session.events).toContain('rejected: server is full')
     session.dispose()
   }, 60_000)
+
+  it('seats players by seed, a room each, and closes a room behind the last to leave', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    const b = await session.join('tank', 0, map.seed + 1)
+    expect(session.server.roomCount).toBe(2)
+    expect(a.client.welcome!.seed).toBe(map.seed)
+    expect(b.client.welcome!.seed).toBe(map.seed + 1)
+    // Each is alone on their own island: the first seat of each.
+    expect(a.client.welcome!.seat).toBe(0)
+    expect(b.client.welcome!.seat).toBe(0)
+    session.run(0.5)
+    expect(a.client.playerCount).toBe(1)
+    expect(b.client.playerCount).toBe(1)
+    expect(session.events).toContain(`opened ${map.seed + 1}`)
+    // The other island goes when its only player does.
+    b.client.close('left')
+    session.run(0.2)
+    expect(session.server.roomCount).toBe(1)
+    expect(session.events).toContain(`closed ${map.seed + 1}`)
+    session.dispose()
+  }, 120_000)
 })
