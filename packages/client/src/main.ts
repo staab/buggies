@@ -6,6 +6,8 @@ import {
 } from '@buggies/game'
 import * as THREE from 'three'
 
+import './styles.css'
+
 import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
 import { Hud } from './hud.ts'

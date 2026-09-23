@@ -298,8 +298,10 @@ export class Sound {
     thump.stop(now + 0.8)
   }
 
-  /** A banana taken: a rising chime. */
-  chime(): void {
+  /** A banana taken, this far off: a rising chime. */
+  chime(distance = 0): void {
+    const loudness = earshot(distance)
+    if (loudness <= 0) return
     const { context } = this
     const now = context.currentTime
     CHIME.forEach((frequency, index) => {
@@ -312,7 +314,7 @@ export class Sound {
       overtone.frequency.value = frequency * 2
       const gain = context.createGain()
       gain.gain.setValueAtTime(0.0001, at)
-      gain.gain.exponentialRampToValueAtTime(0.25, at + 0.01)
+      gain.gain.exponentialRampToValueAtTime(0.25 * loudness, at + 0.01)
       gain.gain.exponentialRampToValueAtTime(0.001, at + 0.28)
       const soft = context.createGain()
       soft.gain.value = 0.25

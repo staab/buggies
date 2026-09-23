@@ -1,44 +1,28 @@
-import type { VehicleProfileId } from '@buggies/game'
 import type { LocalPrediction, PredictionUpdate, ReconcileOutcome, SendInput } from '@buggies/net'
 import type * as THREE from 'three'
 
-import { CarView } from './car-view.ts'
-import type { ChaseTarget } from './chase-camera.ts'
+import { CarPresence, type PresenceEffects } from './car-presence.ts'
 import type { MirrorCars } from './mirror-cars.ts'
-import { SmoothedBody } from './smoothed-body.ts'
 
 /**
- * The local car as drawn: it follows the predicted body, with each server
- * correction eased away rather than shown as a jump.
+ * The local car: the prediction that drives it, and its presence on the
+ * screen, which follows the predicted body with each server correction
+ * eased away rather than shown as a jump.
  */
 export class PredictedCar {
-  readonly object: THREE.Group
-
-  private readonly view: CarView
-  private readonly body: SmoothedBody
+  readonly presence: CarPresence
 
   constructor(
     private readonly prediction: LocalPrediction,
     private readonly send: SendInput,
-    profile: VehicleProfileId,
     color: number,
+    effects: PresenceEffects,
   ) {
-    this.view = new CarView(profile, color)
-    this.view.syncDimensions(prediction.tuning)
-    this.object = this.view.object
-    this.body = new SmoothedBody(prediction.vehicle.body, this.object)
+    this.presence = new CarPresence(prediction.ownSeat, color, effects)
   }
 
-  get speed(): number {
-    return this.prediction.vehicle.speed
-  }
-
-  get wrecked(): boolean {
-    return this.prediction.vehicle.wrecked
-  }
-
-  setWrecked(wrecked: boolean): void {
-    this.view.setWrecked(wrecked)
+  get object(): THREE.Group {
+    return this.presence.object
   }
 
   /**
@@ -47,31 +31,17 @@ export class PredictedCar {
    */
   tick(update: PredictionUpdate, others?: MirrorCars): ReconcileOutcome {
     const outcome = this.prediction.reconcile(update.newestSnapshot)
-    if (outcome === 'replayed') this.body.absorbCorrection()
-    if (outcome === 'resynced') this.body.snapToBody()
+    if (outcome === 'replayed') this.presence.body.absorbCorrection()
+    if (outcome === 'resynced') this.presence.body.snapToBody()
     others?.reconciled(outcome)
     this.prediction.advance(update, this.send)
-    this.body.captureStep()
+    this.presence.body.captureStep()
     others?.stepped()
     return outcome
   }
 
-  render(fraction: number, dt: number): void {
-    this.body.render(fraction, dt)
-    this.view.applySimulatedWheels(this.prediction.vehicle.wheels, this.prediction.tuning)
-  }
-
-  aim(target: ChaseTarget): void {
-    const { body, speed, wrecked } = this.prediction.vehicle
-    body.translation(target.position)
-    body.rotation(target.rotation)
-    body.linvel(target.velocity)
-    target.speed = speed
-    target.wrecked = wrecked
-  }
-
   dispose(): void {
-    this.view.dispose()
+    this.presence.dispose()
     this.prediction.dispose()
   }
 }

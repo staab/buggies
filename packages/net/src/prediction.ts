@@ -160,6 +160,11 @@ export class LocalPrediction {
     return this.seat.vehicle
   }
 
+  /** The local car's seat in the mirror. */
+  get ownSeat(): Seat {
+    return this.seat
+  }
+
   /**
    * Every seat of the mirror, other players' included: their cars are the
    * bodies the local car is driven against, run ahead from the last
