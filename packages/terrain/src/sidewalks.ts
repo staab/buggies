@@ -31,7 +31,8 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
     positions.push(x, y, z)
     return positions.length / 3 - 1
   }
-  // A quad wound so its normal points along `outward`.
+  // A quad wound so its normal points along `outward`. Its corners are vertices
+  // pushed above, so their positions are there to read.
   const quad = (a: number, b: number, c: number, d: number, outward: [number, number, number]): void => {
     const ax = positions[a * 3]!, ay = positions[a * 3 + 1]!, az = positions[a * 3 + 2]!
     const bx = positions[b * 3]!, by = positions[b * 3 + 1]!, bz = positions[b * 3 + 2]!
@@ -58,6 +59,7 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
       [-outer, -outer],
       [outer, -outer],
     ]
+    // Four corners, and the side after the last is the first.
     for (let side = 0; side < 4; side++) {
       if (!walk.sides[side]) continue
       const [u0, v0] = corners[side]!
@@ -68,7 +70,7 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
       // across the band and half a step either way along it, so the slab
       // never sinks into a rise between stations, and the stations share
       // their vertices so the slab runs smoothly rather than in steps.
-      const stations: number[][] = []
+      const stations: [number, number, number, number][] = []
       const reach = (2 * outer) / steps / 2
       for (let k = 0; k <= steps; k++) {
         const t = k / steps
@@ -95,9 +97,10 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
       }
       const mid = place(((u0 + u1) / 2) * (1 + scale) * 0.5, ((v0 + v1) / 2) * (1 + scale) * 0.5)
       const out: [number, number, number] = [mid.x - walk.x, 0, mid.z - walk.z]
-      for (let k = 0; k + 1 < stations.length; k++) {
-        const [ot, it, ob, ib] = stations[k]! as [number, number, number, number]
-        const [ot2, it2, ob2, ib2] = stations[k + 1]! as [number, number, number, number]
+      for (const [k, [ot, it, ob, ib]] of stations.entries()) {
+        const after = stations[k + 1]
+        if (after === undefined) break
+        const [ot2, it2, ob2, ib2] = after
         quad(ot, it, ot2, it2, [0, 1, 0])
         quad(ot, ot2, ob, ob2, out)
         quad(it, it2, ib, ib2, [-out[0], 0, -out[2]])

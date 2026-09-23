@@ -40,7 +40,7 @@ interface Burst {
 export class Explosions {
   readonly object = new THREE.Group()
 
-  private readonly bursts: Burst[] = []
+  private bursts: Burst[] = []
   private readonly piece = new THREE.BoxGeometry(0.5, 0.35, 0.5)
   private readonly ball = new THREE.SphereGeometry(1, 14, 10)
 
@@ -85,15 +85,16 @@ export class Explosions {
   }
 
   update(dt: number): void {
-    for (let b = this.bursts.length - 1; b >= 0; b--) {
-      const burst = this.bursts[b]!
+    const alive: Burst[] = []
+    for (const burst of this.bursts) {
       burst.age += dt
       const life = burst.age / LIFE
       if (life >= 1) {
         this.remove(burst)
-        this.bursts.splice(b, 1)
         continue
       }
+      alive.push(burst)
+      // The velocities and spins were made alongside the pieces, one each.
       for (const [i, mesh] of burst.pieces.entries()) {
         const velocity = burst.velocities[i]!
         const spin = burst.spins[i]!
@@ -116,6 +117,7 @@ export class Explosions {
       burst.cloudMaterial.color.copy(FIRE).lerp(SMOKE, Math.min(bloom * 1.4, 1))
       burst.cloudMaterial.opacity = 0.7 * (1 - bloom) * (1 - bloom)
     }
+    this.bursts = alive
   }
 
   dispose(): void {

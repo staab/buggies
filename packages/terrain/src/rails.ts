@@ -56,10 +56,11 @@ interface Frame {
   nz: number
 }
 
-/** Unit normal to a road at a sample, pointing to its left. */
+/** Unit normal to a road at one of its samples, pointing to its left. */
 function frameAt(road: Road, index: number): Frame {
   const { points } = road
   const count = points.length
+  // Both neighbours are within the road, wrapped round a loop or held at an end.
   const prev = points[road.closed ? (index - 1 + count) % count : Math.max(index - 1, 0)]!
   const next = points[road.closed ? (index + 1) % count : Math.min(index + 1, count - 1)]!
   const dx = next.x - prev.x
@@ -90,7 +91,11 @@ function beside(
  * along the rail from beyond, and no flare there.
  */
 function flared(points: RoadPoint[], side: number, atStart: boolean, atEnd: boolean): RoadPoint[] {
-  if (points.length < 2) return points
+  const first = points[0]
+  const second = points[1]
+  const last = points.at(-1)
+  const beforeLast = points.at(-2)
+  if (first === undefined || second === undefined || last === undefined || beforeLast === undefined) return points
   const flare = (from: RoadPoint, toward: RoadPoint, atStart: boolean): RoadPoint => {
     // Past `from`, away from `toward` along the run; and away from the road
     // across it, which is the run's own side of its direction of travel.
@@ -107,11 +112,7 @@ function flared(points: RoadPoint[], side: number, atStart: boolean, atEnd: bool
     const out = RAIL_FLARE * sin(RAIL_FLARE_ANGLE)
     return { x: from.x + ax * along + outX * out, y: from.y, z: from.z + az * along + outZ * out }
   }
-  return [
-    ...(atStart ? [flare(points[0]!, points[1]!, true)] : []),
-    ...points,
-    ...(atEnd ? [flare(points[points.length - 1]!, points[points.length - 2]!, false)] : []),
-  ]
+  return [...(atStart ? [flare(first, second, true)] : []), ...points, ...(atEnd ? [flare(last, beforeLast, false)] : [])]
 }
 
 function finished(road: Road, points: RoadPoint[], side: number, atStart: boolean, atEnd: boolean): RailRun {
@@ -120,7 +121,7 @@ function finished(road: Road, points: RoadPoint[], side: number, atStart: boolea
 
 /** Every run of guardrail on the map. */
 export function railRuns(roads: Road[]): RailRun[] {
-  const mouths = roads.filter((road) => road.kind === 'ramp').map((road) => road.points[0]!)
+  const mouths = roads.filter((road) => road.kind === 'ramp').flatMap((road) => road.points.slice(0, 1))
   const runs: RailRun[] = []
 
   for (const road of roads) {
@@ -129,6 +130,9 @@ export function railRuns(roads: Road[]): RailRun[] {
     const half = road.width / 2
     const lift = roadLift(road)
 
+    // A segment, its structure and its two points are all within the road:
+    // segments are counted from its points, and the last of a loop ends at
+    // the first. An edge is taken at one of those points.
     const railed = (segment: number, side: number): boolean => {
       const structure = road.structure[segment]!
       if (structure === ROAD_TUNNEL) return false
@@ -182,10 +186,10 @@ export function railRuns(roads: Road[]): RailRun[] {
 }
 
 /** Unit direction from a run's edge line in toward the road, at one of its points. */
-function inward(run: RailRun, index: number): { x: number; z: number } {
+function inward(run: RailRun, index: number, point: RoadPoint): { x: number; z: number } {
   const { points, side } = run
-  const prev = points[Math.max(index - 1, 0)]!
-  const next = points[Math.min(index + 1, points.length - 1)]!
+  const prev = points[index - 1] ?? point
+  const next = points[index + 1] ?? point
   const dx = next.x - prev.x
   const dz = next.z - prev.z
   const length = hypot(dx, dz) || 1
@@ -218,9 +222,8 @@ export function railMesh(runs: RailRun[]): RailMesh {
       else indices.push(a, b, c, b, d, c)
     }
     // Four corners per point: outer bottom, outer top, inner top, inner bottom.
-    for (let i = 0; i < points.length; i++) {
-      const point = points[i]!
-      const { x: inX, z: inZ } = inward(run, i)
+    for (const [i, point] of points.entries()) {
+      const { x: inX, z: inZ } = inward(run, i, point)
       const bottom = point.y + RAIL_BASE
       const top = point.y + RAIL_HEIGHT
       positions.push(

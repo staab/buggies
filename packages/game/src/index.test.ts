@@ -187,8 +187,11 @@ describe('game', () => {
     const before = { x: position.x, z: position.z, fx: forward.x, fz: forward.z }
     expect(Math.hypot(before.x - seat.spawn.position.x, before.z - seat.spawn.position.z)).toBeGreaterThan(60)
 
+    seat.vehicle.damage = 0.4
     respawnNearby(arena, seat)
     const after = seat.vehicle.frame
+    // Put back, not made new: the knocks it had come with it.
+    expect(seat.vehicle.damage).toBe(0.4)
     // Near where it was, not back at the start, on a road, still heading the same way.
     expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(15)
     expect(Math.hypot(after.position.x - seat.spawn.position.x, after.position.z - seat.spawn.position.z)).toBeGreaterThan(45)
@@ -250,6 +253,7 @@ describe('game', () => {
     const seat = solo(arena)
     run(arena, NEUTRAL_INPUT, 1)
     seat.vehicle.body.setTranslation({ x: -50, y: 20, z: -50 }, true)
+    seat.vehicle.damage = 0.6
 
     let brought = 0
     let landed = { x: 0, z: 0 }
@@ -260,6 +264,7 @@ describe('game', () => {
       if (back.length > 0) landed = { ...seat.vehicle.frame.position }
     }
     expect(brought).toBe(1)
+    expect(seat.vehicle.damage).toBe(0.6)
     // Back on the map, on the road nearest to where it went over the edge.
     const worldSize = map.size * map.cellSize
     expect(landed.x).toBeGreaterThan(0)

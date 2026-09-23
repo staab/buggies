@@ -45,6 +45,7 @@ export function sampleHeight(field: Heightfield, x: number, z: number): number {
   const tx = gx - col
   const tz = gz - row
 
+  // The column and row are clamped into the field, so all four corners are there.
   const top = heights[row * width + col]! * (1 - tx) + heights[row * width + col1]! * tx
   const bottom = heights[row1 * width + col]! * (1 - tx) + heights[row1 * width + col1]! * tx
   return top * (1 - tz) + bottom * tz

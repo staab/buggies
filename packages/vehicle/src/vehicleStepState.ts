@@ -14,6 +14,9 @@ export interface VehicleStepState {
   lastLinearVelocity: Vec3
   wrecked: boolean
   wheelSuspensionLength: [number, number, number, number]
+  /** Which tyres hold the ground at rest, and where each took hold. */
+  wheelHeld: [boolean, boolean, boolean, boolean]
+  wheelHoldPoint: [Vec3, Vec3, Vec3, Vec3]
   invertedRestTime: number
   selfRighting: boolean
   selfRightElapsed: number
@@ -31,6 +34,8 @@ export function createVehicleStepState(): VehicleStepState {
     lastLinearVelocity: v3(),
     wrecked: false,
     wheelSuspensionLength: [0, 0, 0, 0],
+    wheelHeld: [false, false, false, false],
+    wheelHoldPoint: [v3(), v3(), v3(), v3()],
     invertedRestTime: 0,
     selfRighting: false,
     selfRightElapsed: 0,
@@ -49,7 +54,11 @@ export function readVehicleStepState(out: VehicleStepState, vehicle: Vehicle): V
   out.damage = vehicle.damage
   vcopy(out.lastLinearVelocity, vehicle.lastLinearVelocity)
   out.wrecked = vehicle.wrecked
-  for (let i = 0; i < 4; i++) out.wheelSuspensionLength[i] = vehicle.wheels[i]!.suspensionLength
+  for (const [i, wheel] of vehicle.wheels.entries()) {
+    out.wheelSuspensionLength[i] = wheel.suspensionLength
+    out.wheelHeld[i] = wheel.held
+    vcopy(out.wheelHoldPoint[i]!, wheel.holdPoint)
+  }
   out.invertedRestTime = vehicle.invertedRestTime
   out.selfRighting = vehicle.selfRighting
   out.selfRightElapsed = vehicle.selfRightElapsed
@@ -74,7 +83,11 @@ export function writeVehicleStepState(vehicle: Vehicle, state: VehicleStepState)
   vehicle.damage = state.damage
   vcopy(vehicle.lastLinearVelocity, state.lastLinearVelocity)
   vehicle.wrecked = state.wrecked
-  for (let i = 0; i < 4; i++) vehicle.wheels[i]!.suspensionLength = state.wheelSuspensionLength[i]!
+  for (const [i, wheel] of vehicle.wheels.entries()) {
+    wheel.suspensionLength = state.wheelSuspensionLength[i]!
+    wheel.held = state.wheelHeld[i]!
+    vcopy(wheel.holdPoint, state.wheelHoldPoint[i]!)
+  }
   vehicle.invertedRestTime = state.invertedRestTime
   vehicle.selfRighting = state.selfRighting
   vehicle.selfRightElapsed = state.selfRightElapsed

@@ -7,6 +7,8 @@
  */
 
 import * as exact from '@buggies/physics'
+
+import { at } from './at.ts'
 import { RIVER_BANK_LAP } from './rivers.ts'
 import type { District, Heightfield, Lake, River, Road, RoadPoint } from './types.ts'
 import { buildArterials } from './roads/arterials.ts'
@@ -156,11 +158,11 @@ export function generateRoads(
     return ground <= seaLevel ? { wet: true, level: seaLevel } : { wet: false, level: ground }
   }
 
+  // Everything below is one value a sample, read by a sample's index: none of it comes back empty.
   const ground = new Float32Array(count)
   const wet = new Uint8Array(count)
   const surface = new Float32Array(count)
-  for (let i = 0; i < count; i++) {
-    const point = samples[i]!
+  for (const [i, point] of samples.entries()) {
     ground[i] = sampleTerrain(field, point.x, point.z)
     const water = surfaceAt(point.x, point.z)
     wet[i] = water.wet ? 1 : 0
@@ -204,7 +206,7 @@ export function generateRoads(
   for (let pass = 0; pass < 20; pass++) {
     let raised = false
     for (const { index: c, cross } of crossings) {
-      const required = cross.heights[cross.centerIndex]! + UNDERPASS_CLEARANCE
+      const required = at(cross.heights, cross.centerIndex, 'cross road centre') + UNDERPASS_CLEARANCE
       for (let j = -bridgeSteps; j <= bridgeSteps; j++) {
         const k = (c + j + count) % count
         if (profile[k]! < required) {
@@ -242,7 +244,7 @@ export function generateRoads(
 
   const built = crossings.filter(({ index, cross }) => {
     if (kind[index] === KIND_TUNNEL) return false
-    if (profile[index]! - cross.heights[cross.centerIndex]! < UNDERPASS_CLEARANCE - 0.5) return false
+    if (profile[index]! - at(cross.heights, cross.centerIndex, 'cross road centre') < UNDERPASS_CLEARANCE - 0.5) return false
     // A ramp lands ROAD_SURFACE below the cross road's centreline, on its ground.
     const drop =
       profile[index]! +

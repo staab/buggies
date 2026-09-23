@@ -150,27 +150,29 @@ function nodesNamed(root: THREE.Object3D, matches: (name: string) => boolean): T
 function splitAcross(geometry: THREE.BufferGeometry): [left: THREE.BufferGeometry, right: THREE.BufferGeometry] {
   const source = geometry.index === null ? geometry : geometry.toNonIndexed()
   const position = source.getAttribute('position')
-  const sides: number[][] = [[], []]
+  const left: number[] = []
+  const right: number[] = []
   for (let vertex = 0; vertex < position.count; vertex += 3) {
     const centre = position.getX(vertex) + position.getX(vertex + 1) + position.getX(vertex + 2)
-    sides[centre < 0 ? 0 : 1]!.push(vertex, vertex + 1, vertex + 2)
+    ;(centre < 0 ? left : right).push(vertex, vertex + 1, vertex + 2)
   }
-  const halves = sides.map((vertices) => {
-    const half = new THREE.BufferGeometry()
+  const half = (vertices: number[]): THREE.BufferGeometry => {
+    const built = new THREE.BufferGeometry()
     for (const [name, attribute] of Object.entries(source.attributes)) {
       const from = attribute as THREE.BufferAttribute
       const itemSize = from.itemSize
       const array = new Float32Array(vertices.length * itemSize)
       vertices.forEach((vertex, at) => {
+        // Every vertex is one of the source's, so its components are there.
         for (let component = 0; component < itemSize; component++) {
           array[at * itemSize + component] = from.array[vertex * itemSize + component]!
         }
       })
-      half.setAttribute(name, new THREE.BufferAttribute(array, itemSize, from.normalized))
+      built.setAttribute(name, new THREE.BufferAttribute(array, itemSize, from.normalized))
     }
-    return half
-  })
-  return [halves[0]!, halves[1]!]
+    return built
+  }
+  return [half(left), half(right)]
 }
 
 /** The meshes under a wheel node, their geometry baked into the chassis frame. */
@@ -190,6 +192,7 @@ function bakeWheelMeshes(node: THREE.Object3D, toChassis: THREE.Matrix4): THREE.
 function wheelFrom(meshes: THREE.Mesh[]): Omit<WheelTemplate, 'isFront' | 'isLeft'> {
   const box = new THREE.Box3()
   for (const mesh of meshes) {
+    // Just computed, so it is there.
     mesh.geometry.computeBoundingBox()
     box.union(mesh.geometry.boundingBox!)
   }
@@ -237,13 +240,14 @@ export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: V
     const meshes = bakeWheelMeshes(node, toChassis)
     const box = new THREE.Box3()
     for (const mesh of meshes) {
+      // Just computed, so it is there.
       mesh.geometry.computeBoundingBox()
       box.union(mesh.geometry.boundingBox!)
     }
     if (box.max.x - box.min.x > AXLE_ASPECT * (box.max.y - box.min.y)) {
-      const sides = meshes.map((mesh) => splitAcross(mesh.geometry))
-      loose.push(wheelFrom(sides.map(([left], at) => new THREE.Mesh(left, meshes[at]!.material))))
-      loose.push(wheelFrom(sides.map(([, right], at) => new THREE.Mesh(right, meshes[at]!.material))))
+      const sides = meshes.map((mesh) => ({ material: mesh.material, halves: splitAcross(mesh.geometry) }))
+      loose.push(wheelFrom(sides.map(({ material, halves: [left] }) => new THREE.Mesh(left, material))))
+      loose.push(wheelFrom(sides.map(({ material, halves: [, right] }) => new THREE.Mesh(right, material))))
       for (const mesh of meshes) mesh.geometry.dispose()
     } else {
       loose.push(wheelFrom(meshes))

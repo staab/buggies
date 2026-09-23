@@ -87,6 +87,7 @@ export {
   SPILL_MOST,
   SPILL_MOST_OUT,
   SPILL_NEAR,
+  SPILLED_IDS,
   pickupOut,
   pickupSeed,
   pickupSpot,
@@ -112,6 +113,7 @@ import {
   PICKUP_RESPAWN_TICKS,
   SPILL_MOST,
   SPILL_MOST_OUT,
+  SPILLED_IDS,
   type Pickup,
   type Spilled,
 } from './pickups.ts'
@@ -163,18 +165,21 @@ export interface Arena {
   readonly pickups: readonly Pickup[]
   /** Bananas spilled from wrecks, lying about until taken. Replaced whole by the server's word. */
   spilled: Spilled[]
+  /** The number the next banana spilled gets. */
+  spilledNext: number
   tick: number
 }
 
+/** A sample of a road: the point, and where along the road it is. */
 interface RoadSpot {
   road: Road
   index: number
+  point: RoadPoint
 }
 
 function spawnAt(spot: RoadSpot): VehicleSpawn {
-  const { road, index } = spot
+  const { road, index, point } = spot
   const count = road.points.length
-  const point = road.points[index]!
   const ahead = road.points[Math.min(index + FACING_REACH, count - 1)] ?? point
   return {
     position: { x: point.x, y: point.y + roadLift(road), z: point.z },
@@ -185,11 +190,11 @@ function spawnAt(spot: RoadSpot): VehicleSpawn {
 
 /** A spawn at a spot, facing whichever way along the road is nearer to `forward`. */
 function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): VehicleSpawn {
-  const { road, index } = spot
+  const { road, index, point } = spot
   const count = road.points.length
+  // Wrapped round a loop or held at an end, so always one of the road's points.
   const at = (i: number): RoadPoint =>
     road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
-  const point = at(index)
   const ahead = at(index + FACING_REACH)
   const behind = at(index - FACING_REACH)
   let dx = ahead.x - point.x
@@ -212,13 +217,13 @@ function nearestRoadSpotTo(map: TerrainMap, x: number, z: number): RoadSpot | nu
   for (const road of map.roads) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    for (let i = 0; i < segmentCount; i++) {
+    for (const [i, point] of road.points.entries()) {
+      if (i >= segmentCount) break
       if (road.structure[i] === ROAD_TUNNEL) continue
-      const point = road.points[i]!
       const distance = hypot(point.x - x, point.z - z)
       if (distance >= bestDistance) continue
       bestDistance = distance
-      best = { road, index: i }
+      best = { road, index: i, point }
     }
   }
   return best
@@ -245,13 +250,13 @@ function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
   for (const road of roads) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    for (let i = 0; i < segmentCount; i++) {
+    for (const [i, point] of road.points.entries()) {
+      if (i >= segmentCount) break
       if (road.structure[i] !== ROAD_GRADE) continue
-      const point = road.points[i]!
       const distance = hypot(point.x - targetX, point.z - targetZ)
       if (distance >= bestDistance) continue
       bestDistance = distance
-      best = { road, index: i }
+      best = { road, index: i, point }
     }
   }
   return best
@@ -268,16 +273,18 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
   const spots: RoadSpot[] = []
   let travelled = 0
   let index = from.index
+  let point = from.point
   while (spots.length < wanted) {
     const next = index + step
     if (next < 0 || next >= segmentCount) break
     if (road.structure[Math.min(index, next)] !== ROAD_GRADE) break
-    const a = road.points[index]!
-    const b = road.points[next]!
-    travelled += hypot(b.x - a.x, b.z - a.z)
+    const ahead = road.points[next]
+    if (ahead === undefined) break
+    travelled += hypot(ahead.x - point.x, ahead.z - point.z)
     index = next
+    point = ahead
     if (travelled < spacing) continue
-    spots.push({ road, index })
+    spots.push({ road, index, point })
     travelled = 0
   }
   return spots
@@ -306,7 +313,7 @@ export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
   spots.push(...spotsAlong(first, SPAWN_SPACING, 1, count - spots.length))
   // A road too short for the field stacks the rest on its last spot rather
   // than leaving seats with nowhere to be.
-  while (spots.length < count) spots.push(spots[spots.length - 1]!)
+  while (spots.length < count) spots.push(spots.at(-1) ?? first)
   return spots.map(spawnAt)
 }
 
@@ -341,7 +348,17 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
   world.step()
 
   const water = buildWaterLevels(map)
-  return { map, world, worldTuning, seats, water, pickups: createPickups(map, water), spilled: [], tick: 0 }
+  return {
+    map,
+    world,
+    worldTuning,
+    seats,
+    water,
+    pickups: createPickups(map, water),
+    spilled: [],
+    spilledNext: 0,
+    tick: 0,
+  }
 }
 
 function nextEpoch(epoch: number): number {
@@ -362,7 +379,11 @@ function reshape(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
 
 /** Put a vehicle back on its spawn, or another, at rest, and count the reset. */
 export function respawn(seat: Seat, spawn: VehicleSpawn = seat.spawn): void {
+  // A wreck comes back whole; a car only put back, out of the water or
+  // onto the road, keeps the knocks it had.
+  const { damage, wrecked } = seat.vehicle
   resetVehicle(seat.vehicle, spawn)
+  if (!wrecked) seat.vehicle.damage = damage
   seat.epoch = nextEpoch(seat.epoch)
   seat.submersion = 0
   seat.lostTicks = 0
@@ -462,7 +483,10 @@ function spillBananas(arena: Arena): void {
   for (const seat of arena.seats) {
     if (!seat.occupied || !seat.vehicle.wrecked || seat.score === 0) continue
     const count = Math.min(seat.score, SPILL_MOST)
-    arena.spilled.push(...spillFrom(arena.map, seat.vehicle.frame.position, count, seat.id, arena.tick))
+    arena.spilled.push(
+      ...spillFrom(arena.map, seat.vehicle.frame.position, count, seat.id, arena.tick, arena.spilledNext),
+    )
+    arena.spilledNext = (arena.spilledNext + count) % SPILLED_IDS
     seat.score = 0
   }
   if (arena.spilled.length > SPILL_MOST_OUT) arena.spilled.splice(0, arena.spilled.length - SPILL_MOST_OUT)
@@ -483,7 +507,8 @@ function collectPickups(arena: Arena): void {
       break
     }
   }
-  // Spilled bananas go the same way, or fade if nobody comes for them.
+  // Spilled bananas go the same way, or fade if nobody comes for them. Walked
+  // from the end, so taking one out moves nothing still to come, and i stays within the list.
   for (let i = arena.spilled.length - 1; i >= 0; i--) {
     const spilled = arena.spilled[i]!
     if (spilledGone(spilled, arena.tick)) {

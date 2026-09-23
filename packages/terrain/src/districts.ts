@@ -50,7 +50,10 @@ const MAX_SITES = 64
 const FILL_SPACING_FRACTION = 0.6
 const DISTRICT_SALT = 0x5d15
 
-/** Greatest height change from a cell to its four neighbours, scaled to world units. */
+/**
+ * Greatest height change from a cell to its four neighbours, scaled to world
+ * units. Each neighbour is read only once it is known to be within the field.
+ */
 function neighbourSlope(field: Heightfield): Float32Array {
   const { width, depth, cellSize, heights } = field
   const slope = new Float32Array(width * depth)
@@ -71,7 +74,10 @@ function neighbourSlope(field: Heightfield): Float32Array {
   return slope
 }
 
-/** Separable box blur with clamped edges, over a square window. */
+/**
+ * Separable box blur with clamped edges, over a square window. The clamp
+ * keeps every read within its row, or its column, so none comes back empty.
+ */
 function boxBlur(source: Float32Array, width: number, depth: number, radius: number): Float32Array {
   const clamp = (value: number, limit: number): number =>
     value < 0 ? 0 : value >= limit ? limit - 1 : value
@@ -166,6 +172,7 @@ function triangleScore(
   if (Math.min(ab, bc, ca) < MIN_TRIANGLE_SIDE) return -Infinity
   const deviation = Math.max(...triangleAngles(bc, ca, ab).map((angle) => Math.abs(angle - 60)))
   if (deviation > MAX_ANGLE_DEVIATION) return -Infinity
+  // The cells are sites, which are cells of the field the level covers.
   return level[cells[0]]! + level[cells[1]]! + level[cells[2]]!
 }
 
@@ -180,6 +187,7 @@ function bestTriangle(
   const points = sites.map((cell) => cellCenter(cell, width, cellSize))
   let best: [number, number, number] | null = null
   let bestScore = -Infinity
+  // i, j and k all run within the sites, and the points were made from them one for one.
   for (let i = 0; i < sites.length; i++) {
     for (let j = i + 1; j < sites.length; j++) {
       for (let k = j + 1; k < sites.length; k++) {
@@ -212,6 +220,7 @@ export function generateDistricts(
 ): DistrictMap {
   const { width, depth, cellSize, heights } = field
   const count = width * depth
+  // Every field read below has a value a cell, and cells run up to the count.
   const slope = neighbourSlope(field)
   const grade = boxBlur(slope, width, depth, RELIEF_RADIUS)
 
@@ -331,28 +340,27 @@ export function generateDistricts(
 
     const x = ((cell % width) + 0.5) * cellSize
     const z = (((cell / width) | 0) + 0.5) * cellSize
-    let nearest = -1
+    let district: District | null = null
     let nearestSq = Infinity
-    for (const district of districts) {
-      const dx = x - district.cx
-      const dz = z - district.cz
+    for (const candidate of districts) {
+      const dx = x - candidate.cx
+      const dz = z - candidate.cz
       const distanceSq = dx * dx + dz * dz
       if (distanceSq < nearestSq) {
         nearestSq = distanceSq
-        nearest = district.id
+        district = candidate
       }
     }
-    if (nearest < 0) continue
+    if (district === null) continue
 
-    const district = districts[nearest]!
     const distance = Math.sqrt(nearestSq)
     if (distance <= district.radius) {
       districtOf[cell] = DISTRICT_CITY
-      owner[cell] = nearest
+      owner[cell] = district.id
       district.area++
     } else if (distance <= district.radius + district.suburbWidth) {
       districtOf[cell] = DISTRICT_SUBURB
-      owner[cell] = nearest
+      owner[cell] = district.id
       district.area++
     }
   }
@@ -374,8 +382,7 @@ export function generateDistricts(
       const component: number[] = []
       const stack = [start]
       visited.add(start)
-      while (stack.length > 0) {
-        const cell = stack.pop()!
+      for (let cell = stack.pop(); cell !== undefined; cell = stack.pop()) {
         component.push(cell)
         const col = cell % width
         const row = (cell / width) | 0

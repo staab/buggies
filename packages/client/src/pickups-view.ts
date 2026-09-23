@@ -124,7 +124,7 @@ export class PickupField {
   private readonly seen: number[]
   private readonly wasOut: boolean[]
   private readonly lastPositions: THREE.Vector3[]
-  private readonly pops: Pop[] = []
+  private pops: Pop[] = []
   private time = 0
 
   constructor(source: PickupSource) {
@@ -152,6 +152,7 @@ export class PickupField {
   update(dt: number): void {
     this.time += dt
     const { pickups, tick } = this.source
+    // What is remembered a slot was made with the field, one a slot.
     for (const [slot, pickup] of pickups.entries()) {
       const out = pickupOut(pickup, tick)
       // A slot moving on to its next banana means this one was taken.
@@ -261,20 +262,21 @@ export class PickupField {
   }
 
   private updatePops(dt: number): void {
-    for (let p = this.pops.length - 1; p >= 0; p--) {
-      const pop = this.pops[p]!
+    const alive: Pop[] = []
+    for (const pop of this.pops) {
       pop.age += dt
       const life = pop.age / POP_LIFE
       if (life >= 1) {
         this.remove(pop)
-        this.pops.splice(p, 1)
         continue
       }
+      alive.push(pop)
       // The banana leaps, spins, and is gone.
       pop.banana.position.y = POP_RISE * (1 - (1 - life) * (1 - life))
       pop.banana.rotation.y += POP_SPIN * dt
       pop.banana.scale.setScalar(Math.max(1 - life * 1.3, 0))
       pop.bananaMaterial.opacity = Math.max(1 - life * 1.3, 0)
+      // The velocities were made alongside the sparks, one each.
       for (const [i, spark] of pop.sparks.entries()) {
         const velocity = pop.velocities[i]!
         velocity.y -= SPARK_GRAVITY * dt
@@ -288,6 +290,7 @@ export class PickupField {
       pop.ring.scale.setScalar(0.3 + RING_RADIUS * spread)
       pop.ringMaterial.opacity = 0.8 * (1 - spread) * (1 - spread)
     }
+    this.pops = alive
   }
 
   private remove(pop: Pop): void {

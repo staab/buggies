@@ -54,11 +54,14 @@ export function pickupSeed(mapSeed: number, slot: number, generation: number): n
   return (Math.imul(mapSeed, 0x9e3779b1) ^ Math.imul(slot + 1, 0x85ebca6b) ^ Math.imul(generation + 1, 0xc2b2ae35)) >>> 0
 }
 
-function roadSpot(map: TerrainMap, rng: () => number, out: Vec3): Vec3 {
-  const road = map.roads[Math.floor(rng() * map.roads.length)]!
+/** A spot on one of the map's roads, chosen by the rng; none if the road it chose has no points. */
+function roadSpot(map: TerrainMap, rng: () => number, out: Vec3): Vec3 | null {
+  const road = map.roads[Math.floor(rng() * map.roads.length)]
+  if (road === undefined) return null
   const count = road.points.length
   const at = Math.floor(rng() * count)
-  const point = road.points[at]!
+  const point = road.points[at]
+  if (point === undefined) return null
   const next = road.points[road.closed ? (at + 1) % count : Math.min(at + 1, count - 1)] ?? point
   const prior = road.points[road.closed ? (at - 1 + count) % count : Math.max(at - 1, 0)] ?? point
   const dx = next.x - prior.x
@@ -79,7 +82,10 @@ function roadSpot(map: TerrainMap, rng: () => number, out: Vec3): Vec3 {
 export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, generation: number, out: Vec3 = v3()): Vec3 {
   const rng = createRng(pickupSeed(map.seed, slot, generation))
   const onRoad = map.roads.length > 0 && rng() < ON_ROADS
-  if (onRoad) return roadSpot(map, rng, out)
+  if (onRoad) {
+    const spot = roadSpot(map, rng, out)
+    if (spot !== null) return spot
+  }
   const extent = map.size * map.cellSize
   for (let attempt = 0; attempt < LAND_TRIES; attempt++) {
     const x = LAND_MARGIN + rng() * (extent - 2 * LAND_MARGIN)
@@ -90,7 +96,10 @@ export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, g
     out.z = z
     return out
   }
-  if (map.roads.length > 0) return roadSpot(map, rng, out)
+  if (map.roads.length > 0) {
+    const spot = roadSpot(map, rng, out)
+    if (spot !== null) return spot
+  }
   out.x = extent / 2
   out.y = sampleHeight(map.heightfield, extent / 2, extent / 2) + PICKUP_HEIGHT
   out.z = extent / 2
@@ -148,11 +157,16 @@ export const SPILL_LIFE_TICKS = 60 * 90
 /** How many spilled bananas a map holds at once; past that the oldest go. */
 export const SPILL_MOST_OUT = 120
 
+/** Spilled bananas are numbered as they come, and the numbers come round after this many: far more than are ever out at once. */
+export const SPILLED_IDS = 0x10000
+
 /**
  * A banana spilled from a wreck: thrown from where the car blew up to
  * where it lands, to lie there for the taking until it is taken or fades.
  */
 export interface Spilled {
+  /** Its number, by which it is spoken of on the wire; no two out at once share one. */
+  readonly id: number
   readonly from: Vec3
   readonly position: Vec3
   readonly bornTick: number
@@ -169,6 +183,7 @@ export function spillFrom(
   count: number,
   seat: number,
   tick: number,
+  firstId: number,
 ): Spilled[] {
   const rng = createRng(pickupSeed(map.seed, PICKUP_SLOTS + seat, tick))
   const spilled: Spilled[] = []
@@ -178,7 +193,12 @@ export function spillFrom(
     const radius = SPILL_NEAR + rng() * (SPILL_FAR - SPILL_NEAR)
     const x = from.x + cos(angle) * radius
     const z = from.z + sin(angle) * radius
-    spilled.push({ from: origin, position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z), bornTick: tick })
+    spilled.push({
+      id: (firstId + i) % SPILLED_IDS,
+      from: origin,
+      position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z),
+      bornTick: tick,
+    })
   }
   return spilled
 }

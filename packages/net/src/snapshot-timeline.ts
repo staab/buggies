@@ -115,7 +115,11 @@ export class SnapshotTimeline {
 
     // Kept in server order, wherever it arrived in the queue.
     let index = this.buffer.length
-    while (index > 0 && this.buffer[index - 1]!.serverTimeMs > serverTimeMs) index -= 1
+    while (index > 0) {
+      const before = this.buffer[index - 1]
+      if (before === undefined || before.serverTimeMs <= serverTimeMs) break
+      index -= 1
+    }
     this.buffer.splice(index, 0, { serverTimeMs, vehicles: snapshot.vehicles, bySeat })
     while (this.buffer.length > MAX_BUFFERED_SNAPSHOTS) this.buffer.shift()
   }
@@ -139,17 +143,18 @@ export class SnapshotTimeline {
   /** Every vehicle the server has told us about, where it was a moment ago. */
   sample(nowMs: number): readonly VehicleRenderState[] {
     this.view.length = 0
-    if (this.buffer.length === 0) return this.view
+    const oldest = this.buffer[0]
+    const newest = this.buffer.at(-1)
+    if (oldest === undefined || newest === undefined) return this.view
 
     const renderTimeMs = this.renderServerTimeMs(nowMs)
-    const oldest = this.buffer[0]!
-    const newest = this.buffer[this.buffer.length - 1]!
 
     if (renderTimeMs >= newest.serverTimeMs) {
       this.emit(newest.vehicles)
     } else if (renderTimeMs <= oldest.serverTimeMs) {
       this.emit(oldest.vehicles)
     } else {
+      // Kept between the oldest and the newest, so it and the one before are both there.
       let newerIndex = 1
       while (
         newerIndex < this.buffer.length - 1 &&

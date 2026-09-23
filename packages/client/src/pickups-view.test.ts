@@ -83,7 +83,7 @@ describe('bananas as drawn', () => {
   })
 
   it('fling spilled bananas out of the blast in an arc, lie them where they land, and pop them when taken', () => {
-    const spilled: Spilled[] = [{ from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 }]
+    const spilled: Spilled[] = [{ id: 1, from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 }]
     const source = { pickups: pickups(0), spilled, tick: 100 + SPILL_FLIGHT_TICKS / 2 }
     const field = new PickupField(source)
     const loose = field.object.children[1] as THREE.InstancedMesh
@@ -109,7 +109,7 @@ describe('bananas as drawn', () => {
     expect(field.popping).toBe(1)
     field.update(POP_LIFE)
     // Gone at its time: faded, no pop.
-    spilled.push({ from: { x: 0, y: 2, z: 0 }, position: { x: -8, y: 3, z: 4 }, bornTick: 100 })
+    spilled.push({ id: 2, from: { x: 0, y: 2, z: 0 }, position: { x: -8, y: 3, z: 4 }, bornTick: 100 })
     field.update(0.1)
     source.tick = 100 + SPILL_LIFE_TICKS
     spilled.length = 0

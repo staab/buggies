@@ -16,7 +16,14 @@ import { Shell } from './shell.ts'
 import { Sun } from './sun.ts'
 import { TerrainSource } from './terrain-source.ts'
 
-const container = document.getElementById('app')!
+/** An element the page is built with: not there, and nothing else can be. */
+function element(id: string): HTMLElement {
+  const found = document.getElementById(id)
+  if (found === null) throw new Error(`the page has no #${id}`)
+  return found
+}
+
+const container = element('app')
 const sound = new Sound()
 // Browsers hold sound back until the player has done something.
 for (const gesture of ['pointerdown', 'keydown'] as const) {
@@ -94,12 +101,12 @@ const shell = new Shell(
     scene,
     container,
     // One HUD a viewport: the left, or only, and the right of a split screen.
-    huds: [new Hud(document.getElementById('hud')!), new Hud(document.getElementById('hud-right')!)],
+    huds: [new Hud(element('hud')), new Hud(element('hud-right'))],
     sound,
     sun,
     islands: new TerrainSource(),
     server: serverUrl(),
-    createMenu: (host, choice) => new Menu(document.getElementById('menu')!, choice, host),
+    createMenu: (host, choice) => new Menu(element('menu'), choice, host),
     settle,
   },
   readChoice(),

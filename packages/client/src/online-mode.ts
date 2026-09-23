@@ -83,7 +83,7 @@ export async function joinOnline(
   // can be driven here the instant a key goes down.
   const mirror = createArena(map)
   takeSeat(mirror, welcome.seat, welcome.profile)
-  const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick)
+  const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
 
   const root = new THREE.Group()
   scene.add(root)

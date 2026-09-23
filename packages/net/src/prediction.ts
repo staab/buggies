@@ -20,6 +20,7 @@ import {
 } from '@buggies/game'
 import { quat, v3, vcopy, vlength, vsub, type Quat, type Vec3 } from '@buggies/physics'
 
+import type { BananaLedger } from './ledger.ts'
 import { INPUT_TIMELINE_TICKS } from './protocol.ts'
 import type { SnapshotMessage } from './wire.ts'
 
@@ -79,6 +80,7 @@ class PredictionHistory {
     for (const frame of this.frames) frame.tick = NO_TICK_RECORDED
   }
 
+  /** The frames are a ring of HISTORY_TICKS, so every tick has one. */
   private slotFor(tick: number): PredictionFrame {
     return this.frames[tick % HISTORY_TICKS]!
   }
@@ -137,6 +139,7 @@ export class LocalPrediction {
 
   private readonly mirror: Arena
   private readonly seat: Seat
+  private readonly bananas: BananaLedger
   private readonly history = new PredictionHistory()
   private readonly appliedInputs = new Map<number, VehicleInput>()
   private readonly lastSentInput = createVehicleInput()
@@ -147,9 +150,13 @@ export class LocalPrediction {
   private reconciledThroughTick: number
   private newestSnapshot: SnapshotMessage | null = null
 
-  constructor(mirror: Arena, seat: number, epoch: number, tick: number) {
+  /** The ledger is the client's: the bananas as the server has told of them so far. */
+  constructor(mirror: Arena, seat: number, epoch: number, tick: number, bananas: BananaLedger) {
     this.mirror = mirror
-    this.seat = mirror.seats[seat]!
+    const own = mirror.seats[seat]
+    if (own === undefined) throw new Error(`the mirror has no seat ${seat}`)
+    this.seat = own
+    this.bananas = bananas
     this.epoch = epoch
     mirror.tick = tick
     this.reconciledThroughTick = tick
@@ -290,10 +297,11 @@ export class LocalPrediction {
    * replay. The run is bounded so that a wild clock cannot stall a frame.
    */
   private restartFrom(snapshot: SnapshotMessage, throughTick: number, fresh: boolean): void {
-    this.writeSnapshotBodies(snapshot)
     // A car the server has just put back has had its steering and timers
-    // reset too, not only its pose.
+    // reset too, not only its pose; the knocks it kept are the snapshot's
+    // to say, which is why it comes after.
     if (fresh) writeVehicleStepState(this.seat.vehicle, createVehicleStepState())
+    this.writeSnapshotBodies(snapshot)
     const from = Math.max(snapshot.tick, throughTick - MAX_REPLAY_TICKS)
     this.mirror.tick = from
     this.history.forget()
@@ -333,16 +341,15 @@ export class LocalPrediction {
       seat.vehicle.wrecked = vehicle.wrecked
       seat.score = vehicle.score
     }
+    // The bananas are the server's word alone: whatever the mirror took or
+    // spilled since is put back as the server has it, to be taken again in
+    // the replay if it was right.
     const { map, water } = this.mirror
-    for (const [slot, pickup] of snapshot.pickups.entries()) {
+    this.bananas.pickups.forEach((known, slot) => {
       const mine = this.mirror.pickups[slot]
-      if (mine !== undefined) setPickup(map, water, mine, slot, pickup.generation, snapshot.tick + pickup.ticksUntilOut)
-    }
-    this.mirror.spilled = snapshot.spilled.map((spilled) => ({
-      from: { ...spilled.from },
-      position: { ...spilled.position },
-      bornTick: snapshot.tick - spilled.age,
-    }))
+      if (mine !== undefined) setPickup(map, water, mine, slot, known.generation, known.spawnTick)
+    })
+    this.mirror.spilled = this.bananas.spilled.slice()
   }
 
   /** Whoever the server has on the map, the mirror has too, in the same car. */

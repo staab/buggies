@@ -79,23 +79,28 @@ function vehicleKey(step: Step): 'vehicle' | 'vehicle2' {
   return step === 'car2' ? 'vehicle2' : 'vehicle'
 }
 
+function span(className: string, text: string): HTMLSpanElement {
+  const element = document.createElement('span')
+  element.className = className
+  element.textContent = text
+  return element
+}
+
 function card(name: string, note: string): HTMLButtonElement {
   const button = document.createElement('button')
   button.type = 'button'
-  button.innerHTML = `<span class="name"></span><span class="note"></span>`
-  button.querySelector('.name')!.textContent = name
-  button.querySelector('.note')!.textContent = note
+  button.append(span('name', name), span('note', note))
   return button
 }
 
-function group(label: string): [HTMLFieldSetElement, HTMLDivElement] {
+function group(label: string): [HTMLFieldSetElement, HTMLDivElement, HTMLLegendElement] {
   const fieldset = document.createElement('fieldset')
   const legend = document.createElement('legend')
   legend.textContent = label
   const cards = document.createElement('div')
   cards.className = 'cards'
   fieldset.append(legend, cards)
-  return [fieldset, cards]
+  return [fieldset, cards, legend]
 }
 
 /** A text field that keeps its keystrokes to itself: the game is listening too. */
@@ -199,8 +204,8 @@ export class Menu {
 
     // Page three, and with two players four: the vehicle, turning on the
     // spot beside the panel. One page serves both drivers in turn.
-    const [vehicleGroup, vehicleCards] = group('Vehicle')
-    this.vehicleLegend = vehicleGroup.querySelector('legend')!
+    const [vehicleGroup, vehicleCards, vehicleLegend] = group('Vehicle')
+    this.vehicleLegend = vehicleLegend
     for (const vehicle of VEHICLE_PROFILE_IDS) {
       const button = card(VEHICLE_PROFILE_LABELS[vehicle], VEHICLE_NOTES[vehicle])
       button.addEventListener('click', () => {

@@ -26,7 +26,7 @@ const SEAT_COLORS = [
 ]
 
 export function seatColor(seat: number): number {
-  return SEAT_COLORS[seat % SEAT_COLORS.length]!
+  return SEAT_COLORS[seat % SEAT_COLORS.length] ?? PLAYER_BODY_COLOR
 }
 
 /** A colour each, for when a vehicle has to be drawn as boxes. */

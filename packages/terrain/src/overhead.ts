@@ -30,6 +30,7 @@ export function deckSpans(roads: Road[]): DeckSpan[] {
     const segmentCount = road.closed ? count : count - 1
     const lift = roadLift(road)
     const surface = isSurfaceRoad(road)
+    // Within the road: i runs over its segments, and the point after the last is a loop's first.
     for (let i = 0; i < segmentCount; i++) {
       const structure = road.structure[i]
       if (structure === ROAD_TUNNEL) continue

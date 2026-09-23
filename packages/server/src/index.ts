@@ -6,6 +6,8 @@ import { WebSocketServerTransport } from './ws-transport.ts'
 
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 8787)
+/** Behind a reverse proxy, players are told apart by the address it forwards, not its own. */
+const trustProxy = process.env.TRUST_PROXY === '1'
 
 /** How often the loop checks whether a step is due. Finer than a step. */
 const PUMP_INTERVAL_MS = 4
@@ -39,7 +41,7 @@ const server = new GameServer(
   },
 )
 
-const transport = new WebSocketServerTransport({ host, port })
+const transport = new WebSocketServerTransport({ host, port }, { trustProxy })
 const address = await transport.listen(server)
 
 let last = performance.now()

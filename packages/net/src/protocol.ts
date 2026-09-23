@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 8
+export const PROTOCOL_VERSION = 9
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND
@@ -38,12 +38,14 @@ export const REJECT_PROTOCOL_MISMATCH = 1
 export const REJECT_SERVER_FULL = 2
 export const REJECT_MALFORMED_MESSAGE = 3
 export const REJECT_HANDSHAKE_ORDER = 4
+export const REJECT_IDLE = 5
 
 const REJECT_LABELS: Readonly<Record<number, string>> = {
   [REJECT_PROTOCOL_MISMATCH]: 'protocol version mismatch',
   [REJECT_SERVER_FULL]: 'server is full',
   [REJECT_MALFORMED_MESSAGE]: 'malformed message',
   [REJECT_HANDSHAKE_ORDER]: 'expected hello before any other message',
+  [REJECT_IDLE]: 'nothing heard for a while',
 }
 
 export function rejectLabel(reason: number): string {

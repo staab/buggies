@@ -1,5 +1,6 @@
 import type { VehicleInput, VehicleProfileId } from '@buggies/game'
 
+import { BananaLedger } from './ledger.ts'
 import type { PredictionUpdate } from './prediction.ts'
 import {
   INPUT_TIMELINE_TICKS,
@@ -68,6 +69,8 @@ export class ConnectionFailure extends Error {}
  */
 export class NetClient {
   readonly timeline = new SnapshotTimeline()
+  /** The map's bananas as the server has told of them, snapshot by snapshot. */
+  readonly bananas = new BananaLedger()
 
   private readonly transport: ClientTransport
   private readonly clock: () => number
@@ -211,6 +214,7 @@ export class NetClient {
     if (snapshot === null) return
     this.ackTick = snapshot.ackInputTick
     this.newestSnapshot = snapshot
+    this.bananas.take(snapshot)
     this.timeline.push(snapshot, this.clock())
     if (snapshot.ackInputTick !== UNACKNOWLEDGED_INPUT_TICK) {
       this.adjustLead(snapshot.ackInputTick - snapshot.tick, this.clock())

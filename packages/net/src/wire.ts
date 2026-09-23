@@ -35,10 +35,11 @@ export const RESPAWN_BYTES = 1
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
-export const SNAPSHOT_HEADER_BYTES = 12
+export const SNAPSHOT_HEADER_BYTES = 14
 export const SNAPSHOT_VEHICLE_BYTES = 72
-export const SNAPSHOT_PICKUP_BYTES = 4
-export const SNAPSHOT_SPILLED_BYTES = 26
+export const SNAPSHOT_PICKUP_BYTES = 5
+export const SNAPSHOT_SPILLED_BYTES = 28
+export const SNAPSHOT_REMOVED_BYTES = 2
 
 export interface HelloMessage {
   protocolVersion: number
@@ -87,12 +88,19 @@ export interface VehicleSnapshot {
 
 /** One of the map's pickup slots, as the server has it. */
 export interface PickupSnapshot {
+  slot: number
   /** How many pickups the slot has had: says where the current one is. */
   generation: number
   /** How many ticks after the snapshot's the current one appears; none, and it is out. */
   ticksUntilOut: number
 }
 
+/**
+ * Where everything is on a tick. The vehicles are all there every time; the
+ * bananas change rarely, so after a player's first snapshot only the slots
+ * and spilled bananas that changed since the one before are sent, and every
+ * snapshot has to be taken in, in order, for the word to stay whole.
+ */
 export interface SnapshotMessage {
   tick: number
   /**
@@ -100,13 +108,20 @@ export interface SnapshotMessage {
    * Compared with `tick`, it says whether inputs are arriving in time.
    */
   ackInputTick: number
+  /** Whether the bananas here are all of them, a fresh start, rather than what changed. */
+  full: boolean
   vehicles: VehicleSnapshot[]
+  /** The slots whose banana has moved on since the snapshot before; every slot when full. */
   pickups: PickupSnapshot[]
+  /** The bananas spilled since the snapshot before; every one out when full. */
   spilled: SpilledSnapshot[]
+  /** The spilled bananas gone since the snapshot before, taken or faded, by number. */
+  removed: number[]
 }
 
 /** A banana spilled from a wreck, as the server has it. */
 export interface SpilledSnapshot {
+  id: number
   from: Vec3
   position: Vec3
   /** How many ticks before the snapshot's it was spilled. */
@@ -204,13 +219,22 @@ class Reader {
     return { x: this.f32(), y: this.f32(), z: this.f32(), w: this.f32() }
   }
 
+  /** What a driver asks for, kept to its ranges: nothing a client sends is taken as given. */
   input(out: VehicleInput): VehicleInput {
-    out.steer = this.f32()
-    out.throttle = this.f32()
-    out.brake = this.f32()
+    out.steer = within(this.f32(), -1, 1)
+    out.throttle = within(this.f32(), 0, 1)
+    out.brake = within(this.f32(), 0, 1)
     out.handbrake = this.u8() === 1
     return out
   }
+}
+
+/** A number a client sent, kept to its range; one that is not a number at all is nothing. */
+function within(value: number, low: number, high: number): number {
+  if (value >= low && value <= high) return value
+  if (value > high) return high
+  if (value < low) return low
+  return 0
 }
 
 export function messageTypeOf(payload: Uint8Array): number {
@@ -341,14 +365,17 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     SNAPSHOT_HEADER_BYTES +
       message.vehicles.length * SNAPSHOT_VEHICLE_BYTES +
       message.pickups.length * SNAPSHOT_PICKUP_BYTES +
-      message.spilled.length * SNAPSHOT_SPILLED_BYTES,
+      message.spilled.length * SNAPSHOT_SPILLED_BYTES +
+      message.removed.length * SNAPSHOT_REMOVED_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
   writer.u32(message.ackInputTick < 0 ? NO_TICK : message.ackInputTick)
+  writer.u8(message.full ? 1 : 0)
   writer.u8(message.vehicles.length)
   writer.u8(message.pickups.length)
   writer.u8(message.spilled.length)
+  writer.u8(message.removed.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -363,20 +390,24 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
+    writer.u8(pickup.slot)
     writer.u16(pickup.generation & 0xffff)
     writer.u16(Math.min(Math.max(pickup.ticksUntilOut, 0), 0xffff))
   }
   for (const spilled of message.spilled) {
+    writer.u16(spilled.id)
     writer.vec3(spilled.from)
     writer.vec3(spilled.position)
     writer.u16(Math.min(Math.max(spilled.age, 0), 0xffff))
   }
+  for (const id of message.removed) writer.u16(id)
   return writer.bytes
 }
 
 /**
  * The same snapshot with a different acknowledgement, without encoding the
- * vehicles again: every player gets the same bodies and their own ack.
+ * vehicles again: every player gets the same bodies and their own ack. It is
+ * a copy, since a socket keeps hold of what it is given until it has gone out.
  */
 export function withAck(snapshot: Uint8Array, ackInputTick: number): Uint8Array {
   const copy = snapshot.slice()
@@ -390,14 +421,17 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   reader.u8()
   const tick = reader.u32()
   const ack = reader.u32()
+  const full = reader.u8() === 1
   const count = reader.u8()
   const pickupCount = reader.u8()
   const spilledCount = reader.u8()
+  const removedCount = reader.u8()
   const expected =
     SNAPSHOT_HEADER_BYTES +
     count * SNAPSHOT_VEHICLE_BYTES +
     pickupCount * SNAPSHOT_PICKUP_BYTES +
-    spilledCount * SNAPSHOT_SPILLED_BYTES
+    spilledCount * SNAPSHOT_SPILLED_BYTES +
+    removedCount * SNAPSHOT_REMOVED_BYTES
   if (payload.length !== expected) return null
 
   const vehicles: VehicleSnapshot[] = []
@@ -421,8 +455,22 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     })
   }
   const pickups: PickupSnapshot[] = []
-  for (let i = 0; i < pickupCount; i++) pickups.push({ generation: reader.u16(), ticksUntilOut: reader.u16() })
+  for (let i = 0; i < pickupCount; i++) {
+    pickups.push({ slot: reader.u8(), generation: reader.u16(), ticksUntilOut: reader.u16() })
+  }
   const spilled: SpilledSnapshot[] = []
-  for (let i = 0; i < spilledCount; i++) spilled.push({ from: reader.vec3(), position: reader.vec3(), age: reader.u16() })
-  return { tick, ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack, vehicles, pickups, spilled }
+  for (let i = 0; i < spilledCount; i++) {
+    spilled.push({ id: reader.u16(), from: reader.vec3(), position: reader.vec3(), age: reader.u16() })
+  }
+  const removed: number[] = []
+  for (let i = 0; i < removedCount; i++) removed.push(reader.u16())
+  return {
+    tick,
+    ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
+    full,
+    vehicles,
+    pickups,
+    spilled,
+    removed,
+  }
 }

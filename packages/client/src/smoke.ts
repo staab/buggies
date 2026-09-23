@@ -49,6 +49,7 @@ export class Smoke {
     this.owed += RATE * amount * dt
     while (this.owed >= 1) {
       this.owed -= 1
+      // A ring of PUFFS, so next is always one of them.
       const puff = this.puffs[this.next]!
       this.next = (this.next + 1) % PUFFS
       puff.alive = true
