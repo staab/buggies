@@ -1,4 +1,4 @@
-import { LOOSE_MOST, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, pickupOut, type Pickup, type Spilled } from '@buggies/game'
+import { LOOSE_MOST, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, pickupOut, type LooseKind, type Pickup, type Loose } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
@@ -72,7 +72,7 @@ export function bananaGeometry(length = BANANA_LENGTH): THREE.BufferGeometry {
 /** Where a field's bananas are and when: an arena, or a mirror of one. */
 export interface PickupSource {
   readonly pickups: readonly Pickup[]
-  readonly spilled: readonly Spilled[]
+  readonly loose: readonly Loose[]
   readonly tick: number
 }
 
@@ -126,8 +126,8 @@ export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
 }
 
 /** What a loose thing is known by from one frame to the next: what it is, where it was last drawn, and when it would fade. */
-interface Loose {
-  kind: Spilled['kind']
+interface Seen {
+  kind: LooseKind
   position: THREE.Vector3
   goneTick: number
 }
@@ -165,12 +165,12 @@ export class PickupField {
     emissiveIntensity: 0.12,
   })
   private readonly bananas: THREE.InstancedMesh
-  private readonly loose: THREE.InstancedMesh
+  private readonly looseBananas: THREE.InstancedMesh
   private readonly bombShape = bombGeometry()
   private readonly bombMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.3 })
   private readonly bombs: THREE.InstancedMesh
   private readonly onBomb: (at: Vec3) => void
-  private looseSeen = new Map<number, Loose>()
+  private looseSeen = new Map<number, Seen>()
   private readonly spark = new THREE.OctahedronGeometry(0.12)
   private readonly ringGeometry = new THREE.TorusGeometry(1, 0.05, 6, 40).rotateX(Math.PI / 2)
   private readonly placer = new THREE.Object3D()
@@ -184,15 +184,15 @@ export class PickupField {
     this.source = source
     this.onBomb = onBomb
     this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(source.pickups.length, 1))
-    this.loose = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST)
+    this.looseBananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST)
     this.bombs = new THREE.InstancedMesh(this.bombShape, this.bombMaterial, LOOSE_MOST)
-    for (const mesh of [this.bananas, this.loose, this.bombs]) {
+    for (const mesh of [this.bananas, this.looseBananas, this.bombs]) {
       mesh.castShadow = true
       mesh.frustumCulled = false
       this.object.add(mesh)
     }
     this.bananas.count = source.pickups.length
-    this.loose.count = 0
+    this.looseBananas.count = 0
     this.bombs.count = 0
     this.seen = source.pickups.map((pickup) => pickup.generation)
     this.wasOut = source.pickups.map(() => false)
@@ -241,16 +241,16 @@ export class PickupField {
    * went off.
    */
   private updateLoose(): void {
-    const { spilled, tick } = this.source
-    const seen = new Map<number, Loose>()
+    const { tick } = this.source
+    const seen = new Map<number, Seen>()
     let bananas = 0
     let bombs = 0
-    for (const loose of spilled) {
-      const bomb = loose.kind === 'bomb'
+    for (const thing of this.source.loose) {
+      const bomb = thing.kind === 'bomb'
       const slot = bomb ? bombs : bananas
       if (slot >= LOOSE_MOST) continue
-      const flight = Math.min(Math.max((tick - loose.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
-      const { from, position } = loose
+      const flight = Math.min(Math.max((tick - thing.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
+      const { from, position } = thing
       if (flight < 1) {
         // Out of the blast, or off the back of the car, in an arc, tumbling.
         const across = Math.hypot(position.x - from.x, position.z - from.z)
@@ -260,7 +260,7 @@ export class PickupField {
           from.y + (position.y - from.y) * flight + lift,
           from.z + (position.z - from.z) * flight,
         )
-        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + loose.bornTick, bomb ? 0 : TILT, 'YXZ')
+        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + thing.bornTick, bomb ? 0 : TILT, 'YXZ')
         this.placer.scale.setScalar(0.4 + 0.6 * Math.min(flight * 4, 1))
       } else {
         const phase = this.time * BOB_RATE + slot * 1.7
@@ -274,16 +274,16 @@ export class PickupField {
         this.bombs.setMatrixAt(bombs, this.placer.matrix)
         bombs += 1
       } else {
-        this.loose.setMatrixAt(bananas, this.placer.matrix)
+        this.looseBananas.setMatrixAt(bananas, this.placer.matrix)
         bananas += 1
       }
-      const known = this.looseSeen.get(loose.id)
+      const known = this.looseSeen.get(thing.id)
       const drawn = known?.position ?? new THREE.Vector3()
       drawn.copy(this.placer.position)
-      seen.set(loose.id, {
-        kind: loose.kind,
+      seen.set(thing.id, {
+        kind: thing.kind,
         position: drawn,
-        goneTick: bomb ? Number.POSITIVE_INFINITY : loose.bornTick + SPILL_LIFE_TICKS,
+        goneTick: bomb ? Number.POSITIVE_INFINITY : thing.bornTick + SPILL_LIFE_TICKS,
       })
     }
     for (const [id, known] of this.looseSeen) {
@@ -292,8 +292,8 @@ export class PickupField {
       else if (tick < known.goneTick) this.pop(known.position)
     }
     this.looseSeen = seen
-    this.loose.count = bananas
-    this.loose.instanceMatrix.needsUpdate = true
+    this.looseBananas.count = bananas
+    this.looseBananas.instanceMatrix.needsUpdate = true
     this.bombs.count = bombs
     this.bombs.instanceMatrix.needsUpdate = true
   }
@@ -304,7 +304,7 @@ export class PickupField {
     this.object.removeFromParent()
     this.object.clear()
     this.bananas.dispose()
-    this.loose.dispose()
+    this.looseBananas.dispose()
     this.bombs.dispose()
     this.bananaShape.dispose()
     this.bananaMaterial.dispose()

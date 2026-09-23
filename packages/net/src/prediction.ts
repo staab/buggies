@@ -12,7 +12,7 @@ import {
   type Arena,
   type Pickup,
   type Rocket,
-  type Spilled,
+  type Loose,
   type Seat,
   type Vehicle,
   type VehicleInput,
@@ -192,8 +192,8 @@ export class LocalPrediction {
   }
 
   /** Bananas spilled from wrecks, as the mirror has them. */
-  get spilled(): readonly Spilled[] {
-    return this.mirror.spilled
+  get loose(): readonly Loose[] {
+    return this.mirror.loose
   }
 
   /** Rockets in the air, as the mirror has them: the server's word, run ahead. */
@@ -370,9 +370,9 @@ export class LocalPrediction {
       const mine = this.mirror.pickups[slot]
       if (mine !== undefined) setPickup(map, water, mine, slot, known.generation, known.spawnTick)
     })
-    this.mirror.spilled = this.bananas.spilled.slice()
+    this.mirror.loose = this.bananas.loose.slice()
     // Numbered on from where the server is, so a replay's drops get the numbers the server's will.
-    this.mirror.spilledNext = snapshot.spilledNext
+    this.mirror.looseNext = snapshot.looseNext
   }
 
   /** Whoever the server has on the map, the mirror has too, in the same car. */

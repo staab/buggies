@@ -507,7 +507,7 @@ describe('a session', () => {
     // A slot moves on, and a banana is spilled: told once, and the mirror has them.
     const { arena } = session
     setPickup(arena.map, arena.water, arena.pickups[3]!, 3, 1, arena.tick + 480)
-    arena.spilled.push({
+    arena.loose.push({
       id: 7,
       kind: 'banana',
       from: { x: 1, y: 2, z: 3 },
@@ -517,7 +517,7 @@ describe('a session', () => {
     session.run(0.5)
     expect(a.client.bananas.pickups[3]).toEqual({ generation: 1, spawnTick: arena.pickups[3]!.spawnTick })
     expect(a.prediction.pickups[3]!.generation).toBe(1)
-    expect(a.prediction.spilled.map((spilled) => spilled.id)).toEqual([7])
+    expect(a.prediction.loose.map((loose) => loose.id)).toEqual([7])
     expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_BYTES)
 
     // A banana the mirror takes on its own is put back as the server has it.
@@ -530,13 +530,13 @@ describe('a session', () => {
     session.run(0.5)
     expect(b.client.bananas.pickups).toHaveLength(PICKUP_SLOTS)
     expect(b.prediction.pickups[3]!.generation).toBe(1)
-    expect(b.prediction.spilled.map((spilled) => spilled.id)).toEqual([7])
+    expect(b.prediction.loose.map((loose) => loose.id)).toEqual([7])
 
     // Gone on the server, gone from everyone.
-    arena.spilled.length = 0
+    arena.loose.length = 0
     session.run(0.5)
-    expect(a.prediction.spilled).toHaveLength(0)
-    expect(b.client.bananas.spilled).toHaveLength(0)
+    expect(a.prediction.loose).toHaveLength(0)
+    expect(b.client.bananas.loose).toHaveLength(0)
     session.dispose()
   }, 120_000)
 
@@ -581,14 +581,14 @@ describe('a session', () => {
     a.input.fire = true
     session.run(0.05)
     a.input.fire = false
-    const predicted = a.prediction.spilled.find((loose) => loose.kind === 'bomb')
+    const predicted = a.prediction.loose.find((loose) => loose.kind === 'bomb')
     expect(predicted).toBeDefined()
-    expect(arena.spilled.some((loose) => loose.kind === 'bomb')).toBe(false)
+    expect(arena.loose.some((loose) => loose.kind === 'bomb')).toBe(false)
     session.run(0.5)
-    const dropped = arena.spilled.find((loose) => loose.kind === 'bomb')
+    const dropped = arena.loose.find((loose) => loose.kind === 'bomb')
     expect(dropped?.id).toBe(predicted!.id)
-    expect(a.prediction.spilled.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
-    expect(b.prediction.spilled.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
+    expect(a.prediction.loose.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
+    expect(b.prediction.loose.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
 
     // A machine gun, held for a second: shots the tank takes, and ammunition the sports car spends.
     arm(aSeat, 'machineGun')

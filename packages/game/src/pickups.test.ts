@@ -19,10 +19,10 @@ import {
   pickupOut,
   pickupSpot,
   respawn,
-  spilledOut,
+  looseOut,
   takeSeat,
   type Arena,
-  type Spilled,
+  type Loose,
 } from './index.ts'
 
 let map: TerrainMap
@@ -103,53 +103,53 @@ describe('pickups', () => {
     const wreck = { ...a.vehicle.frame.position }
     advance(arena, () => NEUTRAL_INPUT)
     expect(a.score).toBe(0)
-    expect(arena.spilled).toHaveLength(5)
+    expect(arena.loose).toHaveLength(5)
     // Numbered as they come.
-    expect(arena.spilled.map((spilled) => spilled.id)).toEqual([0, 1, 2, 3, 4])
-    for (const spilled of arena.spilled) {
-      expect(spilled.from.x).toBeCloseTo(wreck.x, 1)
-      const flung = Math.hypot(spilled.position.x - wreck.x, spilled.position.z - wreck.z)
+    expect(arena.loose.map((loose) => loose.id)).toEqual([0, 1, 2, 3, 4])
+    for (const loose of arena.loose) {
+      expect(loose.from.x).toBeCloseTo(wreck.x, 1)
+      const flung = Math.hypot(loose.position.x - wreck.x, loose.position.z - wreck.z)
       expect(flung).toBeGreaterThanOrEqual(SPILL_NEAR - 0.5)
       expect(flung).toBeLessThanOrEqual(SPILL_FAR + 0.5)
-      expect(spilled.position.y).toBeCloseTo(
-        sampleHeight(map.heightfield, spilled.position.x, spilled.position.z) + PICKUP_HEIGHT,
+      expect(loose.position.y).toBeCloseTo(
+        sampleHeight(map.heightfield, loose.position.x, loose.position.z) + PICKUP_HEIGHT,
         3,
       )
-      expect(spilledOut(spilled, arena.tick)).toBe(false)
-      expect(spilledOut(spilled, spilled.bornTick + SPILL_FLIGHT_TICKS)).toBe(true)
+      expect(looseOut(loose, arena.tick)).toBe(false)
+      expect(looseOut(loose, loose.bornTick + SPILL_FLIGHT_TICKS)).toBe(true)
     }
     // Nothing more spills as the wreck lies there.
     advance(arena, () => NEUTRAL_INPUT)
-    expect(arena.spilled).toHaveLength(5)
+    expect(arena.loose).toHaveLength(5)
 
     // Once one has landed, someone driving onto it takes it, and it is gone:
     // the one lying furthest from the others, so that it is the only one taken.
-    const apart = (banana: Spilled): number =>
+    const apart = (banana: Loose): number =>
       Math.min(
-        ...arena.spilled
+        ...arena.loose
           .filter((other) => other !== banana)
           .map((other) => Math.hypot(other.position.x - banana.position.x, other.position.z - banana.position.z)),
       )
-    const target = arena.spilled.reduce((best, banana) => (apart(banana) > apart(best) ? banana : best))
+    const target = arena.loose.reduce((best, banana) => (apart(banana) > apart(best) ? banana : best))
     expect(apart(target)).toBeGreaterThan(BANANA_REACH + 1)
     respawn(b, { position: { x: target.position.x, y: target.position.y - PICKUP_HEIGHT, z: target.position.z }, yaw: 0 })
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(b.score).toBe(0)
     for (let i = 0; i < SPILL_FLIGHT_TICKS; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(b.score).toBe(1)
-    expect(arena.spilled).toHaveLength(4)
-    expect(arena.spilled.includes(target)).toBe(false)
+    expect(arena.loose).toHaveLength(4)
+    expect(arena.loose.includes(target)).toBe(false)
 
     // The rest fade in time.
-    arena.tick = arena.spilled[0]!.bornTick + SPILL_LIFE_TICKS
+    arena.tick = arena.loose[0]!.bornTick + SPILL_LIFE_TICKS
     advance(arena, () => NEUTRAL_INPUT)
-    expect(arena.spilled).toHaveLength(0)
+    expect(arena.loose).toHaveLength(0)
 
     // Only so many come out of one blast.
     a.score = SPILL_MOST + 10
     advance(arena, () => NEUTRAL_INPUT)
-    expect(arena.spilled).toHaveLength(SPILL_MOST)
-    expect(arena.spilled[0]!.id).toBe(5)
+    expect(arena.loose).toHaveLength(SPILL_MOST)
+    expect(arena.loose[0]!.id).toBe(5)
     arena.world.free()
   })
 

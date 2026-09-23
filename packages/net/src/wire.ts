@@ -1,10 +1,10 @@
 import {
   NO_TARGET,
-  SPILLED_KINDS,
+  LOOSE_KINDS,
   VEHICLE_PROFILE_IDS,
   WEAPONS,
   createVehicleInput,
-  type SpilledKind,
+  type LooseKind,
   type VehicleInput,
   type VehicleProfileId,
   type Weapon,
@@ -142,12 +142,12 @@ export interface SnapshotMessage {
    * predicts from the same count gives it the same numbers the server will,
    * so the two are one thing on screen and not one gone and another come.
    */
-  spilledNext: number
+  looseNext: number
   vehicles: VehicleSnapshot[]
   /** The slots whose banana has moved on since the snapshot before; every slot when full. */
   pickups: PickupSnapshot[]
   /** The bananas spilled since the snapshot before; every one out when full. */
-  spilled: SpilledSnapshot[]
+  loose: LooseSnapshot[]
   /** The spilled bananas gone since the snapshot before, taken or faded, by number. */
   removed: number[]
   /** Every rocket in the air. */
@@ -155,9 +155,9 @@ export interface SnapshotMessage {
 }
 
 /** Something loose on the map, a banana or a bomb, as the server has it. */
-export interface SpilledSnapshot {
+export interface LooseSnapshot {
   id: number
-  kind: SpilledKind
+  kind: LooseKind
   from: Vec3
   position: Vec3
   /** How many ticks before the snapshot's it was spilled. */
@@ -403,7 +403,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     SNAPSHOT_HEADER_BYTES +
       message.vehicles.length * SNAPSHOT_VEHICLE_BYTES +
       message.pickups.length * SNAPSHOT_PICKUP_BYTES +
-      message.spilled.length * SNAPSHOT_SPILLED_BYTES +
+      message.loose.length * SNAPSHOT_SPILLED_BYTES +
       message.removed.length * SNAPSHOT_REMOVED_BYTES +
       message.rockets.length * SNAPSHOT_ROCKET_BYTES,
   )
@@ -411,10 +411,10 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u32(message.tick)
   writer.u32(message.ackInputTick < 0 ? NO_TICK : message.ackInputTick)
   writer.u8(message.full ? 1 : 0)
-  writer.u16(message.spilledNext)
+  writer.u16(message.looseNext)
   writer.u8(message.vehicles.length)
   writer.u8(message.pickups.length)
-  writer.u8(message.spilled.length)
+  writer.u8(message.loose.length)
   writer.u8(message.removed.length)
   writer.u8(message.rockets.length)
   for (const vehicle of message.vehicles) {
@@ -437,12 +437,12 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(pickup.generation & 0xffff)
     writer.u16(Math.min(Math.max(pickup.ticksUntilOut, 0), 0xffff))
   }
-  for (const spilled of message.spilled) {
-    writer.u16(spilled.id)
-    writer.u8(Math.max(SPILLED_KINDS.indexOf(spilled.kind), 0))
-    writer.vec3(spilled.from)
-    writer.vec3(spilled.position)
-    writer.u16(Math.min(Math.max(spilled.age, 0), 0xffff))
+  for (const loose of message.loose) {
+    writer.u16(loose.id)
+    writer.u8(Math.max(LOOSE_KINDS.indexOf(loose.kind), 0))
+    writer.vec3(loose.from)
+    writer.vec3(loose.position)
+    writer.u16(Math.min(Math.max(loose.age, 0), 0xffff))
   }
   for (const id of message.removed) writer.u16(id)
   for (const rocket of message.rockets) {
@@ -474,17 +474,17 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const tick = reader.u32()
   const ack = reader.u32()
   const full = reader.u8() === 1
-  const spilledNext = reader.u16()
+  const looseNext = reader.u16()
   const count = reader.u8()
   const pickupCount = reader.u8()
-  const spilledCount = reader.u8()
+  const looseCount = reader.u8()
   const removedCount = reader.u8()
   const rocketCount = reader.u8()
   const expected =
     SNAPSHOT_HEADER_BYTES +
     count * SNAPSHOT_VEHICLE_BYTES +
     pickupCount * SNAPSHOT_PICKUP_BYTES +
-    spilledCount * SNAPSHOT_SPILLED_BYTES +
+    looseCount * SNAPSHOT_SPILLED_BYTES +
     removedCount * SNAPSHOT_REMOVED_BYTES +
     rocketCount * SNAPSHOT_ROCKET_BYTES
   if (payload.length !== expected) return null
@@ -525,12 +525,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   for (let i = 0; i < pickupCount; i++) {
     pickups.push({ slot: reader.u8(), generation: reader.u16(), ticksUntilOut: reader.u16() })
   }
-  const spilled: SpilledSnapshot[] = []
-  for (let i = 0; i < spilledCount; i++) {
+  const loose: LooseSnapshot[] = []
+  for (let i = 0; i < looseCount; i++) {
     const id = reader.u16()
-    const kind = SPILLED_KINDS[reader.u8()]
+    const kind = LOOSE_KINDS[reader.u8()]
     if (kind === undefined) return null
-    spilled.push({
+    loose.push({
       id,
       kind,
       from: reader.vec3(),
@@ -558,10 +558,10 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
     full,
-    spilledNext,
+    looseNext,
     vehicles,
     pickups,
-    spilled,
+    loose,
     removed,
     rockets,
   }

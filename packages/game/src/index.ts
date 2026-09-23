@@ -1,16 +1,5 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
-import * as exact from '@buggies/physics'
-import {
-  buildWaterLevels,
-  DRY,
-  ROAD_GRADE,
-  ROAD_TUNNEL,
-  roadLift,
-  waterLevelAt,
-  type Road,
-  type RoadPoint,
-  type TerrainMap,
-} from '@buggies/terrain'
+import { buildWaterLevels, DRY, waterLevelAt, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
@@ -36,9 +25,7 @@ import {
 } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-// The exact trigonometry, copied into this module: called through the import binding it
-// is several times slower under the test runner's module loader, and these run hot.
-const { atan2, hypot } = exact
+import { findSpawns, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
@@ -76,6 +63,7 @@ export {
   writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
+export { findSpawns } from './spawns.ts'
 export {
   BANANA_REACH,
   BANANA_SLOTS,
@@ -88,22 +76,22 @@ export {
   SPILL_LIFE_TICKS,
   SPILL_MOST,
   SPILL_NEAR,
-  SPILLED_IDS,
-  SPILLED_KINDS,
+  LOOSE_IDS,
+  LOOSE_KINDS,
   BOMB_REACH,
   LOOSE_MOST,
   pickupOut,
   pickupSeed,
   pickupSpot,
   reachesPickup,
-  reachesSpilled,
+  reachesLoose,
   setPickup,
   spillFrom,
-  spilledGone,
-  spilledOut,
+  looseGone,
+  looseOut,
   type Pickup,
-  type Spilled,
-  type SpilledKind,
+  type Loose,
+  type LooseKind,
 } from './pickups.ts'
 export {
   BANANAS_PER_WEAPON,
@@ -168,27 +156,21 @@ import {
   createPickups,
   pickupOut,
   reachesPickup,
-  reachesSpilled,
+  reachesLoose,
   setPickup,
   spillFrom,
-  spilledGone,
-  spilledOut,
+  looseGone,
+  looseOut,
   PICKUP_RESPAWN_TICKS,
   SPILL_MOST,
   LOOSE_MOST,
-  SPILLED_IDS,
+  LOOSE_IDS,
   type Pickup,
-  type Spilled,
+  type Loose,
 } from './pickups.ts'
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
 export const MAX_PLAYERS = 8
-
-/** Nose to tail along the road, with room to pull out. */
-const SPAWN_SPACING = 9
-
-/** How far along a road to look for the next point when facing a vehicle. */
-const FACING_REACH = 3
 
 /**
  * A place for one vehicle. Seats are created with the arena and never go
@@ -232,161 +214,14 @@ export interface Arena {
   /** The map's bananas, a slot each, for the taking. */
   readonly pickups: readonly Pickup[]
   /** What lies loose: bananas spilled from wrecks, until taken, and bombs dropped from cars, until set off. */
-  spilled: Spilled[]
+  loose: Loose[]
   /** The number the next banana spilled gets. */
-  spilledNext: number
+  looseNext: number
   /** Rockets in the air. Replaced whole by the server's word. */
   rockets: Rocket[]
   /** The machine gun shots of the last tick, for drawing. */
   readonly shots: Shot[]
   tick: number
-}
-
-/** A sample of a road: the point, and where along the road it is. */
-interface RoadSpot {
-  road: Road
-  index: number
-  point: RoadPoint
-}
-
-function spawnAt(spot: RoadSpot): VehicleSpawn {
-  const { road, index, point } = spot
-  const count = road.points.length
-  const ahead = road.points[Math.min(index + FACING_REACH, count - 1)] ?? point
-  return {
-    position: { x: point.x, y: point.y + roadLift(road), z: point.z },
-    // A chassis faces its own -Z, so a yaw of zero looks down -Z too.
-    yaw: atan2(-(ahead.x - point.x), -(ahead.z - point.z)),
-  }
-}
-
-/** A spawn at a spot, facing whichever way along the road is nearer to `forward`. */
-function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): VehicleSpawn {
-  const { road, index, point } = spot
-  const count = road.points.length
-  // Wrapped round a loop or held at an end, so always one of the road's points.
-  const at = (i: number): RoadPoint =>
-    road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
-  const ahead = at(index + FACING_REACH)
-  const behind = at(index - FACING_REACH)
-  let dx = ahead.x - point.x
-  let dz = ahead.z - point.z
-  if (dx * forward.x + dz * forward.z < 0) {
-    dx = point.x - behind.x
-    dz = point.z - behind.z
-  }
-  if (hypot(dx, dz) < 1e-6) return spawnAt(spot)
-  return {
-    position: { x: point.x, y: point.y + roadLift(road), z: point.z },
-    yaw: atan2(-dx, -dz),
-  }
-}
-
-/** The road point nearest a position, on any road that is not a tunnel. */
-function nearestRoadSpotTo(map: TerrainMap, x: number, z: number): RoadSpot | null {
-  let best: RoadSpot | null = null
-  let bestDistance = Infinity
-  for (const road of map.roads) {
-    const count = road.points.length
-    const segmentCount = road.closed ? count : count - 1
-    for (const [i, point] of road.points.entries()) {
-      if (i >= segmentCount) break
-      if (road.structure[i] === ROAD_TUNNEL) continue
-      const distance = hypot(point.x - x, point.z - z)
-      if (distance >= bestDistance) continue
-      bestDistance = distance
-      best = { road, index: i, point }
-    }
-  }
-  return best
-}
-
-/**
- * The road point nearest the middle of the first city, at grade: on the
- * highway for preference, which loops and so never runs out ahead of a car
- * setting off, and on any road only where there is no highway to be had.
- */
-function nearestGradeSpot(map: TerrainMap): RoadSpot | null {
-  const highways = map.roads.filter((road) => road.kind === 'highway')
-  return nearestGradeSpotOn(map, highways) ?? nearestGradeSpotOn(map, map.roads)
-}
-
-function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
-  const worldSize = map.size * map.cellSize
-  const district = map.districts[0]
-  const targetX = district?.cx ?? worldSize / 2
-  const targetZ = district?.cz ?? worldSize / 2
-
-  let best: RoadSpot | null = null
-  let bestDistance = Infinity
-  for (const road of roads) {
-    const count = road.points.length
-    const segmentCount = road.closed ? count : count - 1
-    for (const [i, point] of road.points.entries()) {
-      if (i >= segmentCount) break
-      if (road.structure[i] !== ROAD_GRADE) continue
-      const distance = hypot(point.x - targetX, point.z - targetZ)
-      if (distance >= bestDistance) continue
-      bestDistance = distance
-      best = { road, index: i, point }
-    }
-  }
-  return best
-}
-
-/**
- * Points along a road from a starting index, one every `spacing` metres,
- * walking in one direction until the road ends or leaves the ground. Road
- * points can be centimetres apart, so distance is measured, not counted.
- */
-function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: number): RoadSpot[] {
-  const { road } = from
-  const segmentCount = road.closed ? road.points.length : road.points.length - 1
-  const spots: RoadSpot[] = []
-  let travelled = 0
-  let index = from.index
-  let point = from.point
-  while (spots.length < wanted) {
-    const next = index + step
-    if (next < 0 || next >= segmentCount) break
-    if (road.structure[Math.min(index, next)] !== ROAD_GRADE) break
-    const ahead = road.points[next]
-    if (ahead === undefined) break
-    travelled += hypot(ahead.x - point.x, ahead.z - point.z)
-    index = next
-    point = ahead
-    if (travelled < spacing) continue
-    spots.push({ road, index, point })
-    travelled = 0
-  }
-  return spots
-}
-
-/**
- * Somewhere worth starting, for each of `count` vehicles: on a road, at
- * grade, as near the middle of the first city as one runs, lined up one
- * behind the other. Cities are where the map is densest, so that is the most
- * interesting place to be dropped.
- */
-export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
-  const first = nearestGradeSpot(map)
-  if (first === null) {
-    const worldSize = map.size * map.cellSize
-    const middle = { x: worldSize / 2, y: 0, z: worldSize / 2 }
-    return Array.from({ length: count }, (_, i) => ({
-      position: { ...middle, z: middle.z + i * SPAWN_SPACING },
-      yaw: 0,
-    }))
-  }
-
-  // Behind the first spot for preference, so the front car is the one nearest
-  // the city; ahead of it when the road behind runs out.
-  const spots = [first, ...spotsAlong(first, SPAWN_SPACING, -1, count - 1)]
-  spots.push(...spotsAlong(first, SPAWN_SPACING, 1, count - spots.length))
-  // A road too short for the field stacks the rest on its last spot rather
-  // than leaving seats with nowhere to be.
-  while (spots.length < count) spots.push(spots.at(-1) ?? first)
-  return spots.map(spawnAt)
 }
 
 export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
@@ -430,8 +265,8 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     seats,
     water,
     pickups: createPickups(map, water),
-    spilled: [],
-    spilledNext: 0,
+    loose: [],
+    looseNext: 0,
     rockets: [],
     shots: [],
     tick: 0,
@@ -569,10 +404,10 @@ export function advance(
  * together; past that the oldest go, whichever they are.
  */
 function trimLoose(arena: Arena): void {
-  while (arena.spilled.length + arena.rockets.length > LOOSE_MOST) {
-    const loose = arena.spilled[0]
+  while (arena.loose.length + arena.rockets.length > LOOSE_MOST) {
+    const loose = arena.loose[0]
     const rocket = arena.rockets[0]
-    if (rocket === undefined || (loose !== undefined && loose.bornTick <= rocket.bornTick)) arena.spilled.shift()
+    if (rocket === undefined || (loose !== undefined && loose.bornTick <= rocket.bornTick)) arena.loose.shift()
     else arena.rockets.shift()
   }
 }
@@ -592,10 +427,10 @@ function spillBananas(arena: Arena): void {
   for (const seat of arena.seats) {
     if (!seat.occupied || !seat.vehicle.wrecked || seat.score === 0) continue
     const count = Math.min(seat.score, SPILL_MOST)
-    arena.spilled.push(
-      ...spillFrom(arena.map, seat.vehicle.frame.position, count, seat.id, arena.tick, arena.spilledNext),
+    arena.loose.push(
+      ...spillFrom(arena.map, seat.vehicle.frame.position, count, seat.id, arena.tick, arena.looseNext),
     )
-    arena.spilledNext = (arena.spilledNext + count) % SPILLED_IDS
+    arena.looseNext = (arena.looseNext + count) % LOOSE_IDS
     seat.score = 0
   }
 }
@@ -619,18 +454,18 @@ function collectPickups(arena: Arena): void {
   // bomb goes off on the first car to reach it once it has landed. Walked
   // from the end, so taking one out moves nothing still to come, and i
   // stays within the list.
-  for (let i = arena.spilled.length - 1; i >= 0; i--) {
-    const spilled = arena.spilled[i]!
-    if (spilledGone(spilled, arena.tick)) {
-      arena.spilled.splice(i, 1)
+  for (let i = arena.loose.length - 1; i >= 0; i--) {
+    const loose = arena.loose[i]!
+    if (looseGone(loose, arena.tick)) {
+      arena.loose.splice(i, 1)
       continue
     }
-    if (!spilledOut(spilled, arena.tick)) continue
+    if (!looseOut(loose, arena.tick)) continue
     for (const seat of arena.seats) {
-      if (!seat.occupied || seat.vehicle.wrecked || !reachesSpilled(spilled, seat.vehicle.frame.position)) continue
-      if (spilled.kind === 'bomb') wreckVehicle(seat.vehicle, seat.tuning)
+      if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position)) continue
+      if (loose.kind === 'bomb') wreckVehicle(seat.vehicle, seat.tuning)
       else score(arena, seat)
-      arena.spilled.splice(i, 1)
+      arena.loose.splice(i, 1)
       break
     }
   }

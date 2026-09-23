@@ -4,15 +4,12 @@ import {
   createVehicleInput,
   freeSeat,
   leaveSeat,
-  occupiedSeats,
   respawnLost,
   respawnNearby,
   type Arena,
   type Seat,
   type VehicleInput,
 } from '@buggies/game'
-import { quat, v3, vcopy } from '@buggies/physics'
-
 import { InputTimeline } from './input-timeline.ts'
 import {
   CLIENT_HELLO,
@@ -29,6 +26,7 @@ import {
   TICKS_PER_SNAPSHOT,
   rejectLabel,
 } from './protocol.ts'
+import { createRoomSnapshots, gatherSnapshot, rememberTold, type RoomSnapshots } from './room-snapshot.ts'
 import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
   decodeHello,
@@ -36,17 +34,12 @@ import {
   encodeReject,
   encodeRooms,
   encodeSnapshot,
-  type PickupSnapshot,
-  type RocketSnapshot,
   type RoomSummary,
-  type SnapshotMessage,
-  type SpilledSnapshot,
   encodeWelcome,
   isRespawn,
   isRoomsRequest,
   messageTypeOf,
   withAck,
-  type VehicleSnapshot,
 } from './wire.ts'
 
 const HANDSHAKE_TIMEOUT_TICKS = TICKS_PER_SECOND * 5
@@ -117,15 +110,8 @@ export interface Room {
   readonly seed: number
   readonly arena: Arena
   readonly players: Map<number, Player>
-  readonly snapshotVehicles: VehicleSnapshot[]
-  readonly snapshotPickups: PickupSnapshot[]
-  readonly snapshotSpilled: SpilledSnapshot[]
-  readonly snapshotRemoved: number[]
-  readonly snapshotRockets: RocketSnapshot[]
-  /** The bananas as the last snapshot told of them: each slot's generation, and which spilled were out. */
-  readonly toldGenerations: number[]
-  readonly toldSpilled: Set<number>
-  readonly spilledNow: Set<number>
+  /** What its snapshots are gathered into, and what the last told. */
+  readonly snapshots: RoomSnapshots
   lastSnapshotBytes: number
 }
 
@@ -304,14 +290,7 @@ export class GameServer implements TransportHandlers {
       seed,
       arena: this.arenaFor(seed),
       players: new Map(),
-      snapshotVehicles: [],
-      snapshotPickups: [],
-      snapshotSpilled: [],
-      snapshotRemoved: [],
-      snapshotRockets: [],
-      toldGenerations: [],
-      toldSpilled: new Set(),
-      spilledNow: new Set(),
+      snapshots: createRoomSnapshots(),
       lastSnapshotBytes: 0,
     }
     this.rooms.set(seed, room)
@@ -391,114 +370,6 @@ export class GameServer implements TransportHandlers {
     this.events.onRejected?.(connection.id, rejectLabel(reason))
   }
 
-  /** The slots whose banana has moved on since the last snapshot told of them, or every slot. */
-  private collectPickups(room: Room, all: boolean): PickupSnapshot[] {
-    const pickups = room.snapshotPickups
-    let count = 0
-    room.arena.pickups.forEach((pickup, slot) => {
-      if (!all && pickup.generation === room.toldGenerations[slot]) return
-      const out = (pickups[count] ??= { slot: 0, generation: 0, ticksUntilOut: 0 })
-      out.slot = slot
-      out.generation = pickup.generation
-      out.ticksUntilOut = Math.max(pickup.spawnTick - room.arena.tick, 0)
-      count += 1
-    })
-    pickups.length = count
-    return pickups
-  }
-
-  /** The bananas spilled since the last snapshot told of them, or every one out. */
-  private collectSpilled(room: Room, all: boolean): SpilledSnapshot[] {
-    const spilled = room.snapshotSpilled
-    let count = 0
-    for (const banana of room.arena.spilled) {
-      if (!all && room.toldSpilled.has(banana.id)) continue
-      const out = (spilled[count] ??= { id: 0, kind: 'banana', from: v3(), position: v3(), age: 0 })
-      out.id = banana.id
-      out.kind = banana.kind
-      vcopy(out.from, banana.from)
-      vcopy(out.position, banana.position)
-      out.age = room.arena.tick - banana.bornTick
-      count += 1
-    }
-    spilled.length = count
-    return spilled
-  }
-
-  /** The spilled bananas the last snapshot told of that are gone since, taken or faded. */
-  private collectRemoved(room: Room): number[] {
-    const removed = room.snapshotRemoved
-    removed.length = 0
-    room.spilledNow.clear()
-    for (const banana of room.arena.spilled) room.spilledNow.add(banana.id)
-    for (const id of room.toldSpilled) if (!room.spilledNow.has(id)) removed.push(id)
-    return removed
-  }
-
-  /** Every rocket in the air: few, and short-lived, so all of them every time. */
-  private collectRockets(room: Room): RocketSnapshot[] {
-    const rockets = room.snapshotRockets
-    let count = 0
-    for (const rocket of room.arena.rockets) {
-      const out = (rockets[count] ??= { id: 0, owner: 0, target: 0, position: v3(), velocity: v3(), age: 0 })
-      out.id = rocket.id
-      out.owner = rocket.owner
-      out.target = rocket.target
-      vcopy(out.position, rocket.position)
-      vcopy(out.velocity, rocket.velocity)
-      out.age = room.arena.tick - rocket.bornTick
-      count += 1
-    }
-    rockets.length = count
-    return rockets
-  }
-
-  /** What this snapshot told of the bananas, for the next to tell only what differs. */
-  private rememberTold(room: Room): void {
-    room.arena.pickups.forEach((pickup, slot) => (room.toldGenerations[slot] = pickup.generation))
-    room.toldSpilled.clear()
-    for (const banana of room.arena.spilled) room.toldSpilled.add(banana.id)
-  }
-
-  private collectSnapshot(room: Room): VehicleSnapshot[] {
-    const vehicles = room.snapshotVehicles
-    let count = 0
-    for (const seat of occupiedSeats(room.arena)) {
-      const { body } = seat.vehicle
-      const vehicle = (vehicles[count] ??= {
-        seat: 0,
-        epoch: 0,
-        profile: seat.profile,
-        position: v3(),
-        rotation: quat(),
-        linearVelocity: v3(),
-        angularVelocity: v3(),
-        damage: 0,
-        wrecked: false,
-        score: 0,
-        weapon: 'none',
-        ammoTicks: 0,
-        appliedInput: createVehicleInput(),
-      })
-      vehicle.seat = seat.id
-      vehicle.epoch = seat.epoch
-      vehicle.profile = seat.profile
-      body.translation(vehicle.position)
-      body.rotation(vehicle.rotation)
-      body.linvel(vehicle.linearVelocity)
-      body.angvel(vehicle.angularVelocity)
-      vehicle.damage = seat.vehicle.damage
-      vehicle.wrecked = seat.vehicle.wrecked
-      vehicle.score = seat.score
-      vehicle.weapon = seat.weapon
-      vehicle.ammoTicks = seat.ammoTicks
-      Object.assign(vehicle.appliedInput, this.playerIn(room, seat)?.timeline.appliedInput ?? this.scratchInput)
-      count += 1
-    }
-    vehicles.length = count
-    return vehicles
-  }
-
   /**
    * Where everything is, to everyone in the room. The vehicles go every
    * time; of the bananas, a newcomer gets the whole word once and everyone
@@ -506,45 +377,23 @@ export class GameServer implements TransportHandlers {
    */
   private broadcastSnapshot(room: Room): void {
     if (room.players.size === 0) return
-    const message: SnapshotMessage = {
-      tick: room.arena.tick,
-      ackInputTick: -1,
-      full: false,
-      spilledNext: room.arena.spilledNext,
-      vehicles: this.collectSnapshot(room),
-      pickups: room.snapshotPickups,
-      spilled: room.snapshotSpilled,
-      removed: room.snapshotRemoved,
-      rockets: this.collectRockets(room),
-    }
-    // Each is encoded at most once, whoever asks first, from the same scratch.
+    const { arena, snapshots } = room
+    const appliedInputOf = (seat: Seat): VehicleInput =>
+      this.playerIn(room, seat)?.timeline.appliedInput ?? this.scratchInput
+    // Each is encoded at most once, whoever asks first: the changes for those told before, the whole for a newcomer.
     let changes: Uint8Array | null = null
     let whole: Uint8Array | null = null
     for (const player of room.players.values()) {
       let encoded: Uint8Array
       if (player.told) {
-        if (changes === null) {
-          message.full = false
-          this.collectPickups(room, false)
-          this.collectSpilled(room, false)
-          this.collectRemoved(room)
-          changes = encodeSnapshot(message)
-        }
-        encoded = changes
+        encoded = changes ??= encodeSnapshot(gatherSnapshot(arena, snapshots, appliedInputOf, false))
       } else {
-        if (whole === null) {
-          message.full = true
-          this.collectPickups(room, true)
-          this.collectSpilled(room, true)
-          room.snapshotRemoved.length = 0
-          whole = encodeSnapshot(message)
-        }
-        encoded = whole
+        encoded = whole ??= encodeSnapshot(gatherSnapshot(arena, snapshots, appliedInputOf, true))
         player.told = true
       }
       player.connection.send(withAck(encoded, player.timeline.receivedTick))
     }
-    room.lastSnapshotBytes = (changes ?? whole ?? encodeSnapshot(message)).length
-    this.rememberTold(room)
+    room.lastSnapshotBytes = (changes ?? whole)?.length ?? 0
+    rememberTold(arena, snapshots)
   }
 }

@@ -1,4 +1,4 @@
-import { SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Spilled } from '@buggies/game'
+import { SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Loose } from '@buggies/game'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -36,13 +36,13 @@ describe('bananas as drawn', () => {
   })
 
   it('are drawn where they are, and not before they are out', () => {
-    const source = { pickups: pickups(3), spilled: [] as Spilled[], tick: 100 }
+    const source = { pickups: pickups(3), loose: [] as Loose[], tick: 100 }
     source.pickups[1]!.spawnTick = 200
     const field = new PickupField(source)
     field.update(0.1)
-    const [bananas, loose] = field.object.children as THREE.InstancedMesh[]
+    const [bananas, looseBananas] = field.object.children as THREE.InstancedMesh[]
     expect(bananas!.count).toBe(3)
-    expect(loose!.count).toBe(0)
+    expect(looseBananas!.count).toBe(0)
     const matrix = new THREE.Matrix4()
     const position = new THREE.Vector3()
     bananas!.getMatrixAt(2, matrix)
@@ -56,7 +56,7 @@ describe('bananas as drawn', () => {
   })
 
   it('pop when taken, and only then', () => {
-    const source = { pickups: pickups(2), spilled: [] as Spilled[], tick: 0 }
+    const source = { pickups: pickups(2), loose: [] as Loose[], tick: 0 }
     const field = new PickupField(source)
     field.update(0.1)
     expect(field.popping).toBe(0)
@@ -84,16 +84,16 @@ describe('bananas as drawn', () => {
   })
 
   it('fling spilled bananas out of the blast in an arc, lie them where they land, and pop them when taken', () => {
-    const spilled: Spilled[] = [
+    const loose: Loose[] = [
       { id: 1, kind: 'banana', from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 },
     ]
-    const source = { pickups: pickups(0), spilled, tick: 100 + SPILL_FLIGHT_TICKS / 2 }
+    const source = { pickups: pickups(0), loose, tick: 100 + SPILL_FLIGHT_TICKS / 2 }
     const field = new PickupField(source)
-    const loose = field.object.children[1] as THREE.InstancedMesh
-    expect(loose.count).toBe(1)
+    const looseBananas = field.object.children[1] as THREE.InstancedMesh
+    expect(looseBananas.count).toBe(1)
     const matrix = new THREE.Matrix4()
     const position = new THREE.Vector3()
-    loose.getMatrixAt(0, matrix)
+    looseBananas.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
     // Halfway there, and well above the straight line between.
     expect(position.x).toBeCloseTo(6, 3)
@@ -101,18 +101,18 @@ describe('bananas as drawn', () => {
     // Landed: where it lands, near enough, bobbing.
     source.tick = 100 + SPILL_FLIGHT_TICKS + 10
     field.update(0.1)
-    loose.getMatrixAt(0, matrix)
+    looseBananas.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
     expect(position.x).toBeCloseTo(12, 3)
     expect(Math.abs(position.y - 3)).toBeLessThan(0.3)
     // Gone before its time: taken, and it pops where it lay.
-    spilled.length = 0
+    loose.length = 0
     field.update(0.1)
-    expect(loose.count).toBe(0)
+    expect(looseBananas.count).toBe(0)
     expect(field.popping).toBe(1)
     field.update(POP_LIFE)
     // Gone at its time: faded, no pop.
-    spilled.push({
+    loose.push({
       id: 2,
       kind: 'banana',
       from: { x: 0, y: 2, z: 0 },
@@ -121,7 +121,7 @@ describe('bananas as drawn', () => {
     })
     field.update(0.1)
     source.tick = 100 + SPILL_LIFE_TICKS
-    spilled.length = 0
+    loose.length = 0
     field.update(0.1)
     expect(field.popping).toBe(0)
     field.dispose()
@@ -135,15 +135,15 @@ describe('bananas as drawn', () => {
     expect(size.y).toBeGreaterThan(BOMB_RADIUS * 2)
     geometry.dispose()
 
-    const spilled: Spilled[] = [
+    const loose: Loose[] = [
       { id: 5, kind: 'bomb', from: { x: 0, y: 2, z: 0 }, position: { x: -5, y: 2, z: 0 }, bornTick: 0 },
     ]
-    const source = { pickups: pickups(0), spilled, tick: SPILL_FLIGHT_TICKS + 10 }
+    const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: { x: number; y: number; z: number }[] = []
     const field = new PickupField(source, (at) => wentOff.push({ x: at.x, y: at.y, z: at.z }))
     field.update(0.1)
-    const [, loose, bombs] = field.object.children as THREE.InstancedMesh[]
-    expect(loose!.count).toBe(0)
+    const [, looseBananas, bombs] = field.object.children as THREE.InstancedMesh[]
+    expect(looseBananas!.count).toBe(0)
     expect(bombs!.count).toBe(1)
     const matrix = new THREE.Matrix4()
     const position = new THREE.Vector3()
@@ -151,7 +151,7 @@ describe('bananas as drawn', () => {
     position.setFromMatrixPosition(matrix)
     expect(position.x).toBeCloseTo(-5, 3)
     // Gone: it went off where it was, and it is no banana to pop.
-    spilled.length = 0
+    loose.length = 0
     field.update(0.1)
     expect(bombs!.count).toBe(0)
     expect(wentOff).toHaveLength(1)
@@ -161,16 +161,16 @@ describe('bananas as drawn', () => {
   })
 
   it('pop a banana and burst a bomb harvested before their time, as if taken and set off', () => {
-    const spilled: Spilled[] = [
+    const loose: Loose[] = [
       { id: 1, kind: 'banana', from: { x: 0, y: 2, z: 0 }, position: { x: 6, y: 2, z: 0 }, bornTick: 0 },
       { id: 2, kind: 'bomb', from: { x: 0, y: 2, z: 0 }, position: { x: -6, y: 2, z: 0 }, bornTick: 0 },
     ]
-    const source = { pickups: pickups(0), spilled, tick: SPILL_FLIGHT_TICKS + 10 }
+    const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: number[] = []
     const field = new PickupField(source, (at) => wentOff.push(at.x))
     field.update(0.1)
     // The oldest go to make room: the same as being taken, or set off.
-    spilled.length = 0
+    loose.length = 0
     field.update(0.1)
     expect(field.popping).toBe(1)
     expect(wentOff).toEqual([-6])
