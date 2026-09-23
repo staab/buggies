@@ -35,4 +35,15 @@ describe('the weapon mount', () => {
     expect(barrel(mount, car).dot(forward)).toBeCloseTo(1, 3)
     mount.dispose()
   })
+
+  it('mounts neither the rocket nor the gun over a car with a gun of its own, but the rest', () => {
+    const mount = new WeaponMount(1.8, true)
+    mount.show('machineGun')
+    expect(mount.object.children.some((child) => child.visible)).toBe(false)
+    mount.show('rocket')
+    expect(mount.object.children.some((child) => child.visible)).toBe(false)
+    mount.show('bomb')
+    expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
+    mount.dispose()
+  })
 })

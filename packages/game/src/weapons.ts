@@ -12,7 +12,15 @@ import {
   type Vec3,
 } from '@buggies/physics'
 import { sampleHeight, type TerrainMap } from '@buggies/terrain'
-import { WORLD_UP, addForceAlong, addTorqueAbout, hurtVehicle, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
+import {
+  WORLD_UP,
+  addForceAlong,
+  addTorqueAbout,
+  hurtVehicle,
+  type Vehicle,
+  type VehicleProfileId,
+  type VehicleTuning,
+} from '@buggies/vehicle'
 
 import { PICKUP_HEIGHT, SPILLED_IDS, pickupSeed, type Spilled } from './pickups.ts'
 
@@ -39,6 +47,25 @@ export const BANANAS_PER_WEAPON = 1
 
 /** How far over the roof a weapon rides, and rockets and bullets leave from. */
 export const MOUNT_HEIGHT = 1.1
+
+/** Where a car's own gun ends, in the chassis frame: ahead of the middle of the car, and above it. */
+export interface Muzzle {
+  ahead: number
+  up: number
+}
+
+/**
+ * Cars with a gun of their own built in. Their rockets and shots leave from
+ * its muzzle, and nothing is mounted over the roof for them. The tank's is
+ * measured off its model.
+ */
+export const BUILT_IN_GUNS: Readonly<Partial<Record<VehicleProfileId, Muzzle>>> = {
+  tank: { ahead: 1.7, up: 1.2 },
+}
+
+export function hasBuiltInGun(profile: VehicleProfileId): boolean {
+  return BUILT_IN_GUNS[profile] !== undefined
+}
 
 /**
  * How long, held down, the machine gun fires for, the rocket engine burns
@@ -97,6 +124,7 @@ export interface Gunner {
   readonly occupied: boolean
   readonly vehicle: Vehicle
   readonly tuning: VehicleTuning
+  readonly profile: VehicleProfileId
   weapon: Weapon
   /** How much longer the machine gun fires for, in ticks. */
   ammoTicks: number
@@ -212,6 +240,15 @@ export function mountPoint(out: Vec3, vehicle: Vehicle, tuning: VehicleTuning): 
   return vaddScaled(out, vehicle.frame.position, vehicle.frame.up, tuning.chassisHalfHeight + MOUNT_HEIGHT)
 }
 
+/** Where a car's rockets and shots leave from: the muzzle of its own gun if it has one, else over the roof. */
+export function muzzlePoint(out: Vec3, seat: Gunner): Vec3 {
+  const gun = BUILT_IN_GUNS[seat.profile]
+  if (gun === undefined) return mountPoint(out, seat.vehicle, seat.tuning)
+  const { position, forward, up } = seat.vehicle.frame
+  vaddScaled(out, position, forward, gun.ahead)
+  return vaddScaled(out, out, up, gun.up)
+}
+
 /** A rocket's number: the tick it went and whose it is, so every copy of the simulation numbers it the same. */
 export function rocketId(tick: number, seat: number): number {
   return ((tick << 3) | (seat & 7)) & 0xffff
@@ -264,7 +301,7 @@ function inPlay(seat: Gunner, other: Gunner): boolean {
  * to be drawn.
  */
 function shoot(arena: Battlefield, seat: Gunner): void {
-  mountPoint(muzzle, seat.vehicle, seat.tuning)
+  muzzlePoint(muzzle, seat)
   const from = vcopy(v3(), muzzle)
   const to = v3()
   const target = seat.aimTarget === NO_TARGET ? undefined : arena.seats[seat.aimTarget]
@@ -282,7 +319,7 @@ function shoot(arena: Battlefield, seat: Gunner): void {
 
 /** A rocket goes: from over the roof, straight ahead, after whoever is there to go after. */
 function launch(arena: Battlefield, seat: Gunner): void {
-  mountPoint(muzzle, seat.vehicle, seat.tuning)
+  muzzlePoint(muzzle, seat)
   arena.rockets.push({
     id: rocketId(arena.tick, seat.id),
     owner: seat.id,
@@ -334,7 +371,7 @@ export function fireWeapons(arena: Battlefield): void {
       continue
     }
     if (seat.weapon === 'machineGun') {
-      mountPoint(muzzle, seat.vehicle, seat.tuning)
+      muzzlePoint(muzzle, seat)
       seat.aimTarget = pickOut(arena, seat, muzzle, MACHINE_GUN_RANGE, MACHINE_GUN_SWEEP_COS)
     }
     if (!seat.vehicle.command.fire) continue

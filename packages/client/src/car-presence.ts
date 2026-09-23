@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, WEAPON_LABELS, burning, type Seat } from '@buggies/game'
+import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, WEAPON_LABELS, burning, hasBuiltInGun, type Seat } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import type * as THREE from 'three'
 
@@ -73,7 +73,7 @@ export class CarPresence {
     this.view = new CarView(seat.profile, color)
     this.view.syncDimensions(seat.tuning)
     this.object = this.view.object
-    this.mount = new WeaponMount(seat.tuning.chassisHalfHeight + MOUNT_HEIGHT)
+    this.mount = new WeaponMount(seat.tuning.chassisHalfHeight + MOUNT_HEIGHT, hasBuiltInGun(seat.profile))
     this.object.add(this.mount.object)
     this.body = new SmoothedBody(seat.vehicle.body, this.object)
     const heard = options.heard !== false ? effects.sound : null
