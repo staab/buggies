@@ -1,15 +1,26 @@
-// Ported from the seattle project (src/physics/airControl.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// What a car does in the air: the nose pitched by the pedals, and the whole
+// car held level for the landing.
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import {inverseLerpClamped, lerp, v3, vaddScaled, vcopy, vcross, vdot, vnormalize, vscale, vset} from '@buggies/physics'
-import {addTorqueAbout} from './bodyForces.ts'
-import {WHEEL_RAY_GROUPS} from './groups.ts'
-import type {DriverCommand} from './input.ts'
-import type {VehicleTuning} from './tuning.ts'
-import type {Vehicle} from './vehicleBody.ts'
-import {WORLD_UP} from './world.ts'
+import {
+  inverseLerpClamped,
+  lerp,
+  v3,
+  vaddScaled,
+  vcopy,
+  vcross,
+  vdot,
+  vnormalize,
+  vscale,
+  vset,
+} from '@buggies/physics'
+import { addTorqueAbout } from './bodyForces.ts'
+import { WHEEL_RAY_GROUPS } from './groups.ts'
+import type { DriverCommand } from './input.ts'
+import type { VehicleTuning } from './tuning.ts'
+import type { Vehicle } from './vehicleBody.ts'
+import { WORLD_UP } from './world.ts'
 
 const MIN_FALL_SPEED_FOR_LANDING_PREDICTION = 1e-3
 
@@ -20,12 +31,12 @@ const pitchRollRate = v3()
 const levelTorque = v3()
 
 /**
- * Buggies: in the air the throttle and brake pitch the nose, and that is all.
+ * In the air the throttle and brake pitch the nose, and that is all.
  * The steering does nothing until the wheels are down again: a car does not
  * turn in the air, and one that did was too easy to spin off a jump.
  */
 export function applyAirControl(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const {body, command, frame} = vehicle
+  const { body, command, frame } = vehicle
   const pitchDemand = command.throttle - command.brake
 
   addTorqueAbout(body, frame.right, -pitchDemand * tuning.airPitchTorque)
@@ -44,7 +55,7 @@ function inputAuthority(command: DriverCommand, tuning: VehicleTuning): number {
  * the car lands square on a slope.
  */
 function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): number {
-  const {body, frame, landingRay} = vehicle
+  const { body, frame, landingRay } = vehicle
   const fallSpeed = -frame.linearVelocity.y
   vcopy(targetUp, WORLD_UP)
 
@@ -78,20 +89,16 @@ function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): 
 }
 
 /**
- * Buggies rewrite. Off a jump the car is held level in the air, whatever spin
+ * Off a jump the car is held level in the air, whatever spin
  * the lip gave it: a torque toward upright, damped against its pitch and roll
  * rate, so it lands on its wheels. Yaw is left alone for the air controls.
  * Off a crash it is not: a car that has just been hit is let tumble.
  */
-export function applyAirStabilization(
-  world: RAPIER.World,
-  vehicle: Vehicle,
-  tuning: VehicleTuning,
-): void {
+export function applyAirStabilization(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): void {
   if (vehicle.airborneTime < tuning.airLevelEngageDelay) return
   if (vehicle.impactTime < tuning.impactTumbleTime) return
 
-  const {body, frame} = vehicle
+  const { body, frame } = vehicle
   const fromInput = inputAuthority(vehicle.command, tuning)
   const fromApproach = landing(world, vehicle, tuning)
   const authority = fromInput * fromApproach

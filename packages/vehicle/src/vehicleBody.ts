@@ -1,18 +1,13 @@
-// Ported from the seattle project (src/physics/vehicleBody.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// A vehicle's rigid body and wheels: how they are made, sized and put back
+// on a spawn.
 
 import * as RAPIER from '@dimforge/rapier3d-compat'
 
-import {quat, quatFromYaw, v3, vset, type Vec3} from '@buggies/physics'
-import {createChassisFrame, readChassisFrame, type ChassisFrame} from './chassisFrame.ts'
-import {
-  createDriverCommand,
-  readDriverCommand,
-  NEUTRAL_INPUT,
-  type DriverCommand,
-} from './input.ts'
-import type {VehicleTuning} from './tuning.ts'
-import {worldGravity} from './world.ts'
+import { quat, quatFromYaw, v3, vset, type Vec3 } from '@buggies/physics'
+import { createChassisFrame, readChassisFrame, type ChassisFrame } from './chassisFrame.ts'
+import { createDriverCommand, readDriverCommand, NEUTRAL_INPUT, type DriverCommand } from './input.ts'
+import type { VehicleTuning } from './tuning.ts'
+import { worldGravity } from './world.ts'
 
 export const WHEEL_COUNT = 4
 export const WHEELS_PER_AXLE = 2
@@ -94,15 +89,7 @@ export interface VehicleSpawn {
 }
 
 type WheelFrame =
-  | 'isFront'
-  | 'isLeft'
-  | 'rayOrigin'
-  | 'rayEnd'
-  | 'contactPoint'
-  | 'contactNormal'
-  | 'wheelCenter'
-  | 'forward'
-  | 'right'
+  'isFront' | 'isLeft' | 'rayOrigin' | 'rayEnd' | 'contactPoint' | 'contactNormal' | 'wheelCenter' | 'forward' | 'right'
 
 type WheelMotion = Omit<WheelState, WheelFrame>
 
@@ -179,10 +166,10 @@ export interface WheelCorner {
 }
 
 export const WHEEL_CORNERS: readonly WheelCorner[] = [
-  {isFront: true, isLeft: true},
-  {isFront: true, isLeft: false},
-  {isFront: false, isLeft: true},
-  {isFront: false, isLeft: false},
+  { isFront: true, isLeft: true },
+  { isFront: true, isLeft: false },
+  { isFront: false, isLeft: true },
+  { isFront: false, isLeft: false },
 ]
 
 export function wheelMountLocal(out: Vec3, wheel: WheelCorner, tuning: VehicleTuning): Vec3 {
@@ -251,11 +238,7 @@ export function adoptVehicle(
  */
 const CHASSIS_ROUNDING = 0.15
 
-export function createVehicle(
-  world: RAPIER.World,
-  tuning: VehicleTuning,
-  spawn: VehicleSpawn,
-): Vehicle {
+export function createVehicle(world: RAPIER.World, tuning: VehicleTuning, spawn: VehicleSpawn): Vehicle {
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setLinearDamping(tuning.linearDamping)
@@ -309,7 +292,7 @@ export function applyChassisMassProperties(vehicle: Vehicle, tuning: VehicleTuni
 
   vehicle.body.setAdditionalMassProperties(
     tuning.mass,
-    {x: 0, y: tuning.centerOfMassOffsetY, z: tuning.centerOfMassOffsetZ},
+    { x: 0, y: tuning.centerOfMassOffsetY, z: tuning.centerOfMassOffsetZ },
     cuboidPrincipalInertia(v3(), tuning.mass, tuning),
     quat(),
     true,
@@ -326,12 +309,12 @@ export function activateVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
 }
 
 export function resetVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
-  const {body} = vehicle
+  const { body } = vehicle
 
   body.setTranslation(chassisRestingPosition(restingPosition, vehicle, spawn), true)
   body.setRotation(quatFromYaw(spawn.yaw), true)
-  body.setLinvel({x: 0, y: 0, z: 0}, true)
-  body.setAngvel({x: 0, y: 0, z: 0}, true)
+  body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+  body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   body.resetForces(true)
   body.resetTorques(true)
 

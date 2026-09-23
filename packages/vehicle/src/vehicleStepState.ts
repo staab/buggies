@@ -1,14 +1,14 @@
-// Ported from the seattle project (src/physics/vehicleStepState.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced.
+// The part of a vehicle's state that a step reads and writes besides its
+// body: what the prediction has to record to replay a step, and no more.
 
-import {quat, v3, vcopy, type Quat, type Vec3} from '@buggies/physics'
-import {orientChassisFrame} from './chassisFrame.ts'
-import type {Vehicle} from './vehicleBody.ts'
+import { quat, v3, vcopy, type Quat, type Vec3 } from '@buggies/physics'
+import { orientChassisFrame } from './chassisFrame.ts'
+import type { Vehicle } from './vehicleBody.ts'
 
 export interface VehicleStepState {
   steerAngle: number
   airborneTime: number
-  /** Buggies addition: how long since the last crash, and the wheels' travel the stick reads its lift speed from. */
+  /** How long since the last crash, and the wheels' travel the stick reads its lift speed from. */
   impactTime: number
   damage: number
   lastLinearVelocity: Vec3
@@ -41,7 +41,7 @@ export function createVehicleStepState(): VehicleStepState {
 }
 
 export function readVehicleStepState(out: VehicleStepState, vehicle: Vehicle): VehicleStepState {
-  const {frame} = vehicle
+  const { frame } = vehicle
 
   out.steerAngle = vehicle.steerAngle
   out.airborneTime = vehicle.airborneTime
@@ -66,7 +66,7 @@ export function readVehicleStepState(out: VehicleStepState, vehicle: Vehicle): V
 }
 
 export function writeVehicleStepState(vehicle: Vehicle, state: VehicleStepState): void {
-  const {frame} = vehicle
+  const { frame } = vehicle
 
   vehicle.steerAngle = state.steerAngle
   vehicle.airborneTime = state.airborneTime

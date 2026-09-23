@@ -1,7 +1,6 @@
-// Ported from the seattle project (src/physics/vehicle.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced. Buggies adds
-// the ground stick: a wheel that has run out of suspension travel but can
-// still see the ground holds on to it, unless the car is genuinely taking off.
+// One step of a vehicle: wheels cast to the ground, springs and tyres
+// pushing back, the engine and brakes, knocks read off the chassis, and
+// the car held to the road over a crest by the ground stick.
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
@@ -25,14 +24,14 @@ import {
   vset,
   type Vec3,
 } from '@buggies/physics'
-import {applyAirControl, applyAirStabilization} from './airControl.ts'
-import {addForceAlong, addTorqueAbout} from './bodyForces.ts'
-import {readChassisFrame, velocityAtPoint, type ChassisFrame} from './chassisFrame.ts'
-import {WHEEL_RAY_GROUPS, isGround} from './groups.ts'
-import {NEUTRAL_INPUT, readDriverCommand, type VehicleInput} from './input.ts'
-import {updateSelfRighting} from './selfRighting.ts'
-import type {VehicleTuning} from './tuning.ts'
-import {createTyreDriveContext, solveTyreForces} from './tyreModel.ts'
+import { applyAirControl, applyAirStabilization } from './airControl.ts'
+import { addForceAlong, addTorqueAbout } from './bodyForces.ts'
+import { readChassisFrame, velocityAtPoint, type ChassisFrame } from './chassisFrame.ts'
+import { WHEEL_RAY_GROUPS, isGround } from './groups.ts'
+import { NEUTRAL_INPUT, readDriverCommand, type VehicleInput } from './input.ts'
+import { updateSelfRighting } from './selfRighting.ts'
+import type { VehicleTuning } from './tuning.ts'
+import { createTyreDriveContext, solveTyreForces } from './tyreModel.ts'
 import {
   restingRideHeight,
   wheelMountLocal,
@@ -41,7 +40,7 @@ import {
   type Vehicle,
   type WheelState,
 } from './vehicleBody.ts'
-import {worldGravity} from './world.ts'
+import { worldGravity } from './world.ts'
 
 const MIN_SPEED_FOR_SLIP_ANGLE = 1
 const MIN_WHEEL_RADIUS = 1e-3
@@ -56,22 +55,17 @@ const contactForce = v3()
 const driveContext = createTyreDriveContext()
 
 /**
- * Buggies addition. Tell a crash from a jump by what hit the chassis over
+ * Tell a crash from a jump by what hit the chassis over
  * the last step. The ground is no crash: a low car's belly touches down at
  * the foot of a steep ramp and flies on. A wall, a tree or another car is,
  * when it hits harder than the tyres ever could, and for a while after it
  * the car is left to tumble as it will.
  */
-function noteImpacts(
-  world: RAPIER.World,
-  vehicle: Vehicle,
-  tuning: VehicleTuning,
-  dt: number,
-): void {
+function noteImpacts(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
   let impulse = 0
-  world.contactPairsWith(vehicle.collider, other => {
+  world.contactPairsWith(vehicle.collider, (other) => {
     if (isGround(other)) return
-    world.contactPair(vehicle.collider, other, manifold => {
+    world.contactPair(vehicle.collider, other, (manifold) => {
       for (let i = 0; i < manifold.numContacts(); i++) {
         impulse += Math.hypot(
           manifold.contactImpulse(i),
@@ -87,7 +81,7 @@ function noteImpacts(
 }
 
 /**
- * Buggies addition. Damage is read off the car's own motion: how sharply
+ * Damage is read off the car's own motion: how sharply
  * its level speed changed over the step. The tyres can only pull so hard;
  * anything sharper is a knock, from a wall, a rail, a tree or another car,
  * and every bit of it past what the tyres could have done is damage. Only
@@ -96,11 +90,8 @@ function noteImpacts(
  * met square costs a lot.
  */
 function takeDamage(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
-  const {frame, lastLinearVelocity} = vehicle
-  const jolt = Math.hypot(
-    frame.linearVelocity.x - lastLinearVelocity.x,
-    frame.linearVelocity.z - lastLinearVelocity.z,
-  )
+  const { frame, lastLinearVelocity } = vehicle
+  const jolt = Math.hypot(frame.linearVelocity.x - lastLinearVelocity.x, frame.linearVelocity.z - lastLinearVelocity.z)
   vcopy(lastLinearVelocity, frame.linearVelocity)
   const knock = jolt - tuning.damageAcceleration * dt
   if (knock <= 0) return
@@ -108,7 +99,7 @@ function takeDamage(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
   if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
 }
 
-/** Buggies addition. Past this much damage the car is smoking. */
+/** Past this much damage the car is smoking. */
 export const DAMAGE_SMOKING = 0.5
 
 /** How fast a wreck is thrown up, in m/s. */
@@ -119,13 +110,13 @@ const WRECK_ROLL = 2.5
 const blast = v3()
 
 /**
- * Buggies addition. A hit hard enough blows the car up: it is thrown into
+ * A hit hard enough blows the car up: it is thrown into
  * the air end over end, takes no more driving, and is put back on its spawn
  * by whoever runs the arena. Nothing here is random, so every copy of the
  * simulation blows it up the same way.
  */
 /**
- * Buggies: blow a car up from outside, a bomb having gone off under it. It
+ * Blow a car up from outside, a bomb having gone off under it. It
  * is as wrecked as a crash would leave it, and thrown up and over the same.
  */
 export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
@@ -134,7 +125,7 @@ export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
 }
 
 function wreck(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const {body, frame} = vehicle
+  const { body, frame } = vehicle
   vehicle.wrecked = true
   vset(blast, 0, WRECK_LIFT * tuning.mass, 0)
   body.applyImpulse(blast, true)
@@ -144,23 +135,16 @@ function wreck(vehicle: Vehicle, tuning: VehicleTuning): void {
 }
 
 function updateMotionState(vehicle: Vehicle): void {
-  const {frame} = vehicle
+  const { frame } = vehicle
   const lateralSpeed = vdot(frame.linearVelocity, frame.right)
 
   vehicle.speed = vlength(frame.linearVelocity)
   vehicle.forwardSpeed = vdot(frame.linearVelocity, frame.forward)
-  vehicle.slipAngle =
-    vehicle.speed > MIN_SPEED_FOR_SLIP_ANGLE
-      ? atan2(lateralSpeed, vehicle.forwardSpeed)
-      : 0
+  vehicle.slipAngle = vehicle.speed > MIN_SPEED_FOR_SLIP_ANGLE ? atan2(lateralSpeed, vehicle.forwardSpeed) : 0
 }
 
 function steerLimitAtSpeed(tuning: VehicleTuning, speed: number): number {
-  const falloff = inverseLerpClamped(
-    speed,
-    tuning.steerFalloffMinSpeed,
-    tuning.steerFalloffMaxSpeed,
-  )
+  const falloff = inverseLerpClamped(speed, tuning.steerFalloffMinSpeed, tuning.steerFalloffMaxSpeed)
 
   return tuning.maxSteerAngle * (1 - (1 - tuning.steerAtHighSpeed) * falloff)
 }
@@ -183,22 +167,12 @@ function updateSteeringRack(vehicle: Vehicle, tuning: VehicleTuning, dt: number)
   for (const wheel of vehicle.wheels) wheel.steerAngle = wheel.isFront ? vehicle.steerAngle : 0
 }
 
-function advanceWheelSpin(
-  wheel: WheelState,
-  contactPatchSpeed: number,
-  tuning: VehicleTuning,
-  dt: number,
-): void {
+function advanceWheelSpin(wheel: WheelState, contactPatchSpeed: number, tuning: VehicleTuning, dt: number): void {
   wheel.spin += (contactPatchSpeed / Math.max(tuning.wheelRadius, MIN_WHEEL_RADIUS)) * dt
 }
 
-function aimWheelRay(
-  vehicle: Vehicle,
-  wheel: WheelState,
-  tuning: VehicleTuning,
-  castDistance: number,
-): void {
-  const {frame} = vehicle
+function aimWheelRay(vehicle: Vehicle, wheel: WheelState, tuning: VehicleTuning, castDistance: number): void {
+  const { frame } = vehicle
 
   wheelMountLocal(mountLocal, wheel, tuning)
   qrotate(mountWorld, frame.rotation, mountLocal)
@@ -207,11 +181,7 @@ function aimWheelRay(
   vcopy(vehicle.ray.origin, wheel.rayOrigin)
 }
 
-function markWheelAirborne(
-  wheel: WheelState,
-  tuning: VehicleTuning,
-  frame: ChassisFrame,
-): void {
+function markWheelAirborne(wheel: WheelState, tuning: VehicleTuning, frame: ChassisFrame): void {
   wheel.grounded = false
   wheel.compression = 0
   wheel.suspensionLength = tuning.suspensionRestLength
@@ -236,7 +206,7 @@ function settleWheelOnContact(
   distanceToContact: number,
   contactNormal: Vec3,
 ): void {
-  const {frame} = vehicle
+  const { frame } = vehicle
   const travel = distanceToContact - tuning.wheelRadius
 
   vaddScaled(wheel.contactPoint, wheel.rayOrigin, frame.down, distanceToContact)
@@ -260,20 +230,12 @@ function settleWheelTravel(
   castDistance: number,
   dt: number,
 ): void {
-  const {body, frame} = vehicle
+  const { body, frame } = vehicle
   const droop = tuning.suspensionRestLength + tuning.wheelRadius
 
   aimWheelRay(vehicle, wheel, tuning, castDistance)
 
-  const hit = world.castRayAndGetNormal(
-    vehicle.ray,
-    castDistance,
-    true,
-    undefined,
-    WHEEL_RAY_GROUPS,
-    undefined,
-    body,
-  )
+  const hit = world.castRayAndGetNormal(vehicle.ray, castDistance, true, undefined, WHEEL_RAY_GROUPS, undefined, body)
 
   if (hit === null) {
     markWheelAirborne(wheel, tuning, frame)
@@ -292,7 +254,7 @@ function settleWheelTravel(
     return
   }
 
-  // Buggies addition. The ground is past full droop but within reach: over a
+  // The ground is past full droop but within reach: over a
   // crest, or a bump, the car holds on to it rather than floating off. Only a
   // corner rising faster than the lift speed is really leaving the ground.
   if (wheel.suspensionExtensionRate > tuning.groundStickLiftSpeed) {
@@ -305,7 +267,7 @@ function settleWheelTravel(
 }
 
 function antiRollForceOnLeft(axle: Axle, tuning: VehicleTuning): number {
-  const {left, right} = axle
+  const { left, right } = axle
 
   if (!left.grounded || !right.grounded) return 0
 
@@ -314,15 +276,10 @@ function antiRollForceOnLeft(axle: Axle, tuning: VehicleTuning): number {
   return stiffness * (left.compression - right.compression)
 }
 
-function applyWheelSuspensionForce(
-  vehicle: Vehicle,
-  wheel: WheelState,
-  tuning: VehicleTuning,
-  antiRoll: number,
-): void {
+function applyWheelSuspensionForce(vehicle: Vehicle, wheel: WheelState, tuning: VehicleTuning, antiRoll: number): void {
   if (!wheel.grounded) return
 
-  // Buggies addition. Past full droop the spring and damper have nothing to
+  // Past full droop the spring and damper have nothing to
   // push with; the stick pulls the corner down toward the ground instead, the
   // harder the further it has got away.
   wheel.suspensionForce =
@@ -345,15 +302,9 @@ function applyWheelSuspensionForce(
   vehicle.body.addForceAtPoint(contactForce, wheel.contactPoint, true)
 }
 
-function applySuspensionForces(
-  world: RAPIER.World,
-  vehicle: Vehicle,
-  tuning: VehicleTuning,
-  dt: number,
-): void {
-  const {axles, frame, wheels} = vehicle
-  const castDistance =
-    tuning.suspensionRestLength + tuning.wheelRadius + tuning.groundStickRange
+function applySuspensionForces(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
+  const { axles, frame, wheels } = vehicle
+  const castDistance = tuning.suspensionRestLength + tuning.wheelRadius + tuning.groundStickRange
   let groundedCount = 0
 
   vcopy(vehicle.ray.dir, frame.down)
@@ -383,17 +334,13 @@ function updateTyreBasis(wheel: WheelState, frame: ChassisFrame): void {
 }
 
 function applyTyreForces(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
-  const {body, command, frame, wheels} = vehicle
+  const { body, command, frame, wheels } = vehicle
 
   driveContext.throttle = command.throttle
   driveContext.brake = command.brake
   driveContext.handbrake = command.handbrake
   driveContext.brakePedalDrivesReverse = vehicle.forwardSpeed < tuning.reverseSpeedThreshold
-  driveContext.remainingDriveFraction = clamp(
-    1 - vehicle.speed / Math.max(tuning.maxSpeed, MIN_SPEED_LIMIT),
-    0,
-    1,
-  )
+  driveContext.remainingDriveFraction = clamp(1 - vehicle.speed / Math.max(tuning.maxSpeed, MIN_SPEED_LIMIT), 0, 1)
   driveContext.massPerWheel = tuning.mass / WHEEL_COUNT
 
   for (const wheel of wheels) {
@@ -420,18 +367,14 @@ function groundFraction(vehicle: Vehicle): number {
 }
 
 function applyAerodynamics(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const {body, frame, speed} = vehicle
+  const { body, frame, speed } = vehicle
 
   addForceAlong(body, frame.linearVelocity, -tuning.dragCoefficient * speed)
   addForceAlong(body, frame.down, tuning.downforce * speed * speed * groundFraction(vehicle))
 }
 
 function applyYawAssist(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const speedRamp = inverseLerpClamped(
-    vehicle.speed,
-    tuning.yawAssistMinSpeed,
-    tuning.yawAssistFullSpeed,
-  )
+  const speedRamp = inverseLerpClamped(vehicle.speed, tuning.yawAssistMinSpeed, tuning.yawAssistFullSpeed)
   const slideAuthority =
     1 -
     inverseLerpClamped(
@@ -460,7 +403,7 @@ export function stepVehicle(
   input: VehicleInput,
   dt: number,
 ): void {
-  const {body} = vehicle
+  const { body } = vehicle
 
   body.resetForces(false)
   body.resetTorques(false)
@@ -493,7 +436,5 @@ export function stepVehicle(
   }
 
   body.setLinearDamping(tuning.linearDamping)
-  body.setAngularDamping(
-    grounded || selfRighting ? tuning.angularDampingGrounded : tuning.angularDampingAirborne,
-  )
+  body.setAngularDamping(grounded || selfRighting ? tuning.angularDampingGrounded : tuning.angularDampingAirborne)
 }

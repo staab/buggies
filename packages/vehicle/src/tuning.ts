@@ -1,9 +1,8 @@
-// Ported from the seattle project (src/physics/tuning.ts). Kept in its original
-// shape and formatting so the two can be compared and resynced. Buggies adds
-// the ground stick: how a car holds the road over a crest instead of leaving it,
-// and seven more vehicles alongside seattle's three.
+// Every vehicle's numbers: its body, springs, tyres, engine, and how it
+// behaves in the air and in a crash. Ten profiles, each measured off the
+// model the client draws it with, at the scale it is drawn.
 
-import {createRng} from '@buggies/physics'
+import { createRng } from '@buggies/physics'
 
 export interface VehicleTuning {
   chassisHalfWidth: number
@@ -109,7 +108,7 @@ export interface VehicleTuning {
 }
 
 /**
- * Buggies: the righting torque goes with the mass, so that a truck rolls back
+ * The righting torque goes with the mass, so that a truck rolls back
  * onto its wheels as readily as a car does.
  */
 const SELF_RIGHT_TORQUE_PER_KILOGRAM = 10
@@ -373,10 +372,10 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
   ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 
-// Buggies: the rest of the garage. Each is a body of its own, weighed and sprung
+// The rest of the garage. Each is a body of its own, weighed and sprung
 // for what it is, from a kart you sit an inch off the road in to a tank. Every
-// vehicle's measurements, seattle's three included, are those of the model the
-// client draws it with, at the scale it is drawn: the chassis box is the body,
+// vehicle's measurements are those of the model the client draws it with, at
+// the scale it is drawn: the chassis box is the body,
 // the wheels are as big as its wheels and on its axles. The tyres stand a
 // little wider than the wheels are drawn, though: these bodies are tall for
 // their width, and would go over in a bend otherwise.
@@ -962,16 +961,7 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
 } satisfies VehicleTuning)
 
 export type VehicleProfileId =
-  | 'raceCar'
-  | 'police'
-  | 'firetruck'
-  | 'pickup'
-  | 'sportsCar'
-  | 'smallCar'
-  | 'tank'
-  | 'ambulance'
-  | 'semi'
-  | 'goKart'
+  'raceCar' | 'police' | 'firetruck' | 'pickup' | 'sportsCar' | 'smallCar' | 'tank' | 'ambulance' | 'semi' | 'goKart'
 
 export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
   'sportsCar',
@@ -999,24 +989,23 @@ export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> 
   goKart: 'Go-kart',
 })
 
-export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<VehicleTuning>>> =
-  Object.freeze({
-    raceCar: RACE_CAR_TUNING,
-    police: POLICE_TUNING,
-    firetruck: FIRETRUCK_TUNING,
-    pickup: PICKUP_TUNING,
-    sportsCar: SPORTS_CAR_TUNING,
-    smallCar: SMALL_CAR_TUNING,
-    tank: TANK_TUNING,
-    ambulance: AMBULANCE_TUNING,
-    semi: SEMI_TUNING,
-    goKart: GO_KART_TUNING,
-  })
+export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<VehicleTuning>>> = Object.freeze({
+  raceCar: RACE_CAR_TUNING,
+  police: POLICE_TUNING,
+  firetruck: FIRETRUCK_TUNING,
+  pickup: PICKUP_TUNING,
+  sportsCar: SPORTS_CAR_TUNING,
+  smallCar: SMALL_CAR_TUNING,
+  tank: TANK_TUNING,
+  ambulance: AMBULANCE_TUNING,
+  semi: SEMI_TUNING,
+  goKart: GO_KART_TUNING,
+})
 
 export const DEFAULT_VEHICLE_PROFILE: VehicleProfileId = 'sportsCar'
 
 export function createVehicleTuning(profile: VehicleProfileId = DEFAULT_VEHICLE_PROFILE): VehicleTuning {
-  return {...VEHICLE_PROFILES[profile]}
+  return { ...VEHICLE_PROFILES[profile] }
 }
 
 export function createVehicleTuningByProfile(): Record<VehicleProfileId, VehicleTuning> {

@@ -1,20 +1,15 @@
-// Ported from the seattle project (src/render/damping.ts). Kept in its original shape
-// and formatting so the two can be compared and resynced.
+// Frame-rate independent easing: how much of a difference is left after a
+// span of time at a given rate.
 
 import * as THREE from 'three'
 
-import {lerp} from '@buggies/physics'
+import { lerp } from '@buggies/physics'
 
 export function remainingFraction(ratePerSecond: number, dt: number): number {
   return Math.exp(-ratePerSecond * dt)
 }
 
-export function dampToward(
-  current: number,
-  target: number,
-  ratePerSecond: number,
-  dt: number,
-): number {
+export function dampToward(current: number, target: number, ratePerSecond: number, dt: number): number {
   return lerp(target, current, remainingFraction(ratePerSecond, dt))
 }
 

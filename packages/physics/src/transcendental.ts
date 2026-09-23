@@ -1,6 +1,6 @@
-// Ported from the seattle project (src/core/math). Kept in its original shape
-// and formatting so the two can be compared and resynced; the arithmetic is
-// what makes a simulation replay the same way on every machine.
+// Sine, cosine, arctangent and hypotenuse in plain arithmetic, so that a
+// simulation replays the same way on every engine: the built-in functions
+// are not guaranteed to agree to the last bit.
 
 const PI_HIGH = 3.141592653589793
 const PI_LOW = 1.2246467991473532e-16
@@ -27,7 +27,7 @@ const COS_1 = 4.16666666666666019037e-2
 const COS_2 = -1.38888888888741095749e-3
 const COS_3 = 2.48015872894767294178e-5
 const COS_4 = -2.75573143513906633035e-7
-const COS_5 = 2.08757232129817482790e-9
+const COS_5 = 2.0875723212981748279e-9
 const COS_6 = -1.13596475577881948265e-11
 
 const ATAN_HALF_HIGH = 4.63647609000806093515e-1
@@ -36,19 +36,19 @@ const ATAN_ONE_HIGH = 7.85398163397448278999e-1
 const ATAN_ONE_LOW = 3.06161699786838301793e-17
 const ATAN_THREE_HALVES_HIGH = 9.82793723247329054082e-1
 const ATAN_THREE_HALVES_LOW = 1.39033110312309984516e-17
-const ATAN_INFINITY_HIGH = 1.57079632679489655800e0
+const ATAN_INFINITY_HIGH = 1.570796326794896558
 const ATAN_INFINITY_LOW = 6.12323399573676603587e-17
 
 const ATAN_1 = 3.33333333333329318027e-1
 const ATAN_2 = -1.99999999998764832476e-1
 const ATAN_3 = 1.42857142725034663711e-1
-const ATAN_4 = -1.11111104054623557880e-1
+const ATAN_4 = -1.1111110405462355788e-1
 const ATAN_5 = 9.09088713343650656196e-2
 const ATAN_6 = -7.69187620504482999495e-2
 const ATAN_7 = 6.66107313738753120669e-2
 const ATAN_8 = -5.83357013379057348645e-2
 const ATAN_9 = 4.97687799461593236017e-2
-const ATAN_10 = -3.65315727442169155270e-2
+const ATAN_10 = -3.6531572744216915527e-2
 const ATAN_11 = 1.62858201153657823623e-2
 
 function splitHigh(value: number): number {
@@ -97,8 +97,7 @@ function reduceToQuarterTurn(x: number): void {
   const midError = productError(turns, PI_OVER_TWO_MID, midProduct)
   const afterMid = afterHigh - midProduct
   const afterMidError = sumError(afterHigh, -midProduct, afterMid)
-  const tail =
-    afterHighError + afterMidError - highError - midError - turns * PI_OVER_TWO_LOW
+  const tail = afterHighError + afterMidError - highError - midError - turns * PI_OVER_TWO_LOW
 
   reducedHigh = afterMid + tail
   reducedLow = sumError(afterMid, tail, reducedHigh)
@@ -121,10 +120,7 @@ function sinNearZero(x: number, tail: number): number {
 function cosNearZero(x: number, tail: number): number {
   const square = x * x
   const series =
-    square *
-    (COS_1 +
-      square *
-        (COS_2 + square * (COS_3 + square * (COS_4 + square * (COS_5 + square * COS_6)))))
+    square * (COS_1 + square * (COS_2 + square * (COS_3 + square * (COS_4 + square * (COS_5 + square * COS_6)))))
   const half = 0.5 * square
   const partial = 1 - half
 
@@ -186,13 +182,8 @@ function atanOfMagnitude(ratio: number): number {
   const square = reduced * reduced
   const fourth = square * square
   const oddSeries =
-    square *
-    (ATAN_1 +
-      fourth *
-        (ATAN_3 + fourth * (ATAN_5 + fourth * (ATAN_7 + fourth * (ATAN_9 + fourth * ATAN_11)))))
-  const evenSeries =
-    fourth *
-    (ATAN_2 + fourth * (ATAN_4 + fourth * (ATAN_6 + fourth * (ATAN_8 + fourth * ATAN_10))))
+    square * (ATAN_1 + fourth * (ATAN_3 + fourth * (ATAN_5 + fourth * (ATAN_7 + fourth * (ATAN_9 + fourth * ATAN_11)))))
+  const evenSeries = fourth * (ATAN_2 + fourth * (ATAN_4 + fourth * (ATAN_6 + fourth * (ATAN_8 + fourth * ATAN_10))))
 
   if (offsetHigh === 0) return reduced - reduced * (oddSeries + evenSeries)
 
@@ -228,8 +219,7 @@ export function atan2(y: number, x: number): number {
   let angle = 0
 
   if (magnitudeY > magnitudeX * RATIO_LIMIT) angle = PI_OVER_TWO
-  else if (!negativeX || magnitudeY * RATIO_LIMIT >= magnitudeX)
-    angle = atanOfMagnitude(magnitudeY / magnitudeX)
+  else if (!negativeX || magnitudeY * RATIO_LIMIT >= magnitudeX) angle = atanOfMagnitude(magnitudeY / magnitudeX)
 
   if (!negativeX) return negativeY ? -angle : angle
 

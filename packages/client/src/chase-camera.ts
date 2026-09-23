@@ -1,22 +1,21 @@
-// Ported from the seattle project (src/render/chaseCamera.ts), kept in its
-// original shape and formatting so the two can be compared and resynced.
-// Buggies adds one thing seattle has no need of: a roof, for driving through
-// tunnels. Every part of it is marked below.
+// The camera behind a car: it hangs back on an arm, looks ahead of the car,
+// widens its view with speed, drops under a bridge or in a tunnel, and pulls
+// far away to watch a wreck.
 
 import * as THREE from 'three'
 
-import {clamp, type Quat, type Vec3} from '@buggies/physics'
-import {CHASSIS_FORWARD as CHASSIS_FORWARD_VEC3} from '@buggies/game'
-import {dampToward, dampVector3Toward} from './damping.ts'
+import { clamp, type Quat, type Vec3 } from '@buggies/physics'
+import { CHASSIS_FORWARD as CHASSIS_FORWARD_VEC3 } from '@buggies/game'
+import { dampToward, dampVector3Toward } from './damping.ts'
 
 export interface CameraTuning {
   distance: number
   height: number
-  /** Buggies addition: the height the camera drops to with something overhead, under a bridge or in a tunnel. */
+  /** The height the camera drops to with something overhead, under a bridge or in a tunnel. */
   lowHeight: number
   distanceSpeedGain: number
   /**
-   * Buggies addition: how far back and up the camera pulls from the spot
+   * How far back and up the camera pulls from the spot
    * where the car blew up, and how quickly. It stops following the car
    * there, and watches the wreck fly from where it stood.
    */
@@ -46,7 +45,7 @@ export interface CameraTuning {
 
 export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   distance: 8.5,
-  // Raised from seattle's 3.2 on request, then a little more. The rest of the rig is untouched.
+  // Raised on request, then a little more.
   height: 5.2,
   lowHeight: 1.9,
   distanceSpeedGain: 2.5,
@@ -75,7 +74,7 @@ export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
 } satisfies CameraTuning)
 
 export function createCameraTuning(): CameraTuning {
-  return {...DEFAULT_CAMERA_TUNING}
+  return { ...DEFAULT_CAMERA_TUNING }
 }
 
 export function resetCameraTuning(tuning: CameraTuning): void {
@@ -87,22 +86,22 @@ export interface ChaseTarget {
   rotation: Quat
   velocity: Vec3
   speed: number
-  /** Buggies addition: blown up, and being watched from well back until it is put back. */
+  /** Blown up, and being watched from well back until it is put back. */
   wrecked: boolean
 }
 
 export function createChaseTarget(): ChaseTarget {
   return {
-    position: {x: 0, y: 0, z: 0},
-    rotation: {x: 0, y: 0, z: 0, w: 1},
-    velocity: {x: 0, y: 0, z: 0},
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    velocity: { x: 0, y: 0, z: 0 },
     speed: 0,
     wrecked: false,
   }
 }
 
 /**
- * Buggies addition. What the camera may not pass through at a point: the
+ * What the camera may not pass through at a point: the
  * ground under it, and whatever roof there is over it.
  */
 export interface CameraBounds {
@@ -111,23 +110,19 @@ export interface CameraBounds {
 }
 
 /**
- * Buggies addition. The bounds at a point, for a car at height `above`: a
+ * The bounds at a point, for a car at height `above`: a
  * deck counts as a roof only when it is over the car, not when the car is
  * driving on it.
  */
 export type CameraBoundsAt = (x: number, z: number, out: CameraBounds, above: number) => CameraBounds
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
-const CHASSIS_FORWARD = new THREE.Vector3(
-  CHASSIS_FORWARD_VEC3.x,
-  CHASSIS_FORWARD_VEC3.y,
-  CHASSIS_FORWARD_VEC3.z,
-)
+const CHASSIS_FORWARD = new THREE.Vector3(CHASSIS_FORWARD_VEC3.x, CHASSIS_FORWARD_VEC3.y, CHASSIS_FORWARD_VEC3.z)
 const MIN_SPEED_FOR_VELOCITY_BLEND = 1
 const MIN_FOV_SPEED_REFERENCE = 1e-3
 const MIN_ARM_LENGTH_SQUARED = 1e-6
 
-/** Buggies addition. How far the camera keeps below a roof. */
+/** How far the camera keeps below a roof. */
 const ROOF_CLEARANCE = 0.6
 
 export class ChaseCamera {
@@ -147,11 +142,11 @@ export class ChaseCamera {
 
   private settled = false
   private wrecked = false
-  /** Buggies addition: where the car blew up, and which way it was going, for the camera to pull away from. */
+  /** Where the car blew up, and which way it was going, for the camera to pull away from. */
   private readonly wreckAnchor = new THREE.Vector3()
   private readonly wreckArm = new THREE.Vector3()
   private boundsAt: CameraBoundsAt | null = null
-  private readonly bounds: CameraBounds = {floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY}
+  private readonly bounds: CameraBounds = { floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY }
 
   constructor(tuning: CameraTuning) {
     this.tuning = tuning
@@ -166,13 +161,13 @@ export class ChaseCamera {
     })
   }
 
-  /** Buggies addition. Where the camera is kept: above the floor, under the roof. */
+  /** Where the camera is kept: above the floor, under the roof. */
   setBoundsAt(boundsAt: CameraBoundsAt): void {
     this.boundsAt = boundsAt
   }
 
   /**
-   * Buggies addition. Keep a height between the floor and the roof at a point,
+   * Keep a height between the floor and the roof at a point,
    * held clear of the ground and, where there is a roof, clear of that too. A
    * bore too low for both leaves the camera under the roof: better a view
    * skimming the road than one looking through the hill.
@@ -180,7 +175,7 @@ export class ChaseCamera {
   private confine(x: number, y: number, z: number): number {
     if (this.boundsAt === null) return y
 
-    const {floor, ceiling} = this.boundsAt(x, z, this.bounds, this.targetPosition.y)
+    const { floor, ceiling } = this.boundsAt(x, z, this.bounds, this.targetPosition.y)
     const lowest = floor + this.tuning.groundClearance
     const highest = ceiling - ROOF_CLEARANCE
 
@@ -213,17 +208,12 @@ export class ChaseCamera {
 
   private readTarget(target: ChaseTarget): void {
     this.targetPosition.set(target.position.x, target.position.y, target.position.z)
-    this.targetRotation.set(
-      target.rotation.x,
-      target.rotation.y,
-      target.rotation.z,
-      target.rotation.w,
-    )
+    this.targetRotation.set(target.rotation.x, target.rotation.y, target.rotation.z, target.rotation.w)
     this.targetVelocity.set(target.velocity.x, target.velocity.y, target.velocity.z)
   }
 
   private updateArmDirection(speed: number): void {
-    const {velocityBlend} = this.tuning
+    const { velocityBlend } = this.tuning
 
     this.armDirection.copy(CHASSIS_FORWARD).applyQuaternion(this.targetRotation)
 
@@ -244,16 +234,16 @@ export class ChaseCamera {
     this.armDirection.normalize()
   }
 
-  /** Buggies addition. Whether there is a roof over the car itself: a bridge deck, or a tunnel. */
+  /** Whether there is a roof over the car itself: a bridge deck, or a tunnel. */
   private covered(): boolean {
     if (this.boundsAt === null) return false
-    const {x, y, z} = this.targetPosition
+    const { x, y, z } = this.targetPosition
     return Number.isFinite(this.boundsAt(x, z, this.bounds, y).ceiling)
   }
 
   private updateDesiredPose(speed: number, speedFractionOfReference: number): void {
     const tuning = this.tuning
-    // Buggies addition: a wreck is watched from well back and well up. The
+    // A wreck is watched from well back and well up. The
     // camera stops following the car the moment it blows up, pulls away from
     // that spot, and turns to keep the wreck in view as it flies.
     if (this.wrecked) {
@@ -261,17 +251,13 @@ export class ChaseCamera {
         .copy(this.wreckAnchor)
         .addScaledVector(this.wreckArm, -tuning.wreckDistance)
         .addScaledVector(WORLD_UP, tuning.wreckHeight)
-      this.desiredPosition.y = this.confine(
-        this.desiredPosition.x,
-        this.desiredPosition.y,
-        this.desiredPosition.z,
-      )
+      this.desiredPosition.y = this.confine(this.desiredPosition.x, this.desiredPosition.y, this.desiredPosition.z)
       this.desiredLookAt.copy(this.targetPosition)
       return
     }
     const armLength = tuning.distance + tuning.distanceSpeedGain * speedFractionOfReference
     const lookAheadDistance = Math.min(speed * tuning.lookAheadTime, tuning.lookAheadMax)
-    // Buggies addition: under a bridge the camera drops to a low chase, and
+    // Under a bridge the camera drops to a low chase, and
     // eases back up once the car is out from under it.
     const height = this.covered() ? tuning.lowHeight : tuning.height
 
@@ -279,11 +265,7 @@ export class ChaseCamera {
       .copy(this.targetPosition)
       .addScaledVector(this.armDirection, -armLength)
       .addScaledVector(WORLD_UP, height)
-    this.desiredPosition.y = this.confine(
-      this.desiredPosition.x,
-      this.desiredPosition.y,
-      this.desiredPosition.z,
-    )
+    this.desiredPosition.y = this.confine(this.desiredPosition.x, this.desiredPosition.y, this.desiredPosition.z)
 
     this.desiredLookAt
       .copy(this.targetPosition)
@@ -303,7 +285,7 @@ export class ChaseCamera {
       return
     }
 
-    // Buggies addition: the pull-out from a wreck is slower than the chase.
+    // The pull-out from a wreck is slower than the chase.
     const positionLambda = this.wrecked ? tuning.wreckLambda : tuning.positionLambda
     dampVector3Toward(this.position, this.desiredPosition, positionLambda, dt)
     dampVector3Toward(this.lookAt, this.desiredLookAt, tuning.lookLambda, dt)
