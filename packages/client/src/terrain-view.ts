@@ -27,6 +27,7 @@ import {
   tunnelShellMesh,
   type BoreSegment,
   type Building,
+  type Field,
   type Heightfield,
   type Lake,
   type Ramp,
@@ -114,6 +115,48 @@ const DOME_COLOR = new THREE.Color('#f2f2ee')
 const SLIT_COLOR = new THREE.Color('#2a2f38')
 /** The tower takes this much of the observatory's width; the dome on it is a true hemisphere of the same radius. */
 const TOWER_SHARE = 0.9
+/** Crops run from young green to ripe gold, in stripes this far apart along the field, the odd one a shade darker. */
+const CROP_STOPS: Stops = [
+  { t: 0, color: new THREE.Color('#6f9a3c') },
+  { t: 0.4, color: new THREE.Color('#9db04a') },
+  { t: 0.75, color: new THREE.Color('#c9a94a') },
+  { t: 1, color: new THREE.Color('#b78a3e') },
+]
+const CROP_STRIPE = 4
+const CROP_STRIPE_SHADE = 0.86
+/** Barns are red or weathered grey under a steep grey roof; silos are pale steel with a domed cap. */
+const BARN_COLORS: [THREE.Color, ...THREE.Color[]] = [
+  new THREE.Color('#9c3b2e'),
+  new THREE.Color('#8a4a3a'),
+  new THREE.Color('#8d8a82'),
+]
+const BARN_ROOF = new THREE.Color('#5c5c5a')
+const BARN_PITCH = 0.5
+const SILO_COLOR = new THREE.Color('#d6d8d6')
+/** Turbines are white towers with a nacelle and three blades this long, turning this fast in radians a second. */
+const TURBINE_COLOR = new THREE.Color('#f0f2f2')
+const BLADE_LENGTH = 18
+const BLADE_SPIN = 0.7
+const NACELLE = { length: 4.2, width: 1.7 } as const
+/** Standing stones are a pale weathered grey, a little different each, to stand out against the grass. */
+const STONE_COLOR = new THREE.Color('#bcbdb5')
+/**
+ * A lighthouse is a white tower tapering to this share of its width at the
+ * top, with two red bands, a railed gallery, a glazed lantern room with the
+ * lamp in it, a cap and a finial, and a door at the foot.
+ */
+const LIGHTHOUSE_COLOR = new THREE.Color('#f4f1ea')
+const LIGHTHOUSE_BAND = new THREE.Color('#c93a2e')
+const LIGHTHOUSE_TAPER = 0.62
+const GALLERY = { out: 1.45, height: 0.5, rail: 1.1 } as const
+const LANTERN = { share: 0.82, height: 3.4 } as const
+const CAP = { out: 1.12, height: 2.4 } as const
+const IRONWORK = new THREE.Color('#2b2f36')
+const GLAZING = new THREE.Color('#bfe0ee')
+const LAMP_COLOR = new THREE.Color('#ffe8a0')
+const DOOR = { width: 1.4, height: 2.6 } as const
+/** How far a building's bottom is buried below the ground, as the generator does it. */
+const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
 const CROWN_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#2f6b2a') },
@@ -327,6 +370,7 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
   ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
   const asphalt: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
   const city = cityBlocks(map)
+  const crops = map.fields.map((field) => cropOf(field))
 
   const texels = Math.ceil(width * cellSize * TEXELS_PER_METRE)
   const data = new Uint8Array(texels * texels * 4)
@@ -365,7 +409,11 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
     }
   }
 
-  // The roads out of the cities are painted on over the land.
+  // The fields are painted on over the land, and the roads over everything.
+  for (const [i, field] of map.fields.entries()) {
+    const crop = crops[i]
+    if (crop !== undefined) paintField(data, texels, field, crop)
+  }
   for (const road of map.roads) {
     if (!isSurfaceRoad(road)) continue
     const count = road.points.length
@@ -399,6 +447,47 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
   texture.anisotropy = 8
   texture.needsUpdate = true
   return texture
+}
+
+/** A field's crop: its colour and the shade of its stripes, as texel values. */
+interface Crop {
+  plain: [number, number, number]
+  striped: [number, number, number]
+}
+
+function cropOf(field: Field): Crop {
+  const color = sampleRamp(field.tone, CROP_STOPS, new THREE.Color())
+  const rgb = { r: 0, g: 0, b: 0 }
+  color.getRGB(rgb, THREE.SRGBColorSpace)
+  const plain: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  return { plain, striped: [plain[0] * CROP_STRIPE_SHADE, plain[1] * CROP_STRIPE_SHADE, plain[2] * CROP_STRIPE_SHADE] }
+}
+
+/** A field, as a rectangle of crop turned with the field, striped along its length. */
+function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop): void {
+  const cos = Math.cos(field.yaw)
+  const sin = Math.sin(field.yaw)
+  const reach = Math.hypot(field.width, field.depth) / 2
+  const from = Math.max(Math.floor((field.x - reach) * TEXELS_PER_METRE), 0)
+  const to = Math.min(Math.ceil((field.x + reach) * TEXELS_PER_METRE), texels - 1)
+  const top = Math.max(Math.floor((field.z - reach) * TEXELS_PER_METRE), 0)
+  const bottom = Math.min(Math.ceil((field.z + reach) * TEXELS_PER_METRE), texels - 1)
+  for (let ty = top; ty <= bottom; ty++) {
+    const dz = (ty + 0.5) / TEXELS_PER_METRE - field.z
+    for (let tx = from; tx <= to; tx++) {
+      const dx = (tx + 0.5) / TEXELS_PER_METRE - field.x
+      // Into the field's own frame: u along its width, v along its depth.
+      const u = dx * cos - dz * sin
+      const v = dx * sin + dz * cos
+      if (Math.abs(u) > field.width / 2 || Math.abs(v) > field.depth / 2) continue
+      const shade = Math.floor((u + field.width / 2) / CROP_STRIPE) % 2 === 0 ? crop.plain : crop.striped
+      const at = (ty * texels + tx) * 4
+      data[at] = Math.round(shade[0])
+      data[at + 1] = Math.round(shade[1])
+      data[at + 2] = Math.round(shade[2])
+      data[at + 3] = 255
+    }
+  }
 }
 
 /** One stretch of carriageway, as a capsule with an edge a texel wide. */
@@ -964,11 +1053,17 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     wall,
     wall,
   ]
-  const blocks = map.buildings.filter((building) => building.kind === 'block')
-  const houses = map.buildings.filter((building) => building.kind === 'house')
-  const cottages = map.buildings.filter((building) => building.kind === 'cottage')
-  const villas = map.buildings.filter((building) => building.kind === 'villa')
-  const observatories = map.buildings.filter((building) => building.kind === 'observatory')
+  const ofKind = (kind: Building['kind']): Building[] => map.buildings.filter((building) => building.kind === kind)
+  const blocks = ofKind('block')
+  const houses = ofKind('house')
+  const cottages = ofKind('cottage')
+  const villas = ofKind('villa')
+  const observatories = ofKind('observatory')
+  const barns = ofKind('barn')
+  const silos = ofKind('silo')
+  const turbines = ofKind('turbine')
+  const stones = [...ofKind('stone'), ...ofKind('lintel')]
+  const lighthouses = ofKind('lighthouse')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -1045,6 +1140,22 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
+  // A barn: a box under a steep roof. Stones: boxes, each its own grey.
+  meshes.push(
+    instanced(box, walled(plain, plain), barns, (barn, matrix, color) => {
+      boxAt(barn, matrix)
+      color.copy(pick(BARN_COLORS, barn.tone))
+    }),
+    instanced(roof, plain, barns, (barn, matrix, color) => {
+      roofAt(barn, matrix, BARN_PITCH)
+      color.copy(BARN_ROOF)
+    }),
+    instanced(box, plain, stones, (stone, matrix, color) => {
+      boxAt(stone, matrix)
+      color.copy(STONE_COLOR).multiplyScalar(0.85 + stone.tone * 0.3)
+    }),
+  )
+
   // An observatory: a round tower with a dome on it, its slit facing whichever way the tone says.
   const tower = new THREE.CylinderGeometry(1, 1, 1, 18)
   tower.translate(0, 0.5, 0)
@@ -1074,6 +1185,190 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     instanced(slit, plain, observatories, (observatory, matrix, color) => {
       domeAt(observatory, matrix)
       color.copy(SLIT_COLOR)
+    }),
+  )
+
+  // A silo: a round tower capped with a hemisphere of its own radius.
+  meshes.push(
+    instanced(tower, plain, silos, (silo, matrix, color) => {
+      const radius = silo.width / 2
+      matrix.makeScale(radius, silo.top - radius - silo.bottom, radius)
+      matrix.setPosition(silo.x, silo.bottom, silo.z)
+      color.copy(SILO_COLOR)
+    }),
+    instanced(dome, plain, silos, (silo, matrix, color) => {
+      const radius = silo.width / 2
+      matrix.makeScale(radius, radius, radius)
+      matrix.setPosition(silo.x, silo.top - radius, silo.z)
+      color.copy(SILO_COLOR)
+    }),
+  )
+
+  // A wind turbine: a tapering tower, a nacelle across its top facing the
+  // way the tone says, and three blades on the front of it, turning.
+  const mast = new THREE.CylinderGeometry(0.55, 1, 1, 12)
+  mast.translate(0, 0.5, 0)
+  const nacelle = new THREE.BoxGeometry(NACELLE.width, NACELLE.width, NACELLE.length)
+  nacelle.translate(0, 0, -NACELLE.length * 0.15)
+  const rotor = new THREE.BufferGeometry()
+  {
+    const blades: THREE.BufferGeometry[] = []
+    for (let k = 0; k < 3; k++) {
+      const blade = new THREE.BoxGeometry(0.5, BLADE_LENGTH, 0.14)
+      blade.translate(0, BLADE_LENGTH / 2, 0)
+      blade.rotateZ((k * Math.PI * 2) / 3)
+      blades.push(blade)
+    }
+    const hub = new THREE.SphereGeometry(0.9, 10, 8)
+    blades.push(hub)
+    const positions: number[] = []
+    const normals: number[] = []
+    const indices: number[] = []
+    let vertices = 0
+    for (const part of blades) {
+      const position = part.getAttribute('position')
+      const normal = part.getAttribute('normal')
+      const index = part.getIndex()
+      for (let i = 0; i < position.count; i++) {
+        positions.push(position.getX(i), position.getY(i), position.getZ(i))
+        normals.push(normal.getX(i), normal.getY(i), normal.getZ(i))
+      }
+      if (index !== null) for (let i = 0; i < index.count; i++) indices.push(index.getX(i) + vertices)
+      vertices += position.count
+      part.dispose()
+    }
+    rotor.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    rotor.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+    rotor.setIndex(indices)
+  }
+  const facing = (turbine: Building): THREE.Quaternion =>
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), turbine.yaw)
+  const hubOf = (turbine: Building): THREE.Vector3 =>
+    new THREE.Vector3(0, 0, NACELLE.length * 0.4).applyQuaternion(facing(turbine)).add(
+      new THREE.Vector3(turbine.x, turbine.top - NACELLE.width / 2, turbine.z),
+    )
+  const rotors = instanced(rotor, plain, turbines, (turbine, matrix, color) => {
+    matrix.compose(hubOf(turbine), facing(turbine), new THREE.Vector3(1, 1, 1))
+    color.copy(TURBINE_COLOR)
+  })
+  if (rotors !== null) {
+    // The blades turn as the frames go by, each rotor a little out of step with the next.
+    const spin = new THREE.Quaternion()
+    const axis = new THREE.Vector3(0, 0, 1)
+    const one = new THREE.Vector3(1, 1, 1)
+    rotors.onBeforeRender = () => {
+      const time = performance.now() / 1000
+      for (const [i, turbine] of turbines.entries()) {
+        spin.setFromAxisAngle(axis, time * BLADE_SPIN + i * 0.9)
+        rotors.setMatrixAt(i, new THREE.Matrix4().compose(hubOf(turbine), facing(turbine).multiply(spin), one))
+      }
+      rotors.instanceMatrix.needsUpdate = true
+    }
+  }
+  meshes.push(
+    instanced(mast, plain, turbines, (turbine, matrix, color) => {
+      const radius = turbine.width / 2
+      matrix.makeScale(radius, turbine.top - NACELLE.width - turbine.bottom, radius)
+      matrix.setPosition(turbine.x, turbine.bottom, turbine.z)
+      color.copy(TURBINE_COLOR)
+    }),
+    instanced(nacelle, plain, turbines, (turbine, matrix, color) => {
+      matrix.compose(
+        new THREE.Vector3(turbine.x, turbine.top - NACELLE.width / 2, turbine.z),
+        facing(turbine),
+        new THREE.Vector3(1, 1, 1),
+      )
+      color.copy(TURBINE_COLOR)
+    }),
+    rotors,
+  )
+
+  // A lighthouse: a tapering white shaft with two red bands, a railed
+  // gallery round the top, a glazed lantern room with the lamp in it under
+  // a cap and finial, and a door at the foot. The shaft is as tall as the
+  // building less what stands on it.
+  const lamp = new THREE.SphereGeometry(0.5, 10, 8)
+  const spire = new THREE.CylinderGeometry(LIGHTHOUSE_TAPER, 1, 1, 24)
+  spire.translate(0, 0.5, 0)
+  const ring = new THREE.TorusGeometry(1, 0.06, 6, 32).rotateX(Math.PI / 2)
+  const cap = new THREE.ConeGeometry(1, 1, 16)
+  cap.translate(0, 0.5, 0)
+  const finial = new THREE.SphereGeometry(0.35, 8, 6)
+  const glazing = new THREE.MeshStandardMaterial({
+    color: GLAZING,
+    roughness: 0.15,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.45,
+  })
+  const glow = new THREE.MeshStandardMaterial({ color: LAMP_COLOR, emissive: LAMP_COLOR, emissiveIntensity: 2.5 })
+  const above = GALLERY.height + LANTERN.height + CAP.height
+  const shaftOf = (lighthouse: Building): { radius: number; height: number; rim: number } => {
+    const radius = lighthouse.width / 2
+    const height = lighthouse.top - lighthouse.bottom - above
+    return { radius, height, rim: lighthouse.bottom + height }
+  }
+  /** The shaft's radius this far up it, as it tapers. */
+  const radiusAt = (lighthouse: Building, up: number): number => {
+    const { radius, height } = shaftOf(lighthouse)
+    return radius * (1 - (1 - LIGHTHOUSE_TAPER) * Math.min(Math.max(up / height, 0), 1))
+  }
+  const standing = (lighthouse: Building, matrix: THREE.Matrix4, radius: number, height: number, y: number): void => {
+    matrix.makeScale(radius, height, radius)
+    matrix.setPosition(lighthouse.x, y, lighthouse.z)
+  }
+  meshes.push(
+    instanced(spire, plain, lighthouses, (lighthouse, matrix, color) => {
+      const { radius, height } = shaftOf(lighthouse)
+      standing(lighthouse, matrix, radius, height, lighthouse.bottom)
+      color.copy(LIGHTHOUSE_COLOR)
+    }),
+    ...[0.35, 0.65].map((share) =>
+      instanced(tower, plain, lighthouses, (lighthouse, matrix, color) => {
+        const { height } = shaftOf(lighthouse)
+        const up = height * share
+        standing(lighthouse, matrix, radiusAt(lighthouse, up) * 1.03, height * 0.09, lighthouse.bottom + up)
+        color.copy(LIGHTHOUSE_BAND)
+      }),
+    ),
+    instanced(tower, plain, lighthouses, (lighthouse, matrix, color) => {
+      const { radius, rim } = shaftOf(lighthouse)
+      standing(lighthouse, matrix, radius * LIGHTHOUSE_TAPER * GALLERY.out, GALLERY.height, rim)
+      color.copy(IRONWORK)
+    }),
+    instanced(ring, plain, lighthouses, (lighthouse, matrix, color) => {
+      const { radius, rim } = shaftOf(lighthouse)
+      const reach = radius * LIGHTHOUSE_TAPER * GALLERY.out
+      matrix.makeScale(reach, 1, reach)
+      matrix.setPosition(lighthouse.x, rim + GALLERY.height + GALLERY.rail, lighthouse.z)
+      color.copy(IRONWORK)
+    }),
+    instanced(tower, glazing, lighthouses, (lighthouse, matrix, color) => {
+      const { radius, rim } = shaftOf(lighthouse)
+      standing(lighthouse, matrix, radius * LIGHTHOUSE_TAPER * LANTERN.share, LANTERN.height, rim + GALLERY.height)
+      color.copy(GLAZING)
+    }),
+    instanced(lamp, glow, lighthouses, (lighthouse, matrix, color) => {
+      const { rim } = shaftOf(lighthouse)
+      matrix.makeScale(1.8, 1.8, 1.8)
+      matrix.setPosition(lighthouse.x, rim + GALLERY.height + LANTERN.height / 2, lighthouse.z)
+      color.copy(LAMP_COLOR)
+    }),
+    instanced(cap, plain, lighthouses, (lighthouse, matrix, color) => {
+      const { radius, rim } = shaftOf(lighthouse)
+      standing(lighthouse, matrix, radius * LIGHTHOUSE_TAPER * CAP.out, CAP.height, rim + GALLERY.height + LANTERN.height)
+      color.copy(LIGHTHOUSE_BAND)
+    }),
+    instanced(finial, plain, lighthouses, (lighthouse, matrix, color) => {
+      matrix.makeScale(1, 1, 1)
+      matrix.setPosition(lighthouse.x, lighthouse.top, lighthouse.z)
+      color.copy(IRONWORK)
+    }),
+    instanced(box, plain, lighthouses, (lighthouse, matrix, color) => {
+      const { radius } = shaftOf(lighthouse)
+      matrix.makeScale(DOOR.width, DOOR.height, 0.4)
+      matrix.setPosition(lighthouse.x, lighthouse.bottom + BURY_SHOWN + DOOR.height / 2, lighthouse.z + radius * 0.97)
+      color.copy(IRONWORK)
     }),
   )
 

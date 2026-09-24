@@ -1,6 +1,7 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { quatFromYaw } from '@buggies/physics'
 import {
+  ROUND_KINDS,
   ROAD_GRADE,
   ROAD_SKIRT,
   ROAD_TUNNEL,
@@ -302,11 +303,10 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
   for (const building of map.buildings) {
     const halfHeight = (building.top - building.bottom) / 2
-    // An observatory is a round tower; everything else is the box it is drawn as.
-    const shape =
-      building.kind === 'observatory'
-        ? RAPIER.ColliderDesc.cylinder(halfHeight, building.width / 2)
-        : RAPIER.ColliderDesc.cuboid(building.width / 2, halfHeight, building.depth / 2)
+    // The round towers are cylinders; everything else is the box it is drawn as.
+    const shape = ROUND_KINDS.includes(building.kind)
+      ? RAPIER.ColliderDesc.cylinder(halfHeight, building.width / 2)
+      : RAPIER.ColliderDesc.cuboid(building.width / 2, halfHeight, building.depth / 2)
     world.createCollider(
       slick(
         shape

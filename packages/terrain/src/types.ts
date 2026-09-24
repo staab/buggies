@@ -101,13 +101,40 @@ export interface Road {
  * under it, up to `top`.
  */
 /**
- * What a building is: a city block, one of three styles of house, or an
- * observatory on a mountain top, which is round rather than square.
+ * What a building is: a city block, one of three styles of house, an
+ * observatory on a mountain top, a farm's barn or silo, a wind turbine, a
+ * standing stone or the lintel laid across two of them, or a lighthouse on
+ * a headland.
  */
-export type BuildingKind = 'block' | 'house' | 'cottage' | 'villa' | 'observatory'
+export type BuildingKind =
+  | 'block'
+  | 'house'
+  | 'cottage'
+  | 'villa'
+  | 'observatory'
+  | 'barn'
+  | 'silo'
+  | 'turbine'
+  | 'stone'
+  | 'lintel'
+  | 'lighthouse'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
+
+/** The kinds that are round towers rather than boxes, as wide as they are deep. */
+export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse']
+
+/** A farm's field: a rectangle of crop painted on the ground, hedged about. */
+export interface Field {
+  x: number
+  z: number
+  yaw: number
+  width: number
+  depth: number
+  /** Which crop, and how ripe, for whoever paints it: 0 to 1. */
+  tone: number
+}
 
 export interface Building {
   kind: BuildingKind
@@ -217,4 +244,5 @@ export interface TerrainMap {
   trees: Tree[]
   ramps: Ramp[]
   sidewalks: Sidewalk[]
+  fields: Field[]
 }

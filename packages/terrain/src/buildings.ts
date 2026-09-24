@@ -31,6 +31,7 @@ import {
 import type {
   Building,
   District,
+  Field,
   Heightfield,
   Lake,
   Mountain,
@@ -122,6 +123,83 @@ const OBSERVATORY_ODDS = 0.5
 const OBSERVATORY_SIZE = 12
 const OBSERVATORY_HEIGHT = 11
 const OBSERVATORY_RELIEF = 8
+
+/**
+ * Farms in the open country, this many at most out of this many tries: a
+ * row of fields side by side, each this long and wide and no more uneven
+ * than this across it, hedged about, with a barn and a silo or two off the
+ * end of the row.
+ */
+const FARMS_MOST = 5
+const FARM_TRIES = 150
+const FIELDS_PER_FARM = { min: 2, max: 4 } as const
+const FIELD_LENGTH = { min: 45, max: 75 } as const
+const FIELD_WIDTH = { min: 28, max: 45 } as const
+const FIELD_GAP = 3
+const FIELD_RELIEF = 8
+const FIELD_ROAD_MARGIN = 4
+const HEDGE_SPACING = 3.5
+/** How far outside the crop the hedge stands: a shrub's width, so it does not sit in the field it hedges. */
+const HEDGE_OUT = 1.9
+const BARN = { width: 14, depth: 9, height: 6.5 } as const
+/** How far past the end of the row the barn stands: beyond the hedge, with room to walk round. */
+const BARN_OFF = 6
+const SILO = { radius: 2.4, height: 9 } as const
+const SILOS = { min: 1, max: 2 } as const
+const SILO_RELIEF = 5
+
+/**
+ * One wind farm an island, if the open country has room for a line of
+ * turbines this far apart, at least this many of them, each a tower this
+ * wide and tall standing on ground no more uneven than this.
+ */
+const WIND_FARM_TRIES = 120
+const TURBINES = { min: 5, max: 7 } as const
+const TURBINES_LEAST = 4
+const TURBINE_SPACING = 48
+const TURBINE = { radius: 1.3, height: 42 } as const
+const TURBINE_RELIEF = 6
+const TURBINE_ROAD_MARGIN = 6
+const TURBINE_GAP = 8
+
+/**
+ * One ring of standing stones an island, on the highest open ground of
+ * this many tries: this many stones round a ring this wide, each this big.
+ */
+const STONES_TRIES = 120
+const STONES = 12
+const STONE_RING = 14
+const STONE = { width: 2.4, depth: 1.3, height: { min: 5.5, max: 8 } } as const
+/** The altar in the middle of the ring: a slab lying this long, wide and high. */
+const ALTAR = { width: 4.5, depth: 2.2, height: 1.1 } as const
+/**
+ * A lintel across two stones side by side, as often as not: this thick and
+ * tall, reaching this far past each, and let this far into their tops. The
+ * two under it are made the same height to carry it.
+ */
+const LINTEL_ODDS = 0.5
+const LINTEL = { depth: 1.2, height: 1.1, overhang: 0.5, seat: 0.15 } as const
+const STONES_RELIEF = 7
+const STONES_ROAD_MARGIN = 6
+
+/**
+ * A lighthouse on a headland, one at most: a tower this wide and tall on a
+ * shore this far above the sea, where at least this much of the ground
+ * within this reach is sea. Were there more, they would keep this far apart.
+ */
+const LIGHTHOUSES_MOST = 1
+const LIGHTHOUSE = { radius: 4.5, height: 34 } as const
+const LIGHTHOUSE_APART = 400
+const SHORE = { over: 1.5, under: 14 } as const
+const HEADLAND_REACH = 30
+const HEADLAND_SAMPLES = 16
+const HEADLAND_SEA = 0.45
+const COAST_STEP = 3
+const LIGHTHOUSE_RELIEF = 7
+const LIGHTHOUSE_ROAD_MARGIN = 6
+
+/** How far anything that stands about keeps from anything else that does. */
+const FURNITURE_GAP = 2
 /** How far apart the ramps stand along a road, out of the cities. */
 const RAMP_SPACING = { min: 140, max: 300 } as const
 /** A ramp's run and rise: an arc ending near a quarter grade, enough to fly off at speed. */
@@ -876,7 +954,7 @@ export function generateBuildings(
   lakes: Lake[],
   mountains: Mountain[],
   seed: number,
-): { buildings: Building[]; trees: Tree[]; ramps: Ramp[]; sidewalks: Sidewalk[] } {
+): { buildings: Building[]; trees: Tree[]; ramps: Ramp[]; sidewalks: Sidewalk[]; fields: Field[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
   // Buildings stand against the old kerb, on the sidewalk; what grows keeps
   // off the sidewalk as well as the street. Nothing is built at all on the
@@ -897,8 +975,313 @@ export function generateBuildings(
   lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
   lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
   raiseObservatory(rng, field, mountains, clear, wet, placed, buildings)
+  const fields: Field[] = []
+  const stands: Stands = {
+    rng,
+    field,
+    seaLevel,
+    clear,
+    wet,
+    placed,
+    buildings,
+    land: countryLand(field, seaLevel, districtOf),
+  }
+  plantFarms(stands, fields, plant)
+  raiseWindFarm(stands)
+  raiseStones(stands)
+  raiseLighthouses(stands)
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
-  return { buildings, trees, ramps, sidewalks }
+  return { buildings, trees, ramps, sidewalks, fields }
+}
+
+/** What everything that stands about the country is placed with. */
+interface Stands {
+  rng: Rng
+  field: Heightfield
+  seaLevel: number
+  clear: (footprint: Footprint, margin: number) => boolean
+  wet: (x: number, z: number) => boolean
+  placed: Placed
+  buildings: Building[]
+  /** Every cell of dry land in the open country, to pick spots from. */
+  land: { x: number; z: number }[]
+}
+
+/** Every cell of land in the open country that is not down at the shore: what the furniture picks its spots from. */
+function countryLand(field: Heightfield, seaLevel: number, districtOf: Uint8Array): { x: number; z: number }[] {
+  const { width, depth, cellSize, heights } = field
+  const land: { x: number; z: number }[] = []
+  for (let row = 0; row < depth; row++) {
+    for (let col = 0; col < width; col++) {
+      const cell = row * width + col
+      if (districtOf[cell] !== DISTRICT_COUNTRY) continue
+      if ((heights[cell] ?? -Infinity) < seaLevel + 2) continue
+      land.push({ x: col * cellSize, z: row * cellSize })
+    }
+  }
+  return land
+}
+
+/** The directions of a footprint's own axes: along its width, and along its depth. */
+function axesOf(yaw: number): { ux: number; uz: number; vx: number; vz: number } {
+  const cos = cosine(yaw)
+  const sin = sine(yaw)
+  return { ux: cos, uz: -sin, vx: sin, vz: cos }
+}
+
+/** Somewhere on the land in the open country, taken at random, or nothing on an island with none. */
+function countrySpot(stands: Stands): { x: number; z: number } | null {
+  const { rng, land } = stands
+  return land[Math.floor(rng() * land.length)] ?? null
+}
+
+/** Whether a footprint can stand here: off the roads by the margin, on dry ground no more uneven than the relief, and clear of everything else. */
+function standsHere(stands: Stands, footprint: Footprint, roadMargin: number, relief: number, gap: number): Ground | null {
+  if (!stands.clear(footprint, roadMargin)) return null
+  const ground = groundUnder(stands.field, stands.wet, footprint)
+  if (ground.wet || ground.high - ground.low > relief) return null
+  if (stands.placed.meets(footprint, gap)) return null
+  return ground
+}
+
+/** A round tower of a kind, this wide and tall, standing on the ground found for it. */
+function tower(stands: Stands, kind: Building['kind'], footprint: Footprint, ground: Ground, height: number): void {
+  stands.placed.add(footprint)
+  stands.buildings.push({ kind, ...footprint, bottom: ground.low - BURY, top: ground.high + height, tone: stands.rng() })
+}
+
+/**
+ * Farms in the open country: a row of fields side by side, each hedged
+ * round with shrubs, and off one end of the row a barn with a silo or two
+ * beside it. A farm is at least two fields, on ground flat enough to plough.
+ */
+function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
+  const { rng, placed } = stands
+  let farms = 0
+  for (let attempt = 0; attempt < FARM_TRIES && farms < FARMS_MOST; attempt++) {
+    const spot = countrySpot(stands)
+    if (spot === null) continue
+    const yaw = randomRange(rng, 0, Math.PI)
+    const count = randomInt(rng, FIELDS_PER_FARM.min, FIELDS_PER_FARM.max)
+    const length = randomRange(rng, FIELD_LENGTH.min, FIELD_LENGTH.max)
+    const width = randomRange(rng, FIELD_WIDTH.min, FIELD_WIDTH.max)
+    const { ux, uz, vx, vz } = axesOf(yaw)
+    const laid: Footprint[] = []
+    for (let k = 0; k < count; k++) {
+      const across = k * (width + FIELD_GAP)
+      const footprint: Footprint = { x: spot.x + vx * across, z: spot.z + vz * across, yaw, width: length, depth: width }
+      if (standsHere(stands, footprint, FIELD_ROAD_MARGIN, FIELD_RELIEF, FURNITURE_GAP) === null) break
+      laid.push(footprint)
+    }
+    if (laid.length < 2) continue
+    for (const footprint of laid) {
+      placed.add(footprint)
+      fields.push({ ...footprint, tone: rng() })
+      // A hedge round it: shrubs a step apart along each side, just outside the crop.
+      const halfU = footprint.width / 2 + HEDGE_OUT
+      const halfV = footprint.depth / 2 + HEDGE_OUT
+      for (let u = -halfU; u <= halfU; u += HEDGE_SPACING) {
+        for (const v of [-halfV, halfV]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
+      }
+      for (let v = -halfV + HEDGE_SPACING; v < halfV; v += HEDGE_SPACING) {
+        for (const u of [-halfU, halfU]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
+      }
+    }
+    // The barn off the end of the first field, broadside to the row, and the silos beside it.
+    const first = laid[0]
+    if (first === undefined) continue
+    const out = first.width / 2 + BARN.width / 2 + BARN_OFF
+    const barn: Footprint = { x: first.x + ux * out, z: first.z + uz * out, yaw, width: BARN.width, depth: BARN.depth }
+    const ground = standsHere(stands, barn, ROAD_MARGIN, HOUSE_RELIEF, FURNITURE_GAP)
+    if (ground !== null) {
+      placed.add(barn)
+      stands.buildings.push({ kind: 'barn', ...barn, bottom: ground.low - BURY, top: ground.high + BARN.height, tone: rng() })
+      for (let k = randomInt(rng, SILOS.min, SILOS.max), n = 0; n < k; n++) {
+        const beside = BARN.width / 2 + SILO.radius + 3.5 + n * (SILO.radius * 2 + 2)
+        const silo: Footprint = {
+          x: barn.x + ux * beside,
+          z: barn.z + uz * beside,
+          yaw: 0,
+          width: SILO.radius * 2,
+          depth: SILO.radius * 2,
+        }
+        const under = standsHere(stands, silo, ROAD_MARGIN, SILO_RELIEF, FURNITURE_GAP)
+        if (under !== null) tower(stands, 'silo', silo, under, SILO.height)
+      }
+    }
+    farms += 1
+  }
+}
+
+/**
+ * The island's wind farm: a line of turbines across the open country, all
+ * facing the same way, wherever the first place tried has room for enough
+ * of them in a row.
+ */
+function raiseWindFarm(stands: Stands): void {
+  const { rng } = stands
+  for (let attempt = 0; attempt < WIND_FARM_TRIES; attempt++) {
+    const spot = countrySpot(stands)
+    if (spot === null) continue
+    const line = randomRange(rng, 0, Math.PI)
+    const facing = randomRange(rng, 0, Math.PI * 2)
+    const wanted = randomInt(rng, TURBINES.min, TURBINES.max)
+    const dx = cosine(line)
+    const dz = sine(line)
+    const standing: { footprint: Footprint; ground: Ground }[] = []
+    for (let k = 0; k < wanted; k++) {
+      const footprint: Footprint = {
+        x: spot.x + dx * k * TURBINE_SPACING,
+        z: spot.z + dz * k * TURBINE_SPACING,
+        yaw: facing,
+        width: TURBINE.radius * 2,
+        depth: TURBINE.radius * 2,
+      }
+      const ground = standsHere(stands, footprint, TURBINE_ROAD_MARGIN, TURBINE_RELIEF, TURBINE_GAP)
+      if (ground === null) break
+      standing.push({ footprint, ground })
+    }
+    if (standing.length < TURBINES_LEAST) continue
+    for (const { footprint, ground } of standing) tower(stands, 'turbine', footprint, ground, TURBINE.height)
+    return
+  }
+}
+
+/**
+ * The island's ring of standing stones, on the highest open ground of a
+ * few tries: the stones round the ring, each turned to face its middle.
+ */
+function raiseStones(stands: Stands): void {
+  const { rng, field, placed, buildings } = stands
+  let best: { x: number; z: number; height: number } | null = null
+  for (let attempt = 0; attempt < STONES_TRIES; attempt++) {
+    const spot = countrySpot(stands)
+    if (spot === null) continue
+    const height = sampleHeight(field, spot.x, spot.z)
+    if (best !== null && height <= best.height) continue
+    const ring: Footprint = { ...spot, yaw: 0, width: (STONE_RING + 2) * 2, depth: (STONE_RING + 2) * 2 }
+    if (standsHere(stands, ring, STONES_ROAD_MARGIN, STONES_RELIEF, FURNITURE_GAP) === null) continue
+    best = { ...spot, height }
+  }
+  if (best === null) return
+  placed.add({ x: best.x, z: best.z, yaw: 0, width: (STONE_RING + 2) * 2, depth: (STONE_RING + 2) * 2 })
+  // The altar in the middle, lying down.
+  const altar: Footprint = { x: best.x, z: best.z, yaw: rng() * Math.PI, width: ALTAR.width, depth: ALTAR.depth }
+  const under = groundUnder(field, stands.wet, altar)
+  if (!under.wet) {
+    buildings.push({ kind: 'stone', ...altar, bottom: under.low - BURY, top: under.high + ALTAR.height, tone: rng() })
+  }
+  // Which pairs of neighbours carry a lintel, and how tall each stone is:
+  // the same as its neighbour where a lintel joins them.
+  const lintels = Array.from({ length: STONES }, () => rng() < LINTEL_ODDS)
+  const heights = Array.from({ length: STONES }, () => randomRange(rng, STONE.height.min, STONE.height.max))
+  for (let k = 0; k < STONES; k++) {
+    if (lintels[k]) heights[(k + 1) % STONES] = heights[k] ?? STONE.height.min
+  }
+  const standing: (Building | null)[] = []
+  for (let k = 0; k < STONES; k++) {
+    const angle = (k * Math.PI * 2) / STONES + randomRange(rng, -0.12, 0.12)
+    const x = best.x + cosine(angle) * STONE_RING
+    const z = best.z + sine(angle) * STONE_RING
+    // Broadside to the middle of the ring.
+    const stone: Footprint = { x, z, yaw: -(angle + Math.PI / 2), width: STONE.width, depth: STONE.depth }
+    const ground = groundUnder(field, stands.wet, stone)
+    if (ground.wet) {
+      standing.push(null)
+      continue
+    }
+    const raised: Building = {
+      kind: 'stone',
+      ...stone,
+      bottom: ground.low - BURY,
+      top: ground.high + (heights[k] ?? STONE.height.min),
+      tone: rng(),
+    }
+    buildings.push(raised)
+    standing.push(raised)
+  }
+  // Stones joined by lintels, however many in a row, are brought to one
+  // top, the tallest of them, so that every lintel lies level on both.
+  const joined = (k: number): (Building | null)[] => {
+    const run: (Building | null)[] = [standing[k] ?? null]
+    for (let n = 0; n < STONES && lintels[(k + n) % STONES]; n++) run.push(standing[(k + n + 1) % STONES] ?? null)
+    return run
+  }
+  for (let k = 0; k < STONES; k++) {
+    if (lintels[(k + STONES - 1) % STONES] && !lintels.every(Boolean)) continue
+    const run = joined(k)
+    if (run.length < 2) continue
+    const top = Math.max(...run.map((stone) => stone?.top ?? -Infinity))
+    for (const stone of run) if (stone !== null) stone.top = top
+    if (lintels.every(Boolean)) break
+  }
+  // The lintels, laid from each stone across to its neighbour, resting on both.
+  for (let k = 0; k < STONES; k++) {
+    if (!lintels[k]) continue
+    const a = standing[k]
+    const b = standing[(k + 1) % STONES]
+    if (a === null || b === null || a === undefined || b === undefined) continue
+    const dx = b.x - a.x
+    const dz = b.z - a.z
+    const span = hypot(dx, dz)
+    const rest = Math.min(a.top, b.top) - LINTEL.seat
+    buildings.push({
+      kind: 'lintel',
+      x: (a.x + b.x) / 2,
+      z: (a.z + b.z) / 2,
+      // Along the line from the one to the other.
+      yaw: -atan2(dz, dx),
+      width: span + STONE.width + LINTEL.overhang * 2,
+      depth: LINTEL.depth,
+      bottom: rest,
+      top: rest + LINTEL.height,
+      tone: rng(),
+    })
+  }
+}
+
+/**
+ * The island's lighthouse: the shore is walked for the spots with the most
+ * sea about them, and the most seaward whose ground will take a tower gets
+ * it.
+ */
+function raiseLighthouses(stands: Stands): void {
+  const { field, seaLevel } = stands
+  const { width, depth, cellSize } = field
+  const candidates: { x: number; z: number; sea: number }[] = []
+  for (let row = 0; row < depth; row += COAST_STEP) {
+    for (let col = 0; col < width; col += COAST_STEP) {
+      const x = col * cellSize
+      const z = row * cellSize
+      const height = sampleHeight(field, x, z)
+      if (height < seaLevel + SHORE.over || height > seaLevel + SHORE.under) continue
+      let sea = 0
+      for (let k = 0; k < HEADLAND_SAMPLES; k++) {
+        const angle = (k * Math.PI * 2) / HEADLAND_SAMPLES
+        if (sampleHeight(field, x + cosine(angle) * HEADLAND_REACH, z + sine(angle) * HEADLAND_REACH) < seaLevel) sea += 1
+      }
+      sea /= HEADLAND_SAMPLES
+      if (sea >= HEADLAND_SEA) candidates.push({ x, z, sea })
+    }
+  }
+  // The most seaward first; among equals, the order they were walked in.
+  candidates.sort((a, b) => b.sea - a.sea || a.z - b.z || a.x - b.x)
+  const raised: { x: number; z: number }[] = []
+  for (const candidate of candidates) {
+    if (raised.length >= LIGHTHOUSES_MOST) break
+    if (raised.some((other) => hypot(other.x - candidate.x, other.z - candidate.z) < LIGHTHOUSE_APART)) continue
+    const footprint: Footprint = {
+      x: candidate.x,
+      z: candidate.z,
+      yaw: 0,
+      width: LIGHTHOUSE.radius * 2,
+      depth: LIGHTHOUSE.radius * 2,
+    }
+    const ground = standsHere(stands, footprint, LIGHTHOUSE_ROAD_MARGIN, LIGHTHOUSE_RELIEF, FURNITURE_GAP)
+    if (ground === null) continue
+    tower(stands, 'lighthouse', footprint, ground, LIGHTHOUSE.height)
+    raised.push(candidate)
+  }
 }
 
 /** The highest ground inside a triangle, at a cell of the field, or nothing if the triangle covers none. */
