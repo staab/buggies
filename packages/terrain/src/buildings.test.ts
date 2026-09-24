@@ -257,6 +257,10 @@ describe('buildings and trees', () => {
     expect(silos.length).toBeGreaterThanOrEqual(1)
     for (const barn of barns) {
       expect(fields.some((field) => Math.hypot(field.x - barn.x, field.z - barn.z) < 80)).toBe(true)
+      // One farm to a place: no two barns near each other.
+      for (const other of barns) {
+        if (other !== barn) expect(Math.hypot(other.x - barn.x, other.z - barn.z)).toBeGreaterThan(60)
+      }
     }
     for (const silo of silos) {
       expect(barns.some((barn) => Math.hypot(barn.x - silo.x, barn.z - silo.z) < 25)).toBe(true)
@@ -302,6 +306,9 @@ describe('buildings and trees', () => {
     for (const tower of towers) {
       expect(districtAt(tower.x, tower.z)).toBe(DISTRICT_SUBURB)
       expect(tower.top - tower.bottom).toBeGreaterThan(20)
+      for (const other of towers) {
+        if (other !== tower) expect(Math.hypot(other.x - tower.x, other.z - tower.z)).toBeGreaterThan(300)
+      }
     }
   })
 
@@ -338,6 +345,9 @@ describe('buildings and trees', () => {
     const main = map.roads.filter((road) => road.kind !== 'street')
     for (const fire of firepits) {
       expect(districtAt(fire.x, fire.z)).toBe(DISTRICT_COUNTRY)
+      for (const other of firepits) {
+        if (other !== fire) expect(Math.hypot(other.x - fire.x, other.z - fire.z)).toBeGreaterThan(100)
+      }
       const ring = tents.filter((tent) => Math.hypot(tent.x - fire.x, tent.z - fire.z) < 15)
       expect(ring.length).toBeGreaterThanOrEqual(4)
       expect(caravans.some((caravan) => Math.hypot(caravan.x - fire.x, caravan.z - fire.z) < 20)).toBe(true)

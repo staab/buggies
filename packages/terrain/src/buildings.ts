@@ -201,6 +201,9 @@ const LIGHTHOUSE_ROAD_MARGIN = 6
 
 /** How far anything that stands about keeps from anything else that does. */
 const FURNITURE_GAP = 2
+/** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
+const FEATURE_APART = 100
+const WATER_TOWERS_APART = 300
 
 /**
  * An orchard: a field planted with fruit trees on a grid instead of a crop,
@@ -1054,6 +1057,7 @@ export function generateBuildings(
     placed,
     buildings,
     land: countryLand(field, seaLevel, districtOf),
+    stood: new Map(),
   }
   // The stations take their lots before the houses line the roads, or the houses would leave them none.
   raiseStations(stands, fields)
@@ -1085,6 +1089,19 @@ interface Stands {
   buildings: Building[]
   /** Every cell of dry land in the open country, to pick spots from. */
   land: { x: number; z: number }[]
+  /** Where each kind of thing stands already, so the next of its kind keeps its distance. */
+  stood: Map<string, { x: number; z: number }[]>
+}
+
+/** Whether nothing of this kind stands within reach of a spot. */
+function farFromKind(stands: Stands, kind: string, x: number, z: number, apart: number): boolean {
+  return !(stands.stood.get(kind) ?? []).some((other) => hypot(other.x - x, other.z - z) < apart)
+}
+
+function noteStood(stands: Stands, kind: string, x: number, z: number): void {
+  const list = stands.stood.get(kind) ?? []
+  list.push({ x, z })
+  stands.stood.set(kind, list)
 }
 
 /** Every cell of land in the open country that is not down at the shore: what the furniture picks its spots from. */
@@ -1140,7 +1157,7 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
   let farms = 0
   for (let attempt = 0; attempt < FARM_TRIES && farms < FARMS_MOST; attempt++) {
     const spot = countrySpot(stands)
-    if (spot === null) continue
+    if (spot === null || !farFromKind(stands, 'farm', spot.x, spot.z, FEATURE_APART)) continue
     const yaw = randomRange(rng, 0, Math.PI)
     const count = randomInt(rng, FIELDS_PER_FARM.min, FIELDS_PER_FARM.max)
     const length = randomRange(rng, FIELD_LENGTH.min, FIELD_LENGTH.max)
@@ -1151,11 +1168,12 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
       const across = k * (width + FIELD_GAP)
       const footprint: Footprint = { x: spot.x + vx * across, z: spot.z + vz * across, yaw, width: length, depth: width }
       // The row stops where the country does.
-      if (districtAt(stands, footprint.x, footprint.z) !== DISTRICT_COUNTRY) break
+      if (!inCountry(stands, footprint)) break
       if (standsHere(stands, footprint, FIELD_ROAD_MARGIN, FIELD_RELIEF, FURNITURE_GAP) === null) break
       laid.push(footprint)
     }
     if (laid.length < 2) continue
+    noteStood(stands, 'farm', spot.x, spot.z)
     for (const [k, footprint] of laid.entries()) {
       // The last field of a farm is sometimes an orchard instead of a crop, where one will take.
       if (k === laid.length - 1 && rng() < ORCHARD_ODDS && plantOrchard(stands, footprint, plant)) continue
@@ -1234,10 +1252,12 @@ function orchardTakes(stands: Stands, footprint: Footprint): boolean {
  * the ground kept for them. Nothing, if the ground would not take one.
  */
 function plantOrchard(stands: Stands, footprint: Footprint, plant: Planter): boolean {
+  if (!farFromKind(stands, 'orchard', footprint.x, footprint.z, FEATURE_APART)) return false
   if (!orchardTakes(stands, footprint)) return false
   for (const spot of orchardGrid(footprint)) plant(spot.x, spot.z, 'fruit', stands.wet)
   stands.placed.add(footprint)
   hedge(stands, footprint, plant)
+  noteStood(stands, 'orchard', footprint.x, footprint.z)
   return true
 }
 
@@ -1249,6 +1269,7 @@ function plantOrchards(stands: Stands, plant: Planter): void {
     const spot = countrySpot(stands)
     if (spot === null) continue
     const footprint: Footprint = { ...spot, yaw: randomRange(rng, 0, Math.PI), ...ORCHARD_SIZE }
+    if (!inCountry(stands, footprint)) continue
     if (standsHere(stands, footprint, FIELD_ROAD_MARGIN, FIELD_RELIEF, FURNITURE_GAP) === null) continue
     if (plantOrchard(stands, footprint, plant)) orchards += 1
   }
@@ -1278,6 +1299,23 @@ function nearestRoadPoint(
     }
   }
   return best
+}
+
+/** Whether a footprint lies in the open country to its corners, not over an edge into a suburb. */
+function inCountry(stands: Stands, footprint: Footprint): boolean {
+  const { ux, uz, vx, vz } = axesOf(footprint.yaw)
+  for (const [su, sv] of [
+    [0, 0],
+    [1, 1],
+    [1, -1],
+    [-1, 1],
+    [-1, -1],
+  ] as const) {
+    const u = (su * footprint.width) / 2
+    const v = (sv * footprint.depth) / 2
+    if (districtAt(stands, footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v) !== DISTRICT_COUNTRY) return false
+  }
+  return true
 }
 
 function districtAt(stands: Stands, x: number, z: number): number {
@@ -1359,6 +1397,7 @@ function raiseWaterTowers(stands: Stands): void {
       const x = district.cx + cosine(angle) * ring
       const z = district.cz + sine(angle) * ring
       if (districtAt(stands, x, z) !== DISTRICT_SUBURB) continue
+      if (!farFromKind(stands, 'watertower', x, z, WATER_TOWERS_APART)) continue
       // Nothing under the tank, though only the column is anything to hit.
       const under: Footprint = { x, z, yaw: 0, width: WATER_TOWER.tank, depth: WATER_TOWER.tank }
       const ground = standsHere(stands, under, ROAD_MARGIN, HOUSE_RELIEF, FURNITURE_GAP)
@@ -1375,6 +1414,7 @@ function raiseWaterTowers(stands: Stands): void {
         top: ground.high + WATER_TOWER.height,
         tone: rng(),
       })
+      noteStood(stands, 'watertower', x, z)
       break
     }
   }
@@ -1453,7 +1493,7 @@ function pitchCamps(stands: Stands, plant: Planter): void {
   let camps = 0
   for (let attempt = 0; attempt < CAMP_TRIES && camps < CAMPS_MOST; attempt++) {
     const spot = countrySpot(stands)
-    if (spot === null) continue
+    if (spot === null || !farFromKind(stands, 'camp', spot.x, spot.z, FEATURE_APART)) continue
     const beside = nearestRoadPoint(roads, spot.x, spot.z)
     if (beside === null || beside.distance < CAMP_NEAR_ROAD.min || beside.distance > CAMP_NEAR_ROAD.max) continue
     const clearing: Footprint = { ...spot, yaw: 0, width: CLEARING_RADIUS * 2, depth: CLEARING_RADIUS * 2 }
@@ -1495,6 +1535,7 @@ function pitchCamps(stands: Stands, plant: Planter): void {
       plant(spot.x + cosine(angle) * (CLEARING_RADIUS - 1), spot.z + sine(angle) * (CLEARING_RADIUS - 1), 'tree', wet)
     }
     placed.add(clearing)
+    noteStood(stands, 'camp', spot.x, spot.z)
     camps += 1
   }
 }
