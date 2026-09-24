@@ -85,6 +85,35 @@ const ROOF_COLORS: [THREE.Color, ...THREE.Color[]] = [
 ]
 /** The pitch of a house's roof, as a fraction of its width. */
 const ROOF_PITCH = 0.3
+/** Cottages are whitewashed or stone under a steep roof of thatch or slate, with a chimney. */
+const COTTAGE_COLORS: [THREE.Color, ...THREE.Color[]] = [
+  new THREE.Color('#f1ebdc'),
+  new THREE.Color('#b8b0a0'),
+  new THREE.Color('#c8d5dc'),
+  new THREE.Color('#e9dfc4'),
+]
+const THATCH_COLORS: [THREE.Color, ...THREE.Color[]] = [
+  new THREE.Color('#8a7448'),
+  new THREE.Color('#5a5b5e'),
+  new THREE.Color('#6d4b3a'),
+]
+const COTTAGE_PITCH = 0.6
+const CHIMNEY = { width: 0.9, height: 1.8 } as const
+const BRICK = new THREE.Color('#8a4a3a')
+/** Villas are pale, flat-roofed, with a smaller second storey set on the first. */
+const VILLA_COLORS: [THREE.Color, ...THREE.Color[]] = [
+  new THREE.Color('#f3efe6'),
+  new THREE.Color('#e6d8c3'),
+  new THREE.Color('#d9b8a3'),
+  new THREE.Color('#cfd8cf'),
+]
+const VILLA_UPPER = 0.7
+/** An observatory is a stone tower under a white dome with a dark slit, turned whichever way. */
+const TOWER_COLOR = new THREE.Color('#c9c4b8')
+const DOME_COLOR = new THREE.Color('#f2f2ee')
+const SLIT_COLOR = new THREE.Color('#2a2f38')
+/** The tower takes this much of the observatory's width; the dome on it is a true hemisphere of the same radius. */
+const TOWER_SHARE = 0.9
 const TRUNK_COLOR = new THREE.Color('#5a4030')
 const CROWN_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#2f6b2a') },
@@ -937,8 +966,13 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   ]
   const blocks = map.buildings.filter((building) => building.kind === 'block')
   const houses = map.buildings.filter((building) => building.kind === 'house')
+  const cottages = map.buildings.filter((building) => building.kind === 'cottage')
+  const villas = map.buildings.filter((building) => building.kind === 'villa')
+  const observatories = map.buildings.filter((building) => building.kind === 'observatory')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
+  const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
+    palette[Math.floor(tone * palette.length) % palette.length] ?? palette[0]
   meshes.push(
     instanced(box, walled(blockWall, flatRoof), blocks, (building, matrix, color) => {
       boxAt(building, matrix)
@@ -946,7 +980,33 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
     instanced(box, walled(houseWall, houseWall), houses, (building, matrix, color) => {
       boxAt(building, matrix)
-      color.copy(HOUSE_COLORS[Math.floor(building.tone * HOUSE_COLORS.length) % HOUSE_COLORS.length] ?? HOUSE_COLORS[0])
+      color.copy(pick(HOUSE_COLORS, building.tone))
+    }),
+    instanced(box, walled(houseWall, houseWall), cottages, (building, matrix, color) => {
+      boxAt(building, matrix)
+      color.copy(pick(COTTAGE_COLORS, building.tone))
+    }),
+  )
+
+  // A villa: its ground floor the whole footprint, and a smaller storey set on top, both flat-roofed.
+  const villaAt = (villa: Building, matrix: THREE.Matrix4, upper: boolean): void => {
+    const share = upper ? VILLA_UPPER : 1
+    const bottom = upper ? villa.top - STOREY : villa.bottom
+    const top = upper ? villa.top : villa.top - STOREY
+    matrix.compose(
+      new THREE.Vector3(villa.x, (top + bottom) / 2, villa.z),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), villa.yaw),
+      new THREE.Vector3(villa.width * share, top - bottom, villa.depth * share),
+    )
+  }
+  meshes.push(
+    instanced(box, walled(houseWall, flatRoof), villas, (villa, matrix, color) => {
+      villaAt(villa, matrix, false)
+      color.copy(pick(VILLA_COLORS, villa.tone))
+    }),
+    instanced(box, walled(houseWall, flatRoof), villas, (villa, matrix, color) => {
+      villaAt(villa, matrix, true)
+      color.copy(pick(VILLA_COLORS, villa.tone))
     }),
   )
 
@@ -955,15 +1015,65 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   roof.rotateY(Math.PI / 4)
   roof.translate(0, 0.5, 0)
   const roofing = new THREE.MeshStandardMaterial({ map: roofFacade().texture, roughness: 0.95, metalness: 0 })
+  const roofAt = (house: Building, matrix: THREE.Matrix4, pitch: number): void => {
+    const span = Math.min(house.width, house.depth)
+    matrix.compose(
+      new THREE.Vector3(house.x, house.top, house.z),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), house.yaw),
+      new THREE.Vector3(house.width + 0.6, span * pitch, house.depth + 0.6),
+    )
+  }
   meshes.push(
     instanced(roof, roofing, houses, (house, matrix, color) => {
-      const span = Math.min(house.width, house.depth)
+      roofAt(house, matrix, ROOF_PITCH)
+      color.copy(pick(ROOF_COLORS, house.tone))
+    }),
+    instanced(roof, roofing, cottages, (cottage, matrix, color) => {
+      roofAt(cottage, matrix, COTTAGE_PITCH)
+      color.copy(pick(THATCH_COLORS, cottage.tone))
+    }),
+    // A chimney up through the steep roof, off to one end of the ridge.
+    instanced(box, plain, cottages, (cottage, matrix, color) => {
+      const rise = Math.min(cottage.width, cottage.depth) * COTTAGE_PITCH
+      const along = new THREE.Vector3(cottage.width * 0.3, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cottage.yaw)
       matrix.compose(
-        new THREE.Vector3(house.x, house.top, house.z),
-        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), house.yaw),
-        new THREE.Vector3(house.width + 0.6, span * ROOF_PITCH, house.depth + 0.6),
+        new THREE.Vector3(cottage.x + along.x, cottage.top + rise * 0.45, cottage.z + along.z),
+        new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), cottage.yaw),
+        new THREE.Vector3(CHIMNEY.width, CHIMNEY.height, CHIMNEY.width),
       )
-      color.copy(ROOF_COLORS[Math.floor(house.tone * ROOF_COLORS.length) % ROOF_COLORS.length] ?? ROOF_COLORS[0])
+      color.copy(BRICK)
+    }),
+  )
+
+  // An observatory: a round tower with a dome on it, its slit facing whichever way the tone says.
+  const tower = new THREE.CylinderGeometry(1, 1, 1, 18)
+  tower.translate(0, 0.5, 0)
+  const dome = new THREE.SphereGeometry(1, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2)
+  const slit = new THREE.BoxGeometry(0.18, 1, 0.9)
+  slit.translate(0, 0.5, 0.55)
+  // The dome is a hemisphere of the tower's radius, so the tower stops that far short of the top.
+  const domeAt = (observatory: Building, matrix: THREE.Matrix4): void => {
+    const radius = (observatory.width / 2) * TOWER_SHARE
+    matrix.compose(
+      new THREE.Vector3(observatory.x, observatory.top - radius, observatory.z),
+      new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), observatory.tone * Math.PI * 2),
+      new THREE.Vector3(radius, radius, radius),
+    )
+  }
+  meshes.push(
+    instanced(tower, plain, observatories, (observatory, matrix, color) => {
+      const radius = (observatory.width / 2) * TOWER_SHARE
+      matrix.makeScale(radius, observatory.top - radius - observatory.bottom, radius)
+      matrix.setPosition(observatory.x, observatory.bottom, observatory.z)
+      color.copy(TOWER_COLOR)
+    }),
+    instanced(dome, plain, observatories, (observatory, matrix, color) => {
+      domeAt(observatory, matrix)
+      color.copy(DOME_COLOR)
+    }),
+    instanced(slit, plain, observatories, (observatory, matrix, color) => {
+      domeAt(observatory, matrix)
+      color.copy(SLIT_COLOR)
     }),
   )
 

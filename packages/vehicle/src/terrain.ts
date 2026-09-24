@@ -301,13 +301,15 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
       .setRestitution(0)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
   for (const building of map.buildings) {
+    const halfHeight = (building.top - building.bottom) / 2
+    // An observatory is a round tower; everything else is the box it is drawn as.
+    const shape =
+      building.kind === 'observatory'
+        ? RAPIER.ColliderDesc.cylinder(halfHeight, building.width / 2)
+        : RAPIER.ColliderDesc.cuboid(building.width / 2, halfHeight, building.depth / 2)
     world.createCollider(
       slick(
-        RAPIER.ColliderDesc.cuboid(
-          building.width / 2,
-          (building.top - building.bottom) / 2,
-          building.depth / 2,
-        )
+        shape
           .setTranslation(building.x, (building.top + building.bottom) / 2, building.z)
           .setRotation(quatFromYaw(building.yaw)),
       ),

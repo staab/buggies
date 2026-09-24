@@ -100,8 +100,17 @@ export interface Road {
  * along its local Z, and stands from `bottom`, buried below the lowest ground
  * under it, up to `top`.
  */
+/**
+ * What a building is: a city block, one of three styles of house, or an
+ * observatory on a mountain top, which is round rather than square.
+ */
+export type BuildingKind = 'block' | 'house' | 'cottage' | 'villa' | 'observatory'
+
+/** The kinds a house comes in. */
+export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
+
 export interface Building {
-  kind: 'block' | 'house'
+  kind: BuildingKind
   x: number
   z: number
   yaw: number
