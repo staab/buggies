@@ -168,7 +168,10 @@ describe('terrain colliders', () => {
       let roofed = 0
       for (const building of map.buildings) {
         const found = castDown(world, building.x, building.z, building.top + 5)
-        if (found !== null && Math.abs(found - building.top) < 0.01) roofed++
+        if (found === null) continue
+        // A standing stone may carry a lintel, whose top is what is met above it.
+        const carried = building.kind === 'stone' && found > building.top
+        if (Math.abs(found - building.top) < 0.01 || carried) roofed++
       }
       expect(roofed).toBe(map.buildings.length)
       const trees = map.trees.filter((tree) => tree.kind === 'tree')

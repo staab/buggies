@@ -227,15 +227,129 @@ describe('buildings and trees', () => {
     expect(domes).toBeLessThan(8)
   }, 60_000)
 
+  it('farm the open country: hedged fields in rows on ground flat enough to plough, a barn and a silo off the end', () => {
+    const { fields } = map
+    expect(fields.length).toBeGreaterThanOrEqual(4)
+    const roadPoints = map.roads.flatMap((road) => road.points)
+    for (const field of fields) {
+      expect(districtAt(field.x, field.z)).toBe(DISTRICT_COUNTRY)
+      const cos = Math.cos(field.yaw)
+      const sin = Math.sin(field.yaw)
+      // No road runs through it.
+      const inside = roadPoints.some((point) => {
+        const dx = point.x - field.x
+        const dz = point.z - field.z
+        return Math.abs(dx * cos - dz * sin) < field.width / 2 && Math.abs(dx * sin + dz * cos) < field.depth / 2
+      })
+      expect(inside).toBe(false)
+      // And it is hedged: shrubs near its edges.
+      const hedge = map.trees.filter(
+        (tree) => tree.kind === 'shrub' && Math.hypot(tree.x - field.x, tree.z - field.z) < Math.hypot(field.width, field.depth) / 2 + 3,
+      )
+      expect(hedge.length).toBeGreaterThan(10)
+    }
+    const barns = map.buildings.filter((building) => building.kind === 'barn')
+    const silos = map.buildings.filter((building) => building.kind === 'silo')
+    expect(barns.length).toBeGreaterThanOrEqual(1)
+    expect(silos.length).toBeGreaterThanOrEqual(1)
+    for (const barn of barns) {
+      expect(fields.some((field) => Math.hypot(field.x - barn.x, field.z - barn.z) < 80)).toBe(true)
+    }
+    for (const silo of silos) {
+      expect(barns.some((barn) => Math.hypot(barn.x - silo.x, barn.z - silo.z) < 25)).toBe(true)
+      expect(silo.width).toBe(silo.depth)
+    }
+  })
+
+  it('raise one wind farm: a line of turbines the same distance apart, all facing the same way', () => {
+    const turbines = map.buildings.filter((building) => building.kind === 'turbine')
+    expect(turbines.length).toBeGreaterThanOrEqual(4)
+    expect(turbines.length).toBeLessThanOrEqual(7)
+    const first = turbines[0]!
+    const last = turbines[turbines.length - 1]!
+    const span = Math.hypot(last.x - first.x, last.z - first.z)
+    const dx = (last.x - first.x) / span
+    const dz = (last.z - first.z) / span
+    const along = turbines.map((turbine) => (turbine.x - first.x) * dx + (turbine.z - first.z) * dz).sort((a, b) => a - b)
+    for (const [i, at] of along.entries()) {
+      if (i > 0) expect(at - along[i - 1]!).toBeCloseTo(48, 0)
+    }
+    for (const turbine of turbines) {
+      const off = Math.abs((turbine.x - first.x) * dz - (turbine.z - first.z) * dx)
+      expect(off).toBeLessThan(0.01)
+      expect(turbine.yaw).toBe(first.yaw)
+      expect(turbine.top - turbine.bottom).toBeGreaterThan(40)
+    }
+  })
+
+  it('ring the open ground with standing stones, each turned to face the altar in the middle', () => {
+    const all = map.buildings.filter((building) => building.kind === 'stone')
+    // The altar lies in the middle; the rest stand round it.
+    expect(all).toHaveLength(13)
+    const altar = all.reduce((lowest, stone) => (stone.top - stone.bottom < lowest.top - lowest.bottom ? stone : lowest))
+    const stones = all.filter((stone) => stone !== altar)
+    const centre = { x: altar.x, z: altar.z }
+    for (const stone of stones) {
+      const rx = stone.x - centre.x
+      const rz = stone.z - centre.z
+      const radius = Math.hypot(rx, rz)
+      expect(Math.abs(radius - 14)).toBeLessThan(1.5)
+      expect(stone.top - stone.bottom).toBeGreaterThan(6)
+      // Its broad side, along its own X, runs across the line to the middle.
+      const across = (Math.cos(stone.yaw) * rx - Math.sin(stone.yaw) * rz) / radius
+      expect(Math.abs(across)).toBeLessThan(0.3)
+      expect(districtAt(stone.x, stone.z)).toBe(DISTRICT_COUNTRY)
+    }
+    // Some neighbours carry a lintel: laid between the two, resting on both, which stand the same height.
+    const lintels = map.buildings.filter((building) => building.kind === 'lintel')
+    expect(lintels.length).toBeGreaterThan(0)
+    expect(lintels.length).toBeLessThan(stones.length)
+    for (const lintel of lintels) {
+      const under = [...stones].sort(
+        (a, b) => Math.hypot(a.x - lintel.x, a.z - lintel.z) - Math.hypot(b.x - lintel.x, b.z - lintel.z),
+      )
+      const [left, right] = under
+      expect(left).toBeDefined()
+      expect(right).toBeDefined()
+      expect(left!.top).toBeCloseTo(right!.top, 1)
+      expect(lintel.bottom).toBeCloseTo(left!.top - 0.15, 3)
+      expect(Math.hypot((left!.x + right!.x) / 2 - lintel.x, (left!.z + right!.z) / 2 - lintel.z)).toBeLessThan(0.01)
+      expect(lintel.width).toBeGreaterThan(Math.hypot(left!.x - right!.x, left!.z - right!.z))
+    }
+  })
+
+  it('light a headland: one lighthouse at most, on a shore with the sea about it', () => {
+    const lighthouses = map.buildings.filter((building) => building.kind === 'lighthouse')
+    expect(lighthouses).toHaveLength(1)
+    const { seaLevel, heightfield } = map
+    for (const lighthouse of lighthouses) {
+      const shore = sampleHeight(heightfield, lighthouse.x, lighthouse.z)
+      expect(shore).toBeGreaterThan(seaLevel + 1)
+      expect(shore).toBeLessThan(seaLevel + 15)
+      let sea = 0
+      for (let k = 0; k < 16; k++) {
+        const angle = (k * Math.PI * 2) / 16
+        if (sampleHeight(heightfield, lighthouse.x + Math.cos(angle) * 30, lighthouse.z + Math.sin(angle) * 30) < seaLevel) sea++
+      }
+      expect(sea / 16).toBeGreaterThanOrEqual(0.45)
+      for (const other of lighthouses) {
+        if (other !== lighthouse) expect(Math.hypot(other.x - lighthouse.x, other.z - lighthouse.z)).toBeGreaterThan(400)
+      }
+    }
+  })
+
   it('keep every building and tree off every road and out of the water', () => {
     for (const building of map.buildings) {
       for (const point of samples(building)) {
         expect(roadCrowding(map.roads, point.x, point.z)).toBeGreaterThan(1)
         expect(sampleHeight(map.heightfield, point.x, point.z)).toBeGreaterThan(map.seaLevel)
       }
-      // Standing on the ground, not floating above it or lost in it.
+      // Standing on the ground, not floating above it or lost in it. A stone may lie low, as the altar
+      // does, and a lintel rests on two stones, not the ground.
+      if (building.kind === 'lintel') continue
       expect(building.bottom).toBeLessThan(sampleHeight(map.heightfield, building.x, building.z))
-      expect(building.top).toBeGreaterThan(sampleHeight(map.heightfield, building.x, building.z) + 3)
+      const least = building.kind === 'stone' ? 0.8 : 3
+      expect(building.top).toBeGreaterThan(sampleHeight(map.heightfield, building.x, building.z) + least)
     }
     for (const tree of map.trees) {
       expect(roadCrowding(map.roads, tree.x, tree.z)).toBeGreaterThan(1)
@@ -248,8 +362,11 @@ describe('buildings and trees', () => {
     for (let i = 0; i < buildings.length; i++) {
       const a = buildings[i]!
       const reachA = Math.hypot(a.width, a.depth) / 2
+      if (a.kind === 'lintel') continue
       for (let j = i + 1; j < buildings.length; j++) {
         const b = buildings[j]!
+        // A lintel lies across two stones on purpose.
+        if (b.kind === 'lintel') continue
         if (Math.hypot(a.x - b.x, a.z - b.z) > reachA + Math.hypot(b.width, b.depth) / 2) continue
         expect(overlap(a, b)).toBe(false)
       }
