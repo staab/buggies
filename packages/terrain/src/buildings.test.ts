@@ -4,6 +4,8 @@ import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts
 import { insidePolygon, interchangeZones } from './interchanges.ts'
 import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
+import { orientedTriangle, signedDistanceToTriangle } from './mountain.ts'
+import { HOUSE_KINDS } from './types.ts'
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
 
@@ -115,7 +117,9 @@ describe('buildings and trees', () => {
   })
 
   it('line the arterials with houses through the suburbs and trees through the country', () => {
-    const houses = map.buildings.filter((building) => building.kind === 'house')
+    const houses = map.buildings.filter((building) => HOUSE_KINDS.includes(building.kind))
+    // In all three styles.
+    expect(new Set(houses.map((house) => house.kind))).toEqual(new Set(HOUSE_KINDS))
     const suburban = houses.filter((house) => districtAt(house.x, house.z) === DISTRICT_SUBURB)
     const rural = houses.filter((house) => districtAt(house.x, house.z) === DISTRICT_COUNTRY)
     expect(suburban.length).toBeGreaterThan(50)
@@ -186,13 +190,42 @@ describe('buildings and trees', () => {
     expect(gardens.filter((tree) => tree.kind === 'tree').length).toBeGreaterThan(30)
     expect(gardens.filter((tree) => tree.kind === 'shrub').length).toBeGreaterThan(30)
     // Most houses have a shrub or two out front.
-    const houses = map.buildings.filter((building) => building.kind === 'house')
+    const houses = map.buildings.filter((building) => HOUSE_KINDS.includes(building.kind))
     const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
     const planted = houses.filter((house) =>
       shrubs.some((shrub) => Math.hypot(house.x - shrub.x, house.z - shrub.z) < 12),
     )
     expect(planted.length).toBeGreaterThan(houses.length * 0.7)
   })
+
+  it('raise one observatory at most, on a mountain top, on about half the islands', () => {
+    let domes = 0
+    for (let seed = 1; seed <= 8; seed++) {
+      const island = generateTerrain(seed, { size: 257 })
+      const observatories = island.buildings.filter((building) => building.kind === 'observatory')
+      expect(observatories.length).toBeLessThanOrEqual(1)
+      domes += observatories.length
+      for (const observatory of observatories) {
+        // Inside a mountain's own triangle, on its highest ground.
+        const triangles = island.mountains.map(orientedTriangle)
+        const home = triangles.find((triangle) => signedDistanceToTriangle(observatory.x, observatory.z, triangle) >= 0)
+        expect(home).toBeDefined()
+        const here = sampleHeight(island.heightfield, observatory.x, observatory.z)
+        let highest = -Infinity
+        const { cellSize, width, depth, heights } = island.heightfield
+        for (let row = 0; row < depth; row++) {
+          for (let col = 0; col < width; col++) {
+            if (signedDistanceToTriangle(col * cellSize, row * cellSize, home!) < 0) continue
+            highest = Math.max(highest, heights[row * width + col]!)
+          }
+        }
+        expect(here).toBeGreaterThan(highest - 0.5)
+        expect(observatory.width).toBe(observatory.depth)
+      }
+    }
+    expect(domes).toBeGreaterThan(0)
+    expect(domes).toBeLessThan(8)
+  }, 60_000)
 
   it('keep every building and tree off every road and out of the water', () => {
     for (const building of map.buildings) {

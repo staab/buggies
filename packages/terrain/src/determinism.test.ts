@@ -12,7 +12,7 @@ import { generateTerrain } from './index.ts'
  */
 const GOLDEN: Record<number, string> = {
   7: 'f496df46',
-  11: '81322b20',
+  11: 'f8674f79',
 }
 
 describe('terrain determinism', () => {

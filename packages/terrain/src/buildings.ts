@@ -103,6 +103,25 @@ const HOUSE_SETBACK = { min: 5, max: 9 } as const
 const HOUSE_WIDTH = { min: 8, max: 12 } as const
 const HOUSE_DEPTH = { min: 7, max: 10 } as const
 const HOUSE_HEIGHT = { min: 3.5, max: 6.5 } as const
+/** A cottage is small and low under a steep roof; a villa is broad, and two storeys. */
+const COTTAGE_WIDTH = { min: 6, max: 8.5 } as const
+const COTTAGE_DEPTH = { min: 5, max: 7 } as const
+const COTTAGE_HEIGHT = { min: 3, max: 3.6 } as const
+const VILLA_WIDTH = { min: 11, max: 14 } as const
+const VILLA_DEPTH = { min: 9, max: 12 } as const
+const VILLA_HEIGHT = { min: 6, max: 7.5 } as const
+/** Which style a house is, by the luck of the draw: the plain one half the time, the others a quarter each. */
+const HOUSE_STYLES: readonly ('house' | 'cottage' | 'villa')[] = ['house', 'house', 'cottage', 'villa']
+
+/**
+ * As often as not an island has an observatory, one at most, on a mountain
+ * top: a round tower this wide and this tall over the peak, on ground no
+ * more uneven than this across it.
+ */
+const OBSERVATORY_ODDS = 0.5
+const OBSERVATORY_SIZE = 12
+const OBSERVATORY_HEIGHT = 11
+const OBSERVATORY_RELIEF = 8
 /** How far apart the ramps stand along a road, out of the cities. */
 const RAMP_SPACING = { min: 140, max: 300 } as const
 /** A ramp's run and rise: an arc ending near a quarter grade, enough to fly off at speed. */
@@ -575,9 +594,16 @@ function lineArterials(
   /** A house beside the road at this sample, facing it, if it fits there in `zone`. */
   const placeHouse = (road: Road, index: number, point: RoadPoint, side: number, zone: number): Building | null => {
     const { dx, dz, nx, nz } = frameAlong(road, index, point)
-    const houseWidth = randomRange(rng, HOUSE_WIDTH.min, HOUSE_WIDTH.max)
-    const houseDepth = randomRange(rng, HOUSE_DEPTH.min, HOUSE_DEPTH.max)
-    const height = randomRange(rng, HOUSE_HEIGHT.min, HOUSE_HEIGHT.max)
+    const kind = HOUSE_STYLES[Math.floor(rng() * HOUSE_STYLES.length)] ?? 'house'
+    const [widths, depths, heights] =
+      kind === 'cottage'
+        ? [COTTAGE_WIDTH, COTTAGE_DEPTH, COTTAGE_HEIGHT]
+        : kind === 'villa'
+          ? [VILLA_WIDTH, VILLA_DEPTH, VILLA_HEIGHT]
+          : [HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT]
+    const houseWidth = randomRange(rng, widths.min, widths.max)
+    const houseDepth = randomRange(rng, depths.min, depths.max)
+    const height = randomRange(rng, heights.min, heights.max)
     const tone = rng()
     const setback = road.width / 2 + randomRange(rng, HOUSE_SETBACK.min, HOUSE_SETBACK.max) + houseDepth / 2
     const footprint: Footprint = {
@@ -595,7 +621,7 @@ function lineArterials(
     if (placed.meets(footprint, BUILDING_GAP)) return null
     placed.add(footprint)
     const house: Building = {
-      kind: 'house',
+      kind,
       ...footprint,
       bottom: ground.low - BURY,
       top: ground.high + height,
@@ -870,6 +896,72 @@ export function generateBuildings(
   fillCities(rng, field, districts, districtOf, clear, wet, placed, buildings, sidewalks, plant)
   lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
   lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
+  raiseObservatory(rng, field, mountains, clear, wet, placed, buildings)
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
   return { buildings, trees, ramps, sidewalks }
+}
+
+/** The highest ground inside a triangle, at a cell of the field, or nothing if the triangle covers none. */
+function highestWithin(field: Heightfield, triangle: Triangle): { x: number; z: number } | null {
+  const { width, depth, cellSize, heights } = field
+  const cols = [triangle.ax, triangle.bx, triangle.cx].map((x) => x / cellSize)
+  const rows = [triangle.az, triangle.bz, triangle.cz].map((z) => z / cellSize)
+  const colFrom = Math.max(Math.floor(Math.min(...cols)), 0)
+  const colTo = Math.min(Math.ceil(Math.max(...cols)), width - 1)
+  const rowFrom = Math.max(Math.floor(Math.min(...rows)), 0)
+  const rowTo = Math.min(Math.ceil(Math.max(...rows)), depth - 1)
+  let best: { x: number; z: number } | null = null
+  let top = -Infinity
+  for (let row = rowFrom; row <= rowTo; row++) {
+    for (let col = colFrom; col <= colTo; col++) {
+      const x = col * cellSize
+      const z = row * cellSize
+      if (signedDistanceToTriangle(x, z, triangle) < 0) continue
+      const height = heights[row * width + col] ?? -Infinity
+      if (height <= top) continue
+      top = height
+      best = { x, z }
+    }
+  }
+  return best
+}
+
+/**
+ * The island's one observatory, if it has one: a round tower under a dome
+ * on the highest ground within a mountain's own triangle, where no road
+ * runs and nothing else stands. The mountains are tried from one chosen at
+ * random, and the first whose peak will take it gets it.
+ */
+function raiseObservatory(
+  rng: Rng,
+  field: Heightfield,
+  mountains: Mountain[],
+  clear: (footprint: Footprint, margin: number) => boolean,
+  wet: (x: number, z: number) => boolean,
+  placed: Placed,
+  buildings: Building[],
+): void {
+  if (mountains.length === 0 || rng() >= OBSERVATORY_ODDS) return
+  const first = Math.floor(rng() * mountains.length)
+  const tone = rng()
+  for (let tried = 0; tried < mountains.length; tried++) {
+    const mountain = mountains[(first + tried) % mountains.length]
+    if (mountain === undefined) continue
+    const peak = highestWithin(field, orientedTriangle(mountain))
+    if (peak === null) continue
+    const footprint: Footprint = { x: peak.x, z: peak.z, yaw: 0, width: OBSERVATORY_SIZE, depth: OBSERVATORY_SIZE }
+    if (!clear(footprint, ROAD_MARGIN)) continue
+    const ground = groundUnder(field, wet, footprint)
+    if (ground.wet || ground.high - ground.low > OBSERVATORY_RELIEF) continue
+    if (placed.meets(footprint, BUILDING_GAP)) continue
+    placed.add(footprint)
+    buildings.push({
+      kind: 'observatory',
+      ...footprint,
+      bottom: ground.low - BURY,
+      top: ground.high + OBSERVATORY_HEIGHT,
+      tone,
+    })
+    return
+  }
 }
