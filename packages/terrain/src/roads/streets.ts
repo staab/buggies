@@ -207,16 +207,18 @@ export function buildCityGrids(
 
     // Streets parallel to the major axis, then parallel to the minor axis, each
     // run spanning the polygon edge to edge.
+    // The samples fall on whole steps of the grid, so every crossing of two
+    // grid lines is a sample of both streets and they meet there exactly.
     for (let v = Math.ceil(vMin / STREET_SPACING) * STREET_SPACING; v <= vMax; v += STREET_SPACING) {
       const samples: { x: number; z: number }[] = []
-      for (let u = uMin; u <= uMax; u += STREET_STEP) {
+      for (let u = Math.ceil(uMin / STREET_STEP) * STREET_STEP; u <= uMax; u += STREET_STEP) {
         samples.push({ x: cx + u * cos - v * sin, z: cz + u * sin + v * cos })
       }
       addRuns(samples)
     }
     for (let u = Math.ceil(uMin / STREET_SPACING) * STREET_SPACING; u <= uMax; u += STREET_SPACING) {
       const samples: { x: number; z: number }[] = []
-      for (let v = vMin; v <= vMax; v += STREET_STEP) {
+      for (let v = Math.ceil(vMin / STREET_STEP) * STREET_STEP; v <= vMax; v += STREET_STEP) {
         samples.push({ x: cx + u * cos - v * sin, z: cz + u * sin + v * cos })
       }
       addRuns(samples)
@@ -428,6 +430,107 @@ export function pruneStrandedStreets(roads: Road[]): Road[] {
     }
   }
 
-  const stranded = new Set(streets.filter((_, index) => !linked.has(find(index))))
+  // A grid of streets is kept even where nothing reaches it: a city with its
+  // streets is a city, and a car gets to them over the grass. What goes is a
+  // street on its own, one stub with neither a grid nor a road to belong to.
+  const sizes = new Map<number, number>()
+  for (let i = 0; i < streets.length; i++) sizes.set(find(i), (sizes.get(find(i)) ?? 0) + 1)
+  const stranded = new Set(
+    streets.filter((_, index) => !linked.has(find(index)) && (sizes.get(find(index)) ?? 0) < 2),
+  )
   return roads.filter((road) => !stranded.has(road))
+}
+
+/**
+ * Run each street's ends on to the arterial or cross road it is heading
+ * into, where one lies within a step or so beyond the end: a street laid
+ * to the edge of its city otherwise stops a few metres short of the road
+ * along that edge, meeting it on paper and not on the ground. The end is
+ * carried to the road's centreline, at the road's own height, so the two
+ * join in a flush tee. Nothing is done where the way there is in the
+ * highway's keep-out, under water or too steep.
+ */
+export function joinStreetsToRoads(roads: Road[], blocked: (x: number, z: number) => boolean): void {
+  const targets = roads.filter((road) => road.kind === 'arterial' || road.kind === 'cross')
+  if (targets.length === 0) return
+  const reach = STREET_STEP + STREET_ARTERIAL_TOUCH
+  const square = cosine(STREET_ARTERIAL_ANGLE)
+
+  /**
+   * Whether the road runs square enough to the street's line everywhere near
+   * the joint: a street joining at a shallow angle, or where the road bends
+   * away shallow, would run alongside it and smear into it.
+   */
+  const squareAt = (joint: RoadPoint, dx: number, dz: number): boolean => {
+    for (const road of targets) {
+      const count = road.points.length
+      const segmentCount = road.closed ? count : count - 1
+      for (let i = 0; i < segmentCount; i++) {
+        const a = road.points[i]!
+        const b = road.points[(i + 1) % count]!
+        if (distanceToSegment(joint.x, joint.z, a.x, a.z, b.x, b.z) > STREET_ARTERIAL_TOUCH + 1) continue
+        const run = hypot(b.x - a.x, b.z - a.z) || 1
+        if (Math.abs(((b.x - a.x) * dx + (b.z - a.z) * dz) / run) > square) return false
+      }
+    }
+    return true
+  }
+
+  /** Where a ray from `from` along `dx, dz` first crosses a target's centreline within reach, and the road's height there. */
+  const hit = (from: RoadPoint, dx: number, dz: number): RoadPoint | null => {
+    let best: RoadPoint | null = null
+    let bestAlong = reach
+    for (const road of targets) {
+      const count = road.points.length
+      const segmentCount = road.closed ? count : count - 1
+      for (let i = 0; i < segmentCount; i++) {
+        const a = road.points[i]!
+        const b = road.points[(i + 1) % count]!
+        const ex = b.x - a.x
+        const ez = b.z - a.z
+        const cross = dx * ez - dz * ex
+        if (Math.abs(cross) < 1e-6) continue
+        const rx = a.x - from.x
+        const rz = a.z - from.z
+        const along = (rx * ez - rz * ex) / cross
+        const at = (rx * dz - rz * dx) / cross
+        if (along <= 0 || along >= bestAlong || at < 0 || at > 1) continue
+        bestAlong = along
+        best = { x: from.x + dx * along, y: a.y + (b.y - a.y) * at, z: from.z + dz * along }
+      }
+    }
+    return best
+  }
+
+  for (const road of roads) {
+    if (road.kind !== 'street' || road.points.length < 2) continue
+    for (const atStart of [true, false]) {
+      const end = road.points[atStart ? 0 : road.points.length - 1]!
+      const before = road.points[atStart ? 1 : road.points.length - 2]!
+      const length = hypot(end.x - before.x, end.z - before.z) || 1
+      const dx = (end.x - before.x) / length
+      const dz = (end.z - before.z) / length
+      const joint = hit(end, dx, dz)
+      if (joint === null || !squareAt(joint, dx, dz)) continue
+      const run = hypot(joint.x - end.x, joint.z - end.z)
+      if (Math.abs(joint.y - end.y) > run * MAX_ROAD_GRADE * 2) continue
+      // Every few metres of the way there is looked at: the middle of the road it joins is fine, the way to it must be too.
+      let clear = true
+      for (let t = 0.25; t < 1 && clear; t += 0.25) {
+        const x = end.x + (joint.x - end.x) * t
+        const z = end.z + (joint.z - end.z) * t
+        if (blocked(x, z)) clear = false
+      }
+      if (!clear) continue
+      const structure = new Uint8Array(road.structure.length + 1)
+      if (atStart) {
+        road.points.unshift(joint)
+        structure.set(road.structure, 1)
+      } else {
+        road.points.push(joint)
+        structure.set(road.structure, 0)
+      }
+      road.structure = structure
+    }
+  }
 }

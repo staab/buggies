@@ -515,13 +515,72 @@ describe('sidewalks', () => {
     map ??= generateTerrain(1)
   }, 60_000)
 
-  it('ring every city block, a block wide less the street', () => {
+  it('ring the built city blocks, a block wide less the street, each side along a street inside the city', () => {
     expect(map.sidewalks.length).toBeGreaterThan(20)
+    const blocks = map.buildings.filter((building) => building.kind === 'block')
+    const carparks = map.fields.filter((field) => field.kind === 'carpark')
+    const streets = map.roads.filter((road) => road.kind === 'street')
+    /** Whether a street's centreline passes within a lane of the point. */
+    const onStreet = (x: number, z: number): boolean =>
+      streets.some((street) => {
+        const a = street.points[0]!
+        const b = street.points[street.points.length - 1]!
+        const dx = b.x - a.x
+        const dz = b.z - a.z
+        const t = Math.min(Math.max(((x - a.x) * dx + (z - a.z) * dz) / (dx * dx + dz * dz || 1), 0), 1)
+        return Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t)) <= street.width / 2 + 1
+      })
+    let laidSides = 0
     for (const walk of map.sidewalks) {
       expect(districtAt(walk.x, walk.z)).toBe(DISTRICT_CITY)
       expect(walk.half).toBeCloseTo(STREET_SPACING / 2 - STREET_WIDTH / 2, 6)
       expect(walk.band).toBeGreaterThan(1)
+      // Something is built on the block it rings.
+      const near = (thing: { x: number; z: number }): boolean => Math.hypot(thing.x - walk.x, thing.z - walk.z) < walk.half + 2
+      expect(blocks.some(near) || carparks.some(near)).toBe(true)
+      // And each laid side lies in the city, with a street running the whole side long.
+      const cos = Math.cos(walk.yaw)
+      const sin = Math.sin(walk.yaw)
+      const mid = walk.half - walk.band / 2
+      const street = STREET_SPACING / 2
+      for (const [k, laid] of walk.sides.entries()) {
+        if (!laid) continue
+        laidSides++
+        const u = k === 1 ? -mid : k === 3 ? mid : 0
+        const v = k === 0 ? mid : k === 2 ? -mid : 0
+        expect(districtAt(walk.x + u * cos - v * sin, walk.z + u * sin + v * cos)).toBe(DISTRICT_CITY)
+        for (const t of [-(walk.half - 1), 0, walk.half - 1]) {
+          const su = k === 0 || k === 2 ? t : k === 1 ? -street : street
+          const sv = k === 1 || k === 3 ? t : k === 0 ? street : -street
+          expect(onStreet(walk.x + su * cos - sv * sin, walk.z + su * sin + sv * cos)).toBe(true)
+        }
+      }
     }
+    expect(laidSides).toBeGreaterThan(40)
+  })
+
+  it('mark out car parks on some of the open lots, and plant street trees along the sidewalks', () => {
+    const carparks = map.fields.filter((field) => field.kind === 'carpark')
+    expect(carparks.length).toBeGreaterThanOrEqual(1)
+    for (const lot of carparks) expect(districtAt(lot.x, lot.z)).toBe(DISTRICT_CITY)
+    let onSidewalks = 0
+    for (const tree of map.trees) {
+      if (tree.kind !== 'tree' || districtAt(tree.x, tree.z) !== DISTRICT_CITY) continue
+      for (const walk of map.sidewalks) {
+        const dx = tree.x - walk.x
+        const dz = tree.z - walk.z
+        if (Math.hypot(dx, dz) > walk.half + 1) continue
+        const cos = Math.cos(walk.yaw)
+        const sin = Math.sin(walk.yaw)
+        const u = dx * cos + dz * sin
+        const v = -dx * sin + dz * cos
+        if (Math.abs(Math.max(Math.abs(u), Math.abs(v)) - (walk.half - walk.band / 2)) < 0.5) {
+          onSidewalks++
+          break
+        }
+      }
+    }
+    expect(onSidewalks).toBeGreaterThan(30)
   })
 })
 
