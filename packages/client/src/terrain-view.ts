@@ -124,14 +124,14 @@ const CROP_STOPS: Stops = [
 ]
 const CROP_STRIPE = 4
 const CROP_STRIPE_SHADE = 0.86
-/** Barns are red or weathered grey under a steep grey roof; silos are pale steel with a domed cap. */
+/** Barns are painted red, a shade or two of it, under a grey gambrel roof; silos are pale steel with a domed cap. */
 const BARN_COLORS: [THREE.Color, ...THREE.Color[]] = [
-  new THREE.Color('#9c3b2e'),
-  new THREE.Color('#8a4a3a'),
-  new THREE.Color('#8d8a82'),
+  new THREE.Color('#a63a2c'),
+  new THREE.Color('#b8402f'),
+  new THREE.Color('#93352a'),
 ]
 const BARN_ROOF = new THREE.Color('#5c5c5a')
-const BARN_PITCH = 0.5
+const BARN_PITCH = 0.6
 const SILO_COLOR = new THREE.Color('#d6d8d6')
 /** Turbines are white towers with a nacelle and three blades this long, turning this fast in radians a second. */
 const TURBINE_COLOR = new THREE.Color('#f0f2f2')
@@ -161,14 +161,16 @@ const FRUIT_STOPS: Stops = [
   { t: 0.5, color: new THREE.Color('#79b04a') },
   { t: 1, color: new THREE.Color('#93b658') },
 ]
-/** Churches are pale stone under slate, with a spire this tall over the tower and a cross on it. */
+/** Churches are pale stone under a slate ridge running from the tower, with a spire this tall over the tower and a cross on it. */
 const CHURCH_COLOR = new THREE.Color('#d9d2c2')
 const SLATE = new THREE.Color('#4d4f55')
 const SPIRE_HEIGHT = 11
 const CHURCH_PITCH = 0.45
-/** Water towers are pale green-grey: a column, four legs, a tank this wide and tall near the top, and a ladder. */
+/** A church's windows come one line to a wall, one every so many metres, tall and arched. */
+const CHURCH_WINDOW_PITCH = 4.5
+/** Water towers are pale green-grey: a column, four legs, a spheroid tank this wide and tall at the top, and a ladder. */
 const WATER_TOWER_COLOR = new THREE.Color('#b8c2b8')
-const TANK = { radius: 4, height: 5 } as const
+const TANK = { radius: 4, height: 5.5 } as const
 /** Filling stations: a white canopy with a red fascia over two pump islands, a glazed shop, and a red sign. */
 /** How high a canopy stands over the ground, as the generator puts it. */
 const CANOPY_OVER = 4.5
@@ -284,6 +286,22 @@ function houseFacade(): Facade {
       const hash = windowHash(column, 1)
       out.setRGB(0.35 + hash * 0.1, 0.42 + hash * 0.1, 0.55)
     } else if (inFrame) out.setRGB(1, 1, 1)
+    else out.setRGB(0.94, 0.93, 0.9)
+  })
+}
+
+/** One tall arched window every so far along a church's wall, on bare stone: a line of them, no more. */
+function churchFacade(height: number): Facade {
+  return paintedFacade(64, [CHURCH_WINDOW_PITCH, height], (u, v, out) => {
+    // The window: a slot up the middle of the bay, rounded over at the top.
+    const du = (u - 0.5) / 0.16
+    const above = (v - 0.62) / 0.16
+    const inArch = Math.abs(du) < 1 && (v > 0.28 && v < 0.62 ? true : above > 0 && du * du + above * above < 1)
+    const df = (u - 0.5) / 0.2
+    const aboveFrame = (v - 0.62) / 0.2
+    const inFrame = Math.abs(df) < 1 && (v > 0.24 && v < 0.62 ? true : aboveFrame > 0 && df * df + aboveFrame * aboveFrame < 1)
+    if (inArch) out.setRGB(0.22, 0.28, 0.45)
+    else if (inFrame) out.setRGB(0.8, 0.78, 0.72)
     else out.setRGB(0.94, 0.93, 0.9)
   })
 }
@@ -1073,6 +1091,66 @@ const boxAt = (building: Building, matrix: THREE.Matrix4): void => {
   )
 }
 
+/**
+ * A roof as a prism: a profile drawn across the building, in a unit square
+ * with the eaves at the bottom corners and the ridge at the top, swept
+ * along the building's length. Flat-shaded, so each slope reads as one.
+ */
+function prismGeometry(profile: [number, number][]): THREE.BufferGeometry {
+  const positions: number[] = []
+  const push = (...points: [number, number, number][]): void => {
+    for (const [x, y, z] of points) positions.push(x, y, z)
+  }
+  // The slopes: a quad along the length for each edge of the profile.
+  for (let i = 0; i + 1 < profile.length; i++) {
+    const [z0, y0] = profile[i]!
+    const [z1, y1] = profile[i + 1]!
+    push([-0.5, y0, z0], [0.5, y0, z0], [0.5, y1, z1])
+    push([-0.5, y0, z0], [0.5, y1, z1], [-0.5, y1, z1])
+  }
+  // The ends: fans from the first eave, one each way.
+  for (const [x, wind] of [
+    [-0.5, 1],
+    [0.5, -1],
+  ] as const) {
+    for (let i = 1; i + 1 < profile.length; i++) {
+      const [za, ya] = profile[0]!
+      const [zb, yb] = profile[i]!
+      const [zc, yc] = profile[i + 1]!
+      if (wind > 0) push([x, ya, za], [x, yb, zb], [x, yc, zc])
+      else push([x, ya, za], [x, yc, zc], [x, yb, zb])
+    }
+  }
+  // Wound so the outside faces out: each triangle's last two corners the other way about.
+  for (let i = 0; i < positions.length; i += 9) {
+    for (let k = 0; k < 3; k++) {
+      const second = positions[i + 3 + k]!
+      positions[i + 3 + k] = positions[i + 6 + k]!
+      positions[i + 6 + k] = second
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.computeVertexNormals()
+  return geometry
+}
+
+/** A gable: two slopes meeting at the ridge. */
+const GABLE: [number, number][] = [
+  [-0.5, 0],
+  [0, 1],
+  [0.5, 0],
+]
+
+/** A gambrel, the barn's roof: steep at the eaves, easing to the ridge. */
+const GAMBREL: [number, number][] = [
+  [-0.5, 0],
+  [-0.4, 0.6],
+  [0, 1],
+  [0.4, 0.6],
+  [0.5, 0],
+]
+
 /** The buildings, trees and shrubs of a map, as a few instanced meshes. */
 function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const box = new THREE.BoxGeometry(1, 1, 1)
@@ -1187,13 +1265,15 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A barn: a box under a steep roof. Stones: boxes, each its own grey.
+  // A barn: a red box under a grey gambrel roof, its ridge along the barn. Stones: boxes, each its own grey.
+  const gambrel = prismGeometry(GAMBREL)
+  const gable = prismGeometry(GABLE)
   meshes.push(
     instanced(box, walled(plain, plain), barns, (barn, matrix, color) => {
       boxAt(barn, matrix)
       color.copy(pick(BARN_COLORS, barn.tone))
     }),
-    instanced(roof, plain, barns, (barn, matrix, color) => {
+    instanced(gambrel, plain, barns, (barn, matrix, color) => {
       roofAt(barn, matrix, BARN_PITCH)
       color.copy(BARN_ROOF)
     }),
@@ -1219,16 +1299,18 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     const offset = new THREE.Vector3(along, 0, across).applyQuaternion(turn)
     matrix.compose(new THREE.Vector3(building.x + offset.x, y, building.z + offset.z), turn, new THREE.Vector3(sx, sy, sz))
   }
+  const naveHeight = churches[0] === undefined ? 8 : churches[0].top - churches[0].bottom - BURY_SHOWN
+  const churchWall = facadeMaterial(churchFacade(naveHeight), 0.9)
   meshes.push(
-    instanced(box, walled(houseWall, slateRoof), churches, (church, matrix, color) => {
+    instanced(box, walled(churchWall, slateRoof), churches, (church, matrix, color) => {
       boxAt(church, matrix)
       color.copy(CHURCH_COLOR)
     }),
-    instanced(roof, roofing, churches, (church, matrix, color) => {
+    instanced(gable, plain, churches, (church, matrix, color) => {
       roofAt(church, matrix, CHURCH_PITCH)
       color.copy(SLATE)
     }),
-    instanced(box, walled(houseWall, slateRoof), steeples, (steeple, matrix, color) => {
+    instanced(box, walled(plain, slateRoof), steeples, (steeple, matrix, color) => {
       boxAt(steeple, matrix)
       color.copy(CHURCH_COLOR)
     }),
@@ -1250,36 +1332,40 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A water tower: a column with four legs about it, a tank near the top under a cap, and a ladder.
+  // A water tower: a column with four legs about it, all reaching up into a spheroid tank at the
+  // top, and a ladder up the side to it.
+  const tankMiddle = (watertower: Building): number => watertower.top - TANK.height / 2
   meshes.push(
     instanced(tower, plain, waterTowers, (watertower, matrix, color) => {
       const radius = watertower.width / 2
-      matrix.makeScale(radius, watertower.top - TANK.height - 1 - watertower.bottom, radius)
+      matrix.makeScale(radius, tankMiddle(watertower) - watertower.bottom, radius)
       matrix.setPosition(watertower.x, watertower.bottom, watertower.z)
       color.copy(WATER_TOWER_COLOR)
     }),
     ...[0, 1, 2, 3].map((k) =>
       instanced(box, plain, waterTowers, (watertower, matrix, color) => {
         const angle = (k * Math.PI) / 2 + Math.PI / 4
-        const reach = TANK.radius * 0.75
-        matrix.makeScale(0.35, watertower.top - TANK.height - 1 - watertower.bottom, 0.35)
-        matrix.setPosition(watertower.x + Math.cos(angle) * reach, watertower.bottom, watertower.z + Math.sin(angle) * reach)
+        const reach = TANK.radius * 0.6
+        const height = tankMiddle(watertower) - watertower.bottom
+        matrix.makeScale(0.35, height, 0.35)
+        matrix.setPosition(
+          watertower.x + Math.cos(angle) * reach,
+          watertower.bottom + height / 2,
+          watertower.z + Math.sin(angle) * reach,
+        )
         color.copy(WATER_TOWER_COLOR)
       }),
     ),
-    instanced(tower, plain, waterTowers, (watertower, matrix, color) => {
-      matrix.makeScale(TANK.radius, TANK.height, TANK.radius)
-      matrix.setPosition(watertower.x, watertower.top - TANK.height - 1, watertower.z)
+    instanced(lamp, plain, waterTowers, (watertower, matrix, color) => {
+      // The lamp is a half-metre sphere: scaled to the tank's radius across and its height up.
+      matrix.makeScale(TANK.radius * 2, TANK.height, TANK.radius * 2)
+      matrix.setPosition(watertower.x, tankMiddle(watertower), watertower.z)
       color.copy(WATER_TOWER_COLOR)
     }),
-    instanced(cap, plain, waterTowers, (watertower, matrix, color) => {
-      matrix.makeScale(TANK.radius * 1.05, 1.2, TANK.radius * 1.05)
-      matrix.setPosition(watertower.x, watertower.top - 1, watertower.z)
-      color.copy(SLATE)
-    }),
     instanced(box, plain, waterTowers, (watertower, matrix, color) => {
-      matrix.makeScale(0.5, watertower.top - 1 - watertower.bottom, 0.12)
-      matrix.setPosition(watertower.x + watertower.width / 2 + 0.2, watertower.bottom, watertower.z)
+      const height = tankMiddle(watertower) - watertower.bottom
+      matrix.makeScale(0.5, height, 0.12)
+      matrix.setPosition(watertower.x + watertower.width / 2 + 0.2, watertower.bottom + height / 2, watertower.z)
       color.copy(IRONWORK)
     }),
   )
@@ -1287,6 +1373,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   // A filling station: the shop with a glazed front, the canopy on its posts with a red fascia,
   // two pump islands under it, and a sign on a pole by the road.
   const glass = new THREE.MeshStandardMaterial({ color: SHOP_GLASS, roughness: 0.2, metalness: 0.1 })
+  const fasciaFace = new THREE.MeshStandardMaterial({ color: FASCIA, roughness: 0.7, metalness: 0.05 })
+  const canopyFace = new THREE.MeshStandardMaterial({ color: CANOPY_COLOR, roughness: 0.8, metalness: 0.05 })
   meshes.push(
     instanced(box, walled(plain, flatRoof), shops, (shop, matrix, color) => {
       boxAt(shop, matrix)
@@ -1296,13 +1384,10 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       upright(shop, matrix, shop.width - 1, shop.top - shop.bottom - BURY_SHOWN - 1, 0.2, (shop.top + shop.bottom + BURY_SHOWN) / 2 - 0.5, 0, -shop.depth / 2)
       color.copy(SHOP_GLASS)
     }),
-    instanced(box, plain, canopies, (canopy, matrix, color) => {
+    // The canopy is one slab: its edges the red fascia, its top and underside white.
+    instanced(box, [fasciaFace, fasciaFace, canopyFace, canopyFace, fasciaFace, fasciaFace], canopies, (canopy, matrix, color) => {
       boxAt(canopy, matrix)
-      color.copy(CANOPY_COLOR)
-    }),
-    instanced(box, plain, canopies, (canopy, matrix, color) => {
-      upright(canopy, matrix, canopy.width + 0.1, 0.7, canopy.depth + 0.1, canopy.bottom + 0.15)
-      color.copy(FASCIA)
+      color.setRGB(1, 1, 1)
     }),
     instanced(box, plain, posts, (post, matrix, color) => {
       boxAt(post, matrix)

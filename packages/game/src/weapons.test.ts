@@ -223,11 +223,17 @@ describe('weapons', () => {
     expect(a.vehicle.frame.position.y - ground).toBeGreaterThan(8)
     expect(a.vehicle.groundedCount).toBe(0)
     expect(a.ammoTicks).toBe(WINGS_FLIGHT_TICKS - 180)
-    // Steered while aloft, it comes round.
+    // Steered while aloft, it comes round, and stays level while it does.
     const { x: fx, z: fz } = a.vehicle.frame.forward
     for (let i = 0; i < 60; i++) advance(arena, () => ({ ...NEUTRAL_INPUT, fire: true, steer: 1 }))
     const { x: gx, z: gz } = a.vehicle.frame.forward
     expect(fx * gx + fz * gz).toBeLessThan(0.9)
+    expect(a.vehicle.frame.up.y).toBeGreaterThan(0.95)
+    // And the throttle drives it along up there.
+    const before = { ...a.vehicle.frame.position }
+    for (let i = 0; i < 60; i++) advance(arena, () => ({ ...NEUTRAL_INPUT, fire: true, throttle: 1 }))
+    expect(a.vehicle.groundedCount).toBe(0)
+    expect(Math.hypot(a.vehicle.frame.position.x - before.x, a.vehicle.frame.position.z - before.z)).toBeGreaterThan(3)
     // Let go: down it comes.
     for (let i = 0; i < 60 * 6; i++) advance(arena)
     expect(a.vehicle.groundedCount).toBeGreaterThan(0)

@@ -83,12 +83,14 @@ export const ENGINE_TOP_SPEED = 1.8
 
 /**
  * How fast the wings climb, in metres a second, and how hard they push up
- * toward that; and how hard they turn the car in the air, as a share of
- * what the pedals pitch it by.
+ * toward that; how hard they turn the car in the air, as a share of what
+ * the pedals pitch it by; and how hard the pedals drive it along up there,
+ * in metres a second a second.
  */
 export const WINGS_CLIMB_SPEED = 8
 export const WINGS_CLIMB_PUSH = 6
-export const WINGS_TURN = 0.8
+export const WINGS_TURN = 1.6
+export const WINGS_THRUST = 9
 /**
  * How far a shot carries, and how far off dead ahead the gun swings to
  * pick out a car: it trains itself on the nearest one in that sweep, and
@@ -227,6 +229,8 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
   const climb = clamp(1 - frame.linearVelocity.y / WINGS_CLIMB_SPEED, 0, 1)
   addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
   addTorqueAbout(body, frame.up, -command.steer * tuning.airPitchTorque * WINGS_TURN)
+  // The pedals drive it along, forward or back, wherever it is.
+  addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
 }
 
 export function disarm(seat: Gunner): void {

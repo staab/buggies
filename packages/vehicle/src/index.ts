@@ -1,4 +1,4 @@
-export { applyAirControl, applyAirStabilization } from './airControl.ts'
+export { applyAirControl, applyAirStabilization, holdLevel } from './airControl.ts'
 export { addForceAlong, addTorqueAbout } from './bodyForces.ts'
 export {
   CHASSIS_FORWARD,

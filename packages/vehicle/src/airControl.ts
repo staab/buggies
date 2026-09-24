@@ -94,6 +94,24 @@ function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): 
  * rate, so it lands on its wheels. Yaw is left alone for the air controls.
  * Off a crash it is not: a car that has just been hit is let tumble.
  */
+/** How much harder than the ordinary levelling a car on wings is held level, and damped. */
+const WINGS_LEVEL = 2.5
+
+/**
+ * Hold a car on wings level, at once and firmly, whatever it is doing:
+ * the wings are what keep it up, and they keep it upright too.
+ */
+export function holdLevel(vehicle: Vehicle, tuning: VehicleTuning): void {
+  const { body, frame } = vehicle
+  vcross(uprightError, frame.up, WORLD_UP)
+  body.angvel(angularVelocity)
+  const yawRate = vdot(angularVelocity, frame.up)
+  vaddScaled(pitchRollRate, angularVelocity, frame.up, -yawRate)
+  vscale(levelTorque, uprightError, tuning.airLevelTorque * WINGS_LEVEL)
+  vaddScaled(levelTorque, levelTorque, pitchRollRate, -tuning.airLevelDamping * WINGS_LEVEL)
+  body.addTorque(levelTorque, true)
+}
+
 export function applyAirStabilization(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): void {
   if (vehicle.airborneTime < tuning.airLevelEngageDelay) return
   if (vehicle.impactTime < tuning.impactTumbleTime) return

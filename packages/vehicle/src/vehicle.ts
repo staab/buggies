@@ -24,7 +24,7 @@ import {
   vset,
   type Vec3,
 } from '@buggies/physics'
-import { applyAirControl, applyAirStabilization } from './airControl.ts'
+import { applyAirControl, applyAirStabilization, holdLevel } from './airControl.ts'
 import { addForceAlong, addTorqueAbout } from './bodyForces.ts'
 import { readChassisFrame, velocityAtPoint, type ChassisFrame } from './chassisFrame.ts'
 import { WHEEL_RAY_GROUPS, isGround } from './groups.ts'
@@ -438,6 +438,10 @@ export function stepVehicle(
     applyYawAssist(vehicle, tuning)
   } else if (selfRighting) {
     vehicle.airborneTime = 0
+  } else if (vehicle.lifted) {
+    // On wings the pedals drive the car along, not its nose up and down, and the wings hold it level.
+    vehicle.airborneTime += dt
+    holdLevel(vehicle, tuning)
   } else {
     vehicle.airborneTime += dt
     applyAirControl(vehicle, tuning)
@@ -445,5 +449,7 @@ export function stepVehicle(
   }
 
   body.setLinearDamping(tuning.linearDamping)
-  body.setAngularDamping(grounded || selfRighting ? tuning.angularDampingGrounded : tuning.angularDampingAirborne)
+  body.setAngularDamping(
+    grounded || selfRighting || vehicle.lifted ? tuning.angularDampingGrounded : tuning.angularDampingAirborne,
+  )
 }
