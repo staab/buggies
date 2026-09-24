@@ -138,9 +138,12 @@ export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'tur
 /** Kinds that stand in the air on something else, a canopy on its posts or a lintel on its stones, rather than on the ground. */
 export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy']
 
-/** A rectangle painted on the ground: a farm's field of crop, hedged about, or a filling station's asphalt apron. */
+/**
+ * A rectangle painted on the ground: a farm's field of crop, hedged about, a
+ * filling station's asphalt apron, or a car park with its bays marked out.
+ */
 export interface Field {
-  kind: 'crop' | 'asphalt'
+  kind: 'crop' | 'asphalt' | 'carpark'
   x: number
   z: number
   yaw: number
@@ -204,8 +207,9 @@ export interface Sidewalk {
   band: number
   /**
    * Which of the ring's four sides are built, going round from the side at
-   * +v: a side that a road other than the block's own streets cuts across
-   * is left out, or its kerb would be a step in that road.
+   * +v: a side with no street along it is left out, as is one that a road
+   * other than the block's own streets cuts across, or its kerb would be a
+   * step in that road.
    */
   sides: [boolean, boolean, boolean, boolean]
 }

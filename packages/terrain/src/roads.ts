@@ -44,6 +44,7 @@ import {
   buildCityGrids,
   pruneStrandedStreets,
   streetKeepOut,
+  joinStreetsToRoads,
   trimStreetsAlongArterials,
 } from './roads/streets.ts'
 
@@ -274,23 +275,17 @@ export function generateRoads(
   )
   // Arterials are numbered before pruning, so their count is not their last id.
   const nextId = Math.max(...arterials.map((road) => road.id), access.length) + 1
+  const keepOut = streetKeepOut([highway, ...access], footprints)
   const streets = districtOf
-    ? buildCityGrids(
-        field,
-        seaLevel,
-        districts,
-        districtOf,
-        streetKeepOut([highway, ...access], footprints),
-        nextId,
-      )
+    ? buildCityGrids(field, seaLevel, districts, districtOf, keepOut, nextId)
     : []
   const network = [highway, ...access, ...arterials, ...streets]
   alignJunctions(network)
   // Junction alignment moves roads, so only once every road is where it will
   // finally be drawn is it worth asking what a street runs into and reaches.
-  const roads = pruneStrandedStreets(
-    trimStreetsAlongArterials(network, nextId + streets.length),
-  )
+  const trimmed = trimStreetsAlongArterials(network, nextId + streets.length)
+  joinStreetsToRoads(trimmed, keepOut)
+  const roads = pruneStrandedStreets(trimmed)
   // The highway cuts its bed first, clear of any ground a surface road is;
   // the surface roads are then settled into the ground.
   const painted = roads.filter(isSurfaceRoad)

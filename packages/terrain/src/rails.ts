@@ -7,7 +7,7 @@
  */
 
 import * as exact from '@buggies/physics'
-import { RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, isSurfaceRoad, roadLift } from './roads.ts'
+import { RAMP_PLATEAU, RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, isSurfaceRoad, roadLift } from './roads.ts'
 import type { Road, RoadPoint } from './types.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
@@ -121,7 +121,21 @@ function finished(road: Road, points: RoadPoint[], side: number, atStart: boolea
 
 /** Every run of guardrail on the map. */
 export function railRuns(roads: Road[]): RailRun[] {
-  const mouths = roads.filter((road) => road.kind === 'ramp').flatMap((road) => road.points.slice(0, 1))
+  // A ramp's mouth is the whole of its plateau: the stretch it runs level
+  // beside the deck before it sweeps away, which a car crosses anywhere along.
+  const mouths = roads
+    .filter((road) => road.kind === 'ramp')
+    .flatMap((road) => {
+      const along: RoadPoint[] = []
+      let travelled = 0
+      for (const [i, point] of road.points.entries()) {
+        const last = road.points[i - 1]
+        if (last !== undefined) travelled += hypot(point.x - last.x, point.z - last.z)
+        if (travelled > RAMP_PLATEAU + RAMP_WIDTH / 2) break
+        along.push(point)
+      }
+      return along
+    })
   const runs: RailRun[] = []
 
   for (const road of roads) {

@@ -12,7 +12,7 @@ import * as exact from '@buggies/physics'
 
 import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts'
 import { sampleHeight } from './heightfield.ts'
-import { interchangeZones, meetsInterchange } from './interchanges.ts'
+import { insidePolygon, interchangeZones, meetsInterchange } from './interchanges.ts'
 import { orientedTriangle, signedDistanceToTriangle, triangleInradius, type Triangle } from './mountain.ts'
 import { fbm2D, smoothstep } from './noise.ts'
 import { RIVER_BANK_LAP } from './rivers.ts'
@@ -65,7 +65,19 @@ const SIDEWALK_SAMPLE = 4
 /** No lot narrower than this: a block is cut into as many lots as leave each this wide. */
 const LOT_MIN = 9
 /** A building stands this far inside its lot at most, on each side. */
-const LOT_INSET = { min: 0.5, max: 2 } as const
+const LOT_INSET = { min: 0.5, max: 3.5 } as const
+/** An open lot is this often a car park rather than a park. */
+const CARPARK_ODDS = 0.35
+/** Street trees along the sidewalks, this far apart, this big: the trunk on the sidewalk and the crown over the street. */
+const STREET_TREE_SPACING = 14
+const STREET_TREE_RADIUS = { min: 1.6, max: 2.2 } as const
+const STREET_TREE_HEIGHT = { min: 6, max: 8 } as const
+/** Trees along the verge of the main roads through a city, this far from the road, this far apart. */
+const CITY_VERGE_SETBACK = 5.5
+const CITY_VERGE_SPACING = 12
+/** How thickly the ground an interchange's ramps enclose is planted, per hundred square metres. */
+const INTERCHANGE_TREES = 0.6
+const INTERCHANGE_SHRUBS = 0.9
 /** Lots left as parks, one in this many. */
 const PARK_LOT_ODDS = 7
 /** Storeys are this tall, and every building is a whole number of them. */
@@ -121,6 +133,7 @@ const HOUSE_STYLES: readonly ('house' | 'cottage' | 'villa')[] = ['house', 'hous
  * more uneven than this across it.
  */
 const OBSERVATORY_ODDS = 0.5
+const OBSERVATORY_SALT = 0x0b5e_4a70
 const OBSERVATORY_SIZE = 12
 const OBSERVATORY_HEIGHT = 11
 const OBSERVATORY_RELIEF = 8
@@ -526,14 +539,29 @@ function fillCities(
   field: Heightfield,
   districts: District[],
   districtOf: Uint8Array,
+  streets: Road[],
   clear: (footprint: Footprint, margin: number) => boolean,
+  clearOfRoads: (footprint: Footprint, margin: number) => boolean,
   wet: (x: number, z: number) => boolean,
   placed: Placed,
   buildings: Building[],
   sidewalks: Sidewalk[],
+  fields: Field[],
+  trees: Tree[],
   plant: Planter,
 ): void {
   const { width, cellSize } = field
+  /** A street tree: its trunk on the sidewalk, needing only that much room, its crown over the street. */
+  const plantStreetTree = (x: number, z: number): void => {
+    const radius = randomRange(rng, STREET_TREE_RADIUS.min, STREET_TREE_RADIUS.max)
+    const height = randomRange(rng, STREET_TREE_HEIGHT.min, STREET_TREE_HEIGHT.max)
+    const tone = rng()
+    if (wet(x, z)) return
+    const footprint: Footprint = { x, z, yaw: 0, width: 1, depth: 1 }
+    if (!clearOfRoads(footprint, 0) || placed.meets(footprint, 0)) return
+    placed.add(footprint)
+    trees.push({ kind: 'tree', x, z, bottom: sampleHeight(field, x, z), height, radius, tone })
+  }
   /**
    * Trees and shrubs scattered over a park lot, as many as fit at random. Each
    * stands far enough inside the lot for its crown to stay in it, so the
@@ -564,6 +592,23 @@ function fillCities(
     if (col < 0 || col >= width || row < 0 || row >= field.depth) return false
     return districtOf[row * width + col] === DISTRICT_CITY
   }
+  // The streets as straight lines, end to end, which is what they are: a
+  // point is on a street when it lies within the carriageway of one.
+  const lines = streets
+    .filter((street) => street.points.length >= 2)
+    .map((street) => {
+      const a = street.points[0]!
+      const b = street.points[street.points.length - 1]!
+      return { ax: a.x, az: a.z, bx: b.x, bz: b.z, half: street.width / 2 }
+    })
+  const onStreet = (x: number, z: number): boolean =>
+    lines.some((line) => {
+      const dx = line.bx - line.ax
+      const dz = line.bz - line.az
+      const lengthSq = dx * dx + dz * dz || 1
+      const t = Math.min(Math.max(((x - line.ax) * dx + (z - line.az) * dz) / lengthSq, 0), 1)
+      return hypot(x - (line.ax + dx * t), z - (line.az + dz * t)) <= line.half + 1
+    })
 
   for (const district of districts) {
     const frame = cityFrame(field, districtOf, district)
@@ -602,6 +647,19 @@ function fillCities(
       const sideClear = (du: number, dv: number, along: boolean): boolean => {
         const u = blockU + du
         const v = blockV + dv
+        // A side is laid only inside the city: a block cut off by the city's edge gets no kerb out into the grass.
+        if (!inCity(cx + u * cos - v * sin, cz + u * sin + v * cos)) return false
+        // And only along a street that is there, the whole side long: the
+        // grid has gaps where a street was cut, and a kerb along one would
+        // be a kerb along nothing.
+        const street = STREET_SPACING / 2
+        for (const t of [-(half - 1), 0, half - 1]) {
+          const su = along ? u + t : Math.sign(du) * street
+          const sv = along ? Math.sign(dv) * street : v + t
+          const x = cx + (along ? su : blockU + su) * cos - (along ? blockV + sv : sv) * sin
+          const z = cz + (along ? su : blockU + su) * sin + (along ? blockV + sv : sv) * cos
+          if (!onStreet(x, z)) return false
+        }
         return (
           gentle(u, v, along) &&
           clear(
@@ -631,19 +689,9 @@ function fillCities(
         const blockU = u0 + STREET_SPACING / 2
         const blockV = v0 + STREET_SPACING / 2
         const block = { x: cx + blockU * cos - blockV * sin, z: cz + blockU * sin + blockV * cos }
-        if (inCity(block.x, block.z)) {
-          const sides = ringSides(blockU, blockV)
-          if (sides.some((side) => side)) {
-            sidewalks.push({
-              ...block,
-              // The frame's own turn: the ring is placed the way the block is.
-              yaw: atan2(sin, cos),
-              half: STREET_SPACING / 2 - STREET_WIDTH / 2,
-              band: SIDEWALK_BAND,
-              sides,
-            })
-          }
-        }
+        // The ring is decided now, before the lots are cut, and laid only if something is built on the block.
+        const sides = inCity(block.x, block.z) ? ringSides(blockU, blockV) : null
+        let built = 0
         const lotsU = cutLots(rng, u0 + edge, u0 + STREET_SPACING - edge)
         const lotsV = cutLots(rng, v0 + edge, v0 + STREET_SPACING - edge)
         for (const [vFrom, vTo] of lotsV) {
@@ -656,7 +704,18 @@ function fillCities(
                 width: uTo - uFrom,
                 depth: vTo - vFrom,
               }
-              if (inCity(lot.x, lot.z)) plantPark(lot)
+              if (!inCity(lot.x, lot.z)) continue
+              // An open lot: a car park with its bays marked out, or a park.
+              if (rng() < CARPARK_ODDS && clear(lot, 0) && !placed.meets(lot, 0)) {
+                const ground = groundUnder(field, wet, lot)
+                if (!ground.wet && ground.high - ground.low <= BLOCK_RELIEF) {
+                  placed.add(lot)
+                  fields.push({ kind: 'carpark', ...lot, tone: 0 })
+                  built += 1
+                  continue
+                }
+              }
+              plantPark(lot)
               continue
             }
             const insetU = randomRange(rng, LOT_INSET.min, LOT_INSET.max)
@@ -693,8 +752,60 @@ function fillCities(
               top: ground.high + height,
               tone,
             })
+            built += 1
           }
         }
+        if (sides === null || built === 0 || !sides.some((side) => side)) continue
+        sidewalks.push({
+          ...block,
+          // The frame's own turn: the ring is placed the way the block is.
+          yaw: atan2(sin, cos),
+          half: STREET_SPACING / 2 - STREET_WIDTH / 2,
+          band: SIDEWALK_BAND,
+          sides,
+        })
+        // Street trees along each laid side of the ring, down the middle of the sidewalk.
+        const half = STREET_SPACING / 2 - STREET_WIDTH / 2
+        const mid = half - SIDEWALK_BAND / 2
+        const reach = half - STREET_TREE_SPACING / 2
+        for (const [k, laid] of sides.entries()) {
+          if (!laid) continue
+          for (let t = -reach; t <= reach + 1e-6; t += STREET_TREE_SPACING) {
+            const u = blockU + (k === 0 || k === 2 ? t : k === 1 ? -mid : mid)
+            const v = blockV + (k === 1 || k === 3 ? t : k === 0 ? mid : -mid)
+            plantStreetTree(cx + u * cos - v * sin, cz + u * sin + v * cos)
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * The ground an interchange's ramps enclose, as a park: trees and shrubs
+ * scattered over it, as many as will stand, off the ramps themselves.
+ */
+function plantInterchanges(
+  rng: Rng,
+  zones: { x: number; z: number }[][],
+  wet: (x: number, z: number) => boolean,
+  plant: Planter,
+): void {
+  for (const zone of zones) {
+    if (zone.length < 3) continue
+    const minX = Math.min(...zone.map((point) => point.x))
+    const maxX = Math.max(...zone.map((point) => point.x))
+    const minZ = Math.min(...zone.map((point) => point.z))
+    const maxZ = Math.max(...zone.map((point) => point.z))
+    const area = ((maxX - minX) * (maxZ - minZ)) / 100
+    for (const [kind, thick] of [
+      ['tree', INTERCHANGE_TREES],
+      ['shrub', INTERCHANGE_SHRUBS],
+    ] as const) {
+      for (let k = 0; k < Math.round(area * thick) * PARK_TRIES; k++) {
+        const x = randomRange(rng, minX, maxX)
+        const z = randomRange(rng, minZ, maxZ)
+        if (insidePolygon(zone, x, z)) plant(x, z, kind, wet)
       }
     }
   }
@@ -804,7 +915,9 @@ function lineArterials(
   }
 
   for (const road of roads) {
-    if (road.kind !== 'arterial' && road.kind !== 'cross') continue
+    if (road.kind !== 'arterial' && road.kind !== 'cross' && road.kind !== 'highway') continue
+    // A highway gets verge trees through the cities and nothing else beside it.
+    const highway = road.kind === 'highway'
     const points = road.points
     for (const side of [1, -1]) {
       let travelled = 0
@@ -824,7 +937,14 @@ function lineArterials(
         }
         const { nx, nz } = frameAlong(road, i, point)
         const beside = districtAt(point.x + nx * side * road.width, point.z + nz * side * road.width)
-        if (beside === DISTRICT_SUBURB) {
+        if (beside === DISTRICT_CITY) {
+          // Through the city: trees along the verge, on the open ground beside the road.
+          const out = road.width / 2 + CITY_VERGE_SETBACK
+          plant(point.x + nx * side * out, point.z + nz * side * out, 'tree', wet)
+          nextSlot = travelled + CITY_VERGE_SPACING
+        } else if (highway) {
+          nextSlot = travelled + TREE_SPACING.max
+        } else if (beside === DISTRICT_SUBURB) {
           placeHouse(road, i, point, side, DISTRICT_SUBURB)
           nextSlot = travelled + randomRange(rng, SUBURB_SPACING.min, SUBURB_SPACING.max)
         } else if (beside === DISTRICT_COUNTRY) {
@@ -1042,9 +1162,25 @@ export function generateBuildings(
   const ramps: Ramp[] = []
   const sidewalks: Sidewalk[] = []
   const plant = planter(rng, field, placed, trees, clearOfStreets)
-  fillCities(rng, field, districts, districtOf, clear, wet, placed, buildings, sidewalks, plant)
-  lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
   const fields: Field[] = []
+  fillCities(
+    rng,
+    field,
+    districts,
+    districtOf,
+    roads.filter((road) => road.kind === 'street'),
+    clear,
+    clearOfRoads,
+    wet,
+    placed,
+    buildings,
+    sidewalks,
+    fields,
+    trees,
+    plant,
+  )
+  plantInterchanges(rng, zones, wet, plant)
+  lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
   const stands: Stands = {
     rng,
     field,
@@ -1062,7 +1198,9 @@ export function generateBuildings(
   // The stations take their lots before the houses line the roads, or the houses would leave them none.
   raiseStations(stands, fields)
   lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
-  raiseObservatory(rng, field, mountains, clear, wet, placed, buildings)
+  // The observatory throws its own dice, so which islands have one does
+  // not change whenever something else in here draws a number more or less.
+  raiseObservatory(createRng((seed ^ OBSERVATORY_SALT) >>> 0), field, mountains, clear, wet, placed, buildings)
   plantFarms(stands, fields, plant)
   plantOrchards(stands, plant)
   raiseWindFarm(stands)

@@ -10,11 +10,14 @@ import {
   ROAD_TUNNEL,
   ROAD_WIDTH,
   STREET_SPACING,
+  STREET_WIDTH,
   TUNNEL_CLEARANCE,
   TUNNEL_WALL_HEIGHT,
   boreClearance,
   buildTunnelHoles,
   cityFrame,
+  insidePolygon,
+  interchangeZones,
   deckShouldered,
   heightAt,
   isSurfaceRoad,
@@ -33,6 +36,7 @@ import {
   type Ramp,
   type River,
   type Road,
+  type RoadPoint,
   type TerrainMap,
   type Tree,
 } from '@buggies/terrain'
@@ -60,6 +64,21 @@ const SEABED_SHALLOW = new THREE.Color('#4a7f86')
 const CITY_TINT = new THREE.Color('#8c8f93')
 const SUBURB_TINT = new THREE.Color('#a3a271')
 const ROAD_GRADE_COLOR = new THREE.Color('#43464b')
+/** A kerb's lighter edge along a road, the white of its centre line, and the gravel of a park path. */
+const KERB_COLOR = new THREE.Color('#8f9296')
+const MARKING_COLOR = new THREE.Color('#e6e6df')
+const GRAVEL_COLOR = new THREE.Color('#b9ad93')
+/**
+ * The roads are marked with a dashed centre line and nothing else. The
+ * ground is painted two texels to the metre, so the dashes are half a metre
+ * wide, a texel, or they would smear.
+ */
+const DASH = { every: 6, length: 3, width: 0.5 } as const
+/** How far past the asphalt a road's lighter kerb shows. */
+const KERB_LINE = 0.75
+/** An interchange park's loop path: this many points round, this far out from the middle toward the ramps. */
+const PARK_LOOP_POINTS = 16
+const PARK_LOOP_IN = 0.55
 const ROAD_BRIDGE_COLOR = new THREE.Color('#a8adb3')
 const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
@@ -351,7 +370,7 @@ const TUNNEL_CUT_SUBDIVISIONS = 4
  * street reads as a street, coarse enough that a whole island fits in one
  * texture.
  */
-const TEXELS_PER_METRE = 1
+const TEXELS_PER_METRE = 2
 
 function sampleRamp(t: number, stops: Stops, out: THREE.Color): THREE.Color {
   let lo = stops[0]
@@ -380,7 +399,7 @@ function terrainColor(
   }
   const t = (height - seaLevel) / Math.max(max - seaLevel, 1e-3)
   sampleRamp(t, LAND_STOPS, out)
-  if (district === DISTRICT_CITY) out.lerp(CITY_TINT, 0.55)
+  if (district === DISTRICT_CITY) out.lerp(CITY_TINT, 0.35)
   else if (district === DISTRICT_SUBURB) out.lerp(SUBURB_TINT, 0.35)
   return out
 }
@@ -415,67 +434,83 @@ function buildGroundTexture(map: TerrainMap, mouths: Mouth[]): THREE.DataTexture
     corner[cell * 3 + 2] = rgb.b
   }
 
-  ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
-  const asphalt: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
-  const city = cityBlocks(map)
+  const texelsOf = (color: THREE.Color): [number, number, number] => {
+    color.getRGB(rgb, THREE.SRGBColorSpace)
+    return [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+  }
+  const asphalt = texelsOf(ROAD_GRADE_COLOR)
+  const kerb = texelsOf(KERB_COLOR)
+  const marking = texelsOf(MARKING_COLOR)
+  const gravel = texelsOf(GRAVEL_COLOR)
   const crops = map.fields.map((field) => cropOf(field))
 
   const texels = Math.ceil(width * cellSize * TEXELS_PER_METRE)
   const data = new Uint8Array(texels * texels * 4)
+  // Which column of the field each texel column falls in, and how far across it, worked out once.
+  const colOf = new Int32Array(texels)
+  const acrossOf = new Float32Array(texels)
+  for (let tx = 0; tx < texels; tx++) {
+    const gx = Math.min((tx + 0.5) / TEXELS_PER_METRE / cellSize, width - 1)
+    colOf[tx] = Math.min(Math.floor(gx), width - 2)
+    acrossOf[tx] = gx - colOf[tx]!
+  }
   for (let ty = 0; ty < texels; ty++) {
     const z = (ty + 0.5) / TEXELS_PER_METRE
     const gz = Math.min(z / cellSize, depth - 1)
     const row = Math.min(Math.floor(gz), depth - 2)
     const tz = gz - row
-    for (let tx = 0; tx < texels; tx++) {
-      const x = (tx + 0.5) / TEXELS_PER_METRE
-      const gx = Math.min(x / cellSize, width - 1)
-      const col = Math.min(Math.floor(gx), width - 2)
-      const txf = gx - col
-      const at = (ty * texels + tx) * 4
-      // In a city, everything outside a block's sidewalk is asphalt: the
-      // streets and every gap between them alike, one crisp grey. Inside the
-      // sidewalk the ground keeps its own colour.
-      if (districtOf[Math.round(gz) * width + Math.round(gx)] === DISTRICT_CITY && !city.insideBlock(x, z)) {
-        data[at] = asphalt[0]
-        data[at + 1] = asphalt[1]
-        data[at + 2] = asphalt[2]
-        data[at + 3] = 255
-        continue
-      }
+    const rowAt = row * width * 3
+    let at = ty * texels * 4
+    for (let tx = 0; tx < texels; tx++, at += 4) {
+      const txf = acrossOf[tx]!
       // The four corners of a cell within the field: the row and column were held one short of its edge.
-      const a = (row * width + col) * 3
+      const a = rowAt + colOf[tx]! * 3
       const b = a + 3
       const c = a + width * 3
       const d = c + 3
-      for (let channel = 0; channel < 3; channel++) {
-        const top = corner[a + channel]! * (1 - txf) + corner[b + channel]! * txf
-        const bottom = corner[c + channel]! * (1 - txf) + corner[d + channel]! * txf
-        data[at + channel] = Math.round((top * (1 - tz) + bottom * tz) * 255)
-      }
+      const wa = (1 - txf) * (1 - tz)
+      const wb = txf * (1 - tz)
+      const wc = (1 - txf) * tz
+      const wd = txf * tz
+      data[at] = Math.round((corner[a]! * wa + corner[b]! * wb + corner[c]! * wc + corner[d]! * wd) * 255)
+      data[at + 1] = Math.round((corner[a + 1]! * wa + corner[b + 1]! * wb + corner[c + 1]! * wc + corner[d + 1]! * wd) * 255)
+      data[at + 2] = Math.round((corner[a + 2]! * wa + corner[b + 2]! * wb + corner[c + 2]! * wc + corner[d + 2]! * wd) * 255)
       data[at + 3] = 255
     }
   }
 
-  // The fields are painted on over the land, and the roads over everything.
+  // The fields are painted on over the land, and the roads over everything:
+  // the country roads and the city streets alike, each with a lighter kerb
+  // along it, and the streets marked out besides.
   for (const [i, field] of map.fields.entries()) {
     const crop = crops[i]
     if (crop !== undefined) paintField(data, texels, field, crop)
   }
-  for (const road of map.roads) {
-    if (!isSurfaceRoad(road)) continue
+  // A gravel loop round the ground each interchange encloses, now that it
+  // is a park, laid before the roads so no path crosses one.
+  for (const zone of interchangeZones(map.roads)) {
+    const loop = parkLoop(zone)
+    for (let i = 0; i < loop.length; i++) paintSegment(data, texels, loop[i]!, loop[(i + 1) % loop.length]!, 1.2, gravel)
+  }
+  const gradeSegments = (road: Road): [RoadPoint, RoadPoint][] => {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    const half = road.width / 2
+    const segments: [RoadPoint, RoadPoint][] = []
     // Within the road: i runs over its segments, and the point after the last is a loop's first.
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
-      const a = road.points[i]!
-      const b = road.points[(i + 1) % count]!
-      if (city.inCity((a.x + b.x) / 2, (a.z + b.z) / 2)) continue
-      paintSegment(data, texels, a, b, half, asphalt)
+      segments.push([road.points[i]!, road.points[(i + 1) % count]!])
     }
+    return segments
   }
+  const surface = map.roads.filter((road) => isSurfaceRoad(road))
+  for (const road of surface) {
+    for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2 + KERB_LINE, kerb)
+  }
+  for (const road of surface) {
+    for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2, asphalt)
+  }
+  for (const road of surface) paintDashes(data, texels, road, marking)
   // And the strip between each ramp's plateau and the deck it leaves, under
   // the deck's paved skirt, so no ground shows at the seam between them.
   for (const mouth of mouths) {
@@ -504,7 +539,7 @@ interface Crop {
 }
 
 function cropOf(field: Field): Crop {
-  if (field.kind === 'asphalt') {
+  if (field.kind === 'asphalt' || field.kind === 'carpark') {
     const rgb = { r: 0, g: 0, b: 0 }
     ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
     const plain: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
@@ -517,7 +552,7 @@ function cropOf(field: Field): Crop {
   return { plain, striped: [plain[0] * CROP_STRIPE_SHADE, plain[1] * CROP_STRIPE_SHADE, plain[2] * CROP_STRIPE_SHADE] }
 }
 
-/** A field, as a rectangle of crop turned with the field, striped along its length. */
+/** A field, as a rectangle of crop turned with the field, striped along its length; a car park is plain asphalt. */
 function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop): void {
   const cos = Math.cos(field.yaw)
   const sin = Math.sin(field.yaw)
@@ -540,6 +575,102 @@ function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop):
       data[at + 1] = Math.round(shade[1])
       data[at + 2] = Math.round(shade[2])
       data[at + 3] = 255
+    }
+  }
+}
+
+/** A point part way from `a` to `b`. */
+function between(a: { x: number; z: number }, b: { x: number; z: number }, t: number): { x: number; z: number } {
+  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }
+}
+
+/**
+ * A road's dashed centre line, along its stretches at grade. The dashes are
+ * laid by the distance along the road, not the segment, since a road's
+ * points come a few metres apart.
+ */
+function paintDashes(data: Uint8Array, texels: number, road: Road, marking: [number, number, number]): void {
+  const count = road.points.length
+  const segmentCount = road.closed ? count : count - 1
+  let travelled = 0
+  for (let i = 0; i < segmentCount; i++) {
+    const a = road.points[i]!
+    const b = road.points[(i + 1) % count]!
+    const length = Math.hypot(b.x - a.x, b.z - a.z)
+    if (road.structure[i] === ROAD_GRADE && length > 0) {
+      let from = 0
+      while (from < length) {
+        const phase = (travelled + from) % DASH.every
+        const lit = phase < DASH.length
+        const to = Math.min(length, from + (lit ? DASH.length - phase : DASH.every - phase))
+        if (lit) paintLine(data, texels, between(a, b, from / length), between(a, b, to / length), marking, DASH.width)
+        from = to
+      }
+    }
+    travelled += length
+  }
+}
+
+/**
+ * A path round the inside of an interchange's park: from the middle of
+ * the zone, a point part way out toward its edge in each of a ring of
+ * directions, so the loop follows the shape the ramps enclose.
+ */
+function parkLoop(zone: { x: number; z: number }[]): { x: number; z: number }[] {
+  let cx = 0
+  let cz = 0
+  for (const point of zone) {
+    cx += point.x
+    cz += point.z
+  }
+  cx /= zone.length
+  cz /= zone.length
+  if (!insidePolygon(zone, cx, cz)) return []
+  const loop: { x: number; z: number }[] = []
+  for (let k = 0; k < PARK_LOOP_POINTS; k++) {
+    const angle = (k / PARK_LOOP_POINTS) * Math.PI * 2
+    const dx = Math.cos(angle)
+    const dz = Math.sin(angle)
+    // Out from the middle to the edge, a metre at a time.
+    let reach = 0
+    while (reach < 400 && insidePolygon(zone, cx + dx * (reach + 1), cz + dz * (reach + 1))) reach += 1
+    loop.push({ x: cx + dx * reach * PARK_LOOP_IN, z: cz + dz * reach * PARK_LOOP_IN })
+  }
+  return loop
+}
+
+/**
+ * A hard-edged line from `a` to `b`, a texel wide unless told otherwise:
+ * walked half a texel at a time along and across, marking the texel each
+ * step lands in, so it is the same width however it lies, and a line along
+ * a texel boundary still lands on one.
+ */
+function paintLine(
+  data: Uint8Array,
+  texels: number,
+  a: { x: number; z: number },
+  b: { x: number; z: number },
+  rgb: [number, number, number],
+  width = 1 / TEXELS_PER_METRE,
+): void {
+  const length = Math.hypot(b.x - a.x, b.z - a.z)
+  const steps = Math.max(1, Math.ceil(length * TEXELS_PER_METRE * 2))
+  const nx = length > 0 ? -(b.z - a.z) / length : 0
+  const nz = length > 0 ? (b.x - a.x) / length : 0
+  const across = Math.max(1, Math.round(width * TEXELS_PER_METRE * 2))
+  for (let step = 0; step <= steps; step++) {
+    const t = step / steps
+    const x = a.x + (b.x - a.x) * t
+    const z = a.z + (b.z - a.z) * t
+    for (let k = 0; k < across; k++) {
+      const n = ((k + 0.5) / across - 0.5) * width
+      const tx = Math.floor((x + nx * n) * TEXELS_PER_METRE)
+      const ty = Math.floor((z + nz * n) * TEXELS_PER_METRE)
+      if (tx < 0 || ty < 0 || tx >= texels || ty >= texels) continue
+      const at = (ty * texels + tx) * 4
+      data[at] = rgb[0]
+      data[at + 1] = rgb[1]
+      data[at + 2] = rgb[2]
     }
   }
 }
@@ -581,60 +712,6 @@ function paintSegment(
   }
 }
 
-/**
- * Where the cities' blocks are, for colouring the ground: a point is inside a
- * block where a sidewalk rings it, read straight off the city's grid frame
- * rather than by searching the rings.
- */
-function cityBlocks(map: TerrainMap): {
-  inCity: (x: number, z: number) => boolean
-  insideBlock: (x: number, z: number) => boolean
-} {
-  const { width, depth, cellSize } = map.heightfield
-  const inCity = (x: number, z: number): boolean => {
-    const col = Math.floor(x / cellSize)
-    const row = Math.floor(z / cellSize)
-    if (col < 0 || col >= width || row < 0 || row >= depth) return false
-    return map.districtOf[row * width + col] === DISTRICT_CITY
-  }
-  const frames = map.districts.map((district) => cityFrame(map.heightfield, map.districtOf, district))
-  // The blocks that have a sidewalk, by city and grid cell, with how far in
-  // from the block's grid lines the sidewalk's inner edge lies.
-  const ringed = new Map<string, number>()
-  const frameOf = (x: number, z: number): { index: number; u: number; v: number } | null => {
-    let best: { index: number; u: number; v: number } | null = null
-    let bestDistance = Infinity
-    for (const [index, frame] of frames.entries()) {
-      if (frame === null) continue
-      const distance = Math.hypot(x - frame.cx, z - frame.cz)
-      if (distance >= bestDistance) continue
-      bestDistance = distance
-      const dx = x - frame.cx
-      const dz = z - frame.cz
-      best = { index, u: dx * frame.cos + dz * frame.sin, v: -dx * frame.sin + dz * frame.cos }
-    }
-    return best
-  }
-  for (const walk of map.sidewalks) {
-    const at = frameOf(walk.x, walk.z)
-    if (at === null) continue
-    const i = Math.floor(at.u / STREET_SPACING)
-    const j = Math.floor(at.v / STREET_SPACING)
-    ringed.set(`${at.index}:${i}:${j}`, STREET_SPACING / 2 - (walk.half - walk.band))
-  }
-  const insideBlock = (x: number, z: number): boolean => {
-    const at = frameOf(x, z)
-    if (at === null) return false
-    const i = Math.floor(at.u / STREET_SPACING)
-    const j = Math.floor(at.v / STREET_SPACING)
-    const inset = ringed.get(`${at.index}:${i}:${j}`)
-    if (inset === undefined) return false
-    const ou = at.u - i * STREET_SPACING
-    const ov = at.v - j * STREET_SPACING
-    return ou >= inset && ou <= STREET_SPACING - inset && ov >= inset && ov <= STREET_SPACING - inset
-  }
-  return { inCity, insideBlock }
-}
 
 /** Where a ramp leaves the highway's deck, and the way it runs from there. */
 interface Mouth {
