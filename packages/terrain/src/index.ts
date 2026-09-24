@@ -42,6 +42,7 @@ export {
   STREET_SPACING,
   STREET_WIDTH,
   SURFACE_SHOULDER,
+  STREET_GRID_LEAST,
   cityFrame,
   deckShouldered,
   footprintsOverlap,
