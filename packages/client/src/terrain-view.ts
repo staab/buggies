@@ -155,6 +155,36 @@ const IRONWORK = new THREE.Color('#2b2f36')
 const GLAZING = new THREE.Color('#bfe0ee')
 const LAMP_COLOR = new THREE.Color('#ffe8a0')
 const DOOR = { width: 1.4, height: 2.6 } as const
+/** Fruit trees are short, round and a lighter green than the woods. */
+const FRUIT_STOPS: Stops = [
+  { t: 0, color: new THREE.Color('#5f9a3a') },
+  { t: 0.5, color: new THREE.Color('#79b04a') },
+  { t: 1, color: new THREE.Color('#93b658') },
+]
+/** Churches are pale stone under slate, with a spire this tall over the tower and a cross on it. */
+const CHURCH_COLOR = new THREE.Color('#d9d2c2')
+const SLATE = new THREE.Color('#4d4f55')
+const SPIRE_HEIGHT = 11
+const CHURCH_PITCH = 0.45
+/** Water towers are pale green-grey: a column, four legs, a tank this wide and tall near the top, and a ladder. */
+const WATER_TOWER_COLOR = new THREE.Color('#b8c2b8')
+const TANK = { radius: 4, height: 5 } as const
+/** Filling stations: a white canopy with a red fascia over two pump islands, a glazed shop, and a red sign. */
+/** How high a canopy stands over the ground, as the generator puts it. */
+const CANOPY_OVER = 4.5
+const CANOPY_COLOR = new THREE.Color('#f4f4f0')
+const FASCIA = new THREE.Color('#d0392b')
+const PUMP_COLOR = new THREE.Color('#e8e8e4')
+const SHOP_GLASS = new THREE.Color('#9fc3d8')
+/** Camp sites: tents in bright colours, white caravans, a ring of stones round the fire with an ember in it. */
+const TENT_COLORS: [THREE.Color, ...THREE.Color[]] = [
+  new THREE.Color('#d9542b'),
+  new THREE.Color('#2f7fbf'),
+  new THREE.Color('#e0b429'),
+  new THREE.Color('#3f9a5a'),
+]
+const CARAVAN_COLOR = new THREE.Color('#f2f1ec')
+const CARAVAN_STRIPE = new THREE.Color('#4a7fb5')
 /** How far a building's bottom is buried below the ground, as the generator does it. */
 const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
@@ -456,6 +486,12 @@ interface Crop {
 }
 
 function cropOf(field: Field): Crop {
+  if (field.kind === 'asphalt') {
+    const rgb = { r: 0, g: 0, b: 0 }
+    ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
+    const plain: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
+    return { plain, striped: plain }
+  }
   const color = sampleRamp(field.tone, CROP_STOPS, new THREE.Color())
   const rgb = { r: 0, g: 0, b: 0 }
   color.getRGB(rgb, THREE.SRGBColorSpace)
@@ -1042,6 +1078,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const box = new THREE.BoxGeometry(1, 1, 1)
   const plain = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 })
   const flatRoof = new THREE.MeshStandardMaterial({ color: '#bdbdb8', roughness: 0.95, metalness: 0 })
+  const slateRoof = new THREE.MeshStandardMaterial({ color: '#4d4f55', roughness: 0.9, metalness: 0 })
   const meshes: (THREE.Object3D | null)[] = []
 
   // A box's faces come in the order +X, -X, +Y, -Y, +Z, -Z: walls all round, a roof on top.
@@ -1064,6 +1101,16 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const turbines = ofKind('turbine')
   const stones = [...ofKind('stone'), ...ofKind('lintel')]
   const lighthouses = ofKind('lighthouse')
+  const churches = ofKind('church')
+  const steeples = ofKind('steeple')
+  const waterTowers = ofKind('watertower')
+  const shops = ofKind('shop')
+  const canopies = ofKind('canopy')
+  const posts = ofKind('post')
+  const signs = ofKind('sign')
+  const tents = ofKind('tent')
+  const caravans = ofKind('caravan')
+  const firepits = ofKind('firepit')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -1156,9 +1203,170 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // An observatory: a round tower with a dome on it, its slit facing whichever way the tone says.
+  // Shapes shared by the towers and what stands on them, built once.
   const tower = new THREE.CylinderGeometry(1, 1, 1, 18)
   tower.translate(0, 0.5, 0)
+  const cap = new THREE.ConeGeometry(1, 1, 16)
+  cap.translate(0, 0.5, 0)
+  const ring = new THREE.TorusGeometry(1, 0.06, 6, 32).rotateX(Math.PI / 2)
+  const lamp = new THREE.SphereGeometry(0.5, 10, 8)
+
+  // A church: the nave a pale box under slate, the tower a box with a spire and a cross, a door at its foot.
+  const spire = new THREE.ConeGeometry(1, 1, 8)
+  spire.translate(0, 0.5, 0)
+  const upright = (building: Building, matrix: THREE.Matrix4, sx: number, sy: number, sz: number, y: number, along = 0, across = 0): void => {
+    const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), building.yaw)
+    const offset = new THREE.Vector3(along, 0, across).applyQuaternion(turn)
+    matrix.compose(new THREE.Vector3(building.x + offset.x, y, building.z + offset.z), turn, new THREE.Vector3(sx, sy, sz))
+  }
+  meshes.push(
+    instanced(box, walled(houseWall, slateRoof), churches, (church, matrix, color) => {
+      boxAt(church, matrix)
+      color.copy(CHURCH_COLOR)
+    }),
+    instanced(roof, roofing, churches, (church, matrix, color) => {
+      roofAt(church, matrix, CHURCH_PITCH)
+      color.copy(SLATE)
+    }),
+    instanced(box, walled(houseWall, slateRoof), steeples, (steeple, matrix, color) => {
+      boxAt(steeple, matrix)
+      color.copy(CHURCH_COLOR)
+    }),
+    instanced(spire, plain, steeples, (steeple, matrix, color) => {
+      upright(steeple, matrix, steeple.width * 0.55, SPIRE_HEIGHT, steeple.depth * 0.55, steeple.top)
+      color.copy(SLATE)
+    }),
+    instanced(box, plain, steeples, (steeple, matrix, color) => {
+      upright(steeple, matrix, 0.15, 1.6, 0.15, steeple.top + SPIRE_HEIGHT + 0.6)
+      color.copy(IRONWORK)
+    }),
+    instanced(box, plain, steeples, (steeple, matrix, color) => {
+      upright(steeple, matrix, 1.0, 0.15, 0.15, steeple.top + SPIRE_HEIGHT + 1.0)
+      color.copy(IRONWORK)
+    }),
+    instanced(box, plain, steeples, (steeple, matrix, color) => {
+      upright(steeple, matrix, 1.4, 2.6, 0.3, steeple.bottom + BURY_SHOWN + 1.3, 0, steeple.depth / 2)
+      color.copy(IRONWORK)
+    }),
+  )
+
+  // A water tower: a column with four legs about it, a tank near the top under a cap, and a ladder.
+  meshes.push(
+    instanced(tower, plain, waterTowers, (watertower, matrix, color) => {
+      const radius = watertower.width / 2
+      matrix.makeScale(radius, watertower.top - TANK.height - 1 - watertower.bottom, radius)
+      matrix.setPosition(watertower.x, watertower.bottom, watertower.z)
+      color.copy(WATER_TOWER_COLOR)
+    }),
+    ...[0, 1, 2, 3].map((k) =>
+      instanced(box, plain, waterTowers, (watertower, matrix, color) => {
+        const angle = (k * Math.PI) / 2 + Math.PI / 4
+        const reach = TANK.radius * 0.75
+        matrix.makeScale(0.35, watertower.top - TANK.height - 1 - watertower.bottom, 0.35)
+        matrix.setPosition(watertower.x + Math.cos(angle) * reach, watertower.bottom, watertower.z + Math.sin(angle) * reach)
+        color.copy(WATER_TOWER_COLOR)
+      }),
+    ),
+    instanced(tower, plain, waterTowers, (watertower, matrix, color) => {
+      matrix.makeScale(TANK.radius, TANK.height, TANK.radius)
+      matrix.setPosition(watertower.x, watertower.top - TANK.height - 1, watertower.z)
+      color.copy(WATER_TOWER_COLOR)
+    }),
+    instanced(cap, plain, waterTowers, (watertower, matrix, color) => {
+      matrix.makeScale(TANK.radius * 1.05, 1.2, TANK.radius * 1.05)
+      matrix.setPosition(watertower.x, watertower.top - 1, watertower.z)
+      color.copy(SLATE)
+    }),
+    instanced(box, plain, waterTowers, (watertower, matrix, color) => {
+      matrix.makeScale(0.5, watertower.top - 1 - watertower.bottom, 0.12)
+      matrix.setPosition(watertower.x + watertower.width / 2 + 0.2, watertower.bottom, watertower.z)
+      color.copy(IRONWORK)
+    }),
+  )
+
+  // A filling station: the shop with a glazed front, the canopy on its posts with a red fascia,
+  // two pump islands under it, and a sign on a pole by the road.
+  const glass = new THREE.MeshStandardMaterial({ color: SHOP_GLASS, roughness: 0.2, metalness: 0.1 })
+  meshes.push(
+    instanced(box, walled(plain, flatRoof), shops, (shop, matrix, color) => {
+      boxAt(shop, matrix)
+      color.copy(CANOPY_COLOR)
+    }),
+    instanced(box, glass, shops, (shop, matrix, color) => {
+      upright(shop, matrix, shop.width - 1, shop.top - shop.bottom - BURY_SHOWN - 1, 0.2, (shop.top + shop.bottom + BURY_SHOWN) / 2 - 0.5, 0, -shop.depth / 2)
+      color.copy(SHOP_GLASS)
+    }),
+    instanced(box, plain, canopies, (canopy, matrix, color) => {
+      boxAt(canopy, matrix)
+      color.copy(CANOPY_COLOR)
+    }),
+    instanced(box, plain, canopies, (canopy, matrix, color) => {
+      upright(canopy, matrix, canopy.width + 0.1, 0.7, canopy.depth + 0.1, canopy.bottom + 0.15)
+      color.copy(FASCIA)
+    }),
+    instanced(box, plain, posts, (post, matrix, color) => {
+      boxAt(post, matrix)
+      color.copy(IRONWORK)
+    }),
+    ...[-1, 1].flatMap((side) => [
+      instanced(box, plain, canopies, (canopy, matrix, color) => {
+        upright(canopy, matrix, 3.2, 0.2, 1.4, canopy.bottom - CANOPY_OVER + 0.1, side * (canopy.width / 4))
+        color.copy(PUMP_COLOR)
+      }),
+      instanced(box, plain, canopies, (canopy, matrix, color) => {
+        upright(canopy, matrix, 0.8, 1.7, 0.5, canopy.bottom - CANOPY_OVER + 1.05, side * (canopy.width / 4))
+        color.copy(FASCIA)
+      }),
+    ]),
+    instanced(tower, plain, signs, (sign, matrix, color) => {
+      matrix.makeScale(0.15, sign.top - sign.bottom - 2.2, 0.15)
+      matrix.setPosition(sign.x, sign.bottom, sign.z)
+      color.copy(IRONWORK)
+    }),
+    instanced(box, plain, signs, (sign, matrix, color) => {
+      upright(sign, matrix, sign.width, 2.2, sign.depth, sign.top - 1.1)
+      color.copy(FASCIA)
+    }),
+  )
+
+  // A camp: tents as ridged prisms in bright colours, white caravans with a stripe and wheels,
+  // and the fire pit as a ring of stones with an ember glowing in it.
+  const tentShape = new THREE.CylinderGeometry(1, 1, 1, 3, 1, false, Math.PI / 2)
+  tentShape.rotateZ(Math.PI / 2)
+  tentShape.translate(0, 0.5, 0)
+  const ember = new THREE.MeshStandardMaterial({ color: '#ff8c3a', emissive: '#ff5a1c', emissiveIntensity: 1.8 })
+  meshes.push(
+    instanced(tentShape, plain, tents, (tent, matrix, color) => {
+      upright(tent, matrix, tent.width, (tent.top - tent.bottom - BURY_SHOWN) / 1.5, tent.depth / 1.732, tent.bottom + BURY_SHOWN)
+      color.copy(pick(TENT_COLORS, tent.tone))
+    }),
+    instanced(box, plain, caravans, (caravan, matrix, color) => {
+      upright(caravan, matrix, caravan.width, caravan.top - caravan.bottom - BURY_SHOWN - 0.5, caravan.depth, (caravan.top + caravan.bottom + BURY_SHOWN + 0.5) / 2)
+      color.copy(CARAVAN_COLOR)
+    }),
+    instanced(box, plain, caravans, (caravan, matrix, color) => {
+      upright(caravan, matrix, caravan.width + 0.04, 0.3, caravan.depth + 0.04, caravan.bottom + BURY_SHOWN + 1.3)
+      color.copy(CARAVAN_STRIPE)
+    }),
+    ...[-1, 1].map((side) =>
+      instanced(box, plain, caravans, (caravan, matrix, color) => {
+        upright(caravan, matrix, 0.7, 0.7, 0.3, caravan.bottom + BURY_SHOWN + 0.3, 0, side * (caravan.depth / 2 - 0.1))
+        color.copy(IRONWORK)
+      }),
+    ),
+    instanced(ring, plain, firepits, (firepit, matrix, color) => {
+      matrix.makeScale(firepit.width / 2, 2.5, firepit.width / 2)
+      matrix.setPosition(firepit.x, firepit.bottom + BURY_SHOWN + 0.15, firepit.z)
+      color.copy(STONE_COLOR)
+    }),
+    instanced(lamp, ember, firepits, (firepit, matrix, color) => {
+      matrix.makeScale(0.9, 0.5, 0.9)
+      matrix.setPosition(firepit.x, firepit.bottom + BURY_SHOWN + 0.2, firepit.z)
+      color.copy(new THREE.Color('#ff8c3a'))
+    }),
+  )
+
+  // An observatory: a round tower with a dome on it, its slit facing whichever way the tone says.
   const dome = new THREE.SphereGeometry(1, 18, 9, 0, Math.PI * 2, 0, Math.PI / 2)
   const slit = new THREE.BoxGeometry(0.18, 1, 0.9)
   slit.translate(0, 0.5, 0.55)
@@ -1287,12 +1495,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   // gallery round the top, a glazed lantern room with the lamp in it under
   // a cap and finial, and a door at the foot. The shaft is as tall as the
   // building less what stands on it.
-  const lamp = new THREE.SphereGeometry(0.5, 10, 8)
-  const spire = new THREE.CylinderGeometry(LIGHTHOUSE_TAPER, 1, 1, 24)
-  spire.translate(0, 0.5, 0)
-  const ring = new THREE.TorusGeometry(1, 0.06, 6, 32).rotateX(Math.PI / 2)
-  const cap = new THREE.ConeGeometry(1, 1, 16)
-  cap.translate(0, 0.5, 0)
+  const taper = new THREE.CylinderGeometry(LIGHTHOUSE_TAPER, 1, 1, 24)
+  taper.translate(0, 0.5, 0)
   const finial = new THREE.SphereGeometry(0.35, 8, 6)
   const glazing = new THREE.MeshStandardMaterial({
     color: GLAZING,
@@ -1318,7 +1522,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     matrix.setPosition(lighthouse.x, y, lighthouse.z)
   }
   meshes.push(
-    instanced(spire, plain, lighthouses, (lighthouse, matrix, color) => {
+    instanced(taper, plain, lighthouses, (lighthouse, matrix, color) => {
       const { radius, height } = shaftOf(lighthouse)
       standing(lighthouse, matrix, radius, height, lighthouse.bottom)
       color.copy(LIGHTHOUSE_COLOR)
@@ -1374,6 +1578,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
 
   const trees = map.trees.filter((tree) => tree.kind === 'tree')
   const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
+  const fruits = map.trees.filter((tree) => tree.kind === 'fruit')
   const trunk = new THREE.CylinderGeometry(TRUNK_RADIUS, TRUNK_RADIUS * 1.3, 1, 6)
   trunk.translate(0, 0.5, 0)
   const crown = new THREE.ConeGeometry(1, 1, 7)
@@ -1396,6 +1601,17 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       matrix.makeScale(shrub.radius, shrub.height / 2, shrub.radius)
       matrix.setPosition(shrub.x, shrub.bottom - shrub.height * 0.15, shrub.z)
       sampleRamp(shrub.tone, CROWN_STOPS, color).multiplyScalar(0.85)
+    }),
+    // A fruit tree: a short trunk under a round crown.
+    instanced(trunk, plain, fruits, (tree: Tree, matrix, color) => {
+      matrix.makeScale(0.8, tree.height * 0.45, 0.8)
+      matrix.setPosition(tree.x, tree.bottom, tree.z)
+      color.copy(TRUNK_COLOR)
+    }),
+    instanced(bush, leaves, fruits, (tree: Tree, matrix, color) => {
+      matrix.makeScale(tree.radius, tree.height * 0.32, tree.radius)
+      matrix.setPosition(tree.x, tree.bottom + tree.height * 0.4, tree.z)
+      sampleRamp(tree.tone, FRUIT_STOPS, color)
     }),
   )
   return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)

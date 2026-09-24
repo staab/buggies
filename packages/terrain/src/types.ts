@@ -118,15 +118,29 @@ export type BuildingKind =
   | 'stone'
   | 'lintel'
   | 'lighthouse'
+  | 'church'
+  | 'steeple'
+  | 'watertower'
+  | 'shop'
+  | 'canopy'
+  | 'post'
+  | 'sign'
+  | 'tent'
+  | 'caravan'
+  | 'firepit'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
 
 /** The kinds that are round towers rather than boxes, as wide as they are deep. */
-export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse']
+export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower']
 
-/** A farm's field: a rectangle of crop painted on the ground, hedged about. */
+/** Kinds that stand in the air on something else, a canopy on its posts or a lintel on its stones, rather than on the ground. */
+export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy']
+
+/** A rectangle painted on the ground: a farm's field of crop, hedged about, or a filling station's asphalt apron. */
 export interface Field {
+  kind: 'crop' | 'asphalt'
   x: number
   z: number
   yaw: number
@@ -197,7 +211,8 @@ export interface Sidewalk {
 }
 
 export interface Tree {
-  kind: 'tree' | 'shrub'
+  /** A wild or garden tree, a shrub, or a fruit tree of an orchard: smaller and rounder. */
+  kind: 'tree' | 'shrub' | 'fruit'
   x: number
   z: number
   bottom: number

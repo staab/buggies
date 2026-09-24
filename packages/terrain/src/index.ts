@@ -83,7 +83,7 @@ export {
   type ShellMesh,
 } from './tunnels.ts'
 export { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
-export { HOUSE_KINDS, ROUND_KINDS } from './types.ts'
+export { HOUSE_KINDS, RAISED_KINDS, ROUND_KINDS } from './types.ts'
 export type {
   Building,
   Field,

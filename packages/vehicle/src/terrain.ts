@@ -320,7 +320,7 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
   // that comes to overlap one would otherwise land its ray inside it, and the
   // suspension would jack the car up onto the tree and hold it there.
   for (const tree of map.trees) {
-    if (tree.kind !== 'tree') continue
+    if (tree.kind === 'shrub') continue
     world.createCollider(
       slick(
         RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS)

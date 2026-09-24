@@ -28,6 +28,7 @@ import {
   STREET_WIDTH,
   type Footprint,
 } from './roads.ts'
+import { HOUSE_KINDS } from './types.ts'
 import type {
   Building,
   District,
@@ -200,6 +201,70 @@ const LIGHTHOUSE_ROAD_MARGIN = 6
 
 /** How far anything that stands about keeps from anything else that does. */
 const FURNITURE_GAP = 2
+
+/**
+ * An orchard: a field planted with fruit trees on a grid instead of a crop,
+ * the last field of a farm this often, and a couple more on their own. The
+ * trees stand this far apart along a row and the rows this far apart.
+ */
+const ORCHARD_ODDS = 0.34
+const ORCHARDS_ALONE = 2
+const ORCHARD_TRIES = 60
+const ORCHARD_SIZE = { width: 42, depth: 30 } as const
+const ORCHARD_ALONG = 6
+const ORCHARD_ROW = 7
+const FRUIT_RADIUS = { min: 2, max: 2.8 } as const
+const FRUIT_HEIGHT = { min: 3.5, max: 4.5 } as const
+
+/**
+ * A church wherever the houses along a road are thick enough to be a
+ * village: this many within this reach of one of them, no other church
+ * nearer than this. The nave and its tower are this big, set this far
+ * back from the road behind a green with a few trees on it.
+ */
+const VILLAGE_HOUSES = 5
+const VILLAGE_REACH = 80
+const CHURCH_APART = 600
+const CHURCHES_MOST = 4
+const NAVE = { width: 26, depth: 12, height: 8 } as const
+const TOWER = { size: 6, height: 16 } as const
+const CHURCH_SETBACK = 14
+const GREEN_TREES = 4
+
+/** A water tower at the edge of each suburb: a column this wide carrying a tank this wide, this tall. */
+const WATER_TOWER = { column: 2.4, tank: 8, height: 22 } as const
+const WATER_TOWER_TRIES = 24
+const WATER_TOWER_IN = 30
+
+/**
+ * A filling station every so far along the suburb stretches of the main
+ * roads: a lot this big against the road, paved, with the shop at the back,
+ * a canopy on posts over the pumps this high, and a sign by the road.
+ */
+const STATION_APART = 700
+const STATION_LOT = { width: 30, depth: 20 } as const
+const STATION_RELIEF = 5
+const SHOP = { width: 10, depth: 6, height: 4 } as const
+const CANOPY = { width: 16, depth: 10, over: 4.5, thick: 0.5 } as const
+const POST = 0.4
+const SIGN = { width: 0.5, depth: 2, height: 7 } as const
+
+/**
+ * Camp sites, this many at most: a clearing this wide in the country near
+ * a road but off it, tents on a ring round a fire, caravans off to one side
+ * and trees round the rim.
+ */
+const CAMPS_MOST = 3
+const CAMP_TRIES = 80
+const CAMP_NEAR_ROAD = { min: 28, max: 60 } as const
+const CLEARING_RADIUS = 20
+const TENTS = 6
+const TENT_RING = 11
+const TENT = { width: 3, depth: 2.5, height: 1.8 } as const
+const CARAVANS = 2
+const CARAVAN = { width: 6, depth: 2.4, height: 2.6 } as const
+const FIRE_PIT = { size: 1.6, height: 0.4 } as const
+const RIM_TREES = 24
 /** How far apart the ramps stand along a road, out of the cities. */
 const RAMP_SPACING = { min: 140, max: 300 } as const
 /** A ramp's run and rise: an arc ending near a quarter grade, enough to fly off at speed. */
@@ -426,17 +491,20 @@ function planter(
   clear: (footprint: Footprint, margin: number) => boolean,
 ): Planter {
   return (x, z, kind, wet) => {
-    const radius =
+    const [radii, heights] =
       kind === 'tree'
-        ? randomRange(rng, TREE_RADIUS.min, TREE_RADIUS.max)
-        : randomRange(rng, SHRUB_RADIUS.min, SHRUB_RADIUS.max)
-    const height =
-      kind === 'tree'
-        ? randomRange(rng, TREE_HEIGHT.min, TREE_HEIGHT.max)
-        : randomRange(rng, SHRUB_HEIGHT.min, SHRUB_HEIGHT.max)
+        ? [TREE_RADIUS, TREE_HEIGHT]
+        : kind === 'fruit'
+          ? [FRUIT_RADIUS, FRUIT_HEIGHT]
+          : [SHRUB_RADIUS, SHRUB_HEIGHT]
+    const radius = randomRange(rng, radii.min, radii.max)
+    const height = randomRange(rng, heights.min, heights.max)
     const tone = rng()
     if (wet(x, z)) return false
-    const footprint: Footprint = { x, z, yaw: 0, width: radius * 2, depth: radius * 2 }
+    // A tree keeps its whole crown to itself; an orchard's trees stand close in rows, whichever
+    // way the rows run, so they keep only the middle of theirs.
+    const footing = kind === 'fruit' ? radius * 1.4 : radius * 2
+    const footprint: Footprint = { x, z, yaw: 0, width: footing, depth: footing }
     if (!clear(footprint, 0) || placed.meets(footprint, 0)) return false
     placed.add(footprint)
     trees.push({ kind, x, z, bottom: sampleHeight(field, x, z), height, radius, tone })
@@ -973,23 +1041,32 @@ export function generateBuildings(
   const plant = planter(rng, field, placed, trees, clearOfStreets)
   fillCities(rng, field, districts, districtOf, clear, wet, placed, buildings, sidewalks, plant)
   lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
-  lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
-  raiseObservatory(rng, field, mountains, clear, wet, placed, buildings)
   const fields: Field[] = []
   const stands: Stands = {
     rng,
     field,
     seaLevel,
+    districts,
+    districtOf,
+    roads,
     clear,
     wet,
     placed,
     buildings,
     land: countryLand(field, seaLevel, districtOf),
   }
+  // The stations take their lots before the houses line the roads, or the houses would leave them none.
+  raiseStations(stands, fields)
+  lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
+  raiseObservatory(rng, field, mountains, clear, wet, placed, buildings)
   plantFarms(stands, fields, plant)
+  plantOrchards(stands, plant)
   raiseWindFarm(stands)
   raiseStones(stands)
   raiseLighthouses(stands)
+  raiseChurches(stands, plant)
+  raiseWaterTowers(stands)
+  pitchCamps(stands, plant)
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
   return { buildings, trees, ramps, sidewalks, fields }
 }
@@ -999,6 +1076,9 @@ interface Stands {
   rng: Rng
   field: Heightfield
   seaLevel: number
+  districts: District[]
+  districtOf: Uint8Array
+  roads: Road[]
   clear: (footprint: Footprint, margin: number) => boolean
   wet: (x: number, z: number) => boolean
   placed: Placed
@@ -1070,22 +1150,18 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
     for (let k = 0; k < count; k++) {
       const across = k * (width + FIELD_GAP)
       const footprint: Footprint = { x: spot.x + vx * across, z: spot.z + vz * across, yaw, width: length, depth: width }
+      // The row stops where the country does.
+      if (districtAt(stands, footprint.x, footprint.z) !== DISTRICT_COUNTRY) break
       if (standsHere(stands, footprint, FIELD_ROAD_MARGIN, FIELD_RELIEF, FURNITURE_GAP) === null) break
       laid.push(footprint)
     }
     if (laid.length < 2) continue
-    for (const footprint of laid) {
+    for (const [k, footprint] of laid.entries()) {
+      // The last field of a farm is sometimes an orchard instead of a crop, where one will take.
+      if (k === laid.length - 1 && rng() < ORCHARD_ODDS && plantOrchard(stands, footprint, plant)) continue
       placed.add(footprint)
-      fields.push({ ...footprint, tone: rng() })
-      // A hedge round it: shrubs a step apart along each side, just outside the crop.
-      const halfU = footprint.width / 2 + HEDGE_OUT
-      const halfV = footprint.depth / 2 + HEDGE_OUT
-      for (let u = -halfU; u <= halfU; u += HEDGE_SPACING) {
-        for (const v of [-halfV, halfV]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
-      }
-      for (let v = -halfV + HEDGE_SPACING; v < halfV; v += HEDGE_SPACING) {
-        for (const u of [-halfU, halfU]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
-      }
+      fields.push({ kind: 'crop', ...footprint, tone: rng() })
+      hedge(stands, footprint, plant)
     }
     // The barn off the end of the first field, broadside to the row, and the silos beside it.
     const first = laid[0]
@@ -1110,6 +1186,316 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
       }
     }
     farms += 1
+  }
+}
+
+/** A hedge round a footprint: shrubs a step apart along each side, just outside it. */
+function hedge(stands: Stands, footprint: Footprint, plant: Planter): void {
+  const { ux, uz, vx, vz } = axesOf(footprint.yaw)
+  const halfU = footprint.width / 2 + HEDGE_OUT
+  const halfV = footprint.depth / 2 + HEDGE_OUT
+  for (let u = -halfU; u <= halfU; u += HEDGE_SPACING) {
+    for (const v of [-halfV, halfV]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
+  }
+  for (let v = -halfV + HEDGE_SPACING; v < halfV; v += HEDGE_SPACING) {
+    for (const u of [-halfU, halfU]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
+  }
+}
+
+/** How far in from an orchard's edge the outermost trees stand: a crown's width, clear of the hedge. */
+const ORCHARD_IN = 3.5
+
+/** Where an orchard's trees would stand on a footprint: a grid along its rows, in from the hedge. */
+function orchardGrid(footprint: Footprint): { x: number; z: number }[] {
+  const { ux, uz, vx, vz } = axesOf(footprint.yaw)
+  const halfU = footprint.width / 2 - ORCHARD_IN
+  const halfV = footprint.depth / 2 - ORCHARD_IN
+  const grid: { x: number; z: number }[] = []
+  for (let v = -halfV; v <= halfV + 1e-6; v += ORCHARD_ROW) {
+    for (let u = -halfU; u <= halfU + 1e-6; u += ORCHARD_ALONG) {
+      grid.push({ x: footprint.x + ux * u + vx * v, z: footprint.z + uz * u + vz * v })
+    }
+  }
+  return grid
+}
+
+/** Whether an orchard would take on a footprint: nearly all of its trees on dry ground away from any road. */
+function orchardTakes(stands: Stands, footprint: Footprint): boolean {
+  const grid = orchardGrid(footprint)
+  const crown = FRUIT_RADIUS.max
+  const fine = grid.filter(
+    (spot) => !stands.wet(spot.x, spot.z) && stands.clear({ ...spot, yaw: 0, width: crown * 2, depth: crown * 2 }, 4),
+  )
+  return fine.length >= grid.length * 0.9
+}
+
+/**
+ * An orchard on a footprint: fruit trees on its grid, hedged about, and
+ * the ground kept for them. Nothing, if the ground would not take one.
+ */
+function plantOrchard(stands: Stands, footprint: Footprint, plant: Planter): boolean {
+  if (!orchardTakes(stands, footprint)) return false
+  for (const spot of orchardGrid(footprint)) plant(spot.x, spot.z, 'fruit', stands.wet)
+  stands.placed.add(footprint)
+  hedge(stands, footprint, plant)
+  return true
+}
+
+/** A couple of orchards on their own in the open country, where a field's worth of gentle ground is free. */
+function plantOrchards(stands: Stands, plant: Planter): void {
+  const { rng } = stands
+  let orchards = 0
+  for (let attempt = 0; attempt < ORCHARD_TRIES && orchards < ORCHARDS_ALONE; attempt++) {
+    const spot = countrySpot(stands)
+    if (spot === null) continue
+    const footprint: Footprint = { ...spot, yaw: randomRange(rng, 0, Math.PI), ...ORCHARD_SIZE }
+    if (standsHere(stands, footprint, FIELD_ROAD_MARGIN, FIELD_RELIEF, FURNITURE_GAP) === null) continue
+    if (plantOrchard(stands, footprint, plant)) orchards += 1
+  }
+}
+
+/** The main roads: what runs between and through the towns, as opposed to the streets of a city. */
+function mainRoads(roads: Road[]): Road[] {
+  return roads.filter((road) => road.kind === 'arterial' || road.kind === 'cross' || road.kind === 'highway')
+}
+
+/** The nearest point of any of these roads to a spot, at grade, and how far off it is. */
+function nearestRoadPoint(
+  roads: Road[],
+  x: number,
+  z: number,
+): { road: Road; index: number; point: RoadPoint; distance: number } | null {
+  let best: { road: Road; index: number; point: RoadPoint; distance: number } | null = null
+  for (const road of roads) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    for (const [i, point] of road.points.entries()) {
+      if (i >= segmentCount) break
+      if (road.structure[i] !== ROAD_GRADE) continue
+      const distance = hypot(point.x - x, point.z - z)
+      if (best !== null && distance >= best.distance) continue
+      best = { road, index: i, point, distance }
+    }
+  }
+  return best
+}
+
+function districtAt(stands: Stands, x: number, z: number): number {
+  const { width, depth, cellSize } = stands.field
+  const col = Math.floor(x / cellSize)
+  const row = Math.floor(z / cellSize)
+  if (col < 0 || col >= width || row < 0 || row >= depth) return -1
+  return stands.districtOf[row * width + col] ?? -1
+}
+
+/**
+ * A church for every village: where the houses along a road stand thickest,
+ * a nave broadside to the road, set back behind a green with trees on it,
+ * and a tower with a spire at one end of the nave. The thickest cluster
+ * first, then the next that is far enough from every church so far.
+ */
+function raiseChurches(stands: Stands, plant: Planter): void {
+  const { rng, buildings, placed } = stands
+  const houses = buildings.filter((building) => HOUSE_KINDS.includes(building.kind))
+  const clusters = houses
+    .map((house) => ({
+      house,
+      near: houses.filter((other) => hypot(other.x - house.x, other.z - house.z) < VILLAGE_REACH).length,
+    }))
+    .filter((cluster) => cluster.near >= VILLAGE_HOUSES)
+    .sort((a, b) => b.near - a.near || a.house.x - b.house.x || a.house.z - b.house.z)
+  const roads = mainRoads(stands.roads)
+  const churches: { x: number; z: number }[] = []
+  for (const { house } of clusters) {
+    if (churches.length >= CHURCHES_MOST) break
+    if (churches.some((church) => hypot(church.x - house.x, church.z - house.z) < CHURCH_APART)) continue
+    const beside = nearestRoadPoint(roads, house.x, house.z)
+    if (beside === null) continue
+    const { road, index, point } = beside
+    const { dx, dz, nx, nz } = frameAlong(road, index, point)
+    const yaw = -atan2(dz, dx)
+    for (const side of [1, -1]) {
+      const back = road.width / 2 + CHURCH_SETBACK + NAVE.depth / 2
+      const nave: Footprint = { x: point.x + nx * side * back, z: point.z + nz * side * back, yaw, ...NAVE }
+      const naveGround = standsHere(stands, nave, ROAD_MARGIN, HOUSE_RELIEF + 1, FURNITURE_GAP)
+      if (naveGround === null) continue
+      const along = NAVE.width / 2 + TOWER.size / 2 + 0.2
+      const tower: Footprint = { x: nave.x + dx * along, z: nave.z + dz * along, yaw, width: TOWER.size, depth: TOWER.size }
+      const towerGround = standsHere(stands, tower, ROAD_MARGIN, HOUSE_RELIEF + 1, FURNITURE_GAP)
+      if (towerGround === null) continue
+      placed.add(nave)
+      placed.add(tower)
+      const tone = rng()
+      buildings.push({ kind: 'church', ...nave, bottom: naveGround.low - BURY, top: naveGround.high + NAVE.height, tone })
+      buildings.push({ kind: 'steeple', ...tower, bottom: towerGround.low - BURY, top: towerGround.high + TOWER.height, tone })
+      // The green between the road and the nave, kept open, with trees at its ends.
+      const greenBack = road.width / 2 + CHURCH_SETBACK / 2
+      const green: Footprint = {
+        x: point.x + nx * side * greenBack,
+        z: point.z + nz * side * greenBack,
+        yaw,
+        width: NAVE.width + TOWER.size,
+        depth: CHURCH_SETBACK - 2,
+      }
+      for (let k = 0; k < GREEN_TREES; k++) {
+        const end = (k % 2 === 0 ? 1 : -1) * (green.width / 2 - 1)
+        const off = (k < 2 ? -1 : 1) * (green.depth / 4)
+        plant(green.x + dx * end + nx * off, green.z + dz * end + nz * off, 'tree', stands.wet)
+      }
+      if (!placed.meets(green, 0)) placed.add(green)
+      churches.push({ x: nave.x, z: nave.z })
+      break
+    }
+  }
+}
+
+/** A water tower at the edge of each suburb, on the first spot of a few tried that will take one. */
+function raiseWaterTowers(stands: Stands): void {
+  const { rng, placed } = stands
+  for (const district of stands.districts) {
+    const ring = district.radius + district.suburbWidth - WATER_TOWER_IN
+    for (let attempt = 0; attempt < WATER_TOWER_TRIES; attempt++) {
+      const angle = randomRange(rng, 0, Math.PI * 2)
+      const x = district.cx + cosine(angle) * ring
+      const z = district.cz + sine(angle) * ring
+      if (districtAt(stands, x, z) !== DISTRICT_SUBURB) continue
+      // Nothing under the tank, though only the column is anything to hit.
+      const under: Footprint = { x, z, yaw: 0, width: WATER_TOWER.tank, depth: WATER_TOWER.tank }
+      const ground = standsHere(stands, under, ROAD_MARGIN, HOUSE_RELIEF, FURNITURE_GAP)
+      if (ground === null) continue
+      placed.add(under)
+      stands.buildings.push({
+        kind: 'watertower',
+        x,
+        z,
+        yaw: 0,
+        width: WATER_TOWER.column,
+        depth: WATER_TOWER.column,
+        bottom: ground.low - BURY,
+        top: ground.high + WATER_TOWER.height,
+        tone: rng(),
+      })
+      break
+    }
+  }
+}
+
+/**
+ * Filling stations along the suburb stretches of the main roads, one every
+ * so far: a paved lot against the road, the shop at the back of it, a
+ * canopy on four posts over the pumps, and a sign at the roadside corner.
+ */
+function raiseStations(stands: Stands, fields: Field[]): void {
+  const { rng, placed, buildings } = stands
+  const stations: { x: number; z: number }[] = []
+  for (const road of mainRoads(stands.roads)) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    let travelled = randomRange(rng, 0, STATION_APART)
+    let previous = road.points[0]
+    for (const [index, point] of road.points.entries()) {
+      if (index >= segmentCount || previous === undefined) break
+      travelled += hypot(point.x - previous.x, point.z - previous.z)
+      previous = point
+      if (travelled < STATION_APART || road.structure[index] !== ROAD_GRADE) continue
+      if (districtAt(stands, point.x, point.z) !== DISTRICT_SUBURB) continue
+      if (stations.some((station) => hypot(station.x - point.x, station.z - point.z) < STATION_APART)) continue
+      const { dx, dz, nx, nz } = frameAlong(road, index, point)
+      const yaw = -atan2(dz, dx)
+      for (const side of [1, -1]) {
+        const back = road.width / 2 + STATION_LOT.depth / 2 + 0.5
+        const lot: Footprint = { x: point.x + nx * side * back, z: point.z + nz * side * back, yaw, ...STATION_LOT }
+        // The whole lot in the suburb, not over its edge into the country.
+        if (districtAt(stands, lot.x, lot.z) !== DISTRICT_SUBURB) continue
+        const ground = standsHere(stands, lot, 0.5, STATION_RELIEF, FURNITURE_GAP)
+        if (ground === null) continue
+        placed.add(lot)
+        fields.push({ kind: 'asphalt', ...lot, tone: 0 })
+        // Whatever stands on the lot is buried like a house; whatever floats over it, the canopy,
+        // floats that far over the highest ground under the lot, and its posts reach up to it.
+        const stand = (kind: Building['kind'], footprint: Footprint, over: number, height: number): void => {
+          const bottom = over > 0 ? ground.high + over : ground.low - BURY
+          const top = over > 0 ? bottom + height : ground.high + height
+          buildings.push({ kind, ...footprint, bottom, top, tone: rng() })
+        }
+        // In from the road: the lot's own depth axis runs away from it on this side.
+        const at = (along: number, inward: number): { x: number; z: number } => ({
+          x: lot.x + dx * along + nx * side * inward,
+          z: lot.z + dz * along + nz * side * inward,
+        })
+        stand('shop', { ...at(0, STATION_LOT.depth / 2 - SHOP.depth / 2 - 1), yaw, width: SHOP.width, depth: SHOP.depth }, 0, SHOP.height)
+        const canopyAt = at(0, -2)
+        stand('canopy', { ...canopyAt, yaw, width: CANOPY.width, depth: CANOPY.depth }, CANOPY.over, CANOPY.thick)
+        for (const cu of [-1, 1]) {
+          for (const cv of [-1, 1]) {
+            const corner = at(cu * (CANOPY.width / 2 - 0.6), -2 + cv * (CANOPY.depth / 2 - 0.6))
+            stand('post', { ...corner, yaw, width: POST, depth: POST }, 0, CANOPY.over)
+          }
+        }
+        stand('sign', { ...at(STATION_LOT.width / 2 - 2, -(STATION_LOT.depth / 2 - 1.5)), yaw, width: SIGN.width, depth: SIGN.depth }, 0, SIGN.height)
+        stations.push({ x: lot.x, z: lot.z })
+        travelled = 0
+        break
+      }
+    }
+  }
+}
+
+/**
+ * Camp sites in the country near a road: a clearing with a fire in the
+ * middle, tents on a ring round it turned to face it, a couple of caravans
+ * off to one side, and trees round the rim so it reads as cut out of the
+ * woods.
+ */
+function pitchCamps(stands: Stands, plant: Planter): void {
+  const { rng, placed, buildings, field, wet } = stands
+  const roads = mainRoads(stands.roads)
+  let camps = 0
+  for (let attempt = 0; attempt < CAMP_TRIES && camps < CAMPS_MOST; attempt++) {
+    const spot = countrySpot(stands)
+    if (spot === null) continue
+    const beside = nearestRoadPoint(roads, spot.x, spot.z)
+    if (beside === null || beside.distance < CAMP_NEAR_ROAD.min || beside.distance > CAMP_NEAR_ROAD.max) continue
+    const clearing: Footprint = { ...spot, yaw: 0, width: CLEARING_RADIUS * 2, depth: CLEARING_RADIUS * 2 }
+    if (standsHere(stands, clearing, 1, FIELD_RELIEF, FURNITURE_GAP) === null) continue
+    const pit: Footprint = { ...spot, yaw: rng() * Math.PI, width: FIRE_PIT.size, depth: FIRE_PIT.size }
+    const pitGround = groundUnder(field, wet, pit)
+    buildings.push({ kind: 'firepit', ...pit, bottom: pitGround.low - BURY, top: pitGround.high + FIRE_PIT.height, tone: rng() })
+    for (let k = 0; k < TENTS; k++) {
+      const angle = (k * Math.PI * 2) / TENTS + randomRange(rng, -0.2, 0.2)
+      const tent: Footprint = {
+        x: spot.x + cosine(angle) * TENT_RING,
+        z: spot.z + sine(angle) * TENT_RING,
+        // Its door to the fire: broadside to the middle.
+        yaw: -(angle + Math.PI / 2),
+        width: TENT.width,
+        depth: TENT.depth,
+      }
+      const ground = groundUnder(field, wet, tent)
+      if (ground.wet) continue
+      buildings.push({ kind: 'tent', ...tent, bottom: ground.low - BURY, top: ground.high + TENT.height, tone: rng() })
+    }
+    // The caravans parked side by side along the rim, nose to the fire.
+    const parking = randomRange(rng, 0, Math.PI * 2)
+    for (let k = 0; k < CARAVANS; k++) {
+      const angle = parking + k * 0.8
+      const caravan: Footprint = {
+        x: spot.x + cosine(angle) * (CLEARING_RADIUS - 5),
+        z: spot.z + sine(angle) * (CLEARING_RADIUS - 5),
+        yaw: -(angle + Math.PI / 2),
+        width: CARAVAN.width,
+        depth: CARAVAN.depth,
+      }
+      const ground = groundUnder(field, wet, caravan)
+      if (ground.wet) continue
+      buildings.push({ kind: 'caravan', ...caravan, bottom: ground.low - BURY, top: ground.high + CARAVAN.height, tone: rng() })
+    }
+    for (let k = 0; k < RIM_TREES; k++) {
+      const angle = (k * Math.PI * 2) / RIM_TREES
+      plant(spot.x + cosine(angle) * (CLEARING_RADIUS - 1), spot.z + sine(angle) * (CLEARING_RADIUS - 1), 'tree', wet)
+    }
+    placed.add(clearing)
+    camps += 1
   }
 }
 
