@@ -5,7 +5,10 @@ import { insidePolygon, interchangeZones } from './interchanges.ts'
 import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
 import { orientedTriangle, signedDistanceToTriangle } from './mountain.ts'
-import { HOUSE_KINDS } from './types.ts'
+import { HOUSE_KINDS, RAISED_KINDS, type BuildingKind } from './types.ts'
+
+/** How little some kinds rise above the ground and still stand on it. */
+const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3 }
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
 
@@ -228,7 +231,7 @@ describe('buildings and trees', () => {
   }, 60_000)
 
   it('farm the open country: hedged fields in rows on ground flat enough to plough, a barn and a silo off the end', () => {
-    const { fields } = map
+    const fields = map.fields.filter((field) => field.kind === 'crop')
     expect(fields.length).toBeGreaterThanOrEqual(4)
     const roadPoints = map.roads.flatMap((road) => road.points)
     for (const field of fields) {
@@ -258,6 +261,93 @@ describe('buildings and trees', () => {
     for (const silo of silos) {
       expect(barns.some((barn) => Math.hypot(barn.x - silo.x, barn.z - silo.z) < 25)).toBe(true)
       expect(silo.width).toBe(silo.depth)
+    }
+  })
+
+  it('plant orchards: fruit trees in rows, hedged, in the country', () => {
+    const fruit = map.trees.filter((tree) => tree.kind === 'fruit')
+    expect(fruit.length).toBeGreaterThan(20)
+    let inRows = 0
+    for (const tree of fruit) {
+      expect(districtAt(tree.x, tree.z)).toBe(DISTRICT_COUNTRY)
+      // In rows: nearly every one has another within a row's reach, and none is nearer than the spacing allows.
+      const near = fruit.filter((other) => other !== tree && Math.hypot(other.x - tree.x, other.z - tree.z) < 8)
+      if (near.length > 0) inRows++
+      for (const other of near) expect(Math.hypot(other.x - tree.x, other.z - tree.z)).toBeGreaterThan(5.5)
+      expect(tree.height).toBeLessThan(5)
+    }
+    expect(inRows).toBeGreaterThan(fruit.length * 0.9)
+  })
+
+  it('raise a church where a village is thick enough, its tower beside the nave, and none too near another', () => {
+    const churches = map.buildings.filter((building) => building.kind === 'church')
+    const steeples = map.buildings.filter((building) => building.kind === 'steeple')
+    expect(churches.length).toBeGreaterThanOrEqual(1)
+    expect(steeples).toHaveLength(churches.length)
+    const houses = map.buildings.filter((building) => HOUSE_KINDS.includes(building.kind))
+    for (const church of churches) {
+      const village = houses.filter((house) => Math.hypot(house.x - church.x, house.z - church.z) < 120)
+      expect(village.length).toBeGreaterThanOrEqual(5)
+      expect(steeples.some((steeple) => Math.hypot(steeple.x - church.x, steeple.z - church.z) < 20)).toBe(true)
+      for (const other of churches) {
+        if (other !== church) expect(Math.hypot(other.x - church.x, other.z - church.z)).toBeGreaterThan(600)
+      }
+    }
+  })
+
+  it('stand a water tower at the edge of each suburb, one at most', () => {
+    const towers = map.buildings.filter((building) => building.kind === 'watertower')
+    expect(towers.length).toBeGreaterThanOrEqual(1)
+    expect(towers.length).toBeLessThanOrEqual(map.districts.length)
+    for (const tower of towers) {
+      expect(districtAt(tower.x, tower.z)).toBe(DISTRICT_SUBURB)
+      expect(tower.top - tower.bottom).toBeGreaterThan(20)
+    }
+  })
+
+  it('run a filling station every so far along the suburb roads: shop, canopy on posts, and a sign on a paved lot', () => {
+    const canopies = map.buildings.filter((building) => building.kind === 'canopy')
+    const shops = map.buildings.filter((building) => building.kind === 'shop')
+    const posts = map.buildings.filter((building) => building.kind === 'post')
+    const signs = map.buildings.filter((building) => building.kind === 'sign')
+    const aprons = map.fields.filter((field) => field.kind === 'asphalt')
+    expect(canopies.length).toBeGreaterThanOrEqual(1)
+    expect(shops).toHaveLength(canopies.length)
+    expect(signs).toHaveLength(canopies.length)
+    expect(posts).toHaveLength(canopies.length * 4)
+    expect(aprons).toHaveLength(canopies.length)
+    for (const canopy of canopies) {
+      // In the air over the ground, on a paved lot in the suburbs, beside a main road.
+      expect(canopy.bottom).toBeGreaterThan(sampleHeight(map.heightfield, canopy.x, canopy.z) + 4)
+      expect(aprons.some((apron) => Math.hypot(apron.x - canopy.x, apron.z - canopy.z) < 5)).toBe(true)
+      expect(districtAt(canopy.x, canopy.z)).toBe(DISTRICT_SUBURB)
+      const main = map.roads.filter((road) => road.kind !== 'street')
+      expect(roadCrowding(main, canopy.x, canopy.z)).toBeLessThan(8)
+      for (const other of canopies) {
+        if (other !== canopy) expect(Math.hypot(other.x - canopy.x, other.z - canopy.z)).toBeGreaterThan(600)
+      }
+    }
+  })
+
+  it('pitch camps in the country near a road: tents round a fire, caravans by, trees round the rim', () => {
+    const firepits = map.buildings.filter((building) => building.kind === 'firepit')
+    const tents = map.buildings.filter((building) => building.kind === 'tent')
+    const caravans = map.buildings.filter((building) => building.kind === 'caravan')
+    expect(firepits.length).toBeGreaterThanOrEqual(1)
+    expect(firepits.length).toBeLessThanOrEqual(3)
+    const main = map.roads.filter((road) => road.kind !== 'street')
+    for (const fire of firepits) {
+      expect(districtAt(fire.x, fire.z)).toBe(DISTRICT_COUNTRY)
+      const ring = tents.filter((tent) => Math.hypot(tent.x - fire.x, tent.z - fire.z) < 15)
+      expect(ring.length).toBeGreaterThanOrEqual(4)
+      expect(caravans.some((caravan) => Math.hypot(caravan.x - fire.x, caravan.z - fire.z) < 20)).toBe(true)
+      const nearest = Math.min(...main.flatMap((road) => road.points.map((point) => Math.hypot(point.x - fire.x, point.z - fire.z))))
+      expect(nearest).toBeGreaterThan(25)
+      expect(nearest).toBeLessThan(65)
+      const rim = map.trees.filter(
+        (tree) => tree.kind === 'tree' && Math.abs(Math.hypot(tree.x - fire.x, tree.z - fire.z) - 19) < 2,
+      )
+      expect(rim.length).toBeGreaterThan(8)
     }
   })
 
@@ -345,10 +435,10 @@ describe('buildings and trees', () => {
         expect(sampleHeight(map.heightfield, point.x, point.z)).toBeGreaterThan(map.seaLevel)
       }
       // Standing on the ground, not floating above it or lost in it. A stone may lie low, as the altar
-      // does, and a lintel rests on two stones, not the ground.
-      if (building.kind === 'lintel') continue
+      // does, and so may a fire pit or a tent; a lintel rests on stones and a canopy on posts, not the ground.
+      if (RAISED_KINDS.includes(building.kind)) continue
       expect(building.bottom).toBeLessThan(sampleHeight(map.heightfield, building.x, building.z))
-      const least = building.kind === 'stone' ? 0.8 : 3
+      const least = LOW_KINDS[building.kind] ?? 3
       expect(building.top).toBeGreaterThan(sampleHeight(map.heightfield, building.x, building.z) + least)
     }
     for (const tree of map.trees) {
@@ -362,11 +452,11 @@ describe('buildings and trees', () => {
     for (let i = 0; i < buildings.length; i++) {
       const a = buildings[i]!
       const reachA = Math.hypot(a.width, a.depth) / 2
-      if (a.kind === 'lintel') continue
+      if (RAISED_KINDS.includes(a.kind)) continue
       for (let j = i + 1; j < buildings.length; j++) {
         const b = buildings[j]!
-        // A lintel lies across two stones on purpose.
-        if (b.kind === 'lintel') continue
+        // A lintel lies across two stones, and a canopy over its posts, on purpose.
+        if (RAISED_KINDS.includes(b.kind)) continue
         if (Math.hypot(a.x - b.x, a.z - b.z) > reachA + Math.hypot(b.width, b.depth) / 2) continue
         expect(overlap(a, b)).toBe(false)
       }
