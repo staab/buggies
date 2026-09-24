@@ -44,6 +44,7 @@ import {
   buildCityGrids,
   pruneStrandedStreets,
   streetKeepOut,
+  connectStreetGrids,
   joinStreetsToRoads,
   trimStreetsAlongArterials,
 } from './roads/streets.ts'
@@ -82,7 +83,7 @@ export {
   footprintsOverlap,
   roadClearance,
 } from './roads/clearance.ts'
-export { type CityFrame, cityFrame } from './roads/streets.ts'
+export { type CityFrame, STREET_GRID_LEAST, cityFrame } from './roads/streets.ts'
 
 /**
  * Build the highway network: a single closed loop that visits every city, so
@@ -285,7 +286,14 @@ export function generateRoads(
   // finally be drawn is it worth asking what a street runs into and reaches.
   const trimmed = trimStreetsAlongArterials(network, nextId + streets.length)
   joinStreetsToRoads(trimmed, keepOut)
-  const roads = pruneStrandedStreets(trimmed)
+  const connectors = connectStreetGrids(
+    trimmed,
+    field,
+    (x, z) => surfaceAt(x, z).wet,
+    keepOut,
+    Math.max(...trimmed.map((road) => road.id)) + 1,
+  )
+  const roads = pruneStrandedStreets([...trimmed, ...connectors])
   // The highway cuts its bed first, clear of any ground a surface road is;
   // the surface roads are then settled into the ground.
   const painted = roads.filter(isSurfaceRoad)

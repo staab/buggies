@@ -11,9 +11,11 @@ import {
   RAMP_ALONG,
   RAMP_DROP,
   RAMP_DROP_HEADROOM,
+  RAMP_MOUTH_GROUND,
   RAMP_PLATEAU,
   RAMP_REACH,
   RAMP_SEGMENTS,
+  RAMP_TURN_RADIUS,
   RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_SKIRT,
@@ -75,7 +77,7 @@ function findDryCrossing(
       // A city that has no such site is still given its exit, and its ramps
       // may come out with nothing beside the deck at the mouth.
       const step = total / count
-      const mouthFrom = Math.floor((RAMP_ALONG - RAMP_PLATEAU - RAMP_WIDTH) / step)
+      const mouthFrom = Math.floor((RAMP_ALONG - RAMP_MOUTH_GROUND) / step)
       const mouthTo = Math.ceil((RAMP_ALONG + RAMP_WIDTH) / step)
       let bridged = false
       for (let k = mouthFrom; k <= mouthTo && !bridged; k++) {
@@ -185,12 +187,16 @@ export function interchangeCenters(
     return best
   }
 
-  /** True when a crossing at `c` stands clear of every city. */
+  /**
+   * True when a crossing at `c` stands clear of every city, and of the
+   * ground beyond each where its own exit may have been pushed out to by
+   * the search, so no city ends up with a second exit at its edge.
+   */
   const rural = (c: number): boolean =>
     districts.every(
       (district) =>
         hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz) >
-        district.radius + district.suburbWidth,
+        district.radius + district.suburbWidth + INTERCHANGE_SEARCH,
     )
 
   const touching = Math.max(1, Math.round(INTERCHANGE_CLEAR / step))
@@ -289,6 +295,86 @@ export function crossRoad(field: Heightfield, samples: Vec2[], c: number): Cross
  * its four ramps, which is the diamond they enclose together with the highway
  * and the cross road. Nothing else may be built inside it.
  */
+/**
+ * A ramp's line in plan, from its mouth beside the deck to where it meets
+ * the cross road: level and straight along the deck for the plateau, one
+ * arc of `RAMP_TURN_RADIUS` turning out by whatever angle then lets a
+ * straight run end exactly on the merge point. Laid out in the mouth's own
+ * frame: `along` runs down the deck toward the crossing, `out` away from
+ * it. `null` where no such line reaches the merge, for a deck that bends
+ * too much between the two.
+ */
+function rampPlan(mouth: Vec2, along: Vec2, out: Vec2, merge: Vec2): Vec2[] | null {
+  const reachAlong = (merge.x - mouth.x) * along.x + (merge.z - mouth.z) * along.z
+  const reachOut = (merge.x - mouth.x) * out.x + (merge.z - mouth.z) * out.z
+  const run = reachAlong - RAMP_PLATEAU
+  if (run <= 0 || reachOut <= 0) return null
+  const radius = RAMP_TURN_RADIUS
+  // The turn that lets the straight run land on the merge: with `s` its
+  // length, s·sin = out − R(1 − cos) and s·cos = run − R·sin, so the angle
+  // is where the two agree. It rises with the angle, so bisection finds it.
+  const off = (angle: number): number =>
+    (reachOut - radius * (1 - Math.cos(angle))) * Math.cos(angle) - (run - radius * Math.sin(angle)) * Math.sin(angle)
+  let low = 0
+  let high = Math.PI / 2
+  if (off(low) <= 0 || off(high) >= 0) return null
+  for (let step = 0; step < 40; step++) {
+    const mid = (low + high) / 2
+    if (off(mid) > 0) low = mid
+    else high = mid
+  }
+  const turn = (low + high) / 2
+  const arc = radius * turn
+  const straight = (run - radius * Math.sin(turn)) / Math.cos(turn)
+  if (straight < 0) return null
+  const total = RAMP_PLATEAU + arc + straight
+  const points: Vec2[] = []
+  for (let k = 0; k <= RAMP_SEGMENTS; k++) {
+    const s = (total * k) / RAMP_SEGMENTS
+    let x: number
+    let y: number
+    if (s <= RAMP_PLATEAU) {
+      x = s
+      y = 0
+    } else if (s <= RAMP_PLATEAU + arc) {
+      const swept = (s - RAMP_PLATEAU) / radius
+      x = RAMP_PLATEAU + radius * Math.sin(swept)
+      y = radius * (1 - Math.cos(swept))
+    } else {
+      const t = s - RAMP_PLATEAU - arc
+      x = RAMP_PLATEAU + radius * Math.sin(turn) + t * Math.cos(turn)
+      y = radius * (1 - Math.cos(turn)) + t * Math.sin(turn)
+    }
+    points.push({ x: mouth.x + along.x * x + out.x * y, z: mouth.z + along.z * x + out.z * y })
+  }
+  points[RAMP_SEGMENTS] = { x: merge.x, z: merge.z }
+  return points
+}
+
+/**
+ * The older line for a ramp, where the plan above finds none: an S-curve
+ * from the deck to the cross road, leaving along the deck and arriving
+ * square to the cross road.
+ */
+function rampSweep(mouth: Vec2, leave: Vec2, merge: Vec2, arrive: Vec2): Vec2[] {
+  const reach = hypot(merge.x - mouth.x, merge.z - mouth.z)
+  const handle = reach * 0.45
+  const p1x = mouth.x + leave.x * handle
+  const p1z = mouth.z + leave.z * handle
+  const p2x = merge.x - arrive.x * handle
+  const p2z = merge.z - arrive.z * handle
+  const points: Vec2[] = []
+  for (let k = 0; k <= RAMP_SEGMENTS; k++) {
+    const t = k / RAMP_SEGMENTS
+    const u = 1 - t
+    points.push({
+      x: u * u * u * mouth.x + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * merge.x,
+      z: u * u * u * mouth.z + 3 * u * u * t * p1z + 3 * u * t * t * p2z + t * t * t * merge.z,
+    })
+  }
+  return points
+}
+
 export function buildInterchanges(
   samples: Vec2[],
   profile: Float32Array,
@@ -352,29 +438,18 @@ export function buildInterchanges(
         const startZ = start.z + start.nz * sn * startOffset
         const startY = profile[attach]!
 
-        const reach = hypot(mergeX - startX, mergeZ - startZ)
-        const handle = reach * 0.45
-        // Depart toward the crossing and arrive toward it, so the ramp sweeps
-        // down in one smooth motion and ends perpendicular to the cross road.
-        const p1x = startX - sd * start.dx * handle
-        const p1z = startZ - sd * start.dz * handle
-        const p2x = mergeX + sd * frame.dx * handle
-        const p2z = mergeZ + sd * frame.dz * handle
-
-        // An S-curve from the deck to the cross road, level at both ends, so
-        // the ramp always reaches the road and meets it and the deck without
-        // a kink; a grade limit here would strand the tip above the road.
+        // The ramp runs beside the deck for its plateau, turns out through one
+        // arc, and runs straight to the cross road from there: as gentle as
+        // the diagonal allows, where a curve swinging out and back square to
+        // the cross road has to be steeper than the diagonal in its middle.
         // The ramp is the ground: it leaves the highway's own surface, which
         // rides ROAD_SURFACE above its centreline, and lands on the cross road.
-        const points: Vec2[] = []
-        for (let k = 0; k <= RAMP_SEGMENTS; k++) {
-          const t = k / RAMP_SEGMENTS
-          const u = 1 - t
-          points.push({
-            x: u * u * u * startX + 3 * u * u * t * p1x + 3 * u * t * t * p2x + t * t * t * mergeX,
-            z: u * u * u * startZ + 3 * u * u * t * p1z + 3 * u * t * t * p2z + t * t * t * mergeZ,
-          })
-        }
+        const points = rampPlan(
+          { x: startX, z: startZ },
+          { x: -sd * start.dx, z: -sd * start.dz },
+          { x: sn * start.nx, z: sn * start.nz },
+          { x: mergeX, z: mergeZ },
+        ) ?? rampSweep({ x: startX, z: startZ }, { x: -sd * start.dx, z: -sd * start.dz }, { x: mergeX, z: mergeZ }, { x: -sd * frame.dx, z: -sd * frame.dz })
         const along = cumulativeLengths(points)
         const rampLength = along[RAMP_SEGMENTS]!
         // The deck's surface `distance` further along the highway toward the

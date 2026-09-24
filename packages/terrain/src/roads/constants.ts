@@ -101,10 +101,23 @@ export const CROSS_RELIEF = 10
 export const RAMP_ALONG = 80
 
 /** Distance along the cross road from the underpass to each ramp's far end. */
-export const RAMP_REACH = 50
+export const RAMP_REACH = 40
 
-/** Half-length of the cross road either side of the underpass; ends just past the ramps. */
-export const CROSS_REACH = RAMP_REACH + RAMP_WIDTH / 2 + 2
+/**
+ * The radius of the one bend a ramp makes: leaving the deck it turns out
+ * through this arc and then runs straight to the cross road, so it is never
+ * steeper across than the diagonal itself, where a curve that swung out and
+ * back square to the cross road would have to be.
+ */
+export const RAMP_TURN_RADIUS = 60
+
+/**
+ * Half-length of the cross road either side of the underpass: past the
+ * ramps' landings, out to where the arterials take over. Held where it was
+ * when the ramps landed further out, since the sites judged fit for an
+ * interchange and the arterial network are both laid out from it.
+ */
+export const CROSS_REACH = 56
 
 /** Highway length either side of an underpass drawn as bridge deck. */
 export const UNDERPASS_SPAN = 30
@@ -143,7 +156,14 @@ export const RAMP_SEGMENTS = 24
  * leaving the deck crosses the skirt onto ground still level with it, and
  * only descends once the ramp has pulled clear of the highway.
  */
-export const RAMP_PLATEAU = 20
+export const RAMP_PLATEAU = 12
+
+/**
+ * How far back from a ramp's highway end the deck must stand on the ground
+ * for an interchange to be sited there: the plateau and then some, so the
+ * ramp has a shoulder to leave onto however long it runs level.
+ */
+export const RAMP_MOUTH_GROUND = 28
 
 /** Arterial road width, in world units. */
 export const ARTERIAL_WIDTH = 10
