@@ -40,6 +40,7 @@ import type {
   River,
   Road,
   RoadPoint,
+  Rock,
   Sidewalk,
   Tree,
 } from './types.ts'
@@ -406,6 +407,26 @@ const WILD_MAX_SLOPE = 0.6
 /** And nothing grows above this fraction of the way from the sea to the island's highest ground. */
 const TREELINE = 0.65
 const WILD_SALT = 0x7e11
+/**
+ * Rocks, on the bare ground the wilds leave: boulders, come in fields from
+ * noise this coarse (open ground below the lower mark, a field above the
+ * upper), this likely at a spot in a field and this likely on open bare
+ * ground, no steeper than this, and this big across; scree, lying thick on
+ * the bare slopes steeper than this, this likely at a spot no boulder
+ * takes, and this small. A rock stands this much of its size into the
+ * ground, and keeps this far off a road.
+ */
+const ROCK_FREQUENCY = 0.007
+const ROCK_FIELD = { open: 0.45, deep: 0.62 } as const
+const BOULDER_ODDS = { lone: 0.01, field: 0.12 } as const
+const BOULDER_MAX_SLOPE = 0.7
+const BOULDER_SIZE = { min: 2, max: 5 } as const
+const SCREE_SLOPE = 0.45
+const SCREE_ODDS = 0.4
+const SCREE_SIZE = { min: 0.5, max: 1.5 } as const
+const ROCK_BURY = 0.3
+const ROCK_ROAD_MARGIN = 1.5
+const ROCK_SALT = 0x2c9b
 
 /**
  * What has been placed so far, bucketed so a footprint is only ever tested
@@ -1121,7 +1142,9 @@ function lineRamps(
  * foothills of the mountains, thinning to nothing on the bare heights, and
  * a lighter scatter through the suburbs. Every spot is tried at random
  * against a density that follows the lie of the land, so the woods clump
- * rather than dust the map evenly.
+ * rather than dust the map evenly. The bare heights, and the slopes too
+ * steep to grow on, get rocks instead: boulders in fields of their own,
+ * and scree on the steep.
  */
 function plantWilds(
   rng: Rng,
@@ -1133,6 +1156,8 @@ function plantWilds(
   clear: (footprint: Footprint, margin: number) => boolean,
   wet: (x: number, z: number) => boolean,
   plant: Planter,
+  placed: Placed,
+  rocks: Rock[],
 ): void {
   const { width, depth, cellSize } = field
   const shapes = mountains.map((mountain) => {
@@ -1161,7 +1186,20 @@ function plantWilds(
     return districtOf[row * width + col] ?? -1
   }
 
+  // A rock: off the roads and off everything placed, and a boulder, which
+  // is something to hit, placed in its turn; a scree stone is nothing to
+  // hit, and nothing keeps off it.
+  const rock = (x: number, z: number, kind: Rock['kind'], size: number): void => {
+    const yaw = randomRange(rng, 0, Math.PI)
+    const tone = rng()
+    const footprint: Footprint = { x, z, yaw, width: size, depth: size }
+    if (!clear(footprint, ROCK_ROAD_MARGIN) || placed.meets(footprint, 0)) return
+    if (kind === 'boulder') placed.add(footprint)
+    rocks.push({ kind, x, z, bottom: sampleHeight(field, x, z) - size * ROCK_BURY, size, yaw, tone })
+  }
+
   const noiseSeed = (seed ^ WILD_SALT) >>> 0
+  const rockSeed = (seed ^ ROCK_SALT) >>> 0
   const spanX = width * cellSize
   const spanZ = depth * cellSize
   let highest = -Infinity
@@ -1175,9 +1213,19 @@ function plantWilds(
       const district = districtAt(x, z)
       if (district !== DISTRICT_COUNTRY && district !== DISTRICT_SUBURB) continue
       const height = sampleHeight(field, x, z)
-      if (height <= seaLevel || height >= treeline) continue
+      if (height <= seaLevel) continue
       const up = rise(x, z)
-      if (up >= FOOTHILL.treeline) continue
+      const slope = slopeAt(x, z)
+      if (height >= treeline || up >= FOOTHILL.treeline || slope > WILD_MAX_SLOPE) {
+        // Bare ground: rock. Boulders come in fields where their noise
+        // runs high, and the odd one anywhere; scree lies on the steep slopes.
+        if (wet(x, z)) continue
+        const strewn = smoothstep(ROCK_FIELD.open, ROCK_FIELD.deep, fbm2D(x * ROCK_FREQUENCY, z * ROCK_FREQUENCY, rockSeed, 3))
+        const boulders = slope > BOULDER_MAX_SLOPE ? 0 : BOULDER_ODDS.lone + (BOULDER_ODDS.field - BOULDER_ODDS.lone) * strewn
+        if (roll < boulders) rock(x, z, 'boulder', randomRange(rng, BOULDER_SIZE.min, BOULDER_SIZE.max))
+        else if (slope > SCREE_SLOPE && roll < boulders + SCREE_ODDS) rock(x, z, 'scree', randomRange(rng, SCREE_SIZE.min, SCREE_SIZE.max))
+        continue
+      }
       // Woods where the noise runs high; the foothills thicken them, and thin
       // them again toward the treeline.
       const wood = smoothstep(WOOD_EDGE.open, WOOD_EDGE.deep, fbm2D(x * WOOD_FREQUENCY, z * WOOD_FREQUENCY, noiseSeed, 3))
@@ -1189,7 +1237,6 @@ function plantWilds(
       const trees = LONE_TREES + (WOOD_TREES - LONE_TREES) * thickness
       const shrubs = LONE_SHRUBS + (WOOD_SHRUBS - LONE_SHRUBS) * thickness
       if (roll >= trees + shrubs) continue
-      if (slopeAt(x, z) > WILD_MAX_SLOPE) continue
       plant(x, z, roll < trees ? 'tree' : 'shrub', wet)
     }
   }
@@ -1206,7 +1253,7 @@ export function generateBuildings(
   lakes: Lake[],
   mountains: Mountain[],
   seed: number,
-): { buildings: Building[]; trees: Tree[]; ramps: Ramp[]; sidewalks: Sidewalk[]; fields: Field[] } {
+): { buildings: Building[]; trees: Tree[]; rocks: Rock[]; ramps: Ramp[]; sidewalks: Sidewalk[]; fields: Field[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
   // Buildings stand against the old kerb, on the sidewalk; what grows keeps
   // off the sidewalk as well as the street. Nothing is built at all on the
@@ -1277,8 +1324,9 @@ export function generateBuildings(
   raiseWaterTowers(stands)
   // The camps throw their own dice too, for the same reason as the observatory.
   pitchCamps({ ...stands, rng: createRng((seed ^ CAMP_SALT) >>> 0) }, plant)
-  plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
-  return { buildings, trees, ramps, sidewalks, fields }
+  const rocks: Rock[] = []
+  plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant, placed, rocks)
+  return { buildings, trees, rocks, ramps, sidewalks, fields }
 }
 
 /** What everything that stands about the country is placed with. */

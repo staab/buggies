@@ -4,7 +4,8 @@ import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts
 import { insidePolygon, interchangeZones } from './interchanges.ts'
 import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
-import { orientedTriangle, signedDistanceToTriangle } from './mountain.ts'
+import { orientedTriangle, signedDistanceToTriangle, triangleInradius } from './mountain.ts'
+import { smoothstep } from './noise.ts'
 import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
@@ -327,6 +328,57 @@ describe('buildings and trees', () => {
     }
     expect(viewpoints).toBeGreaterThanOrEqual(3)
   }, 240_000)
+
+  it('scatter boulders and scree on the bare high ground, off the roads and out of the water, the boulders big and the scree small', () => {
+    const { heightfield, seaLevel, mountains, roads } = map
+    const boulders = map.rocks.filter((rock) => rock.kind === 'boulder')
+    const scree = map.rocks.filter((rock) => rock.kind === 'scree')
+    expect(boulders.length).toBeGreaterThan(30)
+    expect(scree.length).toBeGreaterThan(300)
+    let highest = -Infinity
+    for (const height of heightfield.heights) highest = Math.max(highest, height)
+    const treeline = seaLevel + 0.65 * (highest - seaLevel)
+    const shapes = mountains.map((mountain) => {
+      const triangle = orientedTriangle(mountain)
+      return { triangle, inradius: Math.max(triangleInradius(triangle), 1e-3), skirt: mountain.skirt }
+    })
+    const rise = (x: number, z: number): number =>
+      Math.max(0, ...shapes.map((shape) => smoothstep(-shape.skirt, shape.inradius, signedDistanceToTriangle(x, z, shape.triangle))))
+    const slope = (x: number, z: number): number => {
+      const step = heightfield.cellSize
+      const dx = sampleHeight(heightfield, x + step, z) - sampleHeight(heightfield, x - step, z)
+      const dz = sampleHeight(heightfield, x, z + step) - sampleHeight(heightfield, x, z - step)
+      return Math.hypot(dx, dz) / (2 * step)
+    }
+    for (const rock of map.rocks) {
+      const ground = sampleHeight(heightfield, rock.x, rock.z)
+      // On bare ground: above the treeline, on a mountain's upper part, or on ground too steep to grow on.
+      expect(ground >= treeline || rise(rock.x, rock.z) >= 0.6 || slope(rock.x, rock.z) > 0.6).toBe(true)
+      expect(ground).toBeGreaterThan(seaLevel + 0.5)
+      expect(roadCrowding(roads, rock.x, rock.z)).toBeGreaterThan(1)
+      expect([DISTRICT_COUNTRY, DISTRICT_SUBURB]).toContain(districtOf(map, rock.x, rock.z))
+      // Standing a little into the ground, and about as tall as it is wide.
+      expect(rock.bottom).toBeLessThan(ground)
+      expect(rock.bottom + rock.size).toBeGreaterThan(ground)
+      if (rock.kind === 'boulder') {
+        expect(rock.size).toBeGreaterThanOrEqual(2)
+        expect(rock.size).toBeLessThanOrEqual(5)
+      } else {
+        expect(rock.size).toBeGreaterThanOrEqual(0.5)
+        expect(rock.size).toBeLessThanOrEqual(1.5)
+        expect(slope(rock.x, rock.z)).toBeGreaterThan(0.3)
+      }
+    }
+    // No boulder stands on another, or on anything built.
+    for (const rock of boulders) {
+      for (const other of boulders) {
+        if (other !== rock) expect(Math.hypot(other.x - rock.x, other.z - rock.z)).toBeGreaterThan((rock.size + other.size) / 2 - 1e-6)
+      }
+      for (const building of map.buildings) {
+        expect(Math.hypot(building.x - rock.x, building.z - rock.z)).toBeGreaterThan(rock.size / 2 - 1e-6)
+      }
+    }
+  })
 
   it('moor a few boats off the shore, in deep enough water, with the shore in sight but not close, and apart', () => {
     const boats = map.buildings.filter((building) => building.kind === 'boat')

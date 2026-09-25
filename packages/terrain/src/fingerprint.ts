@@ -2,8 +2,9 @@ import type { TerrainMap } from './types.ts'
 
 /**
  * A hash of everything about an island that the physics reads, to the
- * last bit: the heights, every road's points and structure, and every
- * building. Two machines that agree on it will agree on where a car lands.
+ * last bit: the heights, every road's points and structure, every
+ * building, every tree and every rock. Two machines that agree on it will
+ * agree on where a car lands.
  */
 export function fingerprint(map: TerrainMap): string {
   const hash = new Fnv1a()
@@ -19,6 +20,14 @@ export function fingerprint(map: TerrainMap): string {
   for (const building of map.buildings) {
     hash.text(building.kind)
     hash.numbers([building.x, building.z, building.yaw, building.width, building.depth, building.bottom, building.top])
+  }
+  for (const tree of map.trees) {
+    hash.text(tree.kind)
+    hash.numbers([tree.x, tree.z, tree.bottom, tree.height, tree.radius])
+  }
+  for (const rock of map.rocks) {
+    hash.text(rock.kind)
+    hash.numbers([rock.x, rock.z, rock.bottom, rock.size, rock.yaw])
   }
   return hash.hex()
 }

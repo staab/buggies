@@ -570,6 +570,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     roads: [],
     buildings: [],
     trees: [],
+    rocks: [],
     ramps: [],
     sidewalks: [],
     fields: [],

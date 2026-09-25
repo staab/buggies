@@ -195,6 +195,33 @@ describe('terrain colliders', () => {
       expect(open).toBe(shrubs.length)
     })
 
+    it('stands every boulder as a solid its size, and passes through the scree', () => {
+      const boulders = map.rocks.filter((rock) => rock.kind === 'boulder')
+      const scree = map.rocks.filter((rock) => rock.kind === 'scree')
+      expect(boulders.length).toBeGreaterThan(20)
+      expect(scree.length).toBeGreaterThan(50)
+      let topped = 0
+      for (const rock of boulders) {
+        const found = castDown(world, rock.x, rock.z, rock.bottom + rock.size + 5)
+        if (found !== null && Math.abs(found - rock.bottom - rock.size) < 0.01) topped++
+      }
+      expect(topped).toBe(boulders.length)
+      // A scree stone is nothing to hit: the ray passes down through it to
+      // the ground. On the cliffs scree lies on, the collider's triangles
+      // can put the ground well off the drawn ground's bilinear reading,
+      // even above a small stone's top, but never exactly at it.
+      let open = 0
+      let stopped = 0
+      for (const rock of scree) {
+        const found = castDown(world, rock.x, rock.z, rock.bottom + rock.size + 5)
+        if (found === null) continue
+        if (found < rock.bottom + rock.size - 0.1) open++
+        if (Math.abs(found - rock.bottom - rock.size) < 0.01) stopped++
+      }
+      expect(stopped).toBe(0)
+      expect(open).toBeGreaterThan(scree.length * 0.98)
+    })
+
     it('stands a solid kicker under every ramp, curving from its foot up to its lip', () => {
       expect(map.ramps.length).toBeGreaterThan(0)
       let sound = 0

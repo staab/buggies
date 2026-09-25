@@ -287,12 +287,13 @@ const TRUNK_RADIUS = 0.35
 
 /**
  * Everything standing beside the roads: every building as the box it is
- * drawn as, every tree as its trunk, and nothing for a shrub, which a car
- * drives through. Slick like a wall, so a car that clips a corner scrapes
- * past rather than sticking to it.
+ * drawn as, every tree as its trunk, every boulder as a box its size, and
+ * nothing for a shrub or a scree stone, which a car drives through. Slick
+ * like a wall, so a car that clips a corner scrapes past rather than
+ * sticking to it.
  */
 function addBuildings(world: RAPIER.World, map: TerrainMap): void {
-  if (map.buildings.length === 0 && map.trees.length === 0) return
+  if (map.buildings.length === 0 && map.trees.length === 0 && map.rocks.length === 0) return
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   const slick = (desc: RAPIER.ColliderDesc): RAPIER.ColliderDesc =>
     desc
@@ -324,6 +325,20 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
       slick(
         RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS)
           .setTranslation(tree.x, tree.bottom + tree.height / 2, tree.z)
+          .setCollisionGroups(WALL_GROUPS),
+      ),
+      body,
+    )
+  }
+  // A boulder is a wall to the wheels for the same reason a trunk is.
+  for (const rock of map.rocks) {
+    if (rock.kind !== 'boulder') continue
+    const half = rock.size / 2
+    world.createCollider(
+      slick(
+        RAPIER.ColliderDesc.cuboid(half, half, half)
+          .setTranslation(rock.x, rock.bottom + half, rock.z)
+          .setRotation(quatFromYaw(rock.yaw))
           .setCollisionGroups(WALL_GROUPS),
       ),
       body,
