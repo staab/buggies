@@ -42,7 +42,7 @@ const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
   },
   duo: {
     name: '2 players',
-    note: 'Split screen mode lets two people drive at once, with one keyboard, same island.',
+    note: 'Two people drive on the same island, split screen, sharing one keyboard.',
   },
 }
 
@@ -159,7 +159,7 @@ export class Menu {
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
   private readonly vehicleLegend: HTMLLegendElement
-  /** What the chosen vehicle does of its own, on which key, and what it is by nature. */
+  /** The chosen vehicle's active and passive abilities. */
   private readonly ability = document.createElement('div')
   private choice: Choice
   private step: Step = 'mode'
@@ -181,7 +181,7 @@ export class Menu {
     const title = document.createElement('h1')
     title.textContent = 'Buggies'
     const blurb = line('blurb')
-    blurb.textContent = 'Enjoy driving around a low-poly procedurally generated island.'
+    blurb.textContent = 'Drive around a low-poly, procedurally generated island.'
     this.steps.className = 'steps'
 
     // Page one: how many are playing.
@@ -379,22 +379,17 @@ export class Menu {
     this.render()
   }
 
-  /**
-   * Say what a vehicle does of its own, on the key that does it for this
-   * driver, and what it is by nature if it is anything in particular.
-   */
-  private describe(vehicle: VehicleProfileId, key: string): void {
+  /** Say what a vehicle's active ability does, and its passive ability if it has one. */
+  private describe(vehicle: VehicleProfileId): void {
     const own = OWN_ACTIONS[vehicle]
-    const kbd = document.createElement('kbd')
-    kbd.textContent = key
-    const action = line('own')
-    action.append(kbd, ' ', span('name', own.label), ' ', span('note', own.about))
-    this.ability.replaceChildren(action)
+    const active = line('active')
+    active.append(span('name', `Active ability: ${own.label}.`), ' ', span('note', own.about))
+    this.ability.replaceChildren(active)
     const notes = NATURE_NOTES[vehicle]
     if (notes.length === 0) return
-    const nature = line('nature')
-    nature.append(span('name', 'By nature'), ' ', span('note', notes.join(' ')))
-    this.ability.append(nature)
+    const passive = line('passive')
+    passive.append(span('name', 'Passive ability:'), ' ', span('note', notes.join(' ')))
+    this.ability.append(passive)
   }
 
   private render(): void {
@@ -412,7 +407,7 @@ export class Menu {
     for (const page of new Set(Object.values(this.pages))) page.hidden = page !== this.pages[this.step]
     if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
     this.here.textContent = drivingHere(this.rooms.find((room) => room.seed === this.choice.seed)?.players ?? 0)
-    this.vehicleLegend.textContent = duo ? (this.step === 'car2' ? 'Vehicle 2: the arrows' : 'Vehicle 1: the letters') : 'Vehicle'
+    this.vehicleLegend.textContent = duo ? (this.step === 'car2' ? 'Vehicle 2 (right side of the keyboard)' : 'Vehicle 1 (left side of the keyboard)') : 'Vehicle'
     for (const [mode, button] of this.modeButtons) {
       button.setAttribute('aria-pressed', String(mode === this.choice.mode))
     }
@@ -420,7 +415,7 @@ export class Menu {
     for (const [vehicle, button] of this.vehicleButtons) {
       button.setAttribute('aria-pressed', String(vehicle === picking))
     }
-    this.describe(picking, duo && this.step === 'car' ? 'Shift' : 'M')
+    this.describe(picking)
     for (const [seed, button] of this.popularButtons) {
       button.setAttribute('aria-pressed', String(seed === this.choice.seed))
     }

@@ -14,7 +14,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { describe, expect, it } from 'vitest'
 
-import { CAR_MODELS, fitCarModel, modelCredits, type CarModel } from './car-model.ts'
+import { CAR_MODELS, fitCarModel, modelCredits, SIREN_NAMES, type CarModel } from './car-model.ts'
 import { CarView } from './car-view.ts'
 
 const MODELS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'models')
@@ -117,6 +117,40 @@ describe('car models', () => {
     expect(semi.body.getObjectByName('Truck')).toBeDefined()
     // The trailer's axles were not made into wheels either.
     expect(semi.wheels).toHaveLength(6)
+  })
+
+  it('splits the roof lights of the emergency vehicles out of their bodies, and of nothing else', async () => {
+    for (const profile of VEHICLE_PROFILE_IDS) {
+      const model = await fitted(profile)
+      const sirens = SIREN_NAMES.map((name) => model.body.getObjectByName(name))
+      if (CAR_MODELS[profile].sirens === undefined) {
+        expect(sirens.every((siren) => siren === undefined)).toBe(true)
+        continue
+      }
+      model.body.updateMatrixWorld(true)
+      for (const [side, siren] of sirens.entries()) {
+        expect(siren).toBeInstanceOf(THREE.Mesh)
+        const box = new THREE.Box3().setFromObject(siren!)
+        // On the roof, on its own side: the chassis frame's left is toward -X.
+        expect(box.min.y).toBeGreaterThan(model.bounds.max.y - (model.bounds.max.y - model.bounds.min.y) * 0.35)
+        expect(Math.sign(box.getCenter(new THREE.Vector3()).x)).toBe(side === 0 ? -1 : 1)
+      }
+    }
+  })
+
+  it('lights one side of the roof lights at a time', async () => {
+    const view = new CarView('police', 0xff0000, await fitted('police'))
+    const [left, right] = SIREN_NAMES.map((name) => view.object.getObjectByName(name) as THREE.Mesh)
+    const unlit = left!.material
+    view.lightSirens(0)
+    expect((left!.material as THREE.MeshStandardMaterial).emissive.getHex()).toBe(CAR_MODELS.police.sirens![0])
+    expect(right!.material).toBe(unlit)
+    view.lightSirens(1)
+    expect(left!.material).toBe(unlit)
+    expect((right!.material as THREE.MeshStandardMaterial).emissive.getHex()).toBe(CAR_MODELS.police.sirens![1])
+    view.lightSirens(null)
+    expect(right!.material).toBe(unlit)
+    view.dispose()
   })
 
   it('credits every maker once, with a license', () => {

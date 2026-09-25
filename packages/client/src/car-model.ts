@@ -28,6 +28,8 @@ export interface CarModelSpec {
   hidden: readonly string[]
   /** Which nodes are wheels. A node holding a whole axle is split into its two wheels. */
   wheels: RegExp
+  /** The colors the model's roof lights flash, left and right, for an emergency vehicle. */
+  sirens?: readonly [left: number, right: number]
   credit: ModelCredit
 }
 
@@ -50,8 +52,22 @@ const KENNEY_WHEELS = /^wheel-/
  */
 export const CAR_MODELS: Readonly<Record<VehicleProfileId, CarModelSpec>> = Object.freeze({
   raceCar: { file: 'kenney/race.glb', scale: 1.55, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
-  police: { file: 'kenney/police.glb', scale: 1.45, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
-  firetruck: { file: 'kenney/firetruck.glb', scale: 1.7, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
+  police: {
+    file: 'kenney/police.glb',
+    scale: 1.45,
+    hidden: [],
+    wheels: KENNEY_WHEELS,
+    sirens: [0xff2a2a, 0x2a6cff],
+    credit: KENNEY,
+  },
+  firetruck: {
+    file: 'kenney/firetruck.glb',
+    scale: 1.7,
+    hidden: [],
+    wheels: KENNEY_WHEELS,
+    sirens: [0xff2a2a, 0xffffff],
+    credit: KENNEY,
+  },
   pickup: { file: 'kenney/truck.glb', scale: 1.5, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
   sportsCar: { file: 'kenney/sedan-sports.glb', scale: 1.6, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
   smallCar: { file: 'kenney/hatchback-sports.glb', scale: 1.15, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
@@ -69,7 +85,14 @@ export const CAR_MODELS: Readonly<Record<VehicleProfileId, CarModelSpec>> = Obje
       licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
     },
   },
-  ambulance: { file: 'kenney/ambulance.glb', scale: 1.6, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
+  ambulance: {
+    file: 'kenney/ambulance.glb',
+    scale: 1.6,
+    hidden: [],
+    wheels: KENNEY_WHEELS,
+    sirens: [0xff2a2a, 0xffffff],
+    credit: KENNEY,
+  },
   semi: {
     file: 'jtoastie-cargo-truck.glb',
     scale: 1.55,
@@ -107,7 +130,23 @@ export interface CarModel {
   wheels: readonly WheelTemplate[]
   /** The body's extent in the chassis frame. */
   bounds: THREE.Box3
+  /** The colors its roof lights flash, left and right; the lights are the body's meshes named in `SIREN_NAMES`. */
+  sirens: readonly [left: number, right: number] | null
 }
+
+/** The meshes a model's roof lights are split into, left and right. */
+export const SIREN_NAMES = ['siren-left', 'siren-right'] as const
+
+/**
+ * The palette strips the Car Kit colors its lights with, as rectangles of
+ * texture coordinates: blue, and red. A light on the roof is a face in one
+ * of these at least this far up the body; lower down they are tail lights.
+ */
+const LIGHT_STRIPS = [
+  { u: [7 / 16, 8 / 16], v: [3 / 4, 1] },
+  { u: [5 / 16, 6 / 16], v: [3 / 4, 1] },
+] as const
+const ROOF_LIGHT_HEIGHT = 0.7
 
 /** A wheel node this much wider than it is tall is a whole axle, both wheels in one. */
 const AXLE_ASPECT = 2.2
@@ -143,20 +182,14 @@ function nodesNamed(root: THREE.Object3D, matches: (name: string) => boolean): T
   return found
 }
 
-/**
- * Two geometries from one, by which side of x = 0 each triangle is on: an
- * axle modeled as a single mesh becomes its left wheel and its right.
- */
-function splitAcross(geometry: THREE.BufferGeometry): [left: THREE.BufferGeometry, right: THREE.BufferGeometry] {
+/** Geometries from one, a triangle each to whichever `bucket` says, by its first vertex in the non-indexed geometry. */
+function partition(geometry: THREE.BufferGeometry, buckets: number, bucket: (vertex: number) => number): THREE.BufferGeometry[] {
   const source = geometry.index === null ? geometry : geometry.toNonIndexed()
-  const position = source.getAttribute('position')
-  const left: number[] = []
-  const right: number[] = []
-  for (let vertex = 0; vertex < position.count; vertex += 3) {
-    const center = position.getX(vertex) + position.getX(vertex + 1) + position.getX(vertex + 2)
-    ;(center < 0 ? left : right).push(vertex, vertex + 1, vertex + 2)
+  const picked: number[][] = Array.from({ length: buckets }, () => [])
+  for (let vertex = 0; vertex < source.getAttribute('position').count; vertex += 3) {
+    picked[bucket(vertex)]!.push(vertex, vertex + 1, vertex + 2)
   }
-  const half = (vertices: number[]): THREE.BufferGeometry => {
+  const part = (vertices: number[]): THREE.BufferGeometry => {
     const built = new THREE.BufferGeometry()
     for (const [name, attribute] of Object.entries(source.attributes)) {
       const from = attribute as THREE.BufferAttribute
@@ -172,7 +205,55 @@ function splitAcross(geometry: THREE.BufferGeometry): [left: THREE.BufferGeometr
     }
     return built
   }
-  return [half(left), half(right)]
+  return picked.map(part)
+}
+
+/**
+ * Two geometries from one, by which side of x = 0 each triangle is on: an
+ * axle modeled as a single mesh becomes its left wheel and its right.
+ */
+function splitAcross(geometry: THREE.BufferGeometry): [left: THREE.BufferGeometry, right: THREE.BufferGeometry] {
+  const source = geometry.index === null ? geometry : geometry.toNonIndexed()
+  const position = source.getAttribute('position')
+  const [left, right] = partition(source, 2, (vertex) =>
+    position.getX(vertex) + position.getX(vertex + 1) + position.getX(vertex + 2) < 0 ? 0 : 1,
+  )
+  return [left!, right!]
+}
+
+/**
+ * Split the roof lights out of a mesh into meshes of their own under it,
+ * the left's and the right's, named in `SIREN_NAMES`, so that they can be
+ * lit apart from the rest of the body. Only faces at least `floor` high in
+ * the world count. The model's left is toward its +X.
+ */
+function splitSirens(mesh: THREE.Mesh, floor: number): void {
+  const source = (mesh.geometry as THREE.BufferGeometry).toNonIndexed()
+  const position = source.getAttribute('position')
+  const uv = source.getAttribute('uv')
+  if (uv === undefined) return
+  const at = new THREE.Vector3()
+  const [rest, left, right] = partition(source, 3, (vertex) => {
+    const u = uv.getX(vertex)
+    const v = uv.getY(vertex)
+    if (!LIGHT_STRIPS.some((strip) => u >= strip.u[0] && u < strip.u[1] && v >= strip.v[0] && v < strip.v[1])) return 0
+    let x = 0
+    for (let k = 0; k < 3; k++) {
+      at.fromBufferAttribute(position, vertex + k).applyMatrix4(mesh.matrixWorld)
+      if (at.y < floor) return 0
+      x += at.x
+    }
+    return x > 0 ? 1 : 2
+  })
+  source.dispose()
+  if (left!.getAttribute('position').count + right!.getAttribute('position').count === 0) return
+  ;(mesh.geometry as THREE.BufferGeometry).dispose()
+  mesh.geometry = rest!
+  for (const [k, geometry] of [left!, right!].entries()) {
+    const light = new THREE.Mesh(geometry, mesh.material)
+    light.name = SIREN_NAMES[k]!
+    mesh.add(light)
+  }
 }
 
 /** The meshes under a wheel node, their geometry baked into the chassis frame. */
@@ -223,6 +304,14 @@ export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: V
   const body = meshBounds(scene, (mesh) => !within(mesh, wheelNodes))
   const ground = Math.min(body.min.y, meshBounds(scene, (mesh) => within(mesh, wheelNodes)).min.y)
   const center = body.getCenter(new THREE.Vector3())
+  if (spec.sirens !== undefined) {
+    const floor = ground + (body.max.y - ground) * ROOF_LIGHT_HEIGHT
+    const meshes: THREE.Mesh[] = []
+    scene.traverse((node) => {
+      if (node instanceof THREE.Mesh && !within(node, wheelNodes)) meshes.push(node)
+    })
+    for (const mesh of meshes) splitSirens(mesh, floor)
+  }
   const rideHeight = restingRideHeight(tuning, DEFAULT_WORLD_TUNING.gravity)
 
   // Model to chassis frame: turned about, scaled, the body centered and the
@@ -267,7 +356,7 @@ export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: V
       node.receiveShadow = true
     }
   })
-  return { body: bodyGroup, wheels, bounds: body.applyMatrix4(toChassis) }
+  return { body: bodyGroup, wheels, bounds: body.applyMatrix4(toChassis), sirens: spec.sirens ?? null }
 }
 
 const fitted = new Map<VehicleProfileId, CarModel>()

@@ -273,7 +273,7 @@ export class Shell implements MenuHost {
       if (stamp !== this.generation) return
       const why = error instanceof Error ? error.message : String(error)
       this.menu.show(this.choiceNow)
-      this.menu.notice(`could not join ${this.server}: ${why}`)
+      this.menu.notice(`Could not join ${this.server}: ${why}`)
     }
   }
 

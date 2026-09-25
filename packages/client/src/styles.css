@@ -384,7 +384,7 @@ button .note {
 fieldset[disabled] {
   opacity: 0.4;
 }
-/* What the chosen vehicle does of its own, and what it is by nature, under the cards. */
+/* The chosen vehicle's active and passive abilities, under the cards. */
 .ability p {
   margin: 8px 0 0;
   font-size: 12px;

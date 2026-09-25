@@ -232,7 +232,7 @@ export class Hud {
     this.expanded = open
     this.root.classList.toggle('expanded', open)
     this.toggle.setAttribute('aria-expanded', String(open))
-    this.toggle.setAttribute('aria-label', open ? 'hide the controls' : 'show the controls')
+    this.toggle.setAttribute('aria-label', open ? 'Hide controls' : 'Show controls')
   }
 
   /** Show this, or nothing. */

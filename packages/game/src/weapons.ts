@@ -154,7 +154,7 @@ export interface OwnAction {
 const LIGHTS: OwnAction = {
   kind: 'lights',
   label: 'Lights',
-  about: 'A press turns them on or off: while on, every car within thirty meters is slowed by a fifth.',
+  about: 'Turns the lights on or off. While they are on, every car within 30 meters is slowed by 20%.',
   activeTicks: 0,
   cooldownTicks: 0,
 }
@@ -162,15 +162,15 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   tank: {
     kind: 'missile',
     label: 'Missile',
-    about: 'A rocket from the gun with half the blast of one won, every three seconds.',
+    about: 'Fires a missile with half the blast of the rocket power-up, every three seconds.',
     activeTicks: 0,
     cooldownTicks: 60 * 3,
   },
-  goKart: { kind: 'hop', label: 'Hop', about: 'A jump off the ground, whenever it is on it.', activeTicks: 6, cooldownTicks: 0 },
+  goKart: { kind: 'hop', label: 'Hop', about: 'Jumps into the air whenever the kart is on the ground.', activeTicks: 6, cooldownTicks: 0 },
   raceCar: {
     kind: 'boost',
     label: 'Boost',
-    about: 'Half a rocket engine, for as long as the key is held.',
+    about: 'Pushes with half the force of the rocket engine power-up while held.',
     activeTicks: 0,
     cooldownTicks: 0,
   },
@@ -180,28 +180,28 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   sportsCar: {
     kind: 'gun',
     label: 'Machine gun',
-    about: 'Fires from the nose at the car ahead for as long as the key is held, a quarter of the bite of one won.',
+    about: 'Fires at the car ahead while held, with a quarter of the damage of the machine gun power-up.',
     activeTicks: 0,
     cooldownTicks: 0,
   },
   smallCar: {
     kind: 'fly',
     label: 'Wings',
-    about: 'Hold the car up and lift it a tenth as hard as wings won would, for as long as the key is held.',
+    about: 'Holds the car up while held, with a tenth of the lift of the wings power-up.',
     activeTicks: 0,
     cooldownTicks: 0,
   },
   semi: {
     kind: 'horn',
     label: 'Horn',
-    about: 'Every press stuns every car within ten meters for a second.',
+    about: 'Stuns every car within 10 meters for a second.',
     activeTicks: 60,
     cooldownTicks: 0,
   },
   pickup: {
     kind: 'bomb',
     label: 'Bomb',
-    about: 'Drops a bomb behind with a quarter of the blast of one won, every five seconds; five out at once at most, the oldest going for the next.',
+    about: 'Drops a bomb behind with a quarter of the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.',
     activeTicks: 0,
     cooldownTicks: 60 * 5,
   },
@@ -240,17 +240,17 @@ export const AMBULANCE_HEAL = 0.01
 export const AMBULANCE_HEAL_TICKS = 60 * 5
 export const FIRETRUCK_BOMB_SHARE = 0.1
 export const POLICE_SHOT_SHARE = 0.5
-const UNSLOWED = 'Not slowed by any siren or lights.'
+const UNSLOWED = 'Not slowed by sirens or lights.'
 /** What is said of each vehicle's nature on the car page: nothing, for most. */
 export const NATURE_NOTES: Readonly<Record<VehicleProfileId, readonly string[]>> = {
   raceCar: [],
-  police: [UNSLOWED, 'Takes half the bite of a machine gun.'],
-  firetruck: [UNSLOWED, 'Takes a tenth of the blast of a bomb.'],
+  police: [UNSLOWED, 'Takes half damage from machine guns.'],
+  firetruck: [UNSLOWED, 'Takes a tenth of the damage from bombs.'],
   pickup: [],
   sportsCar: [],
   smallCar: [],
   tank: [],
-  ambulance: [UNSLOWED, 'Mends itself, a hundredth of its life every five seconds.'],
+  ambulance: [UNSLOWED, 'Repairs 1% of its health every five seconds.'],
   semi: [],
   goKart: [],
 }

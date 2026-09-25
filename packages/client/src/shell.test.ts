@@ -307,7 +307,7 @@ describe('the shell', () => {
     await shell.start(CHOICE)
     expect(shell.playing).toBe(false)
     expect(menu.open).toBe(true)
-    expect(menu.notices.at(-1)).toBe(`could not join ${SERVER}: refused`)
+    expect(menu.notices.at(-1)).toBe(`Could not join ${SERVER}: refused`)
   })
 
   it('asks the server which islands are busy, and has none to offer when it cannot say', async () => {

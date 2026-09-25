@@ -15,11 +15,11 @@ export const SOLO_KEYS: DriverKeys = {
   bindings: SOLO_BINDINGS,
   respawn: (event) => event.code === 'KeyR',
   controls: (ability) => [
-    { keys: ['↑', '←', '↓', '→'], does: 'to drive' },
+    { keys: ['↑', '←', '↓', '→'], does: 'drive' },
     { keys: ['Space'], does: 'handbrake' },
     { keys: ['F'], does: 'fire' },
     { keys: ['D'], does: ability.toLowerCase() },
-    { keys: ['R'], does: 'back to the road' },
+    { keys: ['R'], does: 'respawn' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -29,11 +29,11 @@ export const LEFT_KEYS: DriverKeys = {
   bindings: LEFT_BINDINGS,
   respawn: (event) => event.code === 'KeyQ',
   controls: (ability) => [
-    { keys: ['W', 'A', 'S', 'D'], does: 'to drive' },
+    { keys: ['W', 'A', 'S', 'D'], does: 'drive' },
     { keys: ['Z'], does: 'handbrake' },
     { keys: ['X'], does: 'fire' },
     { keys: ['Shift'], does: ability.toLowerCase() },
-    { keys: ['Q'], does: 'back to the road' },
+    { keys: ['Q'], does: 'respawn' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -43,11 +43,11 @@ export const RIGHT_KEYS: DriverKeys = {
   bindings: RIGHT_BINDINGS,
   respawn: (event) => event.key === 'Enter',
   controls: (ability) => [
-    { keys: ['↑', '←', '↓', '→'], does: 'to drive' },
+    { keys: ['↑', '←', '↓', '→'], does: 'drive' },
     { keys: [','], does: 'handbrake' },
     { keys: ['.'], does: 'fire' },
     { keys: ['M'], does: ability.toLowerCase() },
-    { keys: ['Enter'], does: 'back to the road' },
+    { keys: ['Enter'], does: 'respawn' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }

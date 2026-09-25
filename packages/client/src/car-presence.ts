@@ -16,18 +16,8 @@ import { WeaponReveal } from './weapon-reveal.ts'
 
 /** A knock that takes this much of a car's life is heard at full volume. */
 const LOUD_KNOCK = 0.25
-/**
- * The roof lights of an emergency vehicle: two lamps, this big, flashing in
- * turn this many times a second, in these colors, this far back from the
- * middle of the car: over the roof of a car, and over the cab of a truck,
- * whose body behind is taller. Each sits on the model's roof where it is.
- */
-const ROOF_LIGHT = { width: 0.32, height: 0.14, depth: 0.24, apart: 0.36, flashes: 4 } as const
-const ROOF_LIGHTS: Readonly<Partial<Record<Seat['profile'], { colors: [number, number]; back: number }>>> = {
-  police: { colors: [0xff2a2a, 0x2a6cff], back: -0.1 },
-  ambulance: { colors: [0xff2a2a, 0xffffff], back: -1.3 },
-  firetruck: { colors: [0xff2a2a, 0xffffff], back: -1.9 },
-}
+/** How many times a second an emergency vehicle's roof lights flash from one side to the other. */
+const SIREN_FLASHES = 4
 const overhead = new THREE.Raycaster()
 const above = new THREE.Vector3()
 const down = new THREE.Vector3()
@@ -41,6 +31,8 @@ function roofAt(car: THREE.Object3D, x: number, z: number, chassisTop: number): 
   const hit = overhead.intersectObject(car, true)[0]
   return hit === undefined ? chassisTop : Math.max(car.worldToLocal(hit.point).y, chassisTop)
 }
+/** The siren's footprint, whose highest roof point its base stands on, and how far its base reaches below its middle. */
+const SIREN_FOOTPRINT = { xs: [-0.26, 0, 0.26], zs: [-0.65, -0.35, 0, 0.2], base: 0.07 } as const
 /** The boost's flame at the back of the car, this long. */
 const BOOST_FLAME = { radius: 0.18, length: 0.8 } as const
 
@@ -91,7 +83,6 @@ export class CarPresence {
   private readonly heard: Sound | null
   /** The siren, made the first time it is needed: an emergency vehicle's own, or the power any car may win. */
   private siren: SirenVoice | null = null
-  private readonly roofLights: THREE.Mesh[] = []
   private readonly boostFlame: THREE.Mesh
   private aimPoint: Vec3 | null = null
   private wasWrecked: boolean
@@ -108,24 +99,11 @@ export class CarPresence {
     this.view = new CarView(seat.profile, color)
     this.view.syncDimensions(seat.tuning)
     this.object = this.view.object
-    // An emergency vehicle's roof lights, each on the model's roof where it
-    // sits, measured before anything else is hung on the car; off until its
-    // lights are on.
-    const lamps = ROOF_LIGHTS[seat.profile]
-    if (lamps !== undefined) {
-      const roofs = [-1, 1].map((side) => roofAt(this.object, side * ROOF_LIGHT.apart, lamps.back, seat.tuning.chassisHalfHeight))
-      for (const [k, color] of lamps.colors.entries()) {
-        const lamp = new THREE.Mesh(
-          new THREE.BoxGeometry(ROOF_LIGHT.width, ROOF_LIGHT.height, ROOF_LIGHT.depth),
-          new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5, roughness: 0.4 }),
-        )
-        lamp.position.set((k === 0 ? -1 : 1) * ROOF_LIGHT.apart, roofs[k]! + ROOF_LIGHT.height / 2, lamps.back)
-        lamp.visible = false
-        this.object.add(lamp)
-        this.roofLights.push(lamp)
-      }
-    }
-    this.mount = new WeaponMount(seat.tuning.chassisHalfHeight + MOUNT_HEIGHT, hasBuiltInGun(seat.profile))
+    // The siren power-up stands on the roof rather than hovering; measured before anything else is hung on the car.
+    const top = seat.tuning.chassisHalfHeight
+    const sirenRest =
+      Math.max(...SIREN_FOOTPRINT.xs.flatMap((x) => SIREN_FOOTPRINT.zs.map((z) => roofAt(this.object, x, z, top)))) + SIREN_FOOTPRINT.base
+    this.mount = new WeaponMount(top + MOUNT_HEIGHT, hasBuiltInGun(seat.profile), sirenRest)
     this.object.add(this.mount.object)
     this.body = new SmoothedBody(seat.vehicle.body, this.object)
     const heard = options.heard !== false ? effects.sound : null
@@ -211,9 +189,7 @@ export class CarPresence {
     // The roof lights flash in turn while they are on, and the siren wails.
     this.lightTime += dt
     const lightsOn = this.seat.lightsOn && !vehicle.wrecked
-    for (const [k, lamp] of this.roofLights.entries()) {
-      lamp.visible = lightsOn && Math.floor(this.lightTime * ROOF_LIGHT.flashes + k) % 2 === 0
-    }
+    this.view.lightSirens(lightsOn ? Math.floor(this.lightTime * SIREN_FLASHES) % 2 : null)
     // The siren power sounds while it is held; either way the siren is made the first time it is wanted.
     const sirenPower = this.seat.weapon === 'siren' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
     if ((lightsOn || sirenPower) && this.siren === null) this.siren = this.heard?.siren() ?? null
