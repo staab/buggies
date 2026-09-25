@@ -18,6 +18,7 @@ import {
   SPILL_LIFE_TICKS,
   WEAPONS,
   WINGS_FLIGHT_TICKS,
+  HOP_SPEED,
   HORN_RANGE,
   HORN_STUN_TICKS,
   OWN_ACTIONS,
@@ -44,6 +45,7 @@ import {
   takeSeat,
   weaponWon,
   wingsTurnRadius,
+  worldGravity,
   disarm,
   BANANAS_PER_WEAPON,
   wreckVehicle,
@@ -302,6 +304,48 @@ describe('weapons', () => {
     arena.world.free()
   })
 
+  it('a car carrying wings steers by banking whenever it is in the air, key or no key, and without them it does not', () => {
+    const heading = (v: { x: number; z: number }): number => Math.atan2(v.x, v.z)
+    const swing = (from: number, to: number): number => {
+      let swung = to - from
+      if (swung > Math.PI) swung -= Math.PI * 2
+      if (swung < -Math.PI) swung += Math.PI * 2
+      return Math.abs(swung)
+    }
+    // Up and along on the key, then the key let go while it is still well up, and the steering held.
+    const drive: VehicleInput = { ...NEUTRAL_INPUT, fire: true, throttle: 1 }
+    const glide: VehicleInput = { ...NEUTRAL_INPUT, steer: 1 }
+    const aloft = (): [Arena, Seat] => {
+      const arena = createArena(map)
+      const a = takeSeat(arena, 0, 'sportsCar')
+      for (let i = 0; i < 30; i++) advance(arena)
+      arm(a, 'wings')
+      for (let i = 0; i < 150; i++) advance(arena, () => drive)
+      expect(a.vehicle.groundedCount).toBe(0)
+      return [arena, a]
+    }
+    const [arena, a] = aloft()
+    const was = heading(a.vehicle.frame.linearVelocity)
+    for (let i = 0; i < 45; i++) advance(arena, () => glide)
+    expect(a.vehicle.lifted).toBe(false)
+    expect(a.vehicle.winged).toBe(true)
+    expect(a.vehicle.groundedCount).toBe(0)
+    expect(swing(was, heading(a.vehicle.frame.linearVelocity))).toBeGreaterThan(0.15)
+    // Held level, banked into the turn, and still falling: nothing lifts it.
+    expect(a.vehicle.frame.up.y).toBeGreaterThan(0.8)
+    expect(a.vehicle.frame.linearVelocity.y).toBeLessThan(0)
+    arena.world.free()
+    // Its wings gone, the same steering up there swings the way it is going not at all.
+    const [bare, b] = aloft()
+    disarm(b)
+    const before = heading(b.vehicle.frame.linearVelocity)
+    for (let i = 0; i < 45; i++) advance(bare, () => glide)
+    expect(b.vehicle.winged).toBe(false)
+    expect(b.vehicle.groundedCount).toBe(0)
+    expect(swing(before, heading(b.vehicle.frame.linearVelocity))).toBeLessThan(0.05)
+    bare.world.free()
+  })
+
   it('the tank fires from its own gun, not from over its roof', () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'tank')
@@ -440,8 +484,20 @@ describe("the car's own key", () => {
     advance(arena, () => ABILITY)
     expect(a.actionTicks).toBeGreaterThan(0)
     advance(arena)
-    expect(a.vehicle.frame.linearVelocity.y).toBeGreaterThan(2)
+    expect(a.vehicle.frame.linearVelocity.y).toBeGreaterThan(HOP_SPEED * 0.8)
+    // High enough to clear something: most of the height the launch speed buys against the world's gravity.
+    const ground = a.vehicle.frame.position.y
+    let top = ground
+    for (let i = 0; i < 90; i++) {
+      advance(arena)
+      top = Math.max(top, a.vehicle.frame.position.y)
+    }
+    expect(top - ground).toBeGreaterThan(((HOP_SPEED * HOP_SPEED) / (2 * worldGravity(arena.world))) * 0.8)
+    for (let i = 0; i < 90; i++) advance(arena)
+    expect(a.vehicle.groundedCount).toBeGreaterThan(0)
     // Up in the air, another press gives nothing more.
+    advance(arena, () => ABILITY)
+    advance(arena)
     for (let i = 0; i < 4; i++) advance(arena)
     const rising = a.vehicle.frame.linearVelocity.y
     advance(arena, () => ABILITY)

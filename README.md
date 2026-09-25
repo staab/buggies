@@ -29,7 +29,7 @@ The fire key uses whatever the car carries.
 - **Machine gun** trains itself on the nearest car ahead and fires as long as the key is held, for ten seconds in all. A few seconds of hits blows a car up.
 - **Bomb** is dropped behind the car and floats there until a car runs into it and is wrecked, the one that dropped it included once it has landed.
 - **Rocket engine** shoves the car along while the key is held, for ten seconds in all.
-- **Wings** lift the car into the air while the key is held, for ten seconds in all. Up there the pedals drive it and the steering banks it around a wide turn like a plane.
+- **Wings** lift the car into the air while the key is held, for ten seconds in all. Up there the pedals drive it and the steering banks it around a wide turn like a plane, and a car carrying wings steers that way whenever it is in the air, key or no key.
 - **Shockwave** stuns every other car within thirty meters for five seconds.
 - **Siren** slows every other car within thirty meters by half while the key is held, for ten seconds in all.
 - **Repair** is a red cross on a white disc that mends the car whole at once.

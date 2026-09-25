@@ -438,8 +438,8 @@ export function stepVehicle(
     applyYawAssist(vehicle, tuning)
   } else if (selfRighting) {
     vehicle.airborneTime = 0
-  } else if (vehicle.lifted) {
-    // On wings the pedals drive the car along, not its nose up and down, and the wings hold it level.
+  } else if (vehicle.lifted || vehicle.winged) {
+    // On wings the pedals drive the car along, not its nose up and down, and the wings hold it level, lifting it or not.
     vehicle.airborneTime += dt
     holdLevel(vehicle, tuning)
   } else {
@@ -450,6 +450,6 @@ export function stepVehicle(
 
   body.setLinearDamping(tuning.linearDamping)
   body.setAngularDamping(
-    grounded || selfRighting || vehicle.lifted ? tuning.angularDampingGrounded : tuning.angularDampingAirborne,
+    grounded || selfRighting || vehicle.lifted || vehicle.winged ? tuning.angularDampingGrounded : tuning.angularDampingAirborne,
   )
 }
