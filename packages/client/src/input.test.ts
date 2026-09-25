@@ -51,7 +51,7 @@ describe('key bindings', () => {
     expect(on(SOLO_KEYS, 'Machine gun', 'machine gun')).toEqual(['D'])
     expect(on(SOLO_KEYS, 'Horn', 'fire')).toEqual(['F'])
     expect(on(SOLO_KEYS, 'Horn', 'handbrake')).toEqual(['Space'])
-    expect(on(SOLO_KEYS, 'Horn', 'back to the road')).toEqual(['R'])
+    expect(on(SOLO_KEYS, 'Horn', 'respawn')).toEqual(['R'])
     expect(on(LEFT_KEYS, 'Horn', 'horn')).toEqual(['Shift'])
     expect(on(LEFT_KEYS, 'Horn', 'fire')).toEqual(['X'])
     expect(on(RIGHT_KEYS, 'Wings', 'wings')).toEqual(['M'])

@@ -48,4 +48,19 @@ describe('the weapon mount', () => {
     expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
     mount.dispose()
   })
+
+  it('stands the siren still on the roof while the rest hovers', () => {
+    const car = new THREE.Group()
+    const mount = new WeaponMount(1.8, false, 1.2)
+    car.add(mount.object)
+    mount.show('siren')
+    const horn = mount.object.children.find((child) => child.visible)!
+    for (let i = 0; i < 30; i++) {
+      mount.update(1 / 10)
+      car.updateMatrixWorld(true)
+      expect(horn.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(1.2, 5)
+    }
+    expect(mount.object.position.y).not.toBeCloseTo(1.8, 5)
+    mount.dispose()
+  })
 })

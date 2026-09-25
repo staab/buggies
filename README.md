@@ -1,6 +1,6 @@
 # Buggies
 
-Procedurally generated islands, with roads worth driving, alone or with whoever else is on the same server.
+Drive around procedurally generated islands, alone or with whoever else is on the same server.
 
 ## Run it
 
@@ -9,53 +9,62 @@ pnpm install
 pnpm dev
 ```
 
-That starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game is on the server. Open the client, pick **1 player** or **2 players** on the first page of the menu, then an island by its seed, then a vehicle each, and play. Everyone who picks the same seed shares that island. Each seed is a room of its own on the server, made when the first player asks for it and closed when the last leaves. A second screen opens the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. Each seed is a room on the server, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
 
-The page joins the server next to whichever address it was opened on. To point it elsewhere, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`, and `TRUST_PROXY=1` behind a reverse proxy, so that it tells players apart by the address the proxy forwards.
+The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
 ## Keys
 
-Alone, the arrows drive, `Space` is the handbrake, `F` fires whatever the car carries, `D` does what the car does of its own, `R` puts the car back on the road and `Esc` opens the menu. **2 players** puts two of you on one keyboard, side by side, each with a seat of their own on the server. The player on the left has `W` `A` `S` `D` to drive, `Z` for the handbrake, `X` to fire, `Shift` for the car's own and `Q` for the road. The player on the right has the arrows, `,`, `.`, `M` and `Enter`.
+| | 1 player | 2 players, left | 2 players, right |
+| --- | --- | --- | --- |
+| Drive | arrows | `W` `A` `S` `D` | arrows |
+| Handbrake | `Space` | `Z` | `,` |
+| Fire the power-up | `F` | `X` | `.` |
+| Active ability | `D` | `Shift` | `M` |
+| Respawn on the road | `R` | `Q` | `Enter` |
+| Menu | `Esc` | `Esc` | `Esc` |
+
+In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
 
 ## Bananas
 
-Bananas float about every island, turning slowly. Drive through one to take it, and another turns up somewhere else a little later. A car carrying nothing spends a banana on a power-up at once, rolled for like a fruit machine and carried over the roof for everyone to see. Bananas taken while it carries something are kept for the next one. A wrecked car spills its bananas, sixteen at most, about the wreck for anyone to take. Only so much lies loose on an island at once: past 256 things, the oldest go.
+Bananas float around every island, turning slowly. Drive through one to collect it, and another appears somewhere else a little later. A car carrying nothing spends a banana on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved for the next one. A wrecked car spills up to sixteen of its bananas around the wreck for anyone to collect. An island holds at most 256 loose items, and past that the oldest disappear.
 
 ## Power-ups
 
 The fire key uses whatever the car carries.
 
-- **Rocket** goes after the nearest car ahead and takes most of its life when it reaches it.
-- **Machine gun** trains itself on the nearest car ahead and fires as long as the key is held, for ten seconds in all. A few seconds of hits blows a car up.
-- **Bomb** is dropped behind the car and floats there until a car runs into it and is wrecked, the one that dropped it included once it has landed.
-- **Rocket engine** shoves the car along while the key is held, for ten seconds in all.
-- **Wings** lift the car into the air while the key is held, for ten seconds in all. Up there the pedals drive it and the steering banks it around a wide turn like a plane, and a car carrying wings steers that way whenever it is in the air, key or no key.
-- **Shockwave** stuns every other car within thirty meters for five seconds.
-- **Siren** slows every other car within thirty meters by half while the key is held, for ten seconds in all.
-- **Repair** is a red cross on a white disc that mends the car whole at once.
+- **Rocket** chases the nearest car ahead and takes most of its health when it hits.
+- **Machine gun** aims at the nearest car ahead and fires while the key is held, for ten seconds in total. A few seconds of hits destroys a car.
+- **Bomb** drops behind the car and floats there until a car runs into it and is wrecked. Once it has landed, it wrecks the car that dropped it too.
+- **Rocket engine** pushes the car forward while the key is held, for ten seconds in total.
+- **Wings** lift the car into the air while the key is held, for ten seconds in total. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. A car carrying wings steers this way whenever it is airborne, whether or not the key is held.
+- **Shockwave** stuns every other car within 30 meters for five seconds.
+- **Siren** slows every other car within 30 meters by half while the key is held, for ten seconds in total.
+- **Repair** fully repairs the car immediately. It appears as a red cross on a white disc.
 
 ## Vehicles
 
-Each vehicle does something of its own on its own key, whatever it carries. Most are lesser forms of the power-ups, and only the tank's and the pickup's have a wait before they go again. Nothing is mounted over the roof for them, the power-up slot leaves them out, and their shots and missiles come from the front of the car. The vehicle page of the menu says what the chosen car does and what it is by nature.
+Each vehicle has an active ability on its own key, separate from any power-up it carries. Most are weaker forms of the power-ups, and only the tank's and the pickup's have a cooldown. Active abilities are not mounted over the roof or shown in the HUD, and their shots and missiles come from the front of the car. Some vehicles also have a passive ability. The vehicle page of the menu describes both.
 
-- **Tank** fires a missile from its gun with half a rocket's blast, every three seconds. Its rockets and shots always come from its own gun, with nothing over its roof.
-- **Go-kart** hops off the ground, whenever it is on it.
-- **Race car** boosts with half a rocket engine as long as the key is held.
-- **Sports car** fires a machine gun from its nose with a quarter of the bite, as long as the key is held.
-- **Small car** flies on wings with a tenth of the lift, as long as the key is held.
-- **Semi truck** honks on every press, stunning every car within ten meters for a second.
-- **Heavy pickup** drops a bomb with a quarter of the blast every five seconds, five out at once at most, the oldest going for the next.
-- **Police car, ambulance and fire truck** flash their lights on and off, slowing every car within thirty meters by a fifth while on. None of them is slowed by any siren or lights. The ambulance mends itself, a hundredth of its life every five seconds. The fire truck takes a tenth of a bomb's blast. The police car takes half the bite of a machine gun.
+- **Tank** fires a missile from its gun with half the blast of the rocket power-up, every three seconds. Its rocket and machine gun power-ups also fire from its gun, with nothing mounted over its roof.
+- **Go-kart** jumps into the air whenever it is on the ground.
+- **Race car** boosts with half the force of the rocket engine power-up while the key is held.
+- **Sports car** fires a machine gun from its nose at the car ahead while the key is held, with a quarter of the damage of the machine gun power-up.
+- **Small car** holds itself up while the key is held, with a tenth of the lift of the wings power-up.
+- **Semi truck** honks its horn, stunning every car within 10 meters for a second.
+- **Heavy pickup** drops a bomb behind with a quarter of the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
+- **Police car, ambulance and fire truck** turn their lights on or off. While the lights are on, every car within 30 meters is slowed by 20%. As a passive ability, none of them is slowed by sirens or lights. The ambulance also repairs 1% of its health every five seconds, the fire truck takes a tenth of the damage from bombs, and the police car takes half damage from machine guns.
 
 ## Docker
 
-The game server is published as an image at `ghcr.io/staab/buggies` by the workflow in `.github/workflows/docker.yml`: on every push to the default branch as `latest` and by commit, and on a release tag such as `v1.2.0` by version. It listens on port 8787 and honors `HOST`, `PORT` and `TRUST_PROXY` as above.
+The workflow in `.github/workflows/docker.yml` publishes the game server as an image at `ghcr.io/staab/buggies`. Every push to the default branch is tagged `latest` and with its commit, and a release tag such as `v1.2.0` is tagged with its version. The server listens on port 8787 and honors `HOST`, `PORT` and `TRUST_PROXY` as above.
 
 ```sh
 docker run --rm -p 8787:8787 ghcr.io/staab/buggies
 ```
 
-The first publish may need the package's visibility set in its settings on GitHub. To build the image here instead:
+After the first publish, the package's visibility may need to be set in its GitHub settings. To build the image locally instead:
 
 ```sh
 podman build -t buggies-server .
@@ -67,9 +76,9 @@ podman run --rm -p 8787:8787 buggies-server
 - `physics`: vectors, quaternions, a seeded RNG, the fixed timestep.
 - `terrain`: an island from a seed, with its heightfield, rivers, lakes, districts, roads and tunnels.
 - `vehicle`: the car, with its suspension, tires, air control, self-righting and water, on Rapier.
-- `game`: an arena, a map with seats on it, stepped one fixed tick at a time.
+- `game`: the arena, a map with seats on it, stepped one fixed tick at a time.
 - `net`: the protocol, the server and the client's prediction, with no DOM and no three.js.
-- `server`: the arena that counts, over WebSockets.
+- `server`: the authoritative arena, over WebSockets.
 - `client`: the browser, with rendering, input, menus and the online mode.
 
 ## Check it
@@ -79,7 +88,7 @@ pnpm typecheck
 pnpm test
 ```
 
-The tests cover terrain, driving, the wire format and a whole session, with two clients on a server over a simulated wire and prediction. They run in Node without a browser.
+The tests cover terrain, driving, the wire format, and a full session with two predicting clients connected to a server over a simulated network. They run in Node without a browser.
 
 ## Credits
 

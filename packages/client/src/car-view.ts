@@ -7,7 +7,7 @@ import { v3, type Vec3 } from '@buggies/physics'
 import type { VehicleProfileId, VehicleTuning } from '@buggies/game'
 import { wheelMountLocal, WHEEL_CORNERS, WHEEL_COUNT, type WheelState } from '@buggies/game'
 
-import { carModelFor, type CarModel } from './car-model.ts'
+import { carModelFor, SIREN_NAMES, type CarModel } from './car-model.ts'
 
 export const PLAYER_BODY_COLOR = 0xd8452f
 export const REMOTE_BODY_COLOR = 0x3f6fb5
@@ -71,6 +71,13 @@ interface DrawnWheel {
   z: number
 }
 
+/** One side of a model's roof lights: its own look, and its look lit. */
+interface Siren {
+  mesh: THREE.Mesh
+  unlit: THREE.Material | THREE.Material[]
+  lit: THREE.Material
+}
+
 function cornerIndex(isFront: boolean, isLeft: boolean): number {
   return WHEEL_CORNERS.findIndex((corner) => corner.isFront === isFront && corner.isLeft === isLeft)
 }
@@ -82,6 +89,8 @@ export class CarView {
   private readonly cabinMesh: THREE.Mesh | null = null
   private readonly wheelMeshes: THREE.Mesh[] = []
   private readonly drawnWheels: DrawnWheel[] = []
+  /** The roof lights, left and right, of a model that has them. */
+  private readonly sirens: Siren[] = []
   private readonly materials: THREE.Material[] = []
   private readonly mountLocal: Vec3 = v3()
   /** Whether the wheels sit where the model has them or where the tuning does. */
@@ -92,7 +101,16 @@ export class CarView {
     this.modeled = model !== null
 
     if (model !== null) {
-      this.object.add(model.body.clone())
+      const body = model.body.clone()
+      this.object.add(body)
+      for (const [side, name] of SIREN_NAMES.entries()) {
+        const mesh = body.getObjectByName(name)
+        const color = model.sirens?.[side]
+        if (!(mesh instanceof THREE.Mesh) || color === undefined) continue
+        const lit = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5, roughness: 0.4 })
+        this.materials.push(lit)
+        this.sirens[side] = { mesh, unlit: mesh.material, lit }
+      }
       for (const wheel of model.wheels) {
         const pivot = new THREE.Group()
         pivot.rotation.order = 'YXZ'
@@ -139,6 +157,13 @@ export class CarView {
       this.wheelMeshes.push(mesh)
       this.object.add(mesh)
       this.drawnWheels.push({ pivot: mesh, corner: index, x: 0, z: 0 })
+    }
+  }
+
+  /** Light the roof lights on one side, 0 the left and 1 the right, or on neither. */
+  lightSirens(side: number | null): void {
+    for (const [k, siren] of this.sirens.entries()) {
+      if (siren !== undefined) siren.mesh.material = k === side ? siren.lit : siren.unlit
     }
   }
 

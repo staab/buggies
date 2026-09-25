@@ -37,13 +37,16 @@ export class WeaponMount {
   private readonly height: number
   /** Whether the car has a gun of its own: the rocket and the gun are not mounted over its roof. */
   private readonly builtInGun: boolean
+  /** Where the siren's base stands still on the roof, in the car's frame; it hovers with the rest when unknown. */
+  private readonly sirenRest: number | null
   private readonly desired = AHEAD.clone()
   private shownWeapon: Weapon = 'none'
   private time = 0
 
-  constructor(height: number, builtInGun = false) {
+  constructor(height: number, builtInGun = false, sirenRest: number | null = null) {
     this.height = height
     this.builtInGun = builtInGun
+    this.sirenRest = sirenRest
     this.object.position.y = height
     this.rocket.visible = false
     this.gun.visible = false
@@ -100,6 +103,10 @@ export class WeaponMount {
     this.time += dt
     this.object.position.y = this.height + Math.sin(this.time * BOB_RATE) * BOB
     this.object.rotation.y = Math.sin(this.time * SWAY_RATE) * SWAY
+    if (this.sirenRest !== null) {
+      this.horn.position.y = this.sirenRest - this.object.position.y
+      this.horn.rotation.y = -this.object.rotation.y
+    }
   }
 
   /** Whether the engine's flame is out behind it, flickering. */
