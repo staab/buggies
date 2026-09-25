@@ -1219,7 +1219,7 @@ describe('roads', () => {
     }
   }, 120_000)
 
-  it('climbs a mountain by a road from an arterial: on the ground, at grade, bridging its streams, and ending high on a shoulder', () => {
+  it('climbs a mountain by a road from an arterial: on the ground, at grade, crossing no water, and ending high on a shoulder', () => {
     let climbs = 0
     for (const seed of [1, 2, 3]) {
       const island = generateTerrain(seed)
@@ -1234,9 +1234,8 @@ describe('roads', () => {
         for (let i = 0; i < points.length; i++) {
           const point = points[i]!
           const ground = sampleHeight(island.heightfield, point.x, point.z)
-          const bridged = (i > 0 && structure[i - 1] === ROAD_BRIDGE) || structure[i] === ROAD_BRIDGE
-          if (!bridged) expect(Math.abs(point.y - ground)).toBeLessThan(0.5)
-          else expect(point.y).toBeGreaterThanOrEqual(ground - 0.5)
+          expect(structure[Math.min(i, structure.length - 1)]).toBe(ROAD_GRADE)
+          expect(Math.abs(point.y - ground)).toBeLessThan(0.5)
           if (i === 0) continue
           const before = points[i - 1]!
           const run = Math.hypot(point.x - before.x, point.z - before.z)
