@@ -240,6 +240,12 @@ const ROCK_STOPS: Stops = [
   { t: 0.5, color: new THREE.Color('#8a8078') },
   { t: 1, color: new THREE.Color('#7d6a55') },
 ]
+/** A building site: blue hoardings round it, and a tower crane in yellow or red by tone, its top turning this fast in radians a second. */
+const HOARDING_COLOR = new THREE.Color('#3b5b86')
+const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), new THREE.Color('#c23b2b')]
+const CRANE_CAB = new THREE.Color('#d9dde3')
+const CONCRETE = new THREE.Color('#9a9a94')
+const CRANE = { column: 0.25, brace: 0.12, level: 4, jib: 32, counterJib: 10, cab: 2.6, hookAlong: 0.7, hookDrop: 0.45, turn: 0.06 } as const
 /** A viewpoint's low stone wall and the board on its posts. */
 const WALL_COLOR = new THREE.Color('#a9a59b')
 const BOARD_COLOR = new THREE.Color('#e4dcc6')
@@ -2016,6 +2022,73 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       chairs.onBeforeRender = () => place(performance.now() / 1000)
       meshes.push(chairs)
     }
+  }
+
+  // Building sites: the hoardings as the slab they are, and a tower crane on
+  // each: a lattice mast of four columns braced every few metres, and on top
+  // of it the cab, the jib out one way, the counter-jib and its concrete
+  // counterweight the other, and a hook hung on a cable from along the jib,
+  // the whole top turning slowly as the frames go by.
+  const sites = ofKind('site')
+  const cranes = ofKind('crane')
+  meshes.push(
+    instanced(box, plain, sites, (site, matrix, color) => {
+      boxAt(site, matrix)
+      color.copy(HOARDING_COLOR)
+    }),
+  )
+  const columns = cranes.flatMap((crane) => [-1, 1].flatMap((along) => [-1, 1].map((across) => ({ crane, along, across }))))
+  const braces = cranes.flatMap((crane) => {
+    const levels = Math.floor((crane.top - crane.bottom) / CRANE.level)
+    return Array.from({ length: levels }, (_, level) => [0, 1, 2, 3].map((side) => ({ crane, level, side }))).flat()
+  })
+  meshes.push(
+    instanced(box, plain, columns, ({ crane, along, across }, matrix, color) => {
+      const inset = crane.width / 2 - CRANE.column / 2
+      upright(crane, matrix, CRANE.column, crane.top - crane.bottom, CRANE.column, (crane.top + crane.bottom) / 2, along * inset, across * inset)
+      color.copy(pick(CRANE_COLORS, crane.tone))
+    }),
+    instanced(box, plain, braces, ({ crane, level, side }, matrix, color) => {
+      const inset = crane.width / 2 - CRANE.column / 2
+      const y = crane.bottom + BURY_SHOWN + (level + 0.5) * CRANE.level
+      const along = side === 0 ? inset : side === 2 ? -inset : 0
+      const across = side === 1 ? inset : side === 3 ? -inset : 0
+      const long = side === 0 || side === 2
+      upright(crane, matrix, long ? CRANE.brace : crane.width, CRANE.brace, long ? crane.width : CRANE.brace, y, along, across)
+      color.copy(pick(CRANE_COLORS, crane.tone))
+    }),
+  )
+  for (const crane of cranes) {
+    const color = pick(CRANE_COLORS, crane.tone)
+    const top = new THREE.Group()
+    top.position.set(crane.x, crane.top, crane.z)
+    const part = (width: number, height: number, depth: number, x: number, y: number, shade: THREE.Color): THREE.Mesh => {
+      const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color: shade, roughness: 0.85, metalness: 0.05 }))
+      mesh.scale.set(width, height, depth)
+      mesh.position.set(x, y, 0)
+      top.add(mesh)
+      return mesh
+    }
+    part(CRANE.cab, CRANE.cab * 0.9, CRANE.cab, CRANE.cab * 0.6, CRANE.cab * 0.45, CRANE_CAB)
+    const jib = part(CRANE.jib, 0.9, 0.9, CRANE.jib / 2, 0.45, color)
+    part(CRANE.counterJib, 0.7, 0.7, -CRANE.counterJib / 2, 0.35, color)
+    part(2, 2.5, 2, -CRANE.counterJib + 1, -0.9, CONCRETE)
+    const drop = (crane.top - crane.bottom) * CRANE.hookDrop
+    const along = CRANE.jib * CRANE.hookAlong
+    top.add(
+      new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(along, 0, 0), new THREE.Vector3(along, -drop, 0)]),
+        new THREE.LineBasicMaterial({ color: CABLE_COLOR }),
+      ),
+    )
+    part(0.8, 0.8, 0.8, along, -drop - 0.4, CONCRETE)
+    // The top turns as the frames go by, each crane at its own pace and out of step with the next.
+    const pace = CRANE.turn * (0.7 + crane.tone * 0.6)
+    const phase = crane.tone * Math.PI * 2
+    jib.onBeforeRender = () => {
+      top.rotation.y = crane.yaw + phase + (performance.now() / 1000) * pace
+    }
+    meshes.push(top)
   }
 
   // Rocks: a low-poly lump each, boulders stretched unevenly and turned, scree small and dense.

@@ -9,7 +9,7 @@ import { smoothstep } from './noise.ts'
 import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
-const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3, wall: 0.5, board: 2 }
+const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3, wall: 0.5, board: 2, site: 2.5 }
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
 
@@ -671,8 +671,9 @@ describe('buildings and trees', () => {
       if (RAISED_KINDS.includes(a.kind)) continue
       for (let j = i + 1; j < buildings.length; j++) {
         const b = buildings[j]!
-        // A lintel lies across two stones, and a canopy over its posts, on purpose.
+        // A lintel lies across two stones, and a canopy over its posts, on purpose; a crane stands within its site.
         if (RAISED_KINDS.includes(b.kind)) continue
+        if ((a.kind === 'site' && b.kind === 'crane') || (a.kind === 'crane' && b.kind === 'site')) continue
         if (Math.hypot(a.x - b.x, a.z - b.z) > reachA + Math.hypot(b.width, b.depth) / 2) continue
         expect(overlap(a, b)).toBe(false)
       }
@@ -763,6 +764,35 @@ describe('sidewalks', () => {
       }
     }
     expect(laidSides).toBeGreaterThan(40)
+  })
+
+  it('raise tower cranes on building sites in the heart of a city: each in the middle of a hoarded lot, standing above every block within 50 m', () => {
+    const cranes = map.buildings.filter((building) => building.kind === 'crane')
+    const sites = map.buildings.filter((building) => building.kind === 'site')
+    expect(cranes.length).toBeGreaterThanOrEqual(1)
+    expect(sites.length).toBe(cranes.length)
+    const perCity = new Map<number, number>()
+    for (const crane of cranes) {
+      expect(districtAt(crane.x, crane.z)).toBe(DISTRICT_CITY)
+      expect(crane.width).toBe(3)
+      // In the middle of its site, whose hoardings stand low over the ground.
+      const site = sites.find((candidate) => Math.hypot(candidate.x - crane.x, candidate.z - crane.z) < 1)
+      expect(site).toBeDefined()
+      expect(site!.top).toBeLessThan(sampleHeight(map.heightfield, site!.x, site!.z) + 8)
+      expect(site!.width).toBeGreaterThan(crane.width)
+      expect(site!.depth).toBeGreaterThan(crane.depth)
+      for (const block of map.buildings) {
+        if (block.kind !== 'block' || Math.hypot(block.x - crane.x, block.z - crane.z) > 50) continue
+        expect(crane.top).toBeGreaterThan(block.top + 5)
+      }
+      // Near the heart of its city, and no more than three to a city.
+      const city = map.districts.reduce((best, district) =>
+        Math.hypot(district.cx - crane.x, district.cz - crane.z) < Math.hypot(best.cx - crane.x, best.cz - crane.z) ? district : best,
+      )
+      expect(Math.hypot(city.cx - crane.x, city.cz - crane.z)).toBeLessThan(city.radius * 0.6)
+      perCity.set(city.id, (perCity.get(city.id) ?? 0) + 1)
+    }
+    for (const count of perCity.values()) expect(count).toBeLessThanOrEqual(3)
   })
 
   it('mark out car parks on some of the open lots, and plant street trees along the sidewalks', () => {

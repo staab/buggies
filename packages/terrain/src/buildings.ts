@@ -81,6 +81,23 @@ const INTERCHANGE_TREES = 0.6
 const INTERCHANGE_SHRUBS = 0.9
 /** Lots left as parks, one in this many. */
 const PARK_LOT_ODDS = 7
+/**
+ * Building sites: an open lot this near the heart of a city (as a share of
+ * the way in from the core's edge) is this often hoarded round, this far
+ * in from the lot's edge and this high, with a tower crane in the middle on
+ * a base this wide, no more than this many to a city. The crane stands
+ * this far above the tallest block within this reach of it, and never
+ * lower than this.
+ */
+const SITE_CORE = 0.45
+const SITE_ODDS = 0.35
+const SITES_MOST = 3
+const HOARDING_INSET = 1
+const HOARDING_HEIGHT = 2.5
+const CRANE_BASE = 3
+const CRANE_OVER = 12
+const CRANE_REACH = 50
+const CRANE_HEIGHT_LEAST = 30
 /** Storeys are this tall, and every building is a whole number of them. */
 const STOREY = 3
 /** A block's building is at least this tall, and this much taller again at random. */
@@ -766,6 +783,8 @@ function fillCities(
     }
     const first = (value: number): number => Math.floor(value / STREET_SPACING) * STREET_SPACING
 
+    // The building sites' cranes are raised once the blocks are all up, to stand above them.
+    const sites: Footprint[] = []
     for (let v0 = first(frame.vMin); v0 < frame.vMax; v0 += STREET_SPACING) {
       for (let u0 = first(frame.uMin); u0 < frame.uMax; u0 += STREET_SPACING) {
         const blockU = u0 + STREET_SPACING / 2
@@ -787,15 +806,24 @@ function fillCities(
                 depth: vTo - vFrom,
               }
               if (!inCity(lot.x, lot.z)) continue
-              // An open lot: a car park with its bays marked out, or a park.
-              if (rng() < CARPARK_ODDS && clear(lot, 0) && !placed.meets(lot, 0)) {
-                const ground = groundUnder(field, wet, lot)
-                if (!ground.wet && ground.high - ground.low <= BLOCK_RELIEF) {
-                  placed.add(lot)
-                  fields.push({ kind: 'carpark', ...lot, tone: 0 })
-                  built += 1
-                  continue
-                }
+              // An open lot: a building site near the heart of the city, or a car park with its bays marked out, or a park.
+              const heart = 1 - hypot(lot.x - district.cx, lot.z - district.cz) / district.radius
+              const open = clear(lot, 0) && !placed.meets(lot, 0)
+              const ground = open ? groundUnder(field, wet, lot) : null
+              const level = ground !== null && !ground.wet && ground.high - ground.low <= BLOCK_RELIEF
+              if (level && heart >= SITE_CORE && sites.length < SITES_MOST && rng() < SITE_ODDS) {
+                placed.add(lot)
+                const hoarding: Footprint = { ...lot, width: lot.width - 2 * HOARDING_INSET, depth: lot.depth - 2 * HOARDING_INSET }
+                buildings.push({ kind: 'site', ...hoarding, bottom: ground.low - BURY, top: ground.high + HOARDING_HEIGHT, tone: rng() })
+                sites.push(hoarding)
+                built += 1
+                continue
+              }
+              if (level && rng() < CARPARK_ODDS) {
+                placed.add(lot)
+                fields.push({ kind: 'carpark', ...lot, tone: 0 })
+                built += 1
+                continue
               }
               plantPark(lot)
               continue
@@ -859,6 +887,23 @@ function fillCities(
           }
         }
       }
+    }
+    // A tower crane in the middle of each site, standing above every block near it.
+    for (const site of sites) {
+      let tallest = -Infinity
+      for (const building of buildings) {
+        if (building.kind !== 'block' || hypot(building.x - site.x, building.z - site.z) > CRANE_REACH) continue
+        tallest = Math.max(tallest, building.top)
+      }
+      const base: Footprint = { x: site.x, z: site.z, yaw: site.yaw, width: CRANE_BASE, depth: CRANE_BASE }
+      const ground = groundUnder(field, wet, base)
+      buildings.push({
+        kind: 'crane',
+        ...base,
+        bottom: ground.low - BURY,
+        top: Math.max(ground.high + CRANE_HEIGHT_LEAST, tallest + CRANE_OVER),
+        tone: rng(),
+      })
     }
   }
 }
