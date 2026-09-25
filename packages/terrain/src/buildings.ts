@@ -263,6 +263,15 @@ const LIFT_ROAD_MARGIN = 4
 const PYLON_RELIEF = 6
 const LIFT_STATION_RELIEF = 8
 
+/**
+ * Viewpoint car parks: the lot a mountain road ends in, painted as a car
+ * park, with a low wall along its valley side and an information board at
+ * the far end of the wall from where the road comes in.
+ */
+const VIEWPOINTS_MOST = 1
+const VIEWPOINT_WALL = { thick: 0.5, height: 0.8 } as const
+const VIEWPOINT_BOARD = { width: 2.4, depth: 0.3, height: 2.2 } as const
+
 /** How far anything that stands about keeps from anything else that does. */
 const FURNITURE_GAP = 2
 /** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
@@ -1263,6 +1272,7 @@ export function generateBuildings(
   moorBoats({ ...stands, rng: createRng((seed ^ BOAT_SALT) >>> 0) })
   raiseDams(stands)
   raiseLifts(stands, mountains)
+  raiseViewpoints(stands, fields)
   raiseChurches(stands, plant)
   raiseWaterTowers(stands)
   // The camps throw their own dice too, for the same reason as the observatory.
@@ -2169,6 +2179,44 @@ function raiseLift(stands: Stands, peak: { x: number; z: number }, city: Distric
       })
     }
     return true
+}
+
+function raiseViewpoints(stands: Stands, fields: Field[]): void {
+  const { field, roads, placed, buildings, wet, rng } = stands
+  let viewpoints = 0
+  for (const climb of roads) {
+    if (climb.kind !== 'climb' || climb.lot === undefined || viewpoints >= VIEWPOINTS_MOST) continue
+    const lot: Footprint = { x: climb.lot.x, z: climb.lot.z, yaw: climb.lot.yaw, width: climb.lot.width, depth: climb.lot.depth }
+    if (districtAt(stands, lot.x, lot.z) !== DISTRICT_COUNTRY) continue
+    if (groundUnder(field, wet, lot).wet || placed.meets(lot, FURNITURE_GAP)) continue
+    placed.add(lot)
+    fields.push({ kind: 'carpark', ...lot, tone: 0 })
+    // The wall along the valley side, which the lot's depth runs down toward.
+    const { ux, uz, vx, vz } = axesOf(lot.yaw)
+    const wall: Footprint = {
+      x: lot.x + vx * (lot.depth / 2 - VIEWPOINT_WALL.thick / 2),
+      z: lot.z + vz * (lot.depth / 2 - VIEWPOINT_WALL.thick / 2),
+      yaw: lot.yaw,
+      width: lot.width,
+      depth: VIEWPOINT_WALL.thick,
+    }
+    const footing = groundUnder(field, wet, wall)
+    buildings.push({ kind: 'wall', ...wall, bottom: footing.low - BURY, top: footing.high + VIEWPOINT_WALL.height, tone: rng() })
+    // The board at the far end of the wall from where the road comes in, a step back from it.
+    const end = climb.points.at(-1)!
+    const back = climb.points[Math.max(climb.points.length - 5, 0)]!
+    const far = (end.x - back.x) * ux + (end.z - back.z) * uz < 0 ? -1 : 1
+    const board: Footprint = {
+      x: wall.x + ux * far * (lot.width / 2 - 2) - vx * 1.5,
+      z: wall.z + uz * far * (lot.width / 2 - 2) - vz * 1.5,
+      yaw: lot.yaw,
+      width: VIEWPOINT_BOARD.width,
+      depth: VIEWPOINT_BOARD.depth,
+    }
+    const post = groundUnder(field, wet, board)
+    buildings.push({ kind: 'board', ...board, bottom: post.low - BURY, top: post.high + VIEWPOINT_BOARD.height, tone: rng() })
+    viewpoints += 1
+  }
 }
 
 function moorBoats(stands: Stands): void {

@@ -8,7 +8,7 @@ import { orientedTriangle, signedDistanceToTriangle } from './mountain.ts'
 import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
-const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3 }
+const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3, wall: 0.5, board: 2 }
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
 
@@ -17,6 +17,12 @@ let map: TerrainMap
 function districtAt(x: number, z: number): number {
   const { width, cellSize } = map.heightfield
   return map.districtOf[Math.floor(z / cellSize) * width + Math.floor(x / cellSize)]!
+}
+
+/** The district a point of an island lies in. */
+function districtOf(island: TerrainMap, x: number, z: number): number {
+  const { width, cellSize } = island.heightfield
+  return island.districtOf[Math.floor(z / cellSize) * width + Math.floor(x / cellSize)]!
 }
 
 /** The corners of a footprint, its centre and the middle of each side. */
@@ -275,6 +281,52 @@ describe('buildings and trees', () => {
     }
     expect(lifts).toBeGreaterThanOrEqual(1)
   }, 120_000)
+
+  it('park at a viewpoint at the top of a mountain road: a level lot the road runs into, with a wall on the valley side and a board', () => {
+    let viewpoints = 0
+    for (const seed of [1, 2, 3, 4]) {
+      const island = seed === 1 ? map : generateTerrain(seed)
+      const lots = island.fields.filter((field) => field.kind === 'carpark' && districtOf(island, field.x, field.z) === DISTRICT_COUNTRY)
+      const walls = island.buildings.filter((building) => building.kind === 'wall')
+      const boards = island.buildings.filter((building) => building.kind === 'board')
+      expect(lots.length).toBeLessThanOrEqual(1)
+      expect(walls.length).toBe(lots.length)
+      expect(boards.length).toBe(lots.length)
+      for (const lot of lots) {
+        viewpoints++
+        const sin = Math.sin(lot.yaw)
+        const cos = Math.cos(lot.yaw)
+        // In the lot's own frame: u along its width, v across its depth toward the valley.
+        const frame = (x: number, z: number): { u: number; v: number } => ({
+          u: (x - lot.x) * cos - (z - lot.z) * sin,
+          v: (x - lot.x) * sin + (z - lot.z) * cos,
+        })
+        // The mountain road ends inside the lot.
+        const climb = island.roads.find((road) => road.kind === 'climb')
+        expect(climb).toBeDefined()
+        const end = frame(climb!.points.at(-1)!.x, climb!.points.at(-1)!.z)
+        expect(Math.abs(end.u)).toBeLessThan(lot.width / 2)
+        expect(Math.abs(end.v)).toBeLessThan(lot.depth / 2)
+        // The lot is level, and the road's end sits on it.
+        const at = (u: number, v: number): number => sampleHeight(island.heightfield, lot.x + u * cos + v * sin, lot.z - u * sin + v * cos)
+        const corners = [at(0, 0), at(-14, -9), at(14, -9), at(-14, 9), at(14, 9)]
+        expect(Math.max(...corners) - Math.min(...corners)).toBeLessThan(0.6)
+        expect(Math.abs(climb!.points.at(-1)!.y - at(end.u, end.v))).toBeLessThan(0.5)
+        // The wall along the valley side, low, with the ground falling away beyond it.
+        const wall = walls[0]!
+        const edge = { x: lot.x + (sin * lot.depth) / 2, z: lot.z + (cos * lot.depth) / 2 }
+        expect(Math.hypot(wall.x - edge.x, wall.z - edge.z)).toBeLessThan(1)
+        expect(wall.top - wall.bottom).toBeLessThan(4)
+        expect(at(0, lot.depth / 2 + 16)).toBeLessThan(at(0, 0) - 2)
+        // The board stands within the lot, near the wall.
+        const board = frame(boards[0]!.x, boards[0]!.z)
+        expect(Math.abs(board.u)).toBeLessThan(lot.width / 2)
+        expect(board.v).toBeGreaterThan(lot.depth / 2 - 4)
+        expect(board.v).toBeLessThan(lot.depth / 2)
+      }
+    }
+    expect(viewpoints).toBeGreaterThanOrEqual(3)
+  }, 240_000)
 
   it('moor a few boats off the shore, in deep enough water, with the shore in sight but not close, and apart', () => {
     const boats = map.buildings.filter((building) => building.kind === 'boat')
@@ -662,7 +714,8 @@ describe('sidewalks', () => {
   })
 
   it('mark out car parks on some of the open lots, and plant street trees along the sidewalks', () => {
-    const carparks = map.fields.filter((field) => field.kind === 'carpark')
+    // A car park is in the city, but for a viewpoint's at the top of a mountain road.
+    const carparks = map.fields.filter((field) => field.kind === 'carpark' && districtAt(field.x, field.z) !== DISTRICT_COUNTRY)
     expect(carparks.length).toBeGreaterThanOrEqual(1)
     for (const lot of carparks) expect(districtAt(lot.x, lot.z)).toBe(DISTRICT_CITY)
     let onSidewalks = 0

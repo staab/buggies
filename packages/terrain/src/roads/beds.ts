@@ -5,6 +5,7 @@ import {
   CUT_CLEARANCE,
   CUT_SLOPE,
   MAX_ARTERIAL_GRADE,
+  MAX_CLIMB_GRADE,
   MAX_RAMP_CURVATURE,
   MAX_RAMP_GRADE,
   MAX_ROAD_CURVATURE,
@@ -453,6 +454,7 @@ function limitRunGrade(points: RoadPoint[], from: number, to: number, maxGrade: 
 /** The grade a surface road of this kind is held to. */
 function surfaceGradeLimit(road: Road): number {
   if (road.kind === 'ramp') return MAX_RAMP_GRADE
+  if (road.kind === 'climb') return MAX_CLIMB_GRADE
   return road.kind === 'arterial' ? MAX_ARTERIAL_GRADE : MAX_ROAD_GRADE
 }
 

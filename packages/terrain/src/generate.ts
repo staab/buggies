@@ -583,6 +583,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     map.lakes,
     seed,
     map.districtOf,
+    map.mountains,
   )
   Object.assign(
     map,
