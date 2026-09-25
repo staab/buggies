@@ -353,6 +353,12 @@ export class LocalPrediction {
       seat.score = vehicle.score
       seat.weapon = vehicle.weapon
       seat.ammoTicks = vehicle.ammoTicks
+      seat.actionTicks = vehicle.actionTicks
+      seat.cooldownTicks = vehicle.cooldownTicks
+      seat.lightsOn = vehicle.lightsOn
+      seat.stunnedTicks = vehicle.stunnedTicks
+      seat.slowedTicks = vehicle.slowedTicks
+      seat.slowedBy = vehicle.slowedBy
     }
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,

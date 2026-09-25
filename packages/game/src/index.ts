@@ -119,6 +119,20 @@ export {
   WINGS_FLIGHT_TICKS,
   WINGS_THRUST,
   WINGS_TURN,
+  BOOST_PUSH,
+  EMERGENCY_SLOW,
+  HOP_SPEED,
+  HORN_RANGE,
+  HORN_STUN_TICKS,
+  OWN_ACTIONS,
+  SHOCKWAVE_RANGE,
+  SHOCKWAVE_STUN_TICKS,
+  SIREN_RANGE,
+  SIREN_SLOW,
+  SIREN_TICKS,
+  SLOW_DRAG,
+  SLOW_HOLD_TICKS,
+  acting,
   ammoFor,
   arm,
   burning,
@@ -126,14 +140,21 @@ export {
   fireWeapons,
   flyRockets,
   hasBuiltInGun,
+  hinder,
+  lifting,
   mountPoint,
   muzzlePoint,
+  ownAction,
   pushWithWeapons,
+  restAction,
   rocketId,
+  stunned,
   weaponWon,
   type Battlefield,
   type Gunner,
   type Muzzle,
+  type OwnAction,
+  type OwnActionKind,
   type Rocket,
   type Shot,
   type Weapon,
@@ -147,7 +168,11 @@ import {
   disarm,
   fireWeapons,
   flyRockets,
+  hinder,
+  lifting,
   pushWithWeapons,
+  restAction,
+  stunned,
   weaponWon,
   type Rocket,
   type Shot,
@@ -198,6 +223,16 @@ export interface Seat {
   ammoTicks: number
   /** The seat the machine gun is trained on, or none. */
   aimTarget: number
+  /** The car's own action, when it carries nothing: how long it has left, how long before it may go again, and whether its lights are on. */
+  actionTicks: number
+  cooldownTicks: number
+  lightsOn: boolean
+  /** Whether the fire key was down last tick, so that a press is told from a hold. */
+  fireHeld: boolean
+  /** How long it is stunned for, taking no driving, and slowed for, held back by this share of a full slow. */
+  stunnedTicks: number
+  slowedTicks: number
+  slowedBy: number
 }
 
 /**
@@ -250,6 +285,13 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       weapon: 'none',
       ammoTicks: 0,
       aimTarget: NO_TARGET,
+      actionTicks: 0,
+      cooldownTicks: 0,
+      lightsOn: false,
+      fireHeld: false,
+      stunnedTicks: 0,
+      slowedTicks: 0,
+      slowedBy: 0,
     }
   })
 
@@ -334,6 +376,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   seat.occupied = true
   seat.score = 0
   disarm(seat)
+  restAction(seat)
   seat.vehicle.body.setEnabled(true)
   respawn(seat)
   return seat
@@ -346,6 +389,7 @@ export function leaveSeat(arena: Arena, id: number): void {
   seat.occupied = false
   seat.score = 0
   disarm(seat)
+  restAction(seat)
   seat.vehicle.body.setEnabled(false)
 }
 
@@ -379,14 +423,16 @@ export function advance(
   const gravity = worldGravity(arena.world)
   for (const seat of arena.seats) {
     if (!seat.occupied) continue
-    const input = inputFor(seat)
+    // A stunned car takes no driving.
+    const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
     // A car its engine or wings are driving along is not one the tyres hold
     // still, and one its wings are lifting is not one the road holds down.
     const lit = burning(seat, input.fire)
     seat.vehicle.boosted = lit
-    seat.vehicle.lifted = lit && seat.weapon === 'wings'
+    seat.vehicle.lifted = lifting(seat, input.fire)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     pushWithWeapons(seat, gravity)
+    hinder(seat)
     const level = waterUnder(arena, seat)
     seat.submersion =
       level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level)

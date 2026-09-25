@@ -18,6 +18,12 @@ import {
   SPILL_LIFE_TICKS,
   WEAPONS,
   WINGS_FLIGHT_TICKS,
+  HORN_STUN_TICKS,
+  OWN_ACTIONS,
+  SHOCKWAVE_STUN_TICKS,
+  SIREN_SLOW,
+  SIREN_TICKS,
+  EMERGENCY_SLOW,
   advance,
   ammoFor,
   arm,
@@ -33,6 +39,7 @@ import {
   type Arena,
   type Seat,
   type VehicleInput,
+  type VehicleProfileId,
 } from './index.ts'
 
 let map: TerrainMap
@@ -304,6 +311,203 @@ describe('weapons', () => {
     for (let i = 0; i < ROCKET_LIFE_TICKS; i++) advance(arena)
     expect(arena.rockets).toHaveLength(0)
     expect(b.vehicle.damage).toBe(0)
+    arena.world.free()
+  })
+})
+
+/** Press the fire key once: down for a tick, then up for a tick. */
+function press(arena: Arena, shooter: Seat): void {
+  advance(arena, (seat) => (seat === shooter ? FIRE : NEUTRAL_INPUT))
+  advance(arena)
+}
+
+/** Two cars of these kinds: one on its spawn, and another this far ahead of it, facing the same way, settled. */
+function twoCars(arena: Arena, first: VehicleProfileId, second: VehicleProfileId, ahead: number): [Seat, Seat] {
+  const a = takeSeat(arena, 0, first)
+  const b = takeSeat(arena, 1, second)
+  advance(arena)
+  const { position, forward } = a.vehicle.frame
+  const x = position.x + forward.x * ahead
+  const z = position.z + forward.z * ahead
+  respawn(b, { position: { x, y: sampleHeight(map.heightfield, x, z), z }, yaw: a.spawn.yaw })
+  for (let i = 0; i < 30; i++) advance(arena)
+  return [a, b]
+}
+
+describe('the fire key without a powerup', () => {
+  beforeAll(() => {
+    initPhysics()
+    map ??= generateTerrain(3)
+  }, 60_000)
+
+  it('the tank fires a missile from its gun on a press, and not again until it has cooled down', () => {
+    const arena = createArena(map)
+    const [a] = twoCars(arena, 'tank', 'sportsCar', 30)
+    press(arena, a)
+    expect(arena.rockets.length + arena.loose.length).toBeGreaterThanOrEqual(1)
+    const fired = arena.rockets.length
+    expect(fired).toBe(1)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    // Held on, or pressed again, nothing more goes while it cools.
+    fire(arena, a, 30)
+    press(arena, a)
+    expect(arena.rockets.length).toBeLessThanOrEqual(1)
+    for (let i = 0; i < OWN_ACTIONS.tank.cooldownTicks; i++) advance(arena)
+    expect(a.cooldownTicks).toBe(0)
+    press(arena, a)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
+  it('the go-kart hops from the ground, and not from the air', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'goKart')
+    for (let i = 0; i < 60; i++) advance(arena)
+    expect(a.vehicle.groundedCount).toBeGreaterThan(0)
+    // The hop goes on the press, and shows in the car's speed from the step after.
+    advance(arena, () => FIRE)
+    expect(a.actionTicks).toBeGreaterThan(0)
+    advance(arena)
+    expect(a.vehicle.frame.linearVelocity.y).toBeGreaterThan(2)
+    // Up in the air, another press gives nothing more.
+    for (let i = 0; i < 4; i++) advance(arena)
+    const rising = a.vehicle.frame.linearVelocity.y
+    advance(arena, () => FIRE)
+    expect(a.vehicle.frame.linearVelocity.y).toBeLessThan(rising + 0.05)
+    arena.world.free()
+  })
+
+  it('the race car boosts while the key is held, for its time, then cools down', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'raceCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    const drive: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1, fire: true }
+    // The boost starts on the press, and pushes from the step after.
+    advance(arena, () => drive)
+    advance(arena, () => drive)
+    expect(a.vehicle.boosted).toBe(true)
+    expect(a.actionTicks).toBe(OWN_ACTIONS.raceCar.activeTicks - 2)
+    for (let i = 0; i < OWN_ACTIONS.raceCar.activeTicks; i++) advance(arena, () => drive)
+    expect(a.actionTicks).toBe(0)
+    expect(a.vehicle.boosted).toBe(false)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    // Pressed again while cooling, it stays off.
+    press(arena, a)
+    expect(a.actionTicks).toBe(0)
+    arena.world.free()
+  })
+
+  it('an emergency vehicle turns its lights on and off with a press, and slows the cars near it while they are on', () => {
+    const arena = createArena(map)
+    const [a, b] = twoCars(arena, 'police', 'sportsCar', 15)
+    expect(a.lightsOn).toBe(false)
+    // A press turns them on, and holding the key on from it leaves them on.
+    fire(arena, a, 20)
+    expect(a.lightsOn).toBe(true)
+    expect(b.slowedTicks).toBeGreaterThan(0)
+    expect(b.slowedBy).toBe(EMERGENCY_SLOW)
+    // Let go and pressed again, off.
+    advance(arena)
+    press(arena, a)
+    expect(a.lightsOn).toBe(false)
+    for (let i = 0; i < 5; i++) advance(arena)
+    expect(b.slowedTicks).toBe(0)
+    expect(b.slowedBy).toBe(0)
+    arena.world.free()
+  })
+
+  it('the sports car fires its own gun while the key is held, trained on the car ahead, and cools down', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 30, 0)
+    const shots = fire(arena, a, 60)
+    expect(shots).toBeGreaterThan(5)
+    expect(b.vehicle.damage).toBeGreaterThan(0)
+    expect(a.actionTicks).toBeGreaterThan(0)
+    fire(arena, a, OWN_ACTIONS.sportsCar.activeTicks)
+    expect(a.actionTicks).toBe(0)
+    expect(fire(arena, a, 10)).toBe(0)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
+  it('the small car flies on wings of its own while the key is held', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'smallCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    const start = a.vehicle.frame.position.y
+    fire(arena, a, 90)
+    expect(a.vehicle.lifted).toBe(true)
+    expect(a.vehicle.frame.position.y).toBeGreaterThan(start + 2)
+    arena.world.free()
+  })
+
+  it('the semi honks: a car within ten metres is stunned for a second, and one further off is not', () => {
+    const arena = createArena(map)
+    const [a, near] = twoCars(arena, 'semi', 'sportsCar', 8)
+    const far = takeSeat(arena, 2, 'sportsCar')
+    const { position, forward } = a.vehicle.frame
+    const x = position.x + forward.x * 25
+    const z = position.z + forward.z * 25
+    respawn(far, { position: { x, y: sampleHeight(map.heightfield, x, z), z }, yaw: a.spawn.yaw })
+    for (let i = 0; i < 30; i++) advance(arena)
+    advance(arena, (seat) => (seat === a ? FIRE : NEUTRAL_INPUT))
+    expect(near.stunnedTicks).toBe(HORN_STUN_TICKS)
+    expect(far.stunnedTicks).toBe(0)
+    expect(a.actionTicks).toBe(OWN_ACTIONS.semi.activeTicks)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    // A stunned car takes no driving.
+    const drive: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
+    for (let i = 0; i < 30; i++) advance(arena, (seat) => (seat === near ? drive : NEUTRAL_INPUT))
+    expect(near.vehicle.speed).toBeLessThan(0.5)
+    arena.world.free()
+  })
+
+  it('the pickup drops a bomb behind it on a press, and not another until it has cooled down', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'pickup')
+    for (let i = 0; i < 30; i++) advance(arena)
+    press(arena, a)
+    expect(arena.loose.filter((loose) => loose.kind === 'bomb').length).toBe(1)
+    press(arena, a)
+    expect(arena.loose.filter((loose) => loose.kind === 'bomb').length).toBe(1)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
+  it('a powerup takes the key over from the car\'s own action', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'raceCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    arm(a, 'rocket')
+    press(arena, a)
+    expect(arena.rockets.length).toBe(1)
+    expect(a.actionTicks).toBe(0)
+    expect(a.weapon).toBe('none')
+    arena.world.free()
+  })
+
+  it('the shockwave stuns every car within thirty metres for five seconds', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 20, 0)
+    arm(a, 'shockwave')
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    expect(b.stunnedTicks).toBe(SHOCKWAVE_STUN_TICKS)
+    for (let i = 0; i < SHOCKWAVE_STUN_TICKS; i++) advance(arena)
+    expect(b.stunnedTicks).toBe(0)
+    arena.world.free()
+  })
+
+  it('the siren slows the cars near it by half while it sounds, and runs out', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 20, 0)
+    arm(a, 'siren')
+    fire(arena, a, 10)
+    expect(b.slowedTicks).toBeGreaterThan(0)
+    expect(b.slowedBy).toBe(SIREN_SLOW)
+    expect(a.ammoTicks).toBe(SIREN_TICKS - 10)
+    fire(arena, a, SIREN_TICKS)
+    expect(a.weapon).toBe('none')
     arena.world.free()
   })
 })

@@ -3,6 +3,7 @@ import {
   FIXED_TIMESTEP,
   NEUTRAL_INPUT,
   NO_TARGET,
+  OWN_ACTIONS,
   addHeightfield,
   createPhysicsWorld,
   createVehicle,
@@ -46,11 +47,33 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     weapon: 'none',
     ammoTicks: 0,
     aimTarget: NO_TARGET,
+    actionTicks: 0,
+    cooldownTicks: 0,
+    lightsOn: false,
+    fireHeld: false,
+    stunnedTicks: 0,
+    slowedTicks: 0,
+    slowedBy: 0,
   }
   return { seat, free: () => world.free() }
 }
 
 describe('a car on the screen', () => {
+  it('names its own action when it carries nothing, with the time left of it or before it may go again', () => {
+    const { seat, free } = seatOnFlat()
+    const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })
+    const own = OWN_ACTIONS[seat.profile]
+    presence.render(0, FIXED_TIMESTEP)
+    expect(presence.weaponLabel).toBe(own.label)
+    seat.cooldownTicks = 150
+    expect(presence.weaponLabel).toBe(`${own.label} 3s`)
+    seat.cooldownTicks = 0
+    seat.actionTicks = 60
+    expect(presence.weaponLabel).toBe(own.kind === 'boost' || own.kind === 'gun' || own.kind === 'fly' ? `${own.label} 1s` : own.label)
+    presence.dispose()
+    free()
+  })
+
   beforeAll(async () => {
     await initPhysics()
   })

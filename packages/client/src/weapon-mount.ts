@@ -3,7 +3,7 @@ import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import { disposeObject } from './dispose.ts'
-import { buildBomb, buildEngine, buildGun, buildRocket, buildWings } from './weapon-models.ts'
+import { buildBomb, buildEngine, buildGun, buildHorn, buildRocket, buildSpeaker, buildWings } from './weapon-models.ts'
 
 /** How the mount bobs and sways as it hovers. */
 const BOB = 0.08
@@ -31,6 +31,8 @@ export class WeaponMount {
   private readonly bomb = buildBomb()
   private readonly engine = buildEngine()
   private readonly wings = buildWings()
+  private readonly horn = buildHorn()
+  private readonly speaker = buildSpeaker()
   private readonly height: number
   /** Whether the car has a gun of its own: the rocket and the gun are not mounted over its roof. */
   private readonly builtInGun: boolean
@@ -47,8 +49,10 @@ export class WeaponMount {
     this.bomb.visible = false
     this.engine.model.visible = false
     this.wings.visible = false
+    this.horn.visible = false
+    this.speaker.visible = false
     this.gun.quaternion.copy(AHEAD)
-    this.object.add(this.rocket, this.gun, this.bomb, this.engine.model, this.wings)
+    this.object.add(this.rocket, this.gun, this.bomb, this.engine.model, this.wings, this.horn, this.speaker)
   }
 
   /** Where the gun points: at this, or dead ahead for nothing. */
@@ -85,6 +89,8 @@ export class WeaponMount {
     this.bomb.visible = weapon === 'bomb'
     this.engine.model.visible = weapon === 'engine'
     this.wings.visible = weapon === 'wings'
+    this.horn.visible = weapon === 'siren'
+    this.speaker.visible = weapon === 'shockwave'
   }
 
   update(dt: number): void {
@@ -104,7 +110,7 @@ export class WeaponMount {
 
   dispose(): void {
     this.object.removeFromParent()
-    for (const model of [this.rocket, this.gun, this.bomb, this.engine.model, this.wings]) disposeObject(model)
+    for (const model of [this.rocket, this.gun, this.bomb, this.engine.model, this.wings, this.horn, this.speaker]) disposeObject(model)
     this.object.clear()
   }
 }

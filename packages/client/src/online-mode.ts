@@ -131,7 +131,7 @@ export async function joinOnline(
       // the server keeps going, and so must the mirror.
       const held = active ? keyboard.read() : null
       // Nothing goes while the roll that reveals what was won is still on.
-      if (held !== null && !car.presence.armed) held.fire = false
+      if (held !== null && car.presence.rolling) held.fire = false
       const input = held ?? NEUTRAL_INPUT
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {

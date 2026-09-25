@@ -89,6 +89,12 @@ function gatherVehicles(
       score: 0,
       weapon: 'none',
       ammoTicks: 0,
+      actionTicks: 0,
+      cooldownTicks: 0,
+      lightsOn: false,
+      stunnedTicks: 0,
+      slowedTicks: 0,
+      slowedBy: 0,
       appliedInput: createVehicleInput(),
     })
     vehicle.seat = seat.id
@@ -103,6 +109,12 @@ function gatherVehicles(
     vehicle.score = seat.score
     vehicle.weapon = seat.weapon
     vehicle.ammoTicks = seat.ammoTicks
+    vehicle.actionTicks = seat.actionTicks
+    vehicle.cooldownTicks = seat.cooldownTicks
+    vehicle.lightsOn = seat.lightsOn
+    vehicle.stunnedTicks = seat.stunnedTicks
+    vehicle.slowedTicks = seat.slowedTicks
+    vehicle.slowedBy = seat.slowedBy
     Object.assign(vehicle.appliedInput, appliedInputOf(seat))
     count += 1
   }
