@@ -90,7 +90,7 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
 export const BOMB_DROP_BACK = 5
 
 /** Every so many bananas wins something. */
-export const BANANAS_PER_WEAPON = 1
+export const BANANAS_PER_WEAPON = 5
 
 /** How far over the roof a weapon rides, and rockets and bullets leave from. */
 export const MOUNT_HEIGHT = 1.1
@@ -127,7 +127,7 @@ export const NOSE_UP = 0.2
  * and the wings hold the car up, in ticks; the gun fires a shot every so
  * many of them.
  */
-export const MACHINE_GUN_AMMO_TICKS = 60 * 10
+export const MACHINE_GUN_AMMO_TICKS = 60 * 5
 export const ENGINE_BURN_TICKS = 60 * 10
 export const WINGS_FLIGHT_TICKS = 60 * 10
 export const MACHINE_GUN_SHOT_TICKS = 6
@@ -165,7 +165,7 @@ export const WINGS_THRUST = 9
  * second at a full slow, and stays slowed this long after the siren has
  * passed it.
  */
-export const SIREN_TICKS = 60 * 10
+export const SIREN_TICKS = 60 * 5
 export const SIREN_RANGE = 30
 export const SIREN_SLOW = 0.5
 export const SHOCKWAVE_RANGE = 30
@@ -181,14 +181,14 @@ export const BOMB_DAMAGE = 1
  * after, at a full slick.
  */
 export const OIL_GRIP = 0.2
-export const OIL_SLIP_TICKS = 60 * 2
+export const OIL_SLIP_TICKS = 60 * 5
 
 /** The shield keeps off everything the weapons do to a car, damage, stuns and slows, for this long. */
-export const SHIELD_TICKS = 60 * 8
+export const SHIELD_TICKS = 60 * 10
 
 /** The magnet takes every banana within this of the car, for this long. */
 export const MAGNET_REACH = 25
-export const MAGNET_TICKS = 60 * 6
+export const MAGNET_TICKS = 60 * 30
 
 /**
  * The triple rocket fires this many rockets, fanned out by this much

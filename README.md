@@ -28,23 +28,23 @@ In **2 players** mode, two people share one keyboard on a split screen, and each
 
 ## Bananas
 
-Bananas float around every island, turning slowly. Drive through one to collect it, and another appears somewhere else a little later. A car carrying nothing spends a banana on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved for the next one. A wrecked car spills up to sixteen of its bananas around the wreck for anyone to collect. An island holds at most 256 loose items, and past that the oldest disappear.
+Bananas float around every island, turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has five bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills up to sixteen of its bananas around the wreck for anyone to collect. An island holds at most 256 loose items, and past that the oldest disappear.
 
 ## Power-ups
 
 The fire key uses whatever the car carries.
 
 - **Rocket** chases the nearest car ahead and takes most of its health when it hits.
-- **Machine gun** aims at the nearest car ahead and fires while the key is held, for ten seconds in total. A few seconds of hits destroys a car.
+- **Machine gun** aims at the nearest car ahead and fires while the key is held, for five seconds in total. A few seconds of hits destroys a car.
 - **Bomb** drops behind the car and floats there until a car runs into it and is wrecked. Once it has landed, it wrecks the car that dropped it too.
 - **Rocket engine** pushes the car forward while the key is held, for ten seconds in total.
 - **Wings** lift the car into the air while the key is held, for ten seconds in total. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. A car carrying wings steers this way whenever it is airborne, whether or not the key is held.
 - **Shockwave** stuns every other car within 30 meters for five seconds.
-- **Siren** slows every other car within 30 meters by half while the key is held, for ten seconds in total.
+- **Siren** slows every other car within 30 meters by half while the key is held, for five seconds in total.
 - **Repair** fully repairs the car immediately. It appears as a red cross on a white disc.
-- **Oil slick** drops a pool of oil behind the car that lasts 20 seconds. Any car that drives into it, including the one that dropped it once it has landed, keeps a fifth of its grip while in it and for two seconds after.
-- **Shield** protects the car for eight seconds from weapon damage, stuns and slows, and from being shoved by a ram plow or dragged by a grappling hook.
-- **Magnet** collects every banana within 25 meters for six seconds.
+- **Oil slick** drops a pool of oil behind the car that lasts a minute. Any car that drives into it, including the one that dropped it once it has landed, keeps a fifth of its grip while in it and for five seconds after.
+- **Shield** protects the car for ten seconds from weapon damage, stuns and slows, and from being shoved by a ram plow or dragged by a grappling hook.
+- **Magnet** collects every banana within 25 meters for 30 seconds.
 - **Triple rocket** fires three rockets in a fan, each with half the blast of a rocket. Each chases a different car ahead, nearest first, and any rocket left over chases the nearest.
 - **Ram plow** mounts a blade on the front of the car for ten seconds. Cars and props in front of it are thrown forward, faster than the car is closing on them.
 - **Grappling hook** catches the nearest car within 60 meters ahead and reels the two together for four seconds, pulling the car that fired it harder. With no car ahead, the line shoots out and back and the hook is spent.
