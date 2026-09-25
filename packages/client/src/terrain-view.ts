@@ -222,6 +222,11 @@ const CABIN_ROOF = new THREE.Color('#c9c4b8')
 const CABIN_GLASS = new THREE.Color('#3a4750')
 /** How far over the sea the boot-top's dark band shows. */
 const BOOT_TOP_OVER = 0.15
+/** A dam's concrete, the darker spillway down its face, the white of the water down it, and the railing along its crest. */
+const DAM_COLOR = new THREE.Color('#c9c6bd')
+const SPILLWAY_COLOR = new THREE.Color('#9a9993')
+const SPILL_WATER = new THREE.Color('#eaf3f6')
+const DAM_RAIL = { height: 0.9, thick: 0.15 } as const
 /** How far a building's bottom is buried below the ground, as the generator does it. */
 const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
@@ -1321,6 +1326,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const caravans = ofKind('caravan')
   const firepits = ofKind('firepit')
   const boats = ofKind('boat')
+  const dams = ofKind('dam')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -1869,6 +1875,32 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       upright(boat, matrix, 0.12, 0.12, 1.6, boat.top + 4.2, boat.width * 0.2)
       color.copy(IRONWORK)
     }),
+  )
+
+  // A dam: a concrete wall across the valley, a spillway stepped down its
+  // downstream face with a streak of white water on it, and a railing
+  // along each edge of the crest.
+  meshes.push(
+    instanced(box, plain, dams, (dam, matrix, color) => {
+      boxAt(dam, matrix)
+      color.copy(DAM_COLOR)
+    }),
+    instanced(box, plain, dams, (dam, matrix, color) => {
+      const rise = (dam.top - dam.bottom) * 0.55
+      upright(dam, matrix, dam.width * 0.3, rise, dam.depth * 0.6, dam.bottom + rise / 2, 0, dam.depth * 0.8)
+      color.copy(SPILLWAY_COLOR)
+    }),
+    instanced(box, plain, dams, (dam, matrix, color) => {
+      const rise = (dam.top - dam.bottom) * 0.55
+      upright(dam, matrix, dam.width * 0.12, rise + 0.2, 0.3, dam.bottom + rise / 2 + 0.1, 0, dam.depth * 1.1 + 0.15)
+      color.copy(SPILL_WATER)
+    }),
+    ...[-1, 1].map((side) =>
+      instanced(box, plain, dams, (dam, matrix, color) => {
+        upright(dam, matrix, dam.width, DAM_RAIL.height, DAM_RAIL.thick, dam.top + DAM_RAIL.height / 2, 0, side * (dam.depth / 2 - 0.3))
+        color.copy(IRONWORK)
+      }),
+    ),
   )
 
   return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)

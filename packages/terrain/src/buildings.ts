@@ -226,6 +226,24 @@ const BOAT = { length: { min: 7, max: 12 }, beam: { min: 2.6, max: 3.6 }, draft:
 const BOAT_WATER = { depth: 2, offshore: 25, nearShore: 120 } as const
 const BOATS_APART = 45
 
+/**
+ * A dam across a river: a wall from bank to bank at a narrow point of the
+ * valley, its crest well above the water and level with the banks it
+ * meets, so a car crosses the valley on it. Below a lake's outlet by
+ * choice, where there is a lake; else at the narrowest gorge on any river.
+ * One per island at most.
+ */
+const DAMS_MOST = 1
+/** How high the crest stands over the river, how thick the wall is, and how far it bites into each bank. */
+const DAM = { height: 10, thick: 6, bite: 3 } as const
+/** How far downstream of a lake's outlet the valley is looked at for a dam. */
+const DAM_BELOW = { least: 40, most: 80 } as const
+/** A river is dammed no nearer than this to its source or its mouth, and no lower than this over the sea. */
+const DAM_RIVER = { fromEnds: 60, overSea: 3 } as const
+/** How wide a valley may be at the crest's height and still be dammed, and how narrow it must be to be worth it. */
+const DAM_SPAN = { least: 16, most: 120 } as const
+const DAM_ROAD_MARGIN = 6
+
 /** How far anything that stands about keeps from anything else that does. */
 const FURNITURE_GAP = 2
 /** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
@@ -1203,6 +1221,8 @@ export function generateBuildings(
     districts,
     districtOf,
     roads,
+    rivers,
+    lakes,
     clear,
     wet,
     placed,
@@ -1222,6 +1242,7 @@ export function generateBuildings(
   raiseStones(stands)
   raiseLighthouses(stands)
   moorBoats({ ...stands, rng: createRng((seed ^ BOAT_SALT) >>> 0) })
+  raiseDams(stands)
   raiseChurches(stands, plant)
   raiseWaterTowers(stands)
   // The camps throw their own dice too, for the same reason as the observatory.
@@ -1238,6 +1259,8 @@ interface Stands {
   districts: District[]
   districtOf: Uint8Array
   roads: Road[]
+  rivers: River[]
+  lakes: Lake[]
   clear: (footprint: Footprint, margin: number) => boolean
   wet: (x: number, z: number) => boolean
   placed: Placed
@@ -1899,6 +1922,122 @@ function shoreSpots(stands: Stands): ShoreSpot[] {
  * walked for such water, and boats are set down on it at random, each
  * turned as it lies at anchor and none too near another.
  */
+/** Where a dam could stand: the wall's middle and the way across the valley, the way downstream, the valley's width and the water's height. */
+interface DamSite {
+  x: number
+  z: number
+  dx: number
+  dz: number
+  span: number
+  water: number
+}
+
+/**
+ * The narrowest place to dam a river between two distances along it: at
+ * each point the valley is measured out from the river on either side to
+ * where the bank rises to the crest's height, and the narrowest that both
+ * banks reach in time is the site.
+ */
+function damSite(field: Heightfield, seaLevel: number, river: River, from: number, to: number): DamSite | null {
+  let travelled = 0
+  let best: DamSite | null = null
+  for (let i = 1; i + 1 < river.points.length; i++) {
+    const point = river.points[i]!
+    const last = river.points[i - 1]!
+    travelled += hypot(point.x - last.x, point.z - last.z)
+    if (travelled < from) continue
+    if (travelled > to) break
+    if (point.y < seaLevel + DAM_RIVER.overSea) continue
+    const next = river.points[i + 1]!
+    const dx = next.x - last.x
+    const dz = next.z - last.z
+    const run = hypot(dx, dz) || 1
+    const nx = -dz / run
+    const nz = dx / run
+    const crest = point.y + DAM.height
+    // A bank is where the ground rises to the crest and stays there as far
+    // as the wall bites into it, not a spur it would slip off behind.
+    const bank = (side: number): number => {
+      const groundAt = (out: number): number => sampleHeight(field, point.x + nx * side * out, point.z + nz * side * out)
+      for (let out = 2; out <= DAM_SPAN.most; out += 2) {
+        if (groundAt(out) >= crest && groundAt(out + DAM.bite) >= crest) return out
+      }
+      return Infinity
+    }
+    const left = bank(-1)
+    const right = bank(1)
+    const span = left + right
+    if (span < DAM_SPAN.least || span > DAM_SPAN.most) continue
+    if (best === null || span < best.span) {
+      best = {
+        x: point.x + nx * ((right - left) / 2),
+        z: point.z + nz * ((right - left) / 2),
+        dx: dx / run,
+        dz: dz / run,
+        span,
+        water: point.y,
+      }
+    }
+  }
+  return best
+}
+
+function raiseDams(stands: Stands): void {
+  const { field, seaLevel, rivers, lakes, districtOf, placed, buildings, rng } = stands
+  const { width, cellSize } = field
+  const cellAt = (x: number, z: number): number => Math.floor(z / cellSize) * width + Math.floor(x / cellSize)
+  const riverLength = (river: River): number => {
+    let total = 0
+    for (let i = 1; i < river.points.length; i++) total += hypot(river.points[i]!.x - river.points[i - 1]!.x, river.points[i]!.z - river.points[i - 1]!.z)
+    return total
+  }
+  // The sites worth a dam, below the lakes first, then the gorges, narrowest first.
+  const belowLakes: DamSite[] = []
+  for (const lake of lakes) {
+    const cells = new Set(lake.cells)
+    for (const river of rivers) {
+      // The outlet: the last of the river's points still on the lake.
+      let outlet = -1
+      let along = 0
+      let atOutlet = 0
+      for (const [i, point] of river.points.entries()) {
+        if (i > 0) along += hypot(point.x - river.points[i - 1]!.x, point.z - river.points[i - 1]!.z)
+        if (cells.has(cellAt(point.x, point.z))) {
+          outlet = i
+          atOutlet = along
+        }
+      }
+      if (outlet < 0) continue
+      const site = damSite(field, seaLevel, river, atOutlet + DAM_BELOW.least, atOutlet + DAM_BELOW.most)
+      if (site !== null) belowLakes.push(site)
+    }
+  }
+  const gorges: DamSite[] = []
+  for (const river of rivers) {
+    const site = damSite(field, seaLevel, river, DAM_RIVER.fromEnds, riverLength(river) - DAM_RIVER.fromEnds)
+    if (site !== null) gorges.push(site)
+  }
+  gorges.sort((a, b) => a.span - b.span)
+  let dams = 0
+  for (const site of [...belowLakes, ...gorges]) {
+    if (dams >= DAMS_MOST) break
+    // The wall's width runs across the valley, and its depth downstream.
+    const wall: Footprint = {
+      x: site.x,
+      z: site.z,
+      yaw: atan2(site.dx, site.dz),
+      width: site.span + DAM.bite * 2,
+      depth: DAM.thick,
+    }
+    if (districtOf[cellAt(wall.x, wall.z)] !== DISTRICT_COUNTRY) continue
+    if (!stands.clear(wall, DAM_ROAD_MARGIN) || placed.meets(wall, FURNITURE_GAP)) continue
+    const bed = groundUnder(field, () => false, wall)
+    placed.add(wall)
+    buildings.push({ kind: 'dam', ...wall, bottom: bed.low - BURY, top: site.water + DAM.height, tone: rng() })
+    dams += 1
+  }
+}
+
 function moorBoats(stands: Stands): void {
   const { rng, field, seaLevel, placed, buildings } = stands
   const { width, depth, cellSize } = field

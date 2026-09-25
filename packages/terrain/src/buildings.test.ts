@@ -5,7 +5,7 @@ import { insidePolygon, interchangeZones } from './interchanges.ts'
 import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
 import { orientedTriangle, signedDistanceToTriangle } from './mountain.ts'
-import { HOUSE_KINDS, RAISED_KINDS, SEA_KINDS, type BuildingKind } from './types.ts'
+import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
 const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3 }
@@ -200,6 +200,38 @@ describe('buildings and trees', () => {
     )
     expect(planted.length).toBeGreaterThan(houses.length * 0.7)
   })
+
+  it('dam a river at a gorge: one wall from bank to bank, the river under it, its crest over the water and level with the banks', () => {
+    let dams = 0
+    for (const seed of [1, 3]) {
+      const island = seed === 1 ? map : generateTerrain(seed)
+      const walls = island.buildings.filter((building) => building.kind === 'dam')
+      expect(walls.length).toBeLessThanOrEqual(1)
+      for (const wall of walls) {
+        dams++
+        const { heightfield } = island
+        const cos = Math.cos(wall.yaw)
+        const sin = Math.sin(wall.yaw)
+        // A river runs under it, well below its crest.
+        const river = island.rivers
+          .flatMap((r) => r.points)
+          .reduce((best, point) =>
+            Math.hypot(point.x - wall.x, point.z - wall.z) < Math.hypot(best.x - wall.x, best.z - wall.z) ? point : best,
+          )
+        expect(Math.hypot(river.x - wall.x, river.z - wall.z)).toBeLessThan(wall.width / 2)
+        expect(wall.top).toBeGreaterThan(river.y + 8)
+        // Both ends stand in the banks, at about the crest's height.
+        for (const su of [-1, 1]) {
+          const x = wall.x + (su * wall.width * cos) / 2
+          const z = wall.z - (su * wall.width * sin) / 2
+          expect(sampleHeight(heightfield, x, z)).toBeGreaterThan(wall.top - 4)
+        }
+        // And the wall's foot is on the riverbed, under the water.
+        expect(wall.bottom).toBeLessThan(river.y)
+      }
+    }
+    expect(dams).toBeGreaterThanOrEqual(1)
+  }, 120_000)
 
   it('moor a few boats off the shore, in deep enough water, with the shore in sight but not close, and apart', () => {
     const boats = map.buildings.filter((building) => building.kind === 'boat')
@@ -465,8 +497,8 @@ describe('buildings and trees', () => {
 
   it('keep every building and tree off every road and out of the water', () => {
     for (const building of map.buildings) {
-      // A boat floats on the sea on purpose.
-      if (SEA_KINDS.includes(building.kind)) continue
+      // A boat floats on the sea, and a dam stands across a river, on purpose.
+      if (WATER_KINDS.includes(building.kind)) continue
       for (const point of samples(building)) {
         expect(roadCrowding(map.roads, point.x, point.z)).toBeGreaterThan(1)
         expect(sampleHeight(map.heightfield, point.x, point.z)).toBeGreaterThan(map.seaLevel)
