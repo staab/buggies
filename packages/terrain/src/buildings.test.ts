@@ -380,6 +380,27 @@ describe('buildings and trees', () => {
     }
   })
 
+  it('leave props about for a car to knock over: barrels by the filling stations, crates by the building sites, cones as roadworks on the suburb roads and bales in the fields', () => {
+    const kinds = new Map<string, number>()
+    for (const prop of map.props) kinds.set(prop.kind, (kinds.get(prop.kind) ?? 0) + 1)
+    expect(map.props.length).toBeGreaterThan(20)
+    expect(map.props.length).toBeLessThanOrEqual(250)
+    for (const kind of ['barrel', 'crate', 'cone', 'bale']) expect(kinds.get(kind) ?? 0).toBeGreaterThan(0)
+    for (const prop of map.props) {
+      expect(Math.abs(prop.bottom - sampleHeight(map.heightfield, prop.x, prop.z))).toBeLessThan(0.01)
+      expect(prop.bottom).toBeGreaterThan(map.seaLevel)
+      const crowding = roadCrowding(map.roads, prop.x, prop.z)
+      // Cones stand on the road's edge, as roadworks; everything else keeps off the roads.
+      if (prop.kind === 'cone') expect(crowding).toBeLessThan(1.2)
+      else expect(crowding).toBeGreaterThan(1)
+    }
+    const shops = map.buildings.filter((building) => building.kind === 'shop')
+    for (const prop of map.props) {
+      if (prop.kind === 'barrel') expect(shops.some((shop) => Math.hypot(shop.x - prop.x, shop.z - prop.z) < 12)).toBe(true)
+      if (prop.kind === 'bale') expect(map.fields.some((field) => field.kind === 'crop' && Math.hypot(field.x - prop.x, field.z - prop.z) < 60)).toBe(true)
+    }
+  })
+
   it('moor a few boats off the shore, in deep enough water, with the shore in sight but not close, and apart', () => {
     const boats = map.buildings.filter((building) => building.kind === 'boat')
     expect(boats.length).toBeGreaterThanOrEqual(3)

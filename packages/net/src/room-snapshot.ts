@@ -1,7 +1,7 @@
 import { createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
-import type { LooseSnapshot, PickupSnapshot, RocketSnapshot, SnapshotMessage, VehicleSnapshot } from './wire.ts'
+import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RocketSnapshot, SnapshotMessage, VehicleSnapshot } from './wire.ts'
 
 /**
  * What a room's snapshots are gathered into, kept from one to the next so
@@ -14,6 +14,7 @@ export interface RoomSnapshots {
   readonly loose: LooseSnapshot[]
   readonly removed: number[]
   readonly rockets: RocketSnapshot[]
+  readonly props: PropSnapshot[]
   /** Each slot's generation as last told, and which loose things were out. */
   readonly toldGenerations: number[]
   readonly toldLoose: Set<number>
@@ -27,6 +28,7 @@ export function createRoomSnapshots(): RoomSnapshots {
     loose: [],
     removed: [],
     rockets: [],
+    props: [],
     toldGenerations: [],
     toldLoose: new Set(),
     looseNow: new Set(),
@@ -57,6 +59,7 @@ export function gatherSnapshot(
     loose: gatherLoose(arena, out, whole),
     removed: out.removed,
     rockets: gatherRockets(arena, out),
+    props: gatherProps(arena, out, whole),
   }
 }
 
@@ -167,6 +170,25 @@ function gatherRemoved(arena: Arena, out: RoomSnapshots): number[] {
 }
 
 /** Every rocket in the air: few, and short-lived, so all of them every time. */
+/** The props on the move, or every prop when the whole is asked for: a newcomer has them where the map stands them, not where they have been knocked to. */
+function gatherProps(arena: Arena, out: RoomSnapshots, all: boolean): PropSnapshot[] {
+  const { props } = out
+  let count = 0
+  for (const prop of arena.props) {
+    if (!all && prop.body.isSleeping()) continue
+    if (count >= 0xff) break
+    const entry = (props[count] ??= { id: 0, position: v3(), rotation: quat(), linearVelocity: v3(), angularVelocity: v3() })
+    entry.id = prop.id
+    prop.body.translation(entry.position)
+    prop.body.rotation(entry.rotation)
+    prop.body.linvel(entry.linearVelocity)
+    prop.body.angvel(entry.angularVelocity)
+    count += 1
+  }
+  props.length = count
+  return props
+}
+
 function gatherRockets(arena: Arena, out: RoomSnapshots): RocketSnapshot[] {
   const { rockets } = out
   let count = 0

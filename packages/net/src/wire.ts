@@ -40,12 +40,13 @@ export const RESPAWN_BYTES = 1
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
-export const SNAPSHOT_HEADER_BYTES = 17
+export const SNAPSHOT_HEADER_BYTES = 18
 export const SNAPSHOT_VEHICLE_BYTES = 84
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 29
 export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 30
+export const SNAPSHOT_PROP_BYTES = 54
 
 /** What a vehicle can carry, by the byte that says so: nothing first. */
 const WEAPON_CODES: readonly Weapon[] = ['none', ...WEAPONS]
@@ -121,6 +122,15 @@ export interface RocketSnapshot {
   age: number
 }
 
+/** A prop, as the server has it: where it is and how it is moving. */
+export interface PropSnapshot {
+  id: number
+  position: Vec3
+  rotation: Quat
+  linearVelocity: Vec3
+  angularVelocity: Vec3
+}
+
 /** One of the map's pickup slots, as the server has it. */
 export interface PickupSnapshot {
   slot: number
@@ -160,6 +170,8 @@ export interface SnapshotMessage {
   removed: number[]
   /** Every rocket in the air. */
   rockets: RocketSnapshot[]
+  /** The props on the move since the snapshot before; every prop when full. */
+  props: PropSnapshot[]
 }
 
 /** Something loose on the map, a banana or a bomb, as the server has it. */
@@ -413,7 +425,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
       message.pickups.length * SNAPSHOT_PICKUP_BYTES +
       message.loose.length * SNAPSHOT_SPILLED_BYTES +
       message.removed.length * SNAPSHOT_REMOVED_BYTES +
-      message.rockets.length * SNAPSHOT_ROCKET_BYTES,
+      message.rockets.length * SNAPSHOT_ROCKET_BYTES +
+      message.props.length * SNAPSHOT_PROP_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
@@ -425,6 +438,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.loose.length)
   writer.u8(message.removed.length)
   writer.u8(message.rockets.length)
+  writer.u8(message.props.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -467,6 +481,13 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.vec3(rocket.velocity)
     writer.u16(Math.min(Math.max(rocket.age, 0), 0xffff))
   }
+  for (const prop of message.props) {
+    writer.u16(prop.id)
+    writer.vec3(prop.position)
+    writer.quat(prop.rotation)
+    writer.vec3(prop.linearVelocity)
+    writer.vec3(prop.angularVelocity)
+  }
   return writer.bytes
 }
 
@@ -494,13 +515,15 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const looseCount = reader.u8()
   const removedCount = reader.u8()
   const rocketCount = reader.u8()
+  const propCount = reader.u8()
   const expected =
     SNAPSHOT_HEADER_BYTES +
     count * SNAPSHOT_VEHICLE_BYTES +
     pickupCount * SNAPSHOT_PICKUP_BYTES +
     looseCount * SNAPSHOT_SPILLED_BYTES +
     removedCount * SNAPSHOT_REMOVED_BYTES +
-    rocketCount * SNAPSHOT_ROCKET_BYTES
+    rocketCount * SNAPSHOT_ROCKET_BYTES +
+    propCount * SNAPSHOT_PROP_BYTES
   if (payload.length !== expected) return null
 
   const vehicles: VehicleSnapshot[] = []
@@ -580,6 +603,16 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       age: reader.u16(),
     })
   }
+  const props: PropSnapshot[] = []
+  for (let i = 0; i < propCount; i++) {
+    props.push({
+      id: reader.u16(),
+      position: reader.vec3(),
+      rotation: reader.quat(),
+      linearVelocity: reader.vec3(),
+      angularVelocity: reader.vec3(),
+    })
+  }
   return {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
@@ -590,5 +623,6 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     loose,
     removed,
     rockets,
+    props,
   }
 }

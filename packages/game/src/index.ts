@@ -1,9 +1,13 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
-import { buildWaterLevels, DRY, waterLevelAt, type TerrainMap } from '@buggies/terrain'
+import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
+  PROP_SHAPES,
+  addProp,
   addTerrain,
+  propRise,
+  propRotation,
   applyChassisMassProperties,
   applyWaterResponse,
   applyWorldTuning,
@@ -37,7 +41,12 @@ export {
   createVehicle,
   stepVehicle,
   createPhysicsWorld,
+  PROP_SHAPES,
   addHeightfield,
+  addProp,
+  propRise,
+  propRotation,
+  type PropShape,
   DAMAGE_SMOKING,
   DEFAULT_WORLD_TUNING,
   DEFAULT_VEHICLE_PROFILE,
@@ -236,6 +245,17 @@ export interface Seat {
 }
 
 /**
+ * A prop in the arena: a crate, a barrel, a cone or a bale, as a body the
+ * physics steps, and where the map stands it, for putting it back.
+ */
+export interface ArenaProp {
+  readonly id: number
+  readonly kind: PropKind
+  readonly body: RAPIER.RigidBody
+  readonly home: Prop
+}
+
+/**
  * A map with vehicles on it. Unlike the rest of buggies this is not a value
  * that gets replaced each step: a physics world is a live thing that is
  * advanced in place, and every handle in here points into it.
@@ -257,6 +277,8 @@ export interface Arena {
   rockets: Rocket[]
   /** The machine gun shots of the last tick, for drawing. */
   readonly shots: Shot[]
+  /** The props, numbered as the map lists them, each a body the physics steps. */
+  readonly props: readonly ArenaProp[]
   tick: number
 }
 
@@ -264,6 +286,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
   const worldTuning = createWorldTuning()
   const world = createPhysicsWorld(worldTuning)
   addTerrain(world, map)
+  const props: ArenaProp[] = map.props.map((home, id) => ({ id, kind: home.kind, body: addProp(world, home), home }))
 
   const seats: Seat[] = findSpawns(map, seatCount).map((spawn, id) => {
     const tuning = createVehicleTuning()
@@ -302,6 +325,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
 
   const water = buildWaterLevels(map)
   return {
+    props,
     map,
     world,
     worldTuning,
@@ -439,12 +463,35 @@ export function advance(
   }
   arena.world.step()
   arena.tick += 1
+  restoreProps(arena)
   collectPickups(arena)
   spillBananas(arena)
   fireWeapons(arena)
   armFromBananas(arena)
   flyRockets(arena, dt)
   trimLoose(arena)
+}
+
+/**
+ * A prop that has fallen off the map, into the sea or over its edge, is
+ * put back where the map stands it, at rest.
+ */
+function restoreProps(arena: Arena): void {
+  const worldSize = arena.map.size * arena.map.cellSize
+  for (const prop of arena.props) {
+    const { x, y, z } = prop.body.translation()
+    if (y >= arena.map.seaLevel - ABYSS && x >= 0 && z >= 0 && x <= worldSize && z <= worldSize) continue
+    putPropBack(prop)
+  }
+}
+
+/** Stand a prop back where the map has it, at rest. */
+export function putPropBack(prop: ArenaProp): void {
+  const { body, home, kind } = prop
+  body.setTranslation({ x: home.x, y: home.bottom + propRise(kind), z: home.z }, true)
+  body.setRotation(propRotation(kind, home.yaw), true)
+  body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+  body.setAngvel({ x: 0, y: 0, z: 0 }, true)
 }
 
 /**
