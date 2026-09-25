@@ -510,6 +510,8 @@ describe('a session', () => {
     arena.loose.push({
       id: 7,
       kind: 'banana',
+      owner: 0,
+      power: 0,
       from: { x: 1, y: 2, z: 3 },
       position: { x: 4, y: 5, z: 6 },
       bornTick: arena.tick,
@@ -641,7 +643,7 @@ describe('a session', () => {
     session.run(0.5)
     const seat = a.client.welcome!.seat
     const seen = b.client.pump(b.input).newestSnapshot!.vehicles.find((vehicle) => vehicle.seat === seat)!
-    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, fire: false })
+    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, fire: false, ability: false })
 
     // Inputs past what an honest client could send are dropped, not driven, and not held against them.
     const before = session.server.stats().inputsDropped

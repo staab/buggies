@@ -51,7 +51,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     actionTicks: 0,
     cooldownTicks: 0,
     lightsOn: false,
-    fireHeld: false,
+    abilityHeld: false,
     stunnedTicks: 0,
     slowedTicks: 0,
     slowedBy: 0,
@@ -90,12 +90,18 @@ describe('a car on the screen', () => {
     const { sound, played, sirens } = countingSound()
     const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound })
     presence.render(0, FIXED_TIMESTEP)
-    // The semi's horn: heard once as its action starts, not every frame it goes on.
+    // The semi's horn: heard once as its action starts, not every frame it goes on, and again as it starts over.
     seat.profile = 'semi'
     seat.actionTicks = 60
     presence.render(0, FIXED_TIMESTEP)
     presence.render(0, FIXED_TIMESTEP)
     expect(played.horn).toBe(1)
+    seat.actionTicks = 30
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.horn).toBe(1)
+    seat.actionTicks = 60
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.horn).toBe(2)
     seat.actionTicks = 0
     seat.profile = DEFAULT_VEHICLE_PROFILE
     // The shockwave: armed, then gone the moment it is fired, and heard then.
@@ -118,17 +124,25 @@ describe('a car on the screen', () => {
     free()
   })
 
-  it('names its own action when it carries nothing, with the time left of it or before it may go again', () => {
+  it('names only what it carries in the power-up slot, and nothing of its own, mounting nothing for that either', () => {
     const { seat, free } = seatOnFlat()
     const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })
-    const own = OWN_ACTIONS[seat.profile]
+    expect(OWN_ACTIONS[seat.profile].kind).toBe('gun')
     presence.render(0, FIXED_TIMESTEP)
-    expect(presence.weaponLabel).toBe(own.label)
+    expect(presence.weaponLabel).toBe('')
+    // Its own gun going, and cooling, makes no difference to the slot, and puts no gun over the roof.
+    seat.vehicle.command.ability = true
     seat.cooldownTicks = 150
-    expect(presence.weaponLabel).toBe(`${own.label} 3s`)
-    seat.cooldownTicks = 0
     seat.actionTicks = 60
-    expect(presence.weaponLabel).toBe(own.kind === 'boost' || own.kind === 'gun' || own.kind === 'fly' ? `${own.label} 1s` : own.label)
+    presence.render(0, FIXED_TIMESTEP)
+    expect(presence.weaponLabel).toBe('')
+    const mount = presence.object.children.find((child) => child.position.y > seat.tuning.chassisHalfHeight + 1)!
+    expect(mount.children.some((child) => child.visible)).toBe(false)
+    // Something won is named, once the roll that reveals it has stopped on it.
+    seat.weapon = 'bomb'
+    for (let i = 0; i < 200; i++) presence.render(0, FIXED_TIMESTEP)
+    expect(presence.weaponLabel).toBe('Bomb')
+    expect(mount.children.some((child) => child.visible)).toBe(true)
     presence.dispose()
     free()
   })

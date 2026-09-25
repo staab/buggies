@@ -28,7 +28,7 @@ function effects(): { effects: PresenceEffects; bursts: number[]; puffs: number 
 }
 
 function rocket(id: number, x: number, bornTick: number): Rocket {
-  return { id, owner: 0, target: NO_TARGET, position: { x, y: 5, z: 0 }, velocity: { x: 40, y: 0, z: 0 }, bornTick }
+  return { id, owner: 0, target: NO_TARGET, position: { x, y: 5, z: 0 }, velocity: { x: 40, y: 0, z: 0 }, bornTick, power: 1 }
 }
 
 describe('rockets as drawn', () => {

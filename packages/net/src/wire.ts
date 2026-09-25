@@ -43,9 +43,9 @@ export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 18
 export const SNAPSHOT_VEHICLE_BYTES = 84
 export const SNAPSHOT_PICKUP_BYTES = 5
-export const SNAPSHOT_SPILLED_BYTES = 29
+export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
-export const SNAPSHOT_ROCKET_BYTES = 30
+export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
 
 /** What a vehicle can carry, by the byte that says so: nothing first. */
@@ -120,6 +120,8 @@ export interface RocketSnapshot {
   velocity: Vec3
   /** How many ticks before the snapshot's it went. */
   age: number
+  /** How much of a full blast it goes off with, in steps of a 255th. */
+  power: number
 }
 
 /** A prop, as the server has it: where it is and how it is moving. */
@@ -178,6 +180,10 @@ export interface SnapshotMessage {
 export interface LooseSnapshot {
   id: number
   kind: LooseKind
+  /** Whose it is: the seat it spilled from or was dropped by. */
+  owner: number
+  /** How much of a full bomb's blast it goes off with, in steps of a 255th; none for a banana. */
+  power: number
   from: Vec3
   position: Vec3
   /** How many ticks before the snapshot's it was spilled. */
@@ -231,7 +237,7 @@ class Writer {
     this.f32(value.steer)
     this.f32(value.throttle)
     this.f32(value.brake)
-    this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0))
+    this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0) | (value.ability ? 4 : 0))
   }
 }
 
@@ -283,8 +289,14 @@ class Reader {
     const buttons = this.u8()
     out.handbrake = (buttons & 1) === 1
     out.fire = (buttons & 2) === 2
+    out.ability = (buttons & 4) === 4
     return out
   }
+}
+
+/** A share of something, 0 to 1, as the byte that says so. */
+function share(value: number): number {
+  return Math.round(Math.min(Math.max(value, 0), 1) * 255)
 }
 
 /** A number a client sent, kept to its range; one that is not a number at all is nothing. */
@@ -468,6 +480,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   for (const loose of message.loose) {
     writer.u16(loose.id)
     writer.u8(Math.max(LOOSE_KINDS.indexOf(loose.kind), 0))
+    writer.u8(loose.owner === NO_TARGET ? NOBODY_BYTE : loose.owner)
+    writer.u8(share(loose.power))
     writer.vec3(loose.from)
     writer.vec3(loose.position)
     writer.u16(Math.min(Math.max(loose.age, 0), 0xffff))
@@ -480,6 +494,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.vec3(rocket.position)
     writer.vec3(rocket.velocity)
     writer.u16(Math.min(Math.max(rocket.age, 0), 0xffff))
+    writer.u8(share(rocket.power))
   }
   for (const prop of message.props) {
     writer.u16(prop.id)
@@ -579,9 +594,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const id = reader.u16()
     const kind = LOOSE_KINDS[reader.u8()]
     if (kind === undefined) return null
+    const owner = reader.u8()
     loose.push({
       id,
       kind,
+      owner: owner === NOBODY_BYTE ? NO_TARGET : owner,
+      power: reader.u8() / 255,
       from: reader.vec3(),
       position: reader.vec3(),
       age: reader.u16(),
@@ -601,6 +619,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       position: reader.vec3(),
       velocity: reader.vec3(),
       age: reader.u16(),
+      power: reader.u8() / 255,
     })
   }
   const props: PropSnapshot[] = []
