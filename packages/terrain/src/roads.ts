@@ -33,6 +33,9 @@ import {
   UNDERPASS_CLEARANCE,
   UNDERPASS_SPAN,
   WATER_PROBE_RADIUS,
+  RAMP_WIDTH,
+  RAMP_LANE_REACH,
+  SURFACE_SHOULDER,
 } from './roads/constants.ts'
 import { buildInterchanges, crossRoad, interchangeCenters, sampleOpen } from './roads/crossings.ts'
 import { cumulativeLengths } from './roads/geometry.ts'
@@ -68,6 +71,7 @@ export {
   CROSS_WIDTH,
   INTERCHANGE_SEARCH,
   RAMP_PLATEAU,
+  RAMP_LANE_REACH,
   ARTERIAL_WIDTH,
   MAX_ARTERIAL_GRADE,
   ARTERIAL_BRIDGE_GRADE,
@@ -76,7 +80,7 @@ export {
   STREET_KERB,
   STREET_SPACING,
 } from './roads/constants.ts'
-export { isSurfaceRoad, roadLift, deckShouldered } from './roads/beds.ts'
+export { isSurfaceRoad, roadLift, deckShouldered, skirtFoot } from './roads/beds.ts'
 export {
   type Footprint,
   footprintCorners,
@@ -298,7 +302,7 @@ export function generateRoads(
   // the surface roads are then settled into the ground.
   const painted = roads.filter(isSurfaceRoad)
   const structures = roads.filter((road) => !isSurfaceRoad(road))
-  carveRoadBeds(field, structures, surfaceRoadCells(field, painted))
+  carveRoadBeds(field, structures, surfaceRoadCells(field, painted), undefined, wallHeldBy(painted))
   settleSurfaceRoads(field, painted, structures)
   // A surface road's bridges are decks too. The ground under them is cut
   // clear only now, once the at-grade runs have shaped it: each run's
@@ -311,4 +315,33 @@ export function generateRoads(
     (structure) => structure === ROAD_BRIDGE,
   )
   return roads
+}
+
+/**
+ * Where the highway's cut must not rise into a wall again: beside each
+ * ramp's lane as it runs out from under the deck, out to the lane's
+ * shoulder. A wall there would stand proud of the deck the lane leaves.
+ */
+function wallHeldBy(roads: Road[]): (x: number, z: number) => boolean {
+  const lanes: { ax: number; az: number; bx: number; bz: number }[] = []
+  for (const road of roads) {
+    if (road.kind !== 'ramp') continue
+    let travelled = 0
+    for (let i = 0; i + 1 < road.points.length && travelled < RAMP_LANE_REACH; i++) {
+      const a = road.points[i]!
+      const b = road.points[i + 1]!
+      lanes.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z })
+      travelled += Math.hypot(b.x - a.x, b.z - a.z)
+    }
+  }
+  const reach = RAMP_WIDTH / 2 + SURFACE_SHOULDER
+  return (x, z) => {
+    for (const lane of lanes) {
+      const vx = lane.bx - lane.ax
+      const vz = lane.bz - lane.az
+      const t = Math.min(Math.max(((x - lane.ax) * vx + (z - lane.az) * vz) / (vx * vx + vz * vz || 1), 0), 1)
+      if (Math.hypot(x - (lane.ax + vx * t), z - (lane.az + vz * t)) <= reach) return true
+    }
+    return false
+  }
 }

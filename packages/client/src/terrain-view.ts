@@ -2,7 +2,7 @@ import {
   DISTRICT_CITY,
   DISTRICT_SUBURB,
   RIVER_BANK_LAP,
-  RAMP_PLATEAU,
+  RAMP_LANE_REACH,
   RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_GRADE,
@@ -26,6 +26,7 @@ import {
   rampFacets,
   roadLift,
   sidewalkMesh,
+  skirtFoot,
   tunnelSegments,
   tunnelShellMesh,
   type BoreSegment,
@@ -76,8 +77,6 @@ const GRAVEL_COLOR = new THREE.Color('#b9ad93')
 const DASH = { every: 6, length: 3, width: 0.5 } as const
 /** How far past the asphalt a road's lighter kerb shows. */
 const KERB_LINE = 0.75
-/** How far along each ramp its lane may still lie under or against the deck. */
-const RAMP_LANE_REACH = 45
 /** An interchange park's loop path: this many points round, this far out from the middle toward the ramps. */
 const PARK_LOOP_POINTS = 16
 const PARK_LOOP_IN = 0.55
@@ -924,11 +923,6 @@ function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE
   const verge = half + TUNNEL_CLEARANCE
   const lift = roadLift(road)
   const painted = isSurfaceRoad(road)
-  const { cellSize } = field
-
-  const groundUnder = (x: number, z: number): number =>
-    heightAt(field, Math.floor(x / cellSize), Math.floor(z / cellSize))
-
   const structureColor = (structure: number): THREE.Color =>
     structure === ROAD_BRIDGE
       ? ROAD_BRIDGE_COLOR
@@ -956,12 +950,16 @@ function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE
     const y = point.y + lift
     // Over a ramp's lane the skirt is road, not embankment: the ramp comes
     // out from under the deck's edge there. Either way the skirt runs down
-    // to whatever the ground is at its foot, which over the lane is the
-    // lane's own surface, a hair below the deck.
-    const pavedLeft = road.kind === 'highway' && onRampLane(lanes, point.x + nx * skirt, point.z + nz * skirt)
-    const pavedRight = road.kind === 'highway' && onRampLane(lanes, point.x - nx * skirt, point.z - nz * skirt)
-    const leftGround = Math.min(groundUnder(point.x + nx * skirt, point.z + nz * skirt), y)
-    const rightGround = Math.min(groundUnder(point.x - nx * skirt, point.z - nz * skirt), y)
+    // to the highest ground across its width, which over the lane is the
+    // lane's own surface, a hair below the deck, and elsewhere its foot.
+    const laneUnder = (side: number): boolean =>
+      road.kind === 'highway' &&
+      (onRampLane(lanes, point.x + nx * side * skirt, point.z + nz * side * skirt) ||
+        onRampLane(lanes, point.x + nx * side * (half + ROAD_SKIRT / 2), point.z + nz * side * (half + ROAD_SKIRT / 2)))
+    const pavedLeft = laneUnder(1)
+    const pavedRight = laneUnder(-1)
+    const leftGround = skirtFoot(field, point.x, point.z, nx, nz, half, y)
+    const rightGround = skirtFoot(field, point.x, point.z, -nx, -nz, half, y)
 
     // Six points across: the edges, the skirts down to the ground beside an
     // embankment, and the verges out to the wall of a tunnel.

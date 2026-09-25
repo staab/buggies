@@ -13,7 +13,7 @@ import {
   railRuns,
   roadLift,
   type RailRun,
-  sampleHeight,
+  skirtFoot,
   tunnelCutFloors,
   tunnelSegments,
   tunnelShellMesh,
@@ -128,10 +128,9 @@ function crossSection(
         ? half + TUNNEL_CLEARANCE + VERGE_UNDER_WALL
         : half
 
-  const leftGround =
-    shoulder === 'ground' ? Math.min(sampleHeight(field, point.x + nx * reach, point.z + nz * reach), y) : y
-  const rightGround =
-    shoulder === 'ground' ? Math.min(sampleHeight(field, point.x - nx * reach, point.z - nz * reach), y) : y
+  // A shoulder runs down to the highest ground across the skirt, as the deck is drawn.
+  const leftGround = shoulder === 'ground' ? skirtFoot(field, point.x, point.z, nx, nz, half, y) : y
+  const rightGround = shoulder === 'ground' ? skirtFoot(field, point.x, point.z, -nx, -nz, half, y) : y
 
   out.push(
     point.x + nx * reach, leftGround, point.z + nz * reach,
