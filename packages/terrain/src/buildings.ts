@@ -89,6 +89,17 @@ const PARK_LOT_ODDS = 7
  * this far above the tallest block within this reach of it, and never
  * lower than this.
  */
+/**
+ * The city square: the first open lot this near the heart of a city is
+ * paved over, with a fountain in the middle, its basin this wide and this
+ * high; one to a city. Statues stand on plinths this wide and this tall,
+ * one in the middle of every park big enough to hold one this far in from
+ * its edges, and one on the verge where an arterial comes into a city,
+ * this far beyond the verge trees' line.
+ */
+const SQUARE_CORE = 0.55
+const FOUNTAIN = { width: 8, height: 1 } as const
+const STATUE = { width: 2, height: 2.5, parkInset: 6, vergeOut: 1.5 } as const
 const SITE_CORE = 0.45
 const SITE_ODDS = 0.35
 const SITES_MOST = 3
@@ -666,10 +677,23 @@ function fillCities(
    * stands far enough inside the lot for its crown to stay in it, so the
    * park never crowds a building out of the lot next door.
    */
+  /** A statue on its plinth at a footprint, where the ground is free and dry. */
+  const raiseStatue = (footprint: Footprint): boolean => {
+    if (!clear(footprint, ROAD_MARGIN) || placed.meets(footprint, 0)) return false
+    const ground = groundUnder(field, wet, footprint)
+    if (ground.wet || ground.high - ground.low > HOUSE_RELIEF) return false
+    placed.add(footprint)
+    buildings.push({ kind: 'statue', ...footprint, bottom: ground.low - BURY, top: ground.high + STATUE.height, tone: rng() })
+    return true
+  }
   const plantPark = (lot: Footprint): void => {
     const area = (lot.width * lot.depth) / 100
     const cos = cosine(lot.yaw)
     const sin = sine(lot.yaw)
+    // A statue in the middle of a park with room for one, before the trees take the ground.
+    if (lot.width >= 2 * STATUE.parkInset && lot.depth >= 2 * STATUE.parkInset) {
+      raiseStatue({ x: lot.x, z: lot.z, yaw: lot.yaw, width: STATUE.width, depth: STATUE.width })
+    }
     const somewhere = (inset: number): { x: number; z: number } | null => {
       if (lot.width < 2 * inset || lot.depth < 2 * inset) return null
       const u = randomRange(rng, -lot.width / 2 + inset, lot.width / 2 - inset)
@@ -785,6 +809,7 @@ function fillCities(
 
     // The building sites' cranes are raised once the blocks are all up, to stand above them.
     const sites: Footprint[] = []
+    let squared = false
     for (let v0 = first(frame.vMin); v0 < frame.vMax; v0 += STREET_SPACING) {
       for (let u0 = first(frame.uMin); u0 < frame.uMax; u0 += STREET_SPACING) {
         const blockU = u0 + STREET_SPACING / 2
@@ -811,6 +836,17 @@ function fillCities(
               const open = clear(lot, 0) && !placed.meets(lot, 0)
               const ground = open ? groundUnder(field, wet, lot) : null
               const level = ground !== null && !ground.wet && ground.high - ground.low <= BLOCK_RELIEF
+              if (level && heart >= SQUARE_CORE && !squared) {
+                // The city square: paved over, with a fountain in the middle.
+                placed.add(lot)
+                fields.push({ kind: 'square', ...lot, tone: 0 })
+                const basin: Footprint = { x: lot.x, z: lot.z, yaw: lot.yaw, width: FOUNTAIN.width, depth: FOUNTAIN.width }
+                const footing = groundUnder(field, wet, basin)
+                buildings.push({ kind: 'fountain', ...basin, bottom: footing.low - BURY, top: footing.high + FOUNTAIN.height, tone: rng() })
+                squared = true
+                built += 1
+                continue
+              }
               if (level && heart >= SITE_CORE && sites.length < SITES_MOST && rng() < SITE_ODDS) {
                 placed.add(lot)
                 const hoarding: Footprint = { ...lot, width: lot.width - 2 * HOARDING_INSET, depth: lot.depth - 2 * HOARDING_INSET }
@@ -1031,6 +1067,16 @@ function lineArterials(
     return house
   }
 
+  /** A statue on its plinth at a footprint, where the ground is free and dry. */
+  const raiseStatue = (footprint: Footprint): boolean => {
+    if (!clear(footprint, ROAD_MARGIN) || placed.meets(footprint, 0)) return false
+    const ground = groundUnder(field, wet, footprint)
+    if (ground.wet || ground.high - ground.low > HOUSE_RELIEF) return false
+    placed.add(footprint)
+    buildings.push({ kind: 'statue', ...footprint, bottom: ground.low - BURY, top: ground.high + STATUE.height, tone: rng() })
+    return true
+  }
+
   /** A tree beside the road at this sample, `setback` from its edge, if the ground there is free. */
   const placeTree = (road: Road, index: number, point: RoadPoint, side: number, setback: number): void => {
     const { nx, nz } = frameAlong(road, index, point)
@@ -1051,6 +1097,9 @@ function lineArterials(
       let nextSlot = 0
       let nextHouse = randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
       let previous: RoadPoint | undefined
+      // Whether a statue is owed where the road has just come into a city along this side.
+      let owed = false
+      let inCity = false
       for (const [i, point] of points.entries()) {
         const behind = previous
         previous = point
@@ -1062,11 +1111,29 @@ function lineArterials(
           nextSlot = travelled + TREE_SPACING.min
           continue
         }
-        const { nx, nz } = frameAlong(road, i, point)
+        const { dx, dz, nx, nz } = frameAlong(road, i, point)
         const beside = districtAt(point.x + nx * side * road.width, point.z + nz * side * road.width)
+        if (beside === DISTRICT_CITY && !inCity && road.kind === 'arterial') owed = true
+        inCity = beside === DISTRICT_CITY
         if (beside === DISTRICT_CITY) {
-          // Through the city: trees along the verge, on the open ground beside the road.
+          // Through the city: trees along the verge, on the open ground beside
+          // the road, and a statue where an arterial comes in, on the verge
+          // just beyond the trees' line, at the first slot that is in the city.
           const out = road.width / 2 + CITY_VERGE_SETBACK
+          const statue: Footprint = {
+            x: point.x + nx * side * (out + STATUE.vergeOut),
+            z: point.z + nz * side * (out + STATUE.vergeOut),
+            yaw: -atan2(dz, dx),
+            width: STATUE.width,
+            depth: STATUE.width,
+          }
+          if (owed && districtAt(statue.x, statue.z) === DISTRICT_CITY) {
+            owed = false
+            if (raiseStatue(statue)) {
+              nextSlot = travelled + CITY_VERGE_SPACING
+              continue
+            }
+          }
           plant(point.x + nx * side * out, point.z + nz * side * out, 'tree', wet)
           nextSlot = travelled + CITY_VERGE_SPACING
         } else if (highway) {
@@ -1092,6 +1159,7 @@ function lineArterials(
         } else {
           nextSlot = travelled + TREE_SPACING.max
         }
+        if (beside !== DISTRICT_CITY) owed = false
       }
     }
   }
