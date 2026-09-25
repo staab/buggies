@@ -212,6 +212,46 @@ const COAST_STEP = 3
 const LIGHTHOUSE_RELIEF = 7
 const LIGHTHOUSE_ROAD_MARGIN = 6
 
+/**
+ * A harbour where a city or suburb meets the sea: a quay along the shore,
+ * half over the water, a breakwater curving out from one end of it, and a
+ * few boats moored in the water they shelter. One per island at most.
+ */
+const HARBOURS_MOST = 1
+/** The quay's length along the shore and its width, how far its top stands over the sea, and the most the shore may rise under it. */
+const QUAY = { length: 60, width: 12, over: 1, riseMost: 3 } as const
+/** The breakwater: a run of short slabs, each turned a little further seaward than the last, and how many at the least. */
+const BREAKWATER = { segment: 6, width: 5, segments: 13, turn: 0.1, least: 8, gap: 0.3 } as const
+/** The sea must be open this far out in front of the quay, and no river may come out within this of it. */
+const HARBOUR_CALM = 80
+const RIVER_MOUTH_CLEAR = 100
+const HARBOUR_ROAD_MARGIN = 4
+/** How far beyond a city's suburbs its shore still counts as the city's. */
+const HARBOUR_NEAR = 60
+/** The moored boats: how many at most, how far off the quay and apart, and their size. */
+const BOATS = { most: 4, off: 9, apart: 13, length: { min: 8, max: 11 }, width: 3.2, draft: 1, freeboard: 1.3 } as const
+/** A boat needs this much water under it. */
+const BOAT_DEPTH = 1.5
+
+/**
+ * A ship wrecked on the rocks off a headland: its hull broken in two, the
+ * halves listing apart, half out of the water. One or two per island.
+ */
+const WRECKS_MOST = 2
+/** Each half's length and width, the gap they lie apart, how far the hull stands out of the water, and how far the halves splay. */
+const WRECK = { half: 11, width: 6, gap: 1.5, above: 3, splay: 0.2 } as const
+/**
+ * The shallows a wreck lies in: this far under the sea at least and at most
+ * under each half's middle, no deeper than the drop under any corner, and
+ * this far out from the shore at most.
+ */
+const WRECK_SHALLOWS = { least: 1, most: 3, drop: 6, reach: 20 } as const
+/** The ground kept for a wreck, so nothing else is put on it. */
+const WRECK_FOOTPRINT = 40
+/** A wreck keeps this far from the lighthouse and the harbour, and from another wreck. */
+const WRECK_APART = 300
+const WRECKS_APART = 200
+
 /** How far anything that stands about keeps from anything else that does. */
 const FURNITURE_GAP = 2
 /** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
@@ -1189,6 +1229,7 @@ export function generateBuildings(
     districts,
     districtOf,
     roads,
+    rivers,
     clear,
     wet,
     placed,
@@ -1207,6 +1248,9 @@ export function generateBuildings(
   raiseWindFarm(stands)
   raiseStones(stands)
   raiseLighthouses(stands)
+  // The harbour and the wrecks take the shore the lighthouse leaves.
+  raiseHarbours(stands)
+  wreckShips(stands)
   raiseChurches(stands, plant)
   raiseWaterTowers(stands)
   // The camps throw their own dice too, for the same reason as the observatory.
@@ -1223,6 +1267,7 @@ interface Stands {
   districts: District[]
   districtOf: Uint8Array
   roads: Road[]
+  rivers: River[]
   clear: (footprint: Footprint, margin: number) => boolean
   wet: (x: number, z: number) => boolean
   placed: Placed
@@ -1813,33 +1858,13 @@ function raiseStones(stands: Stands): void {
  * it.
  */
 function raiseLighthouses(stands: Stands): void {
-  const { field, seaLevel } = stands
-  const { width, depth, cellSize } = field
-  const candidates: { x: number; z: number; sea: number }[] = []
-  for (let row = 0; row < depth; row += COAST_STEP) {
-    for (let col = 0; col < width; col += COAST_STEP) {
-      const x = col * cellSize
-      const z = row * cellSize
-      const height = sampleHeight(field, x, z)
-      if (height < seaLevel + SHORE.over || height > seaLevel + SHORE.under) continue
-      let sea = 0
-      for (let k = 0; k < HEADLAND_SAMPLES; k++) {
-        const angle = (k * Math.PI * 2) / HEADLAND_SAMPLES
-        if (sampleHeight(field, x + cosine(angle) * HEADLAND_REACH, z + sine(angle) * HEADLAND_REACH) < seaLevel) sea += 1
-      }
-      sea /= HEADLAND_SAMPLES
-      if (sea >= HEADLAND_SEA) candidates.push({ x, z, sea })
-    }
-  }
-  // The most seaward first; among equals, the order they were walked in.
-  candidates.sort((a, b) => b.sea - a.sea || a.z - b.z || a.x - b.x)
   const raised: { x: number; z: number }[] = []
-  for (const candidate of candidates) {
+  for (const spot of shoreSpots(stands)) {
     if (raised.length >= LIGHTHOUSES_MOST) break
-    if (raised.some((other) => hypot(other.x - candidate.x, other.z - candidate.z) < LIGHTHOUSE_APART)) continue
+    if (raised.some((other) => hypot(other.x - spot.x, other.z - spot.z) < LIGHTHOUSE_APART)) continue
     const footprint: Footprint = {
-      x: candidate.x,
-      z: candidate.z,
+      x: spot.x,
+      z: spot.z,
       yaw: 0,
       width: LIGHTHOUSE.radius * 2,
       depth: LIGHTHOUSE.radius * 2,
@@ -1847,7 +1872,244 @@ function raiseLighthouses(stands: Stands): void {
     const ground = standsHere(stands, footprint, LIGHTHOUSE_ROAD_MARGIN, LIGHTHOUSE_RELIEF, FURNITURE_GAP)
     if (ground === null) continue
     tower(stands, 'lighthouse', footprint, ground, LIGHTHOUSE.height)
-    raised.push(candidate)
+    noteStood(stands, 'lighthouse', spot.x, spot.z)
+    raised.push(spot)
+  }
+}
+
+/** A spot on the shore with the sea about it: how much of the ground round it is sea, and which way the sea mostly lies. */
+interface ShoreSpot {
+  x: number
+  z: number
+  sea: number
+  /** Unit direction out to sea. */
+  outX: number
+  outZ: number
+}
+
+/**
+ * The shore, walked for the spots that stand just above the sea with
+ * plenty of sea about them, the most seaward first and among equals in the
+ * order they were walked in. The lighthouse, the harbour and the wrecks
+ * all pick from these.
+ */
+function shoreSpots(stands: Stands): ShoreSpot[] {
+  const { field, seaLevel } = stands
+  const { width, depth, cellSize } = field
+  const spots: ShoreSpot[] = []
+  for (let row = 0; row < depth; row += COAST_STEP) {
+    for (let col = 0; col < width; col += COAST_STEP) {
+      const x = col * cellSize
+      const z = row * cellSize
+      const height = sampleHeight(field, x, z)
+      if (height < seaLevel + SHORE.over || height > seaLevel + SHORE.under) continue
+      let sea = 0
+      let outX = 0
+      let outZ = 0
+      for (let k = 0; k < HEADLAND_SAMPLES; k++) {
+        const angle = (k * Math.PI * 2) / HEADLAND_SAMPLES
+        if (sampleHeight(field, x + cosine(angle) * HEADLAND_REACH, z + sine(angle) * HEADLAND_REACH) >= seaLevel) continue
+        sea += 1
+        outX += cosine(angle)
+        outZ += sine(angle)
+      }
+      sea /= HEADLAND_SAMPLES
+      const reach = hypot(outX, outZ)
+      if (sea < HEADLAND_SEA || reach === 0) continue
+      spots.push({ x, z, sea, outX: outX / reach, outZ: outZ / reach })
+    }
+  }
+  spots.sort((a, b) => b.sea - a.sea || a.z - b.z || a.x - b.x)
+  return spots
+}
+
+/** The lowest and highest ground under a footprint, sea or land alike, read at its corners and middle. */
+function seabedUnder(field: Heightfield, footprint: Footprint): Ground {
+  return groundUnder(field, () => false, footprint)
+}
+
+/** The lowest and highest ground under a footprint, sea or land alike, read over a grid of it: for one too long for its corners to tell. */
+function seabedOver(field: Heightfield, footprint: Footprint, along: number, across: number): Ground {
+  const { ux, uz, vx, vz } = axesOf(footprint.yaw)
+  let low = Infinity
+  let high = -Infinity
+  for (let i = 0; i < along; i++) {
+    for (let j = 0; j < across; j++) {
+      const u = ((i / (along - 1)) * 2 - 1) * (footprint.width / 2)
+      const v = ((j / (across - 1)) * 2 - 1) * (footprint.depth / 2)
+      const height = sampleHeight(field, footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v)
+      low = Math.min(low, height)
+      high = Math.max(high, height)
+    }
+  }
+  return { low, high, wet: false }
+}
+
+/** The yaw of a footprint whose width runs along a unit direction. */
+function yawAlong(dx: number, dz: number): number {
+  return atan2(-dz, dx)
+}
+
+/**
+ * The island's harbour, if a city or suburb has a shore that will take one:
+ * the shore spot nearest a city, with open sea in front of it and no river
+ * coming out beside it. The quay lies along the waterline there, half over
+ * the water, its top a metre above the sea or just above the shore under
+ * it; the breakwater runs from one end of the quay, slab after slab, each
+ * turned a little further out to sea, and stops where the sea gets shallow;
+ * and boats moor along the quay in the water between.
+ */
+function raiseHarbours(stands: Stands): void {
+  const { rng, field, seaLevel, districts, rivers, placed, buildings } = stands
+  const nearCity = (spot: ShoreSpot): number =>
+    Math.min(...districts.map((district) => hypot(spot.x - district.cx, spot.z - district.cz) - district.radius - district.suburbWidth))
+  const spots = shoreSpots(stands)
+    .filter((spot) => nearCity(spot) <= HARBOUR_NEAR)
+    .sort((a, b) => nearCity(a) - nearCity(b))
+  let harbours = 0
+  for (const spot of spots) {
+    if (harbours >= HARBOURS_MOST) break
+    if (!farFromKind(stands, 'lighthouse', spot.x, spot.z, WRECK_APART)) continue
+    // Open sea in front, and no river mouth beside.
+    let calm = true
+    for (let out = 20; out <= HARBOUR_CALM && calm; out += 20) {
+      if (sampleHeight(field, spot.x + spot.outX * out, spot.z + spot.outZ * out) >= seaLevel) calm = false
+    }
+    if (!calm) continue
+    if (rivers.some((river) => river.points.some((point) => hypot(point.x - spot.x, point.z - spot.z) < RIVER_MOUTH_CLEAR))) continue
+    // Out from the spot to the waterline, where the quay's middle goes.
+    let toWater = 0
+    while (toWater < HEADLAND_REACH && sampleHeight(field, spot.x + spot.outX * toWater, spot.z + spot.outZ * toWater) > seaLevel) toWater += 1
+    if (toWater >= HEADLAND_REACH) continue
+    const cx = spot.x + spot.outX * toWater
+    const cz = spot.z + spot.outZ * toWater
+    // The quay's width runs along the shore, square to the way out to sea.
+    const alongX = -spot.outZ
+    const alongZ = spot.outX
+    const yaw = yawAlong(alongX, alongZ)
+    const quay: Footprint = { x: cx, z: cz, yaw, width: QUAY.length, depth: QUAY.width }
+    if (!stands.clear(quay, HARBOUR_ROAD_MARGIN) || placed.meets(quay, FURNITURE_GAP)) continue
+    const shore = seabedOver(field, quay, 13, 5)
+    if (shore.high > seaLevel + QUAY.riseMost) continue
+    const top = Math.max(seaLevel + QUAY.over, shore.high + 0.3)
+    // The breakwater, from the quay's end, turning out to sea slab by slab.
+    const arm: { footprint: Footprint; bottom: number }[] = []
+    let dx = alongX
+    let dz = alongZ
+    // Which way round is seaward from the arm's heading.
+    const turn = BREAKWATER.turn * (dx * spot.outZ - dz * spot.outX >= 0 ? 1 : -1)
+    // Each slab starts a hand's breadth past the last, so a turned slab's
+    // inner corner stays clear of the one before.
+    let ax = cx + alongX * (QUAY.length / 2 + BREAKWATER.gap)
+    let az = cz + alongZ * (QUAY.length / 2 + BREAKWATER.gap)
+    for (let k = 0; k < BREAKWATER.segments; k++) {
+      const slab: Footprint = {
+        x: ax + (dx * BREAKWATER.segment) / 2,
+        z: az + (dz * BREAKWATER.segment) / 2,
+        yaw: yawAlong(dx, dz),
+        width: BREAKWATER.segment,
+        depth: BREAKWATER.width,
+      }
+      const seabed = seabedUnder(field, slab)
+      if (seabed.high > seaLevel - 0.5 || placed.meets(slab, 0)) break
+      arm.push({ footprint: slab, bottom: seabed.low - BURY })
+      ax += dx * (BREAKWATER.segment + BREAKWATER.gap)
+      az += dz * (BREAKWATER.segment + BREAKWATER.gap)
+      const turned = { x: dx * cosine(turn) - dz * sine(turn), z: dx * sine(turn) + dz * cosine(turn) }
+      dx = turned.x
+      dz = turned.z
+    }
+    if (arm.length < BREAKWATER.least) continue
+    placed.add(quay)
+    buildings.push({ kind: 'quay', ...quay, bottom: shore.low - BURY, top, tone: 0 })
+    for (const slab of arm) {
+      placed.add(slab.footprint)
+      buildings.push({ kind: 'quay', ...slab.footprint, bottom: slab.bottom, top: seaLevel + QUAY.over, tone: 0.5 })
+    }
+    // The boats, along the quay's sea side, each turned a little as it lies at its mooring.
+    for (let k = 0; k < BOATS.most; k++) {
+      const along = -QUAY.length / 2 + BOATS.apart * (k + 0.75)
+      const across = QUAY.width / 2 + BOATS.off
+      const length = randomRange(rng, BOATS.length.min, BOATS.length.max)
+      const boat: Footprint = {
+        x: cx + alongX * along + spot.outX * across,
+        z: cz + alongZ * along + spot.outZ * across,
+        yaw: yaw + randomRange(rng, -0.15, 0.15) + (rng() < 0.5 ? 0 : Math.PI),
+        width: length,
+        depth: BOATS.width,
+      }
+      const tone = rng()
+      const water = seabedUnder(field, boat)
+      if (water.high > seaLevel - BOAT_DEPTH || placed.meets(boat, 1)) continue
+      placed.add(boat)
+      buildings.push({ kind: 'boat', ...boat, bottom: seaLevel - BOATS.draft, top: seaLevel + BOATS.freeboard, tone })
+    }
+    noteStood(stands, 'harbour', cx, cz)
+    harbours += 1
+  }
+}
+
+/**
+ * The island's wrecks: on the shore spots the lighthouse and the harbour
+ * leave, far from both, a hull broken in two in the shallows just off the
+ * shore, the halves lying a little apart and splayed, half out of the
+ * water. The stern half carries the funnel and the bow half the mast, which
+ * the tone tells apart.
+ */
+function wreckShips(stands: Stands): void {
+  const { rng, field, seaLevel, placed, buildings } = stands
+  let wrecks = 0
+  for (const spot of shoreSpots(stands)) {
+    if (wrecks >= WRECKS_MOST) break
+    if (
+      !farFromKind(stands, 'lighthouse', spot.x, spot.z, WRECK_APART) ||
+      !farFromKind(stands, 'harbour', spot.x, spot.z, WRECK_APART) ||
+      !farFromKind(stands, 'wreck', spot.x, spot.z, WRECKS_APART)
+    ) {
+      continue
+    }
+    // Out from the shore to where the water is a metre or two deep.
+    let out = 3
+    while (out <= WRECK_SHALLOWS.reach && sampleHeight(field, spot.x + spot.outX * out, spot.z + spot.outZ * out) > seaLevel - WRECK_SHALLOWS.least) {
+      out += 3
+    }
+    if (out > WRECK_SHALLOWS.reach) continue
+    const x = spot.x + spot.outX * out
+    const z = spot.z + spot.outZ * out
+    if (sampleHeight(field, x, z) < seaLevel - WRECK_SHALLOWS.most) continue
+    const site: Footprint = { x, z, yaw: 0, width: WRECK_FOOTPRINT, depth: WRECK_FOOTPRINT }
+    if (placed.meets(site, 0) || !stands.clear(site, 0)) continue
+    // The hull lies along the shore, more or less, the halves each turned a little off that line.
+    const line = yawAlong(-spot.outZ, spot.outX) + randomRange(rng, -0.5, 0.5)
+    const { ux, uz } = axesOf(line)
+    const splay = rng() < 0.5 ? 1 : -1
+    const halves: { footprint: Footprint; bottom: number; tone: number }[] = []
+    for (const [k, side] of [
+      [0, -1],
+      [1, 1],
+    ] as const) {
+      const centre = side * (WRECK.half / 2 + WRECK.gap / 2)
+      const half: Footprint = {
+        x: x + ux * centre,
+        z: z + uz * centre,
+        yaw: line + side * splay * WRECK.splay,
+        width: WRECK.half,
+        depth: WRECK.width,
+      }
+      // Each half in the shallows: under the sea all over, not deep under
+      // its middle, and off no ledge that drops away under a corner.
+      const seabed = seabedUnder(field, half)
+      const middle = sampleHeight(field, half.x, half.z)
+      if (seabed.high > seaLevel - 0.3 || middle < seaLevel - WRECK_SHALLOWS.most || seabed.low < seaLevel - WRECK_SHALLOWS.drop) break
+      halves.push({ footprint: half, bottom: seabed.low - BURY, tone: (k + rng()) / 2 })
+    }
+    if (halves.length < 2) continue
+    placed.add(site)
+    for (const half of halves) {
+      buildings.push({ kind: 'hull', ...half.footprint, bottom: half.bottom, top: seaLevel + WRECK.above, tone: half.tone })
+    }
+    noteStood(stands, 'wreck', x, z)
+    wrecks += 1
   }
 }
 

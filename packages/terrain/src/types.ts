@@ -128,6 +128,9 @@ export type BuildingKind =
   | 'tent'
   | 'caravan'
   | 'firepit'
+  | 'quay'
+  | 'boat'
+  | 'hull'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
@@ -137,6 +140,9 @@ export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'tur
 
 /** Kinds that stand in the air on something else, a canopy on its posts or a lintel on its stones, rather than on the ground. */
 export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy']
+
+/** Kinds that stand in the sea: a harbour's quay and breakwater, the boats moored there, and the halves of a wreck. */
+export const SEA_KINDS: readonly BuildingKind[] = ['quay', 'boat', 'hull']
 
 /**
  * A rectangle painted on the ground: a farm's field of crop, hedged about, a
@@ -162,7 +168,11 @@ export interface Building {
   depth: number
   bottom: number
   top: number
-  /** A shade for whoever draws it, 0 to 1. */
+  /**
+   * A shade for whoever draws it, 0 to 1. For a wreck's hull it says which
+   * half this is as well: under a half the stern, with the funnel, and over
+   * it the bow, with the mast.
+   */
   tone: number
 }
 
