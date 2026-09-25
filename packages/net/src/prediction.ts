@@ -205,6 +205,10 @@ export class LocalPrediction {
   get shots(): Arena['shots'] {
     return this.mirror.shots
   }
+  /** The props, as the mirror has them: the server's word, run ahead. */
+  get props(): Arena['props'] {
+    return this.mirror.props
+  }
 
   /** Bananas taken, as predicted; the server's count catches up with it. */
   get score(): number {
@@ -359,6 +363,15 @@ export class LocalPrediction {
       seat.stunnedTicks = vehicle.stunnedTicks
       seat.slowedTicks = vehicle.slowedTicks
       seat.slowedBy = vehicle.slowedBy
+    }
+    // The props are where the server says, moving as it says; the mirror runs them on from there.
+    for (const moved of snapshot.props) {
+      const prop = this.mirror.props[moved.id]
+      if (prop === undefined) continue
+      prop.body.setTranslation(moved.position, true)
+      prop.body.setRotation(moved.rotation, true)
+      prop.body.setLinvel(moved.linearVelocity, true)
+      prop.body.setAngvel(moved.angularVelocity, true)
     }
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,

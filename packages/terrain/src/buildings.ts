@@ -40,6 +40,7 @@ import type {
   River,
   Road,
   RoadPoint,
+  Prop,
   Rock,
   Sidewalk,
   Tree,
@@ -81,6 +82,19 @@ const INTERCHANGE_TREES = 0.6
 const INTERCHANGE_SHRUBS = 0.9
 /** Lots left as parks, one in this many. */
 const PARK_LOT_ODDS = 7
+/**
+ * Props, the furniture a car can knock about, no more than this many to an
+ * island: barrels stacked this many deep beside a filling station's shop,
+ * crates this many along the strip outside a building site's hoardings,
+ * a line of this many cones this far apart as roadworks every so far along
+ * the suburb roads, and this many bales to a crop field.
+ */
+const PROPS_MOST = 250
+const PROP_SALT = 0x5a1d
+const STATION_BARRELS = 4
+const SITE_CRATES = 3
+const ROADWORKS = { cones: 6, apart: 2.2, every: 450 } as const
+const FIELD_BALES = { min: 2, max: 4 } as const
 /**
  * Building sites: an open lot this near the heart of a city (as a share of
  * the way in from the core's edge) is this often hoarded round, this far
@@ -665,6 +679,7 @@ function fillCities(
   fields: Field[],
   trees: Tree[],
   plant: Planter,
+  props: Prop[],
 ): void {
   const { width, cellSize } = field
   /** A street tree: its trunk on the sidewalk, needing only that much room, its crown over the street. */
@@ -858,6 +873,13 @@ function fillCities(
                 const hoarding: Footprint = { ...lot, width: lot.width - 2 * HOARDING_INSET, depth: lot.depth - 2 * HOARDING_INSET }
                 buildings.push({ kind: 'site', ...hoarding, bottom: ground.low - BURY, top: ground.high + HOARDING_HEIGHT, tone: rng() })
                 sites.push(hoarding)
+                // Crates along the strip between the hoardings and the pavement.
+                const { ux, uz, vx, vz } = axesOf(lot.yaw)
+                for (let k = 0; k < SITE_CRATES; k++) {
+                  const along = (k - (SITE_CRATES - 1) / 2) * 1.3
+                  const out = hoarding.depth / 2 + HOARDING_INSET / 2
+                  props.push({ kind: 'crate', x: lot.x + ux * along + vx * out, z: lot.z + uz * along + vz * out, bottom: sampleHeight(field, lot.x + ux * along + vx * out, lot.z + uz * along + vz * out), yaw: lot.yaw })
+                }
                 built += 1
                 continue
               }
@@ -1397,7 +1419,7 @@ export function generateBuildings(
   lakes: Lake[],
   mountains: Mountain[],
   seed: number,
-): { buildings: Building[]; trees: Tree[]; rocks: Rock[]; ramps: Ramp[]; sidewalks: Sidewalk[]; fields: Field[] } {
+): { buildings: Building[]; trees: Tree[]; rocks: Rock[]; props: Prop[]; ramps: Ramp[]; sidewalks: Sidewalk[]; fields: Field[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
   // Buildings stand against the old kerb, on the sidewalk; what grows keeps
   // off the sidewalk as well as the street. Nothing is built at all on the
@@ -1415,6 +1437,7 @@ export function generateBuildings(
   const sidewalks: Sidewalk[] = []
   const plant = planter(rng, field, placed, trees, clearOfStreets)
   const fields: Field[] = []
+  const props: Prop[] = []
   fillCities(
     rng,
     field,
@@ -1430,10 +1453,13 @@ export function generateBuildings(
     fields,
     trees,
     plant,
+    props,
   )
   plantInterchanges(rng, zones, wet, plant)
   lineRamps(rng, field, districtOf, roads, clear, wet, placed, ramps)
   const stands: Stands = {
+    props,
+    propRng: createRng((seed ^ PROP_SALT) >>> 0),
     rng,
     field,
     seaLevel,
@@ -1451,6 +1477,7 @@ export function generateBuildings(
   }
   // The stations take their lots before the houses line the roads, or the houses would leave them none.
   raiseStations(stands, fields)
+  coneOffRoadworks(stands)
   lineArterials(rng, field, districtOf, roads, clear, wet, placed, buildings, plant)
   // The observatory throws its own dice, so which islands have one does
   // not change whenever something else in here draws a number more or less.
@@ -1470,11 +1497,14 @@ export function generateBuildings(
   pitchCamps({ ...stands, rng: createRng((seed ^ CAMP_SALT) >>> 0) }, plant)
   const rocks: Rock[] = []
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant, placed, rocks)
-  return { buildings, trees, rocks, ramps, sidewalks, fields }
+  return { buildings, trees, rocks, props, ramps, sidewalks, fields }
 }
 
 /** What everything that stands about the country is placed with. */
 interface Stands {
+  /** The props placed so far, no more than PROPS_MOST, and the dice they throw, so that they move nothing else. */
+  readonly props: Prop[]
+  readonly propRng: Rng
   rng: Rng
   field: Heightfield
   seaLevel: number
@@ -1541,6 +1571,12 @@ function standsHere(stands: Stands, footprint: Footprint, roadMargin: number, re
   return ground
 }
 
+/** A prop standing on the ground at a spot, turned this way, while the island has room for more. */
+function prop(stands: Stands, kind: Prop['kind'], x: number, z: number, yaw: number): void {
+  if (stands.props.length >= PROPS_MOST || stands.wet(x, z)) return
+  stands.props.push({ kind, x, z, bottom: sampleHeight(stands.field, x, z), yaw })
+}
+
 /** A round tower of a kind, this wide and tall, standing on the ground found for it. */
 function tower(stands: Stands, kind: Building['kind'], footprint: Footprint, ground: Ground, height: number): void {
   stands.placed.add(footprint)
@@ -1580,6 +1616,13 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
       placed.add(footprint)
       fields.push({ kind: 'crop', ...footprint, tone: rng() })
       hedge(stands, footprint, plant)
+      // A few bales left lying in the field.
+      const { propRng } = stands
+      for (let k = randomInt(propRng, FIELD_BALES.min, FIELD_BALES.max); k > 0; k--) {
+        const u = randomRange(propRng, -footprint.width / 2 + 3, footprint.width / 2 - 3)
+        const v = randomRange(propRng, -footprint.depth / 2 + 3, footprint.depth / 2 - 3)
+        prop(stands, 'bale', footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, yaw + randomRange(propRng, -0.4, 0.4))
+      }
     }
     // The barn off the end of the first field, broadside to the row, and the silos beside it.
     const first = laid[0]
@@ -1873,10 +1916,45 @@ function raiseStations(stands: Stands, fields: Field[]): void {
           }
         }
         stand('sign', { ...at(STATION_LOT.width / 2 - 2, -(STATION_LOT.depth / 2 - 1.5)), yaw, width: SIGN.width, depth: SIGN.depth }, 0, SIGN.height)
+        // Barrels in a row beside the shop, along the back of the lot.
+        for (let k = 0; k < STATION_BARRELS; k++) {
+          const beside = at(SHOP.width / 2 + 1 + k * 0.8, STATION_LOT.depth / 2 - SHOP.depth / 2 - 1)
+          prop(stands, 'barrel', beside.x, beside.z, yaw)
+        }
         stations.push({ x: lot.x, z: lot.z })
         travelled = 0
         break
       }
+    }
+  }
+}
+
+/**
+ * Roadworks along the suburb stretches of the main roads, every so far: a
+ * line of cones down one edge of the carriageway, for a car to scatter.
+ */
+function coneOffRoadworks(stands: Stands): void {
+  const rng = stands.propRng
+  for (const road of mainRoads(stands.roads)) {
+    if (road.kind === 'highway') continue
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    let travelled = randomRange(rng, 0, ROADWORKS.every)
+    let previous = road.points[0]
+    for (const [index, point] of road.points.entries()) {
+      if (index >= segmentCount || previous === undefined) break
+      travelled += hypot(point.x - previous.x, point.z - previous.z)
+      previous = point
+      if (travelled < ROADWORKS.every || road.structure[index] !== ROAD_GRADE) continue
+      if (districtAt(stands, point.x, point.z) !== DISTRICT_SUBURB) continue
+      const { dx, dz, nx, nz } = frameAlong(road, index, point)
+      const side = rng() < 0.5 ? 1 : -1
+      const edge = road.width / 2 - 0.6
+      for (let k = 0; k < ROADWORKS.cones; k++) {
+        const along = k * ROADWORKS.apart
+        prop(stands, 'cone', point.x + dx * along + nx * side * edge, point.z + dz * along + nz * side * edge, -atan2(dz, dx))
+      }
+      travelled = 0
     }
   }
 }

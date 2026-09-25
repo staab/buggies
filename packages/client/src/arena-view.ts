@@ -6,12 +6,13 @@ import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import { Explosions } from './explosion.ts'
 import { PickupField, type PickupSource } from './pickups-view.ts'
+import { PropsView, type PropSource } from './props-view.ts'
 import { RocketsView, type RocketSource } from './rockets-view.ts'
 import { Smoke } from './smoke.ts'
 import { Tracers } from './tracers.ts'
 
 /** Where everything on the island besides the cars is read from: an arena, or a mirror of one. */
-export interface ArenaSource extends PickupSource, RocketSource {
+export interface ArenaSource extends PickupSource, RocketSource, PropSource {
   readonly shots: readonly Shot[]
 }
 
@@ -32,6 +33,7 @@ export class ArenaView {
   private readonly pickups: PickupField
   private readonly rockets: RocketsView
   private readonly tracers: Tracers
+  private readonly props: PropsView
 
   constructor(source: ArenaSource, sound: Sound | null, ear: Ear) {
     this.source = source
@@ -42,7 +44,8 @@ export class ArenaView {
     })
     this.rockets = new RocketsView(source, this.effects, ear)
     this.tracers = new Tracers(sound, ear)
-    this.object.add(this.explosions.object, this.smoke.object, this.pickups.object, this.rockets.object, this.tracers.object)
+    this.props = new PropsView(source)
+    this.object.add(this.explosions.object, this.smoke.object, this.pickups.object, this.rockets.object, this.tracers.object, this.props.object)
   }
 
   /** A frame on: after the cars have fed the effects, so that what they gave off this frame is seen. */
@@ -51,12 +54,14 @@ export class ArenaView {
     this.tracers.fire(this.source.shots, this.source.tick)
     this.tracers.update(dt)
     this.rockets.update(dt)
+    this.props.update()
     this.smoke.update(dt)
     this.explosions.update(dt)
   }
 
   dispose(): void {
     this.tracers.dispose()
+    this.props.dispose()
     this.rockets.dispose()
     this.pickups.dispose()
     this.explosions.dispose()

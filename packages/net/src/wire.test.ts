@@ -9,6 +9,7 @@ import {
 import {
   INPUT_BYTES,
   SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_PROP_BYTES,
   SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_REMOVED_BYTES,
   SNAPSHOT_ROCKET_BYTES,
@@ -97,6 +98,15 @@ const snapshot: SnapshotMessage = {
     { id: 9, owner: 2, target: 5, position: { x: 1, y: 2, z: 3 }, velocity: { x: 40, y: -1, z: 20 }, age: 12 },
     { id: 65535, owner: 7, target: -1, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, age: 0 },
   ],
+  props: [
+    {
+      id: 17,
+      position: { x: 100.5, y: 3.25, z: 200.75 },
+      rotation: { x: 0, y: 0.7071067811865476, z: 0, w: 0.7071067811865476 },
+      linearVelocity: { x: 2, y: -1, z: 0.5 },
+      angularVelocity: { x: 0.1, y: 0.2, z: 0.3 },
+    },
+  ],
 }
 
 describe('wire', () => {
@@ -125,6 +135,7 @@ describe('wire', () => {
     const payload = encodeSnapshot(snapshot)
     expect(payload.length).toBe(
       SNAPSHOT_HEADER_BYTES +
+        snapshot.props.length * SNAPSHOT_PROP_BYTES +
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
         2 * SNAPSHOT_SPILLED_BYTES +
@@ -147,7 +158,7 @@ describe('wire', () => {
       }
     }
     // With nothing changed, a snapshot is its vehicles alone.
-    const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [] }
+    const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [] }
     expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
@@ -179,6 +190,14 @@ describe('wire', () => {
         for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(vehicle[key][axis], 4)
       }
       for (const axis of ['x', 'y', 'z', 'w'] as const) expect(got.rotation[axis]).toBeCloseTo(vehicle.rotation[axis], 6)
+    }
+    for (const [i, prop] of snapshot.props.entries()) {
+      const got = decoded.props[i]!
+      expect(got.id).toBe(prop.id)
+      for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
+        for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(prop[key][axis], 4)
+      }
+      for (const axis of ['x', 'y', 'z', 'w'] as const) expect(got.rotation[axis]).toBeCloseTo(prop.rotation[axis], 6)
     }
   })
 

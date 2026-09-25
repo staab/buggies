@@ -603,6 +603,33 @@ describe('a session', () => {
     session.dispose()
   }, 120_000)
 
+  it('sends a prop that is on the move to every mirror, and one nobody has touched to none', async () => {
+    // A small island may have no props of its own: a few cones are set out on it for the test, and taken away after.
+    const spawn = map.roads[0]!.points[0]!
+    const cones = 3
+    for (let k = 0; k < cones; k++) map.props.push({ kind: 'cone', x: spawn.x + k * 3, z: spawn.z, bottom: spawn.y, yaw: 0 })
+    const session = new Session()
+    const a = await session.join()
+    const b = await session.join()
+    session.run(1)
+    // Everything at rest: the snapshots carry no props.
+    expect(session.arena.props.length).toBeGreaterThanOrEqual(cones)
+    for (const prop of session.arena.props) prop.body.sleep()
+    session.run(0.5)
+    expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
+    // A cone knocked into the air on the server is seen flying on both mirrors.
+    const cone = session.arena.props.find((prop) => prop.kind === 'cone')!
+    cone.body.setLinvel({ x: 3, y: 6, z: 0 }, true)
+    session.run(0.5)
+    const at = cone.body.translation()
+    for (const player of [a, b]) {
+      const mirrored = player.prediction.props[cone.id]!.body.translation()
+      expect(Math.hypot(mirrored.x - at.x, mirrored.y - at.y, mirrored.z - at.z)).toBeLessThan(1.5)
+    }
+    session.dispose()
+    map.props.length -= cones
+  }, 120_000)
+
   it('keeps inputs to their ranges, drops a flood of them, and lets go of a player heard nothing from', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')

@@ -109,4 +109,6 @@ export type {
   TerrainOptions,
   Tree,
   Rock,
+  Prop,
+  PropKind,
 } from './types.ts'

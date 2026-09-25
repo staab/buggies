@@ -290,6 +290,23 @@ export interface Rock {
   tone: number
 }
 
+/** The kinds of thing a car can knock about. */
+export type PropKind = 'crate' | 'barrel' | 'cone' | 'bale'
+
+/**
+ * A prop: the one kind of furniture that moves. Where it starts, standing
+ * on the ground, turned by `yaw`; the physics owns it from there, and puts
+ * it back here if it falls off the map.
+ */
+export interface Prop {
+  kind: PropKind
+  x: number
+  z: number
+  /** The ground it stands on. */
+  bottom: number
+  yaw: number
+}
+
 export interface TerrainMap {
   seed: number
   size: number
@@ -306,6 +323,7 @@ export interface TerrainMap {
   buildings: Building[]
   trees: Tree[]
   rocks: Rock[]
+  props: Prop[]
   ramps: Ramp[]
   sidewalks: Sidewalk[]
   fields: Field[]
