@@ -22,8 +22,24 @@ export interface PropShape {
 export const PROP_SHAPES: Readonly<Record<PropKind, PropShape>> = {
   crate: { shape: 'box', halfWidth: 0.5, halfHeight: 0.5, halfDepth: 0.5, mass: 30, friction: 0.7, restitution: 0.2, onSide: false },
   barrel: { shape: 'drum', halfWidth: 0.3, halfHeight: 0.45, halfDepth: 0.3, mass: 50, friction: 0.6, restitution: 0.15, onSide: false },
-  cone: { shape: 'cone', halfWidth: 0.25, halfHeight: 0.35, halfDepth: 0.25, mass: 3, friction: 0.6, restitution: 0.3, onSide: false },
+  cone: { shape: 'cone', halfWidth: 0.32, halfHeight: 0.45, halfDepth: 0.32, mass: 3, friction: 0.6, restitution: 0.3, onSide: false },
   bale: { shape: 'drum', halfWidth: 0.6, halfHeight: 0.6, halfDepth: 0.6, mass: 80, friction: 0.9, restitution: 0.05, onSide: true },
+}
+
+/**
+ * How many flat sides a cone has. A perfectly round cone lying on its side
+ * rolls in circles for good, never coming to rest; a faceted one lies on a face.
+ */
+export const CONE_SIDES = 12
+
+/** A cone's points about its middle, apex up, its base ring placed as three.js places a cone's. */
+function conePoints(halfHeight: number, radius: number): Float32Array {
+  const points = [0, halfHeight, 0]
+  for (let side = 0; side < CONE_SIDES; side++) {
+    const angle = (side / CONE_SIDES) * Math.PI * 2
+    points.push(Math.sin(angle) * radius, -halfHeight, Math.cos(angle) * radius)
+  }
+  return new Float32Array(points)
 }
 
 /** How high a prop's middle stands over the ground it starts on. */
@@ -61,7 +77,8 @@ export function addProp(world: RAPIER.World, prop: Prop): RAPIER.RigidBody {
       ? RAPIER.ColliderDesc.cuboid(shape.halfWidth, shape.halfHeight, shape.halfDepth)
       : shape.shape === 'drum'
         ? RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.halfWidth)
-        : RAPIER.ColliderDesc.cone(shape.halfHeight, shape.halfWidth)
+        : // A hull of distinct points always makes a collider.
+          RAPIER.ColliderDesc.convexHull(conePoints(shape.halfHeight, shape.halfWidth))!
   world.createCollider(desc.setDensity(0).setMass(shape.mass).setFriction(shape.friction).setRestitution(shape.restitution), body)
   return body
 }

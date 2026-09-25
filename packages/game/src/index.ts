@@ -3,6 +3,7 @@ import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type Ter
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
+  CONE_SIDES,
   PROP_SHAPES,
   addProp,
   addTerrain,
@@ -41,6 +42,7 @@ export {
   createVehicle,
   stepVehicle,
   createPhysicsWorld,
+  CONE_SIDES,
   PROP_SHAPES,
   addHeightfield,
   addProp,
