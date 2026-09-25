@@ -11,8 +11,8 @@ import { generateTerrain } from './index.ts'
  * client and that is the bug.
  */
 const GOLDEN: Record<number, string> = {
-  7: 'd0c615dc',
-  11: '6e475efc',
+  7: '09c2bf90',
+  11: '4025eb2c',
 }
 
 describe('terrain determinism', () => {

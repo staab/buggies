@@ -5,7 +5,7 @@ import { insidePolygon, interchangeZones } from './interchanges.ts'
 import { STREET_SPACING, STREET_WIDTH } from './roads.ts'
 import { generateTerrain } from './generate.ts'
 import { orientedTriangle, signedDistanceToTriangle } from './mountain.ts'
-import { HOUSE_KINDS, RAISED_KINDS, type BuildingKind } from './types.ts'
+import { HOUSE_KINDS, RAISED_KINDS, SEA_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
 const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3 }
@@ -200,6 +200,97 @@ describe('buildings and trees', () => {
     )
     expect(planted.length).toBeGreaterThan(houses.length * 0.7)
   })
+
+  it('build a harbour where a city meets the sea: a quay half over the water, a breakwater out from its end, boats moored inside', () => {
+    let harbours = 0
+    for (let seed = 1; seed <= 6; seed++) {
+      const island = generateTerrain(seed, { size: 513 })
+      const { seaLevel, heightfield } = island
+      const quays = island.buildings.filter((building) => building.kind === 'quay')
+      const boats = island.buildings.filter((building) => building.kind === 'boat')
+      const long = quays.filter((quay) => quay.width > 30)
+      expect(long.length).toBeLessThanOrEqual(1)
+      if (long.length === 0) {
+        expect(quays).toHaveLength(0)
+        expect(boats).toHaveLength(0)
+        continue
+      }
+      harbours++
+      const quay = long[0]!
+      // One long side over the land, the other over the sea, the top just above both.
+      const cos = Math.cos(quay.yaw)
+      const sin = Math.sin(quay.yaw)
+      const sideHeight = (sv: number): number => sampleHeight(heightfield, quay.x + (sv * quay.depth * sin) / 2, quay.z + (sv * quay.depth * cos) / 2)
+      const sides = [sideHeight(1), sideHeight(-1)]
+      expect(Math.min(...sides)).toBeLessThan(seaLevel)
+      expect(Math.max(...sides)).toBeGreaterThan(seaLevel)
+      expect(quay.top).toBeGreaterThan(seaLevel + 0.9)
+      expect(quay.top).toBeGreaterThan(Math.max(...sides))
+      expect(quay.bottom).toBeLessThan(seaLevel)
+      // Beside a city or its suburbs.
+      const near = island.districts.some((district) => Math.hypot(district.cx - quay.x, district.cz - quay.z) < district.radius + district.suburbWidth + 80)
+      expect(near).toBe(true)
+      // The breakwater: a run of slabs from the quay's end into the water, each near the last.
+      const slabs = quays.filter((other) => other !== quay)
+      expect(slabs.length).toBeGreaterThanOrEqual(8)
+      const end = { x: quay.x + (cos * quay.width) / 2, z: quay.z - (sin * quay.width) / 2 }
+      expect(Math.hypot(slabs[0]!.x - end.x, slabs[0]!.z - end.z)).toBeLessThan(5)
+      for (const [k, slab] of slabs.entries()) {
+        expect(sampleHeight(heightfield, slab.x, slab.z)).toBeLessThan(seaLevel)
+        expect(slab.top).toBeCloseTo(seaLevel + 1, 6)
+        if (k > 0) expect(Math.hypot(slab.x - slabs[k - 1]!.x, slab.z - slabs[k - 1]!.z)).toBeLessThan(7)
+      }
+      // The boats float in the water off the quay.
+      expect(boats.length).toBeGreaterThanOrEqual(1)
+      for (const boat of boats) {
+        expect(sampleHeight(heightfield, boat.x, boat.z)).toBeLessThan(seaLevel - 1)
+        expect(boat.bottom).toBeLessThan(seaLevel)
+        expect(boat.top).toBeGreaterThan(seaLevel)
+        expect(Math.hypot(boat.x - quay.x, boat.z - quay.z)).toBeLessThan(60)
+      }
+    }
+    expect(harbours).toBeGreaterThanOrEqual(1)
+  }, 120_000)
+
+  it('wreck a ship or two in the shallows off a headland, far from the lighthouse and the harbour', () => {
+    let wrecks = 0
+    for (let seed = 1; seed <= 6; seed++) {
+      const island = generateTerrain(seed, { size: 513 })
+      const { seaLevel, heightfield } = island
+      const hulls = island.buildings.filter((building) => building.kind === 'hull')
+      expect(hulls.length % 2).toBe(0)
+      expect(hulls.length).toBeLessThanOrEqual(4)
+      const keepFrom = island.buildings.filter((building) => building.kind === 'lighthouse' || (building.kind === 'quay' && building.width > 30))
+      for (let k = 0; k < hulls.length; k += 2) {
+        wrecks++
+        const stern = hulls[k]!
+        const bow = hulls[k + 1]!
+        expect(stern.tone).toBeLessThan(0.5)
+        expect(bow.tone).toBeGreaterThanOrEqual(0.5)
+        // The halves lie a little apart, splayed off one line.
+        expect(Math.hypot(stern.x - bow.x, stern.z - bow.z)).toBeGreaterThan(stern.width)
+        expect(Math.hypot(stern.x - bow.x, stern.z - bow.z)).toBeLessThan(stern.width + 4)
+        expect(Math.abs(stern.yaw - bow.yaw)).toBeGreaterThan(0.1)
+        for (const half of [stern, bow]) {
+          // In water shallower than three metres, half out of it, with land within twenty metres.
+          const seabed = sampleHeight(heightfield, half.x, half.z)
+          expect(seabed).toBeLessThan(seaLevel)
+          expect(seabed).toBeGreaterThan(seaLevel - 3.5)
+          expect(half.top).toBeGreaterThan(seaLevel + 2)
+          expect(half.bottom).toBeLessThan(seabed)
+          let land = false
+          for (let angle = 0; angle < Math.PI * 2 && !land; angle += Math.PI / 8) {
+            for (let reach = 5; reach <= 25 && !land; reach += 5) {
+              if (sampleHeight(heightfield, half.x + Math.cos(angle) * reach, half.z + Math.sin(angle) * reach) > seaLevel) land = true
+            }
+          }
+          expect(land).toBe(true)
+          for (const other of keepFrom) expect(Math.hypot(other.x - half.x, other.z - half.z)).toBeGreaterThan(280)
+        }
+      }
+    }
+    expect(wrecks).toBeGreaterThanOrEqual(1)
+  }, 120_000)
 
   it('raise one observatory at most, on a mountain top, on about half the islands', () => {
     let domes = 0
@@ -440,6 +531,8 @@ describe('buildings and trees', () => {
 
   it('keep every building and tree off every road and out of the water', () => {
     for (const building of map.buildings) {
+      // A harbour's stone and boats and a wreck's hull stand in the sea on purpose.
+      if (SEA_KINDS.includes(building.kind)) continue
       for (const point of samples(building)) {
         expect(roadCrowding(map.roads, point.x, point.z)).toBeGreaterThan(1)
         expect(sampleHeight(map.heightfield, point.x, point.z)).toBeGreaterThan(map.seaLevel)
