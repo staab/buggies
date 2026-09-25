@@ -58,6 +58,7 @@ function findDryCrossing(
   seaLevel: number,
   samples: Vec2[],
   wet: Uint8Array,
+  buried: Uint8Array,
   wetAt: (x: number, z: number) => boolean,
   deck: Float32Array,
   cum: Float32Array,
@@ -68,16 +69,25 @@ function findDryCrossing(
   strict = true,
 ): number {
   const count = samples.length
+  const step = total / count
   for (let offset = 0; offset <= maxOffset; offset++) {
     for (const c of [(index + offset) % count, (index - offset + count) % count]) {
       if (!permits(c)) continue
       if (wet[c]) continue
+      // Nothing of an interchange can be in a tunnel: a ramp cannot leave a
+      // deck that is underground, nor a cross road pass under one. The whole
+      // stretch from one pair of mouths to the other must be out in the open.
+      const clearFrom = Math.ceil((RAMP_ALONG + RAMP_WIDTH) / step)
+      let underground = false
+      for (let k = -clearFrom; k <= clearFrom && !underground; k++) {
+        if (buried[(c + k + count) % count]) underground = true
+      }
+      if (underground) continue
       // The ramps leave the deck RAMP_ALONG either side, and run level beside
       // it for a while after: the highway must be on the ground along each
       // mouth, not on a bridge, for the ramp to have a shoulder to leave onto.
       // A city that has no such site is still given its exit, and its ramps
       // may come out with nothing beside the deck at the mouth.
-      const step = total / count
       const mouthFrom = Math.floor((RAMP_ALONG - RAMP_MOUTH_GROUND) / step)
       const mouthTo = Math.ceil((RAMP_ALONG + RAMP_WIDTH) / step)
       let bridged = false
@@ -152,6 +162,7 @@ export function interchangeCenters(
   seaLevel: number,
   samples: Vec2[],
   wet: Uint8Array,
+  buried: Uint8Array,
   wetAt: (x: number, z: number) => boolean,
   cum: Float32Array,
   total: number,
@@ -218,9 +229,9 @@ export function interchangeCenters(
     const reach = Math.round((district.radius + district.suburbWidth) / step) + search
     const permits = (candidate: number): boolean =>
       nearestCity(candidate) === district && gapTo(candidate) >= touching
-    let c = findDryCrossing(field, seaLevel, samples, wet, wetAt, deck, cum, total, seed, reach, permits)
+    let c = findDryCrossing(field, seaLevel, samples, wet, buried, wetAt, deck, cum, total, seed, reach, permits)
     if (c < 0) {
-      c = findDryCrossing(field, seaLevel, samples, wet, wetAt, deck, cum, total, seed, reach, permits, false)
+      c = findDryCrossing(field, seaLevel, samples, wet, buried, wetAt, deck, cum, total, seed, reach, permits, false)
     }
     if (c >= 0) centers.push(c)
   }
@@ -236,6 +247,7 @@ export function interchangeCenters(
       seaLevel,
       samples,
       wet,
+      buried,
       wetAt,
       deck,
       cum,

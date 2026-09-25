@@ -72,6 +72,7 @@ export {
   INTERCHANGE_SEARCH,
   RAMP_PLATEAU,
   RAMP_LANE_REACH,
+  RAMP_ALONG,
   ARTERIAL_WIDTH,
   MAX_ARTERIAL_GRADE,
   ARTERIAL_BRIDGE_GRADE,
@@ -193,11 +194,14 @@ export function generateRoads(
   // limit and so says nothing about how high the highway really stands.
   const deck = Float32Array.from(profile)
   limitGrade(deck, samples, MAX_ROAD_GRADE)
+  // Where that deck would run underground: a tunnel, which no interchange can touch.
+  const buried = Uint8Array.from(ground, (height, i) => (height - deck[i]! > TUNNEL_DEPTH ? 1 : 0))
   const crossings = interchangeCenters(
     field,
     seaLevel,
     samples,
     wet,
+    buried,
     (x, z) => surfaceAt(x, z).wet,
     cum,
     total,
