@@ -223,11 +223,6 @@ const CABIN_ROOF = new THREE.Color('#c9c4b8')
 const CABIN_GLASS = new THREE.Color('#3a4750')
 /** How far over the sea the boot-top's dark band shows. */
 const BOOT_TOP_OVER = 0.15
-/** A dam's concrete, the darker spillway down its face, the white of the water down it, and the railing along its crest. */
-const DAM_COLOR = new THREE.Color('#c9c6bd')
-const SPILLWAY_COLOR = new THREE.Color('#9a9993')
-const SPILL_WATER = new THREE.Color('#eaf3f6')
-const DAM_RAIL = { height: 0.9, thick: 0.15 } as const
 /** A chair lift: grey pylons with a crossbar and sheaves, a cable strung over them, chairs hung from it and moving up and down, and a shed at each end. */
 const PYLON_COLOR = new THREE.Color('#8e9096')
 const CABLE_COLOR = new THREE.Color('#3a3c40')
@@ -260,8 +255,6 @@ const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), ne
 const CRANE_CAB = new THREE.Color('#d9dde3')
 const CONCRETE = new THREE.Color('#9a9a94')
 const CRANE = { column: 0.25, brace: 0.12, level: 4, jib: 32, counterJib: 10, cab: 2.6, hookAlong: 0.7, hookDrop: 0.45, turn: 0.06 } as const
-/** A dam's downstream face leans out this much of its height, with this many buttresses up it, under a crest this thick. */
-const DAM_FACE = { lean: 0.35, buttresses: 4, crest: 0.8 } as const
 /** A viewpoint's low stone wall and the board on its posts. */
 const WALL_COLOR = new THREE.Color('#a9a59b')
 const BOARD_COLOR = new THREE.Color('#e4dcc6')
@@ -948,35 +941,63 @@ function buildLakeGeometry(lakes: Lake[], size: number, cellSize: number): THREE
   return geometry
 }
 
-function buildRiverGeometry(river: River): THREE.BufferGeometry {
-  const points = river.points
+/** How far apart the points of a river's spline are drawn, in metres, and how much of a bend it rounds. */
+const RIVER_STEP = 1.5
+const RIVER_CURVE = 0.5
+
+/**
+ * Every river of a map as one ribbon mesh. Each course is drawn as a spline
+ * through its points, so it winds smoothly rather than turning at each,
+ * its width and surface height carried along it; the ribbon is drawn a
+ * little wider than the river so it laps into the cut banks, and the
+ * channel is cut to meet the water line at its edge, so the surface sits
+ * where it is rather than lifted clear of the ground.
+ */
+function buildRiversGeometry(rivers: readonly River[]): THREE.BufferGeometry {
   const positions: number[] = []
   const indices: number[] = []
-
-  for (const [i, point] of points.entries()) {
-    const prev = points[i - 1] ?? point
-    const next = points[i + 1] ?? point
-    let dx = next.x - prev.x
-    let dz = next.z - prev.z
-    const length = Math.hypot(dx, dz) || 1
-    dx /= length
-    dz /= length
-    // Drawn wider than the river so the ribbon laps into its banks: the channel
-    // is swept round bends, while these quads cut the corner, and the cut bank
-    // shows through any daylight left between them.
-    const halfWidth = (point.width / 2) * (1 + RIVER_BANK_LAP)
-    // The channel is cut to meet the water line at the ribbon's edge, so the
-    // surface is drawn where it actually sits rather than lifted clear of it.
-    const y = point.y
-    positions.push(point.x - dz * halfWidth, y, point.z + dx * halfWidth)
-    positions.push(point.x + dz * halfWidth, y, point.z - dx * halfWidth)
+  for (const river of rivers) {
+    const points = river.points
+    if (points.length < 2) continue
+    const curve = new THREE.CatmullRomCurve3(
+      points.map((point) => new THREE.Vector3(point.x, point.y, point.z)),
+      false,
+      'catmullrom',
+      RIVER_CURVE,
+    )
+    // A stretch of the curve per river point, sampled every step of the way.
+    const along = [0]
+    for (let i = 1; i < points.length; i++) {
+      along.push(along[i - 1]! + Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z))
+    }
+    const total = along[along.length - 1]! || 1
+    const samples = Math.max(2, Math.ceil(total / RIVER_STEP) + 1)
+    const first = positions.length / 3
+    const at = new THREE.Vector3()
+    const ahead = new THREE.Vector3()
+    for (let k = 0; k < samples; k++) {
+      const t = k / (samples - 1)
+      curve.getPointAt(t, at)
+      curve.getTangentAt(t, ahead)
+      // The width at this distance along, from the points either side of it.
+      const distance = t * total
+      let i = 1
+      while (i < along.length - 1 && along[i]! < distance) i++
+      const span = along[i]! - along[i - 1]! || 1
+      const share = Math.min(Math.max((distance - along[i - 1]!) / span, 0), 1)
+      const width = points[i - 1]!.width + (points[i]!.width - points[i - 1]!.width) * share
+      const halfWidth = (width / 2) * (1 + RIVER_BANK_LAP)
+      const length = Math.hypot(ahead.x, ahead.z) || 1
+      const nx = -ahead.z / length
+      const nz = ahead.x / length
+      positions.push(at.x + nx * halfWidth, at.y, at.z + nz * halfWidth)
+      positions.push(at.x - nx * halfWidth, at.y, at.z - nz * halfWidth)
+    }
+    for (let k = 0; k < samples - 1; k++) {
+      const a = first + k * 2
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+    }
   }
-
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = i * 2
-    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
-  }
-
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
@@ -1385,7 +1406,6 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const caravans = ofKind('caravan')
   const firepits = ofKind('firepit')
   const boats = ofKind('boat')
-  const dams = ofKind('dam')
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
   const walls = ofKind('wall')
@@ -1940,62 +1960,6 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A dam: a concrete wall across the valley holding a reservoir behind it,
-  // its downstream face sloping out to a wide foot with buttresses up it,
-  // a spillway down the middle with a streak of white water on it, a wider
-  // crest along the top and a railing along each edge of it.
-  const pitched = (dam: Building, matrix: THREE.Matrix4, sx: number, sy: number, sz: number, y: number, across: number, pitch: number): void => {
-    const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, dam.yaw, 0, 'YXZ'))
-    const offset = new THREE.Vector3(0, 0, across).applyAxisAngle(new THREE.Vector3(0, 1, 0), dam.yaw)
-    matrix.compose(new THREE.Vector3(dam.x + offset.x, y, dam.z + offset.z), turn, new THREE.Vector3(sx, sy, sz))
-  }
-  const buttresses = dams.flatMap((dam) => Array.from({ length: DAM_FACE.buttresses }, (_, k) => ({ dam, k })))
-  meshes.push(
-    instanced(box, plain, dams, (dam, matrix, color) => {
-      boxAt(dam, matrix)
-      color.copy(DAM_COLOR)
-    }),
-    // The sloping face: a slab leaning downstream from the crest to the foot.
-    instanced(box, plain, dams, (dam, matrix, color) => {
-      const rise = dam.top - dam.bottom
-      const lean = rise * DAM_FACE.lean
-      const length = Math.hypot(rise, lean)
-      pitched(dam, matrix, dam.width - 1, length, 0.6, (dam.top + dam.bottom) / 2, dam.depth / 2 + lean / 2, -Math.atan2(lean, rise))
-      color.copy(DAM_COLOR)
-    }),
-    instanced(box, plain, buttresses, ({ dam, k }, matrix, color) => {
-      const rise = dam.top - dam.bottom
-      const lean = rise * DAM_FACE.lean
-      const length = Math.hypot(rise, lean)
-      const along = (k - (DAM_FACE.buttresses - 1) / 2) * ((dam.width - 4) / (DAM_FACE.buttresses - 1))
-      const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.atan2(lean, rise), dam.yaw, 0, 'YXZ'))
-      const offset = new THREE.Vector3(along, 0, dam.depth / 2 + lean / 2 + 0.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), dam.yaw)
-      matrix.compose(new THREE.Vector3(dam.x + offset.x, (dam.top + dam.bottom) / 2 - 0.6, dam.z + offset.z), turn, new THREE.Vector3(1.2, length - 1.2, 1.4))
-      color.copy(DAM_COLOR)
-    }),
-    // The crest, a little wider than the wall, lipped over each face.
-    instanced(box, plain, dams, (dam, matrix, color) => {
-      upright(dam, matrix, dam.width, DAM_FACE.crest, dam.depth + 1.2, dam.top - DAM_FACE.crest / 2)
-      color.copy(CHURCH_COLOR)
-    }),
-    instanced(box, plain, dams, (dam, matrix, color) => {
-      const rise = (dam.top - dam.bottom) * 0.55
-      upright(dam, matrix, dam.width * 0.3, rise, dam.depth * 0.6, dam.bottom + rise / 2, 0, dam.depth * 0.8)
-      color.copy(SPILLWAY_COLOR)
-    }),
-    instanced(box, plain, dams, (dam, matrix, color) => {
-      const rise = (dam.top - dam.bottom) * 0.55
-      upright(dam, matrix, dam.width * 0.12, rise + 0.2, 0.3, dam.bottom + rise / 2 + 0.1, 0, dam.depth * 1.1 + 0.15)
-      color.copy(SPILL_WATER)
-    }),
-    ...[-1, 1].map((side) =>
-      instanced(box, plain, dams, (dam, matrix, color) => {
-        upright(dam, matrix, dam.width, DAM_RAIL.height, DAM_RAIL.thick, dam.top + DAM_RAIL.height / 2, 0, side * (dam.depth / 2 - 0.3))
-        color.copy(IRONWORK)
-      }),
-    ),
-  )
-
   // A chair lift: the pylons as grey posts with a crossbar and a sheave at
   // each end of it, the stations as sheds, the cable strung from crossbar
   // to crossbar with a little sag in each span, and the chairs hung from
@@ -2471,9 +2435,7 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   if (map.lakes.length > 0) {
     group.add(new THREE.Mesh(buildLakeGeometry(map.lakes, map.size, map.cellSize), waterMaterial))
   }
-  for (const river of map.rivers) {
-    group.add(new THREE.Mesh(buildRiverGeometry(river), waterMaterial))
-  }
+  if (map.rivers.length > 0) group.add(new THREE.Mesh(buildRiversGeometry(map.rivers), waterMaterial))
 
   if (map.roads.length > 0) {
     const roadMaterial = new THREE.MeshStandardMaterial({

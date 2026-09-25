@@ -68,6 +68,8 @@ const CHANNEL_SLOPE = 0.5
 const RIVER_INSET = 0.35
 /** Upper bound on how far a channel may cut into a steep bank. */
 const CHANNEL_MAX_INCISION = 5
+/** Each river point is drawn toward the run of this many neighbours either side, to take the trace's staircase out of the course. */
+const RIVER_SMOOTHING = 2
 /**
  * How far a lake's surface reaches past its own cells. A river meeting a lake is
  * the same water, so it holds the lake's level right up to the shore instead of
@@ -313,6 +315,39 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
     return { x: -dz / length, z: dx / length }
   }
 
+  /**
+   * Take the staircase out of each course. The trace steps from cell to
+   * cell, so the line it draws turns through right angles and diagonals
+   * every few metres; each point is drawn toward the run of its
+   * neighbours, the spring and the mouth held where they are, and the
+   * surface smoothed the same way, so the ribbon, and the channel cut for
+   * it, wind rather than zigzag.
+   */
+  const smooth = (): void => {
+    for (const river of rivers) {
+      const { points } = river
+      const before = points.map((point) => ({ x: point.x, y: point.y, z: point.z }))
+      for (let i = 1; i < points.length - 1; i++) {
+        let x = 0
+        let y = 0
+        let z = 0
+        let count = 0
+        for (let k = -RIVER_SMOOTHING; k <= RIVER_SMOOTHING; k++) {
+          const p = before[Math.min(Math.max(i + k, 0), before.length - 1)]!
+          x += p.x
+          y += p.y
+          z += p.z
+          count += 1
+        }
+        const point = points[i]!
+        point.x = x / count
+        point.y = y / count
+        point.z = z / count
+      }
+    }
+  }
+  smooth()
+
   // The surface as traced, before anything moved it.
   const traced = rivers.map((river) => river.points.map((point) => point.y))
 
@@ -404,7 +439,16 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
     // Every cell stamped or cut is within the field: the stamp is clamped to it.
 
     for (const river of rivers) {
-      for (const point of river.points) {
+      // Stamped along the course, between the points as well as at them, so
+      // the bed is one channel and not a string of pits.
+      const stamps: RiverPoint[] = []
+      for (const [i, point] of river.points.entries()) {
+        stamps.push(point)
+        const next = river.points[i + 1]
+        if (next === undefined) continue
+        stamps.push({ x: (point.x + next.x) / 2, y: (point.y + next.y) / 2, z: (point.z + next.z) / 2, width: (point.width + next.width) / 2 })
+      }
+      for (const point of stamps) {
         const half = point.width / 2
         // The bed runs flat across the middle, and the bank climbs from it to
         // the water line at the ribbon's edge. It is only cut as deep as that

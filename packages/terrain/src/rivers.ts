@@ -3,7 +3,7 @@ import { orientedTriangle, triangleCentroid, triangleInradius } from './mountain
 import type { Heightfield, Mountain, River, RiverPoint } from './types.ts'
 
 /** Headwaters start almost thread-thin and widen as the river descends. */
-const MIN_WIDTH = 0.4
+const MIN_WIDTH = 0.8
 const MAX_WIDTH = 6.5
 /** Springs sit this fraction of the mountain's rise below the summit. */
 const SOURCE_DROP = 0.5

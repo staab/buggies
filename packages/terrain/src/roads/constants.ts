@@ -256,8 +256,6 @@ export const CLIMB_START = {
   sin: Math.sin((35 * Math.PI) / 180),
   bankCost: 20,
 } as const
-/** A stream is crossed straight over where its far bank is within this many steps. */
-export const CLIMB_FORD = { steps: 6 } as const
 /** How far a climb keeps from every other road once it has left the arterial it starts from. */
 export const CLIMB_ROAD_KEEP = 24
 

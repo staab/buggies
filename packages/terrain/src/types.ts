@@ -141,7 +141,6 @@ export type BuildingKind =
   | 'caravan'
   | 'firepit'
   | 'boat'
-  | 'dam'
   | 'pylon'
   | 'station'
   | 'wall'
@@ -162,7 +161,7 @@ export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'tur
 export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy']
 
 /** Kinds that stand in the water rather than on the land: the boats moored off the shore, and a dam across a river. */
-export const WATER_KINDS: readonly BuildingKind[] = ['boat', 'dam']
+export const WATER_KINDS: readonly BuildingKind[] = ['boat']
 
 /**
  * A rectangle painted on the ground: a farm's field of crop, hedged about, a

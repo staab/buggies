@@ -2,10 +2,8 @@ import * as exact from '@buggies/physics'
 import { orientedTriangle, signedDistanceToTriangle } from '../mountain.ts'
 import type { Heightfield, Lot, Mountain, Road, RoadPoint } from '../types.ts'
 import {
-  ARTERIAL_BRIDGE_CLEARANCE,
   CLIMB_DIP,
   CLIMB_END,
-  CLIMB_FORD,
   CLIMB_GRADE,
   CLIMB_HAIRPIN,
   CLIMB_LOOK,
@@ -23,7 +21,6 @@ import {
   CLIMB_WIDTH,
   CLIMBS_MOST,
   MAX_CLIMB_GRADE,
-  ROAD_BRIDGE,
   ROAD_GRADE,
 } from './constants.ts'
 import { smoothstep } from './geometry.ts'
@@ -42,9 +39,8 @@ const { cos: cosine, hypot, sin: sine } = exact
  * itself in a hairpin where one will fit: half a loop bulging on ahead and
  * coming back the other way a road's spacing further up the slope, drawn
  * out as far as lets the road climb the difference at its grade. Gentler
- * ground is climbed straight up, and a stream is crossed straight over on
- * a short bridge. One climb per island at most, on the highest mountain an
- * arterial comes near.
+ * ground is climbed straight up, and water is never crossed. One climb per
+ * island at most, on the highest mountain an arterial comes near.
  */
 
 interface Spot {
@@ -139,11 +135,6 @@ function traceClimb(
   // The last hairpin and the stretch just into it, which the road after is meant to be near for a while.
   let skip = { from: -1, to: -1 }
   const ground = (px: number, pz: number): number => sampleTerrain(field, px, pz)
-  // The ground the road is to stand on: over water, a bridge deck clear of it.
-  const bed = (px: number, pz: number): number => {
-    const water = surfaceAt(px, pz)
-    return water.wet ? Math.max(water.level + ARTERIAL_BRIDGE_CLEARANCE, ground(px, pz)) : ground(px, pz)
-  }
   const dry = (px: number, pz: number): boolean => !surfaceAt(px, pz).wet
   // Above the sea, off its own earlier legs (all but the stretch just behind
   // it) and off every other road, once away from the one it leaves.
@@ -164,7 +155,7 @@ function traceClimb(
     x = sx
     z = sz
     const most = MAX_CLIMB_GRADE * run
-    y = hypot(x - start.x, z - start.z) < CLIMB_START.level ? start.y : Math.min(Math.max(bed(x, z), y - most), y + most)
+    y = hypot(x - start.x, z - start.z) < CLIMB_START.level ? start.y : Math.min(Math.max(ground(x, z), y - most), y + most)
     points.push({ x, y, z })
     along.push(length)
   }
@@ -208,16 +199,6 @@ function traceClimb(
     }
     return best?.loop ?? null
   }
-  // The far bank of a stream straight ahead, where it is near enough to bridge.
-  const bankAhead = (): Spot | null => {
-    if (dx === 0 && dz === 0) return null
-    for (let k = 2; k <= CLIMB_FORD.steps; k++) {
-      const spot = { x: x + dx * CLIMB_STEP * k, z: z + dz * CLIMB_STEP * k }
-      if (!clear(spot.x, spot.z)) return null
-      if (dry(spot.x, spot.z)) return spot
-    }
-    return null
-  }
   const open = (px: number, pz: number): boolean => dry(px, pz) && clear(px, pz)
   while (length < CLIMB_MOST_LENGTH) {
     if (y >= peak.y - CLIMB_END.belowPeak) return points
@@ -256,15 +237,6 @@ function traceClimb(
       }
     }
     let next = { x: x + nx * CLIMB_STEP, z: z + nz * CLIMB_STEP }
-    if (!dry(next.x, next.z) && clear(next.x, next.z)) {
-      // A stream: straight over to the far bank, holding the heading, where it is near enough.
-      const bank = bankAhead()
-      if (bank !== null) {
-        const count = Math.round(hypot(bank.x - x, bank.z - z) / CLIMB_STEP)
-        for (let k = 1; k <= count; k++) step(x + dx * CLIMB_STEP, z + dz * CLIMB_STEP)
-        continue
-      }
-    }
     if (gentle && !open(next.x, next.z)) {
       // Round whatever is in the way on the flat, turning as little as will do.
       for (const turn of CLIMB_TURNS) {
@@ -494,12 +466,15 @@ export function buildClimbs(
       }
     }
     if (lot === null) continue
-    const structure = new Uint8Array(line.length - 1)
-    for (let i = 0; i < structure.length; i++) {
-      const wet = surfaceAt(line[i]!.x, line[i]!.z).wet || surfaceAt(line[i + 1]!.x, line[i + 1]!.z).wet
-      structure[i] = wet ? ROAD_BRIDGE : ROAD_GRADE
+    const climb: Road = {
+      id: nextId + climbs.length,
+      kind: 'climb',
+      closed: false,
+      width: CLIMB_WIDTH,
+      points: line,
+      structure: new Uint8Array(line.length - 1),
+      lot,
     }
-    const climb: Road = { id: nextId + climbs.length, kind: 'climb', closed: false, width: CLIMB_WIDTH, points: line, structure, lot }
     levelOnLot(climb)
     climbs.push(climb)
   }

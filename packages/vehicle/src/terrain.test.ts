@@ -213,10 +213,14 @@ describe('terrain colliders', () => {
       let open = 0
       let stopped = 0
       for (const rock of scree) {
-        const found = castDown(world, rock.x, rock.z, rock.bottom + rock.size + 5)
-        if (found === null) continue
+        const from = rock.bottom + rock.size + 5
+        const ray = new RAPIER.Ray({ x: rock.x, y: from, z: rock.z }, { x: 0, y: -1, z: 0 })
+        const hit = world.castRay(ray, from * 2, true)
+        if (hit === null) continue
+        const found = from - hit.timeOfImpact
         if (found < rock.bottom + rock.size - 0.1) open++
-        if (Math.abs(found - rock.bottom - rock.size) < 0.01) stopped++
+        // Whatever the ray meets, it is never a solid the size of the stone: the ground, a road or a wall.
+        if (hit.collider.shape.type === RAPIER.ShapeType.Cuboid && Math.abs(found - rock.bottom - rock.size) < 0.01) stopped++
       }
       expect(stopped).toBe(0)
       expect(open).toBeGreaterThan(scree.length * 0.98)
