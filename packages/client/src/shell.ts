@@ -310,6 +310,8 @@ export class Shell implements MenuHost {
     const { menu, game, backdrop } = this
     game?.mode.update(dt, !menu.open)
     if (menu.open) backdrop?.mode.update(dt, false)
+    // The island's clocks keep the game's time.
+    if (this.view !== null) this.view.userData.tick = game?.mode.tick ?? null
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
       if (shown.render) shown.render(this.renderer)

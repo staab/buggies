@@ -100,6 +100,12 @@ const PARK_LOT_ODDS = 7
 const SQUARE_CORE = 0.55
 const FOUNTAIN = { width: 8, height: 1 } as const
 const STATUE = { width: 2, height: 2.5, parkInset: 6, vergeOut: 1.5 } as const
+/**
+ * The clock tower: one to a city, on the block lot nearest the city's
+ * centre within this reach of it, which it takes over: this wide, this
+ * tall, and standing at least this far above every block within this.
+ */
+const CLOCK_TOWER = { reach: 60, width: 10, height: 60, over: 10, lookout: 100 } as const
 const SITE_CORE = 0.45
 const SITE_ODDS = 0.35
 const SITES_MOST = 3
@@ -922,6 +928,31 @@ function fillCities(
             plantStreetTree(cx + u * cos - v * sin, cz + u * sin + v * cos)
           }
         }
+      }
+    }
+    // The clock tower takes over the block nearest the city's centre, and
+    // stands above every block within its lookout.
+    let nearest: Building | null = null
+    for (const building of buildings) {
+      if (building.kind !== 'block') continue
+      const distance = hypot(building.x - district.cx, building.z - district.cz)
+      if (distance > CLOCK_TOWER.reach) continue
+      if (nearest === null || distance < hypot(nearest.x - district.cx, nearest.z - district.cz)) nearest = building
+    }
+    if (nearest !== null) {
+      let tallest = -Infinity
+      for (const building of buildings) {
+        if (building.kind !== 'block' || building === nearest) continue
+        if (hypot(building.x - nearest.x, building.z - nearest.z) <= CLOCK_TOWER.lookout) tallest = Math.max(tallest, building.top)
+      }
+      const footprint: Footprint = { x: nearest.x, z: nearest.z, yaw: nearest.yaw, width: CLOCK_TOWER.width, depth: CLOCK_TOWER.width }
+      const ground = groundUnder(field, wet, footprint)
+      buildings[buildings.indexOf(nearest)] = {
+        kind: 'clocktower',
+        ...footprint,
+        bottom: ground.low - BURY,
+        top: Math.max(ground.high + CLOCK_TOWER.height, tallest + CLOCK_TOWER.over),
+        tone: rng(),
       }
     }
     // A tower crane in the middle of each site, standing above every block near it.

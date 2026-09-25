@@ -13,6 +13,8 @@ export interface ModeView {
   resize(aspect: number): void
   /** `active` is false while a menu is over the top and the player is not driving. */
   update(dt: number, active: boolean): void
+  /** The game's tick, the same on every mirror, for whatever on the island keeps time by it. */
+  readonly tick?: number
   /** Draw itself, if it is not simply its scene through its camera: a split screen is two. */
   render?(renderer: THREE.WebGLRenderer): void
   /** What the HUD should say of the mode, one entry a viewport; none, and it is not shown. */

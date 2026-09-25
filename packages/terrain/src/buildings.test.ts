@@ -799,6 +799,27 @@ describe('sidewalks', () => {
     expect(verges).toBeGreaterThanOrEqual(1)
   })
 
+  it('raise one clock tower in each city, near its centre and above every block within 100 m', () => {
+    const towers = map.buildings.filter((building) => building.kind === 'clocktower')
+    expect(towers.length).toBeGreaterThanOrEqual(1)
+    const perCity = new Map<number, number>()
+    for (const tower of towers) {
+      expect(districtAt(tower.x, tower.z)).toBe(DISTRICT_CITY)
+      expect(tower.width).toBe(10)
+      expect(tower.top - sampleHeight(map.heightfield, tower.x, tower.z)).toBeGreaterThanOrEqual(60)
+      for (const block of map.buildings) {
+        if (block.kind !== 'block' || Math.hypot(block.x - tower.x, block.z - tower.z) > 100) continue
+        expect(tower.top).toBeGreaterThanOrEqual(block.top + 10)
+      }
+      const city = map.districts.reduce((best, district) =>
+        Math.hypot(district.cx - tower.x, district.cz - tower.z) < Math.hypot(best.cx - tower.x, best.cz - tower.z) ? district : best,
+      )
+      expect(Math.hypot(city.cx - tower.x, city.cz - tower.z)).toBeLessThan(60)
+      perCity.set(city.id, (perCity.get(city.id) ?? 0) + 1)
+    }
+    for (const count of perCity.values()) expect(count).toBe(1)
+  })
+
   it('raise tower cranes on building sites in the heart of a city: each in the middle of a hoarded lot, standing above every block within 50 m', () => {
     const cranes = map.buildings.filter((building) => building.kind === 'crane')
     const sites = map.buildings.filter((building) => building.kind === 'site')

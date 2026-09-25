@@ -47,6 +47,8 @@ export interface OnlineView {
   readonly focus: Vec3
   resize(aspect: number): void
   update(dt: number, active: boolean): void
+  /** The mirror's tick: the game's time, the same on every mirror. */
+  readonly tick: number
   hud(): HudState
   dispose(): void
 }
@@ -116,6 +118,9 @@ export async function joinOnline(
     seat: welcome.seat,
     get focus() {
       return prediction.vehicle.frame.position
+    },
+    get tick() {
+      return prediction.tick
     },
     resize(aspect) {
       chase.camera.aspect = aspect
