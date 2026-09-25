@@ -1,4 +1,4 @@
-import { SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Loose } from '@buggies/game'
+import { LOOSE_KINDS, OIL_LIFE_TICKS, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Loose } from '@buggies/game'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -65,11 +65,12 @@ describe('bananas as drawn', () => {
     source.pickups[0]!.spawnTick = 480
     field.update(0.1)
     expect(field.popping).toBe(1)
-    // The three meshes of the field, and the pop.
-    expect(field.object.children.length).toBe(4)
+    // The meshes of the field, the map's bananas and one for each kind of loose thing, and the pop.
+    const meshes = 1 + LOOSE_KINDS.length
+    expect(field.object.children.length).toBe(meshes + 1)
     field.update(POP_LIFE)
     expect(field.popping).toBe(0)
-    expect(field.object.children.length).toBe(3)
+    expect(field.object.children.length).toBe(meshes)
     // Its next turning up is not a taking.
     source.tick = 480
     field.update(0.1)
@@ -176,6 +177,65 @@ describe('bananas as drawn', () => {
     field.update(0.1)
     expect(field.popping).toBe(1)
     expect(wentOff).toEqual([-6])
+    field.dispose()
+  })
+
+  it('spread an oil slick out where it is dropped, rather than throw it there', () => {
+    const loose: Loose[] = [
+      { id: 8, kind: 'oil', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -4, y: 0.05, z: 0 }, bornTick: 0 },
+    ]
+    const source = { pickups: pickups(0), loose, tick: 0 }
+    const field = new PickupField(source)
+    const slicks = field.object.children[4] as THREE.InstancedMesh
+    const at = (): THREE.Vector3 => {
+      const matrix = new THREE.Matrix4()
+      slicks.getMatrixAt(0, matrix)
+      return new THREE.Vector3().setFromMatrixPosition(matrix)
+    }
+    const sizes: number[] = []
+    for (const tick of [0, SPILL_FLIGHT_TICKS / 4, SPILL_FLIGHT_TICKS / 2, SPILL_FLIGHT_TICKS]) {
+      source.tick = tick
+      field.update(0.1)
+      // On the ground where it lies the whole time.
+      expect(at().x).toBeCloseTo(-4, 5)
+      expect(at().y).toBeCloseTo(0.05, 5)
+      sizes.push(column(slicks, 0))
+    }
+    expect(sizes[0]).toBeLessThan(0.1)
+    for (let k = 1; k < sizes.length; k++) expect(sizes[k]!).toBeGreaterThan(sizes[k - 1]!)
+    expect(sizes.at(-1)).toBeCloseTo(1, 5)
+    field.dispose()
+  })
+
+  it('sit mines on the ground and burst them when they go, and lie oil flat, to fade without a sound', () => {
+    const loose: Loose[] = [
+      { id: 7, kind: 'mine', owner: 0, power: 0.3, from: { x: 0, y: 2, z: 0 }, position: { x: 4, y: 0.1, z: 0 }, bornTick: 0 },
+      { id: 8, kind: 'oil', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -4, y: 0.05, z: 0 }, bornTick: 0 },
+    ]
+    const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
+    const wentOff: number[] = []
+    const field = new PickupField(source, (at) => wentOff.push(at.x))
+    field.update(0.1)
+    const [, , , mines, slicks] = field.object.children as THREE.InstancedMesh[]
+    expect(mines!.count).toBe(1)
+    expect(slicks!.count).toBe(1)
+    // Still where they lie, frame to frame.
+    const matrix = new THREE.Matrix4()
+    const position = new THREE.Vector3()
+    slicks!.getMatrixAt(0, matrix)
+    position.setFromMatrixPosition(matrix)
+    expect(position.y).toBeCloseTo(0.05, 5)
+    field.update(0.5)
+    slicks!.getMatrixAt(0, matrix)
+    expect(new THREE.Vector3().setFromMatrixPosition(matrix).y).toBeCloseTo(0.05, 5)
+    // The mine set off, and the slick faded: one burst, and nothing popped.
+    source.tick = OIL_LIFE_TICKS
+    loose.length = 0
+    field.update(0.1)
+    expect(wentOff).toEqual([4])
+    expect(field.popping).toBe(0)
+    expect(mines!.count).toBe(0)
+    expect(slicks!.count).toBe(0)
     field.dispose()
   })
 })

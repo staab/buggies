@@ -1,6 +1,8 @@
 import {
   DEFAULT_VEHICLE_PROFILE,
   FIXED_TIMESTEP,
+  GRAPPLE_MISS_TICKS,
+  GRAPPLE_RANGE,
   NEUTRAL_INPUT,
   NO_TARGET,
   OWN_ACTIONS,
@@ -14,10 +16,11 @@ import {
   type Seat,
 } from '@buggies/game'
 import { flatHeightfield } from '@buggies/terrain'
+import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import type { Sound } from './audio.ts'
-import { CarPresence } from './car-presence.ts'
+import { CarPresence, hookPointOf } from './car-presence.ts'
 import { createChaseTarget } from './chase-camera.ts'
 import { Explosions } from './explosion.ts'
 import { Smoke } from './smoke.ts'
@@ -45,6 +48,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     lostTicks: 0,
     score: 0,
     weapon: 'none',
+    wins: 0,
     ammoTicks: 0,
     aimTarget: NO_TARGET,
     actionTicks: 0,
@@ -55,6 +59,12 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     stunnedTicks: 0,
     slowedTicks: 0,
     slowedBy: 0,
+    shieldTicks: 0,
+    magnetTicks: 0,
+    plowTicks: 0,
+    slipTicks: 0,
+    grappleTicks: 0,
+    grappleTarget: NO_TARGET,
   }
   return { seat, free: () => world.free() }
 }
@@ -88,7 +98,8 @@ describe('a car on the screen', () => {
   it('is heard blowing its horn, setting off a shockwave, and sounding the siren power while it is held', () => {
     const { seat, free } = seatOnFlat()
     const { sound, played, sirens } = countingSound()
-    const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound })
+    const explosions = new Explosions()
+    const presence = new CarPresence(seat, 0xff0000, { explosions, smoke: new Smoke(), sound })
     presence.render(0, FIXED_TIMESTEP)
     // The semi's horn: heard once as its action starts, not every frame it goes on, and again as it starts over.
     seat.profile = 'semi'
@@ -111,6 +122,19 @@ describe('a car on the screen', () => {
     seat.weapon = 'none'
     presence.render(0, FIXED_TIMESTEP)
     expect(played.shockwave).toBe(1)
+    expect(explosions.object.children).toHaveLength(1)
+    // Fired and won again on the same tick: never seen carrying nothing, but it went off all the same.
+    seat.weapon = 'shockwave'
+    seat.wins += 1
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.shockwave).toBe(1)
+    seat.wins += 1
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.shockwave).toBe(2)
+    expect(explosions.object.children).toHaveLength(2)
+    seat.weapon = 'none'
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.shockwave).toBe(3)
     // The siren power: sounds while the key is held with time left, as the power and not a vehicle's own.
     seat.weapon = 'siren'
     seat.ammoTicks = 300
@@ -149,6 +173,52 @@ describe('a car on the screen', () => {
 
   beforeAll(async () => {
     await initPhysics()
+  })
+
+  it('draws the shield up, the plow set, the magnet pulling and the grappling line out, while they last', () => {
+    const { seat, free } = seatOnFlat()
+    const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })
+    const children = presence.object.children
+    const bubble = children.find((child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.SphereGeometry)!
+    const ring = children.find((child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.RingGeometry)!
+    // The rope and its hook are the last things hung on the car.
+    const [rope, hook] = children.slice(-2) as [THREE.Object3D, THREE.Object3D]
+    presence.render(0, FIXED_TIMESTEP)
+    expect([bubble.visible, ring.visible, rope.visible, hook.visible]).toEqual([false, false, false, false])
+    seat.shieldTicks = 10
+    seat.magnetTicks = 10
+    presence.hookAt({ x: 60, y: 0, z: 30 })
+    presence.render(0, FIXED_TIMESTEP)
+    expect([bubble.visible, ring.visible, rope.visible, hook.visible]).toEqual([true, true, true, true])
+    // The rope runs from the car to the point hooked, wherever the car is, and the hook is there.
+    presence.object.updateMatrixWorld()
+    const end = rope.localToWorld(new THREE.Vector3(0, 1, 0))
+    expect(end.x).toBeCloseTo(60, 3)
+    expect(end.z).toBeCloseTo(30, 3)
+    expect(hook.getWorldPosition(new THREE.Vector3()).x).toBeCloseTo(60, 3)
+    presence.hookAt(null)
+    seat.shieldTicks = 0
+    presence.render(0, FIXED_TIMESTEP)
+    expect([bubble.visible, rope.visible, hook.visible]).toEqual([false, false, false])
+    presence.dispose()
+    free()
+  })
+
+  it('shoots a grappling line that caught nothing straight out to its full reach and back in', () => {
+    const { seat, free } = seatOnFlat()
+    seat.grappleTarget = NO_TARGET
+    const reach = (ticks: number): number => {
+      seat.grappleTicks = ticks
+      const at = hookPointOf(seat, [seat])!
+      const { position } = seat.vehicle.frame
+      return Math.hypot(at.x - position.x, at.y - position.y, at.z - position.z)
+    }
+    expect(reach(GRAPPLE_MISS_TICKS)).toBeCloseTo(0, 5)
+    expect(reach(GRAPPLE_MISS_TICKS / 2)).toBeCloseTo(GRAPPLE_RANGE, 5)
+    expect(reach(GRAPPLE_MISS_TICKS / 4)).toBeCloseTo(GRAPPLE_RANGE / 2, 5)
+    seat.grappleTicks = 0
+    expect(hookPointOf(seat, [seat])).toBeNull()
+    free()
   })
 
   it('draws its body, says its state, and bursts when it is wrecked', () => {

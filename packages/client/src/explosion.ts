@@ -15,6 +15,11 @@ const FLASH_TIME = 0.5
 const CLOUD_RADIUS = 6
 const CLOUD_TIME = 1.6
 
+/** A shockwave's ring: how long it takes to reach its full size and fade out, and how wide its band is, as a share of its radius. */
+const SHOCK_TIME = 0.5
+const SHOCK_BAND = 0.2
+const SHOCK = new THREE.Color('#bfe8ff')
+
 const FIRE = new THREE.Color('#ff9a2e')
 const SMOKE = new THREE.Color('#2b2622')
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
@@ -32,15 +37,25 @@ interface Burst {
   age: number
 }
 
+interface Shock {
+  ring: THREE.Mesh
+  material: THREE.MeshBasicMaterial
+  radius: number
+  age: number
+}
+
 /**
  * Cars blowing up: a flash, a ball of fire that rises and turns to smoke, and
- * a spray of burning pieces that fly out, fall, and go dark. Purely for
- * show; the wreck itself is the simulation's.
+ * a spray of burning pieces that fly out, fall, and go dark. Shockwaves: a
+ * ring flat around the car, racing out to the wave's reach and fading. All
+ * purely for show; what they do is the simulation's.
  */
 export class Explosions {
   readonly object = new THREE.Group()
 
   private bursts: Burst[] = []
+  private shocks: Shock[] = []
+  private readonly band = new THREE.RingGeometry(1 - SHOCK_BAND, 1, 64).rotateX(-Math.PI / 2)
   private readonly piece = new THREE.BoxGeometry(0.5, 0.35, 0.5)
   private readonly ball = new THREE.SphereGeometry(1, 14, 10)
 
@@ -84,7 +99,25 @@ export class Explosions {
     this.bursts.push({ group, pieces, velocities, spins, flash, cloud, pieceMaterial, flashMaterial, cloudMaterial, age: 0 })
   }
 
+  /** A shockwave going off here, out to this far. */
+  shockwave(at: Vec3, radius: number): void {
+    const material = new THREE.MeshBasicMaterial({
+      color: SHOCK,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+    const ring = new THREE.Mesh(this.band, material)
+    ring.position.set(at.x, at.y, at.z)
+    ring.scale.setScalar(1)
+    this.object.add(ring)
+    this.shocks.push({ ring, material, radius, age: 0 })
+  }
+
   update(dt: number): void {
+    this.updateShocks(dt)
     const alive: Burst[] = []
     for (const burst of this.bursts) {
       burst.age += dt
@@ -120,9 +153,33 @@ export class Explosions {
     this.bursts = alive
   }
 
+  /** Each ring races out, quickly at first, and fades as it goes. */
+  private updateShocks(dt: number): void {
+    const alive: Shock[] = []
+    for (const shock of this.shocks) {
+      shock.age += dt
+      const t = shock.age / SHOCK_TIME
+      if (t >= 1) {
+        shock.ring.removeFromParent()
+        shock.material.dispose()
+        continue
+      }
+      alive.push(shock)
+      shock.ring.scale.setScalar(1 + (shock.radius - 1) * (1 - (1 - t) ** 3))
+      shock.material.opacity = 0.85 * (1 - t) * (1 - t)
+    }
+    this.shocks = alive
+  }
+
   dispose(): void {
     for (const burst of this.bursts) this.remove(burst)
     this.bursts.length = 0
+    for (const shock of this.shocks) {
+      shock.ring.removeFromParent()
+      shock.material.dispose()
+    }
+    this.shocks.length = 0
+    this.band.dispose()
     this.object.removeFromParent()
     this.piece.dispose()
     this.ball.dispose()

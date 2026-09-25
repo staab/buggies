@@ -25,13 +25,47 @@ import {
   type VehicleTuning,
 } from '@buggies/vehicle'
 
-import { PICKUP_HEIGHT, LOOSE_IDS, pickupSeed, type Loose } from './pickups.ts'
+import type * as RAPIER from '@dimforge/rapier3d-compat'
+
+import { PICKUP_HEIGHT, LOOSE_IDS, pickupSeed, type Loose, type LooseKind } from './pickups.ts'
 
 /** What a car can be carrying over its roof: nothing, or something won with bananas. */
-export type Weapon = 'none' | 'rocket' | 'machineGun' | 'bomb' | 'engine' | 'wings' | 'shockwave' | 'siren' | 'repair'
+export type Weapon =
+  | 'none'
+  | 'rocket'
+  | 'machineGun'
+  | 'bomb'
+  | 'engine'
+  | 'wings'
+  | 'shockwave'
+  | 'siren'
+  | 'repair'
+  | 'oil'
+  | 'shield'
+  | 'magnet'
+  | 'tripleRocket'
+  | 'plow'
+  | 'grapple'
+  | 'mines'
 
 /** What can be won, in the order the HUD rolls through them. */
-export const WEAPONS: readonly Weapon[] = ['rocket', 'machineGun', 'bomb', 'engine', 'wings', 'shockwave', 'siren', 'repair']
+export const WEAPONS: readonly Weapon[] = [
+  'rocket',
+  'machineGun',
+  'bomb',
+  'engine',
+  'wings',
+  'shockwave',
+  'siren',
+  'repair',
+  'oil',
+  'shield',
+  'magnet',
+  'tripleRocket',
+  'plow',
+  'grapple',
+  'mines',
+]
 
 export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   none: '',
@@ -43,6 +77,13 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   shockwave: 'Shockwave',
   siren: 'Siren',
   repair: 'Repair',
+  oil: 'Oil slick',
+  shield: 'Shield',
+  magnet: 'Magnet',
+  tripleRocket: 'Triple rocket',
+  plow: 'Ram plow',
+  grapple: 'Grappling hook',
+  mines: 'Mine field',
 }
 
 /** How far behind the middle of the car a bomb is dropped. */
@@ -136,11 +177,73 @@ export const SLOW_HOLD_TICKS = 2
 export const BOMB_DAMAGE = 1
 
 /**
+ * A car in an oil slick has this share of its tires' grip for this long
+ * after, at a full slick.
+ */
+export const OIL_GRIP = 0.2
+export const OIL_SLIP_TICKS = 60 * 2
+
+/** The shield keeps off everything the weapons do to a car, damage, stuns and slows, for this long. */
+export const SHIELD_TICKS = 60 * 8
+
+/** The magnet takes every banana within this of the car, for this long. */
+export const MAGNET_REACH = 25
+export const MAGNET_TICKS = 60 * 6
+
+/**
+ * The triple rocket fires this many rockets, fanned out by this much
+ * either side of dead ahead, in radians, each with this much of a full
+ * blast and each after a different car ahead where there are enough.
+ */
+export const TRIPLE_ROCKETS = 3
+export const TRIPLE_ROCKET_FAN = 0.2
+export const TRIPLE_ROCKET_POWER = 0.5
+
+/**
+ * The ram plow shoves whatever is in front of the car for this long: a car
+ * or a prop this far ahead of its nose and this far to either side of its
+ * body is thrown on, this much faster than the plow is closing on it, and
+ * a little up.
+ */
+export const PLOW_TICKS = 60 * 10
+export const PLOW_AHEAD = 2.5
+export const PLOW_ASIDE = 0.8
+export const PLOW_SHOVE = 1.6
+export const PLOW_LIFT = 0.3
+
+/**
+ * The grappling hook catches the nearest car within this far and this near
+ * dead ahead, and holds on for this long, or until the line is stretched
+ * past this. While it holds, it reels the car in toward the one it caught,
+ * this hard past this much slack, in meters a second a second, and drags
+ * the caught car back toward it by this share of that. With no car there
+ * to catch, the line shoots out as far as it reaches and back in this
+ * long, and catches nothing.
+ */
+export const GRAPPLE_RANGE = 60
+export const GRAPPLE_COS = 0.6
+export const GRAPPLE_TICKS = 60 * 4
+export const GRAPPLE_MISS_TICKS = 60
+export const GRAPPLE_BREAK = 90
+export const GRAPPLE_SLACK = 6
+export const GRAPPLE_PULL = 14
+export const GRAPPLE_DRAG = 0.4
+
+/**
+ * A mine field is this many mines, each with this much of a bomb's blast,
+ * laid behind the car in a spread this wide and this deep.
+ */
+export const MINES = 5
+export const MINE_POWER = 0.3
+export const MINES_WIDE = 8
+export const MINES_DEEP = 4
+
+/**
  * What a car does with its own key: something of the vehicle's own, had
  * besides whatever it carries, and lesser than the power-ups. Nothing is
  * mounted over the roof for it, and the HUD makes nothing of it.
  */
-export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'fly' | 'horn' | 'bomb'
+export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'oil' | 'horn' | 'bomb'
 export interface OwnAction {
   kind: OwnActionKind
   label: string
@@ -185,11 +288,11 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
     cooldownTicks: 0,
   },
   smallCar: {
-    kind: 'fly',
-    label: 'Wings',
-    about: 'Holds the car up while held, with a tenth of the lift of the wings power-up.',
+    kind: 'oil',
+    label: 'Oil slick',
+    about: 'Drops an oil slick behind with half the slip of the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.',
     activeTicks: 0,
-    cooldownTicks: 0,
+    cooldownTicks: 60 * 3,
   },
   semi: {
     kind: 'horn',
@@ -207,7 +310,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   },
 }
 /** The actions that go on while the key is held. */
-const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'fly']
+const LASTING: readonly OwnActionKind[] = ['boost', 'gun']
 /** The hop: this much speed straight up, from the ground, which carries the kart a few meters into the air. */
 export const HOP_SPEED = 8
 /** The race car's boost: this much of the rocket engine's push. */
@@ -219,14 +322,15 @@ export const EMERGENCY_SLOW = 0.2
 /**
  * How much of what is won a car's own is: the tank's missile of a rocket's
  * blast, the sports car's gun of a shot's bite, the pickup's bomb of a
- * bomb's blast, and the small car's wings of the wings' lift.
+ * bomb's blast, and the small car's oil of an oil slick's slip.
  */
 export const OWN_MISSILE_POWER = 0.5
 export const OWN_GUN_POWER = 0.25
 export const OWN_BOMB_POWER = 0.25
-export const OWN_LIFT = 0.1
-/** The pickup has this many bombs out at once at most: past that, the oldest goes as the next is dropped. */
+export const OWN_OIL_POWER = 0.5
+/** The pickup has this many bombs out at once at most, and the small car this many oil slicks: past that, the oldest goes as the next is dropped. */
 export const OWN_BOMBS_MOST = 5
+export const OWN_OILS_MOST = 3
 
 /**
  * What a vehicle is by nature, besides what it does: how it takes what is
@@ -310,6 +414,8 @@ export interface Gunner {
   readonly tuning: VehicleTuning
   readonly profile: VehicleProfileId
   weapon: Weapon
+  /** How many weapons it has won, counted around past 255: a new one is told from the last even when it is the same. */
+  wins: number
   /** How much longer the machine gun fires for, in ticks. */
   ammoTicks: number
   /** The seat the machine gun is trained on, or none. */
@@ -326,6 +432,14 @@ export interface Gunner {
   stunnedTicks: number
   slowedTicks: number
   slowedBy: number
+  /** How much longer its shield holds, its magnet pulls, its plow shoves and its tires slip on oil, in ticks. */
+  shieldTicks: number
+  magnetTicks: number
+  plowTicks: number
+  slipTicks: number
+  /** How much longer its grappling hook holds, and the seat it has caught, or none. */
+  grappleTicks: number
+  grappleTarget: number
 }
 
 /** A rocket in the air: from whom, after whom, where it is going, and how much of a full blast it goes off with. */
@@ -358,6 +472,8 @@ export interface Battlefield {
   looseNext: number
   /** The shots fired this tick. */
   readonly shots: Shot[]
+  /** What a ram plow knocks aside besides cars. */
+  readonly props: readonly { readonly body: RAPIER.RigidBody }[]
   readonly tick: number
 }
 
@@ -370,6 +486,7 @@ const desired = v3()
 const heading = v3()
 const spin = v3()
 const aside = v3()
+const shove = v3()
 
 /**
  * What a seat wins with its bananas: anyone's guess, but the same guess on
@@ -403,9 +520,9 @@ export function ownAction(seat: Gunner): OwnAction {
 }
 
 /**
- * Whether the car's own lasting action is going: the boost, the wings or
- * the gun, with its key held. It goes whatever the car carries. A wreck
- * does nothing.
+ * Whether the car's own lasting action is going: the boost or the gun,
+ * with its key held. It goes whatever the car carries. A wreck does
+ * nothing.
  */
 export function acting(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): boolean {
   if (!keys.ability || seat.vehicle.wrecked) return false
@@ -421,23 +538,21 @@ function using(seat: Gunner, weapon: Weapon, keys: WeaponKeys): boolean {
 export function arm(seat: Gunner, weapon: Weapon): void {
   seat.weapon = weapon
   seat.ammoTicks = ammoFor(weapon)
+  seat.wins = (seat.wins + 1) & 0xff
 }
 
 /**
  * Whether the car is being driven along by a weapon: the rocket engine
- * burning or the wings holding it up, or the car's own boost or wings
- * going.
+ * burning or the wings holding it up, or the car's own boost going.
  */
 export function burning(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): boolean {
   if (using(seat, 'engine', keys) || using(seat, 'wings', keys)) return true
-  if (!acting(seat, keys)) return false
-  const { kind } = ownAction(seat)
-  return kind === 'boost' || kind === 'fly'
+  return acting(seat, keys) && ownAction(seat).kind === 'boost'
 }
 
-/** Whether the car is held up by wings: the ones it has won, or its own. */
+/** Whether the car is held up by the wings it has won. */
 export function lifting(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): boolean {
-  return using(seat, 'wings', keys) || (acting(seat, keys) && ownAction(seat).kind === 'fly')
+  return using(seat, 'wings', keys)
 }
 
 /** Whether the car has wings out: the ones it has won, with time left of them, whether or not the key is held. A wreck has none. */
@@ -450,10 +565,9 @@ export function winged(seat: Gunner): boolean {
  * the engine shoves the car the way its nose points, less and less as it
  * gets far past what its own engine could do, and the car's own boost
  * shoves it half as hard, with it if both are going; the wings push it up
- * toward a steady climb, arrest a fall, and turn it as it is steered, the
- * car's own wings a share as hard toward a climb as much slower. A car
- * carrying wings is steered the same way whenever it is in the air, key
- * or no key: gliding, it turns like a plane too.
+ * toward a steady climb, arrest a fall, and turn it as it is steered. A
+ * car carrying wings is steered the same way whenever it is in the air,
+ * key or no key: gliding, it turns like a plane too.
  */
 export function pushWithWeapons(seat: Gunner, gravity: number): void {
   const { vehicle, tuning } = seat
@@ -467,9 +581,8 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
   }
   const lifted = lifting(seat)
   if (lifted) {
-    const lift = using(seat, 'wings', command) ? 1 : OWN_LIFT
-    const climb = clamp(1 - frame.linearVelocity.y / (WINGS_CLIMB_SPEED * lift), 0, 1)
-    addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * lift * climb))
+    const climb = clamp(1 - frame.linearVelocity.y / WINGS_CLIMB_SPEED, 0, 1)
+    addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
     // The pedals drive it along, forward or back, wherever it is.
     addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
   }
@@ -543,6 +656,27 @@ export function restAction(seat: Gunner): void {
   seat.stunnedTicks = 0
   seat.slowedTicks = 0
   seat.slowedBy = 0
+  seat.shieldTicks = 0
+  seat.magnetTicks = 0
+  seat.plowTicks = 0
+  seat.slipTicks = 0
+  seat.grappleTicks = 0
+  seat.grappleTarget = NO_TARGET
+}
+
+/** Whether a car's shield is up: nothing the weapons do reaches it. */
+export function shielded(seat: Gunner): boolean {
+  return seat.shieldTicks > 0
+}
+
+/** Take this much of a car's life with a weapon, unless its shield is up. */
+export function harm(seat: Gunner, damage: number): void {
+  if (!shielded(seat)) hurtVehicle(seat.vehicle, seat.tuning, damage)
+}
+
+/** How much of their grip a car's tires have: a share of it while they slip on oil. */
+export function gripOf(seat: Gunner): number {
+  return seat.slipTicks > 0 ? OIL_GRIP : 1
 }
 
 /** Whether a car is stunned: it takes no driving. */
@@ -685,7 +819,7 @@ function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean): v
   const clear = sightLine(arena.map, muzzle, target.vehicle.frame.position)
   vsub(toward, target.vehicle.frame.position, muzzle)
   vaddScaled(to, muzzle, toward, clear)
-  if (clear === 1) hurtVehicle(target.vehicle, target.tuning, MACHINE_GUN_DAMAGE * power * shotShare(target.profile))
+  if (clear === 1) harm(target, MACHINE_GUN_DAMAGE * power * shotShare(target.profile))
   arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? target.id : NO_TARGET })
 }
 
@@ -698,75 +832,210 @@ function reach(arena: Battlefield, seat: Gunner, range: number, hit: (other: Gun
   }
 }
 
-/** Stun a car for this long, or longer if it already is. */
+/** Stun a car for this long, or longer if it already is, unless its shield is up. */
 const stun =
   (ticks: number) =>
   (other: Gunner): void => {
+    if (shielded(other)) return
     other.stunnedTicks = Math.max(other.stunnedTicks, ticks)
   }
 
-/** Slow a car by this share for the moment, or more if it already is; an emergency vehicle is not slowed. */
+/** Slow a car by this share for the moment, or more if it already is; an emergency vehicle is not slowed, nor a shielded one. */
 const slow =
   (share: number) =>
   (other: Gunner): void => {
-    if (!slowable(other.profile)) return
+    if (!slowable(other.profile) || shielded(other)) return
     other.slowedTicks = SLOW_HOLD_TICKS
     other.slowedBy = Math.max(other.slowedBy, share)
   }
 
-/** A rocket goes, with this much of a full blast: from the muzzle, straight ahead, after whoever is there to go after. */
-function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: boolean): void {
+/**
+ * A rocket goes, with this much of a full blast: from the muzzle, straight
+ * ahead or turned this far off it, after this car or, left to itself,
+ * whoever is there to go after.
+ */
+function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: boolean, target?: number, turn = 0): void {
   muzzlePoint(muzzle, seat, own)
+  const { forward } = seat.vehicle.frame
+  const c = cosine(turn)
+  const s = sine(turn)
   arena.rockets.push({
     id: rocketId(seat.id, seat.rocketsFired),
     owner: seat.id,
-    target: pickOut(arena, seat, muzzle, ROCKET_LOCK_RANGE, ROCKET_LOCK_COS),
+    target: target ?? pickOut(arena, seat, muzzle, ROCKET_LOCK_RANGE, ROCKET_LOCK_COS),
     position: vcopy(v3(), muzzle),
-    velocity: vscale(v3(), seat.vehicle.frame.forward, ROCKET_SPEED),
+    velocity: vscale(v3(), v3(forward.x * c - forward.z * s, forward.y, forward.x * s + forward.z * c), ROCKET_SPEED),
     bornTick: arena.tick,
     power,
   })
   seat.rocketsFired = (seat.rocketsFired + 1) % ROCKETS_COUNTED
 }
 
+/** Every car within this far and this near dead ahead of a point, nearest first. */
+function pickAll(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sweepCos: number): number[] {
+  const { forward } = seat.vehicle.frame
+  const found: { id: number; distance: number }[] = []
+  for (const other of arena.seats) {
+    if (!inPlay(seat, other)) continue
+    vsub(toward, other.vehicle.frame.position, from)
+    const distance = vlength(toward)
+    if (distance === 0 || distance > range || vdot(toward, forward) / distance < sweepCos) continue
+    found.push({ id: other.id, distance })
+  }
+  return found.sort((a, b) => a.distance - b.distance || a.id - b.id).map((one) => one.id)
+}
+
 /**
- * A bomb goes down behind the car, with this much of a full blast, to
- * float over the ground there, or over the road the car is on where that
- * is higher, until a car runs into it. It is thrown out like a spilled
- * banana, and cannot go off until it has landed, which gives the car that
- * dropped it a moment to get clear; after that it goes off on anyone, that
- * car too.
+ * The triple rocket: its rockets fanned out either side of dead ahead,
+ * each after a different car ahead, nearest first, and the ones there are
+ * no more cars for after the nearest.
  */
-function dropBomb(arena: Battlefield, seat: Gunner, power: number): void {
-  const { position, forward } = seat.vehicle.frame
-  const x = position.x - forward.x * BOMB_DROP_BACK
-  const z = position.z - forward.z * BOMB_DROP_BACK
+function launchTriple(arena: Battlefield, seat: Gunner): void {
+  muzzlePoint(muzzle, seat)
+  const targets = pickAll(arena, seat, muzzle, ROCKET_LOCK_RANGE, ROCKET_LOCK_COS)
+  for (let k = 0; k < TRIPLE_ROCKETS; k++) {
+    const target = targets[k] ?? targets[0] ?? NO_TARGET
+    launchRocket(arena, seat, TRIPLE_ROCKET_POWER, false, target, (k - (TRIPLE_ROCKETS - 1) / 2) * TRIPLE_ROCKET_FAN)
+  }
+}
+
+/** How far over the ground each thing dropped lies: a bomb floats, a mine sits on it, and an oil slick lies flat on it, just clear of it to be drawn. */
+const DROP_HEIGHT: Readonly<Record<LooseKind, number>> = { banana: PICKUP_HEIGHT, bomb: PICKUP_HEIGHT, mine: 0.1, oil: 0.05 }
+
+/**
+ * Something goes down behind the car, this far back and this far to its
+ * right, with this much of a full one's power, over the ground there or
+ * over the road the car is on where that is higher: a bomb to float until
+ * a car runs into it, a mine to sit until one does, or an oil slick to lie
+ * there. It is thrown out like a spilled banana, and cannot be run into
+ * until it has landed, which gives the car that dropped it a moment to get
+ * clear; after that it goes off on anyone, or oils anyone, that car too.
+ */
+function drop(arena: Battlefield, seat: Gunner, kind: LooseKind, power: number, back = BOMB_DROP_BACK, aside = 0): void {
+  const { position, forward, right } = seat.vehicle.frame
+  const x = position.x - forward.x * back + right.x * aside
+  const z = position.z - forward.z * back + right.z * aside
   const level = Math.max(sampleHeight(arena.map.heightfield, x, z), position.y - seat.tuning.chassisHalfHeight)
   arena.loose.push({
     id: arena.looseNext,
-    kind: 'bomb',
+    kind,
     owner: seat.id,
     power,
     from: vcopy(v3(), position),
-    position: v3(x, level + PICKUP_HEIGHT, z),
+    position: v3(x, level + DROP_HEIGHT[kind], z),
     bornTick: arena.tick,
   })
   arena.looseNext = (arena.looseNext + 1) % LOOSE_IDS
 }
 
-/** A car has only so many bombs out at once: before the next is dropped, the oldest of its own go to make room for it. */
-function harvestBombs(arena: Battlefield, seat: Gunner): void {
+/** A mine field: its mines laid across behind the car, every other one further back. */
+function layMines(arena: Battlefield, seat: Gunner): void {
+  for (let k = 0; k < MINES; k++) {
+    const aside = (k / (MINES - 1) - 0.5) * MINES_WIDE
+    drop(arena, seat, 'mine', MINE_POWER, BOMB_DROP_BACK + (k % 2) * MINES_DEEP, aside)
+  }
+}
+
+/** A car has only so many of its own of a kind out at once: before the next is dropped, the oldest go to make room for it. */
+function harvest(arena: Battlefield, seat: Gunner, kind: LooseKind, most: number): void {
   for (;;) {
     let out = 0
     let oldest = -1
     arena.loose.forEach((loose, i) => {
-      if (loose.kind !== 'bomb' || loose.owner !== seat.id) return
+      if (loose.kind !== kind || loose.owner !== seat.id) return
       out += 1
       if (oldest < 0 || loose.bornTick < arena.loose[oldest]!.bornTick) oldest = i
     })
-    if (out < OWN_BOMBS_MOST || oldest < 0) return
+    if (out < most || oldest < 0) return
     arena.loose.splice(oldest, 1)
   }
+}
+
+/**
+ * The ram plow: every car and prop just in front of the car, that the car
+ * is closing on, is thrown on ahead of it, faster than the plow is closing
+ * on it, and a little up. A shielded car is not.
+ */
+function plow(arena: Battlefield, seat: Gunner): void {
+  const { frame } = seat.vehicle
+  const { tuning } = seat
+  vaddScaled(shove, frame.forward, WORLD_UP, PLOW_LIFT)
+  vnormalize(shove, shove)
+  const thrown = (position: Vec3, velocity: Vec3, halfLength: number, halfWidth: number): number => {
+    vsub(toward, position, frame.position)
+    const along = vdot(toward, frame.forward)
+    if (along < 0 || along > tuning.chassisHalfLength + PLOW_AHEAD + halfLength) return 0
+    if (Math.abs(vdot(toward, frame.right)) > tuning.chassisHalfWidth + PLOW_ASIDE + halfWidth) return 0
+    vsub(toward, frame.linearVelocity, velocity)
+    return Math.max(vdot(toward, frame.forward), 0)
+  }
+  for (const other of arena.seats) {
+    if (!inPlay(seat, other) || shielded(other)) continue
+    const at = other.vehicle.frame
+    const size = other.tuning
+    const closing = thrown(at.position, at.linearVelocity, size.chassisHalfLength, size.chassisHalfWidth)
+    if (closing > 0) other.vehicle.body.applyImpulse(vscale(heading, shove, size.mass * closing * PLOW_SHOVE), true)
+  }
+  for (const { body } of arena.props) {
+    const closing = thrown(body.translation(), body.linvel(), 0.5, 0.5)
+    if (closing > 0) body.applyImpulse(vscale(heading, shove, body.mass() * closing * PLOW_SHOVE), true)
+  }
+}
+
+/** Let go of whatever the grappling hook has caught. */
+function unhook(seat: Gunner): void {
+  seat.grappleTicks = 0
+  seat.grappleTarget = NO_TARGET
+}
+
+/**
+ * The grappling hook, for the step: while it holds, the line reels the car
+ * in toward the one it caught, harder the more it is stretched past its
+ * slack, and drags that one back toward it by a share of that, unless its
+ * shield is up. It lets go when that car is gone or wrecked, or the line
+ * is stretched too far. A line that caught nothing pulls on nothing.
+ */
+export function reel(arena: Battlefield, seat: Gunner): void {
+  if (seat.grappleTicks <= 0 || seat.grappleTarget === NO_TARGET) return
+  const caught = arena.seats[seat.grappleTarget]
+  if (caught === undefined || !inPlay(seat, caught) || seat.vehicle.wrecked) {
+    unhook(seat)
+    return
+  }
+  vsub(toward, caught.vehicle.frame.position, seat.vehicle.frame.position)
+  const distance = vlength(toward)
+  if (distance > GRAPPLE_BREAK) {
+    unhook(seat)
+    return
+  }
+  if (distance <= GRAPPLE_SLACK) return
+  const stretch = clamp((distance - GRAPPLE_SLACK) / GRAPPLE_SLACK, 0, 1)
+  vscale(toward, toward, 1 / distance)
+  addForceAlong(seat.vehicle.body, toward, seat.tuning.mass * GRAPPLE_PULL * stretch)
+  if (!shielded(caught)) addForceAlong(caught.vehicle.body, toward, -caught.tuning.mass * GRAPPLE_PULL * GRAPPLE_DRAG * stretch)
+}
+
+/** Whether a grappling line is on a car, its own or someone else's, pulling it along. */
+export function hooked(arena: Battlefield, seat: Gunner): boolean {
+  if (seat.grappleTicks > 0 && seat.grappleTarget !== NO_TARGET) return true
+  return arena.seats.some((other) => other.grappleTicks > 0 && other.grappleTarget === seat.id && !shielded(seat))
+}
+
+/** Whatever lasts of what a car has used runs down, and all of it ends when the car is wrecked. */
+function wearOff(seat: Gunner): void {
+  if (seat.vehicle.wrecked) {
+    seat.shieldTicks = 0
+    seat.magnetTicks = 0
+    seat.plowTicks = 0
+    seat.slipTicks = 0
+    unhook(seat)
+    return
+  }
+  if (seat.shieldTicks > 0) seat.shieldTicks -= 1
+  if (seat.magnetTicks > 0) seat.magnetTicks -= 1
+  if (seat.plowTicks > 0) seat.plowTicks -= 1
+  if (seat.slipTicks > 0) seat.slipTicks -= 1
+  if (seat.grappleTicks > 0 && --seat.grappleTicks === 0) unhook(seat)
 }
 
 /**
@@ -790,8 +1059,14 @@ function act(arena: Battlefield, seat: Gunner, pressed: boolean): void {
       return
     case 'bomb':
       if (!ready) return
-      harvestBombs(arena, seat)
-      dropBomb(arena, seat, OWN_BOMB_POWER)
+      harvest(arena, seat, 'bomb', OWN_BOMBS_MOST)
+      drop(arena, seat, 'bomb', OWN_BOMB_POWER)
+      seat.cooldownTicks = own.cooldownTicks
+      return
+    case 'oil':
+      if (!ready) return
+      harvest(arena, seat, 'oil', OWN_OILS_MOST)
+      drop(arena, seat, 'oil', OWN_OIL_POWER)
       seat.cooldownTicks = own.cooldownTicks
       return
     case 'hop':
@@ -813,20 +1088,24 @@ function act(arena: Battlefield, seat: Gunner, pressed: boolean): void {
       if (acting(seat) && arena.tick % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat, OWN_GUN_POWER, true)
       return
     default:
-      // The boost and the wings are read off the key as the car is stepped.
+      // The boost is read off the key as the car is stepped.
       return
   }
 }
 
 /**
  * Fire whatever the fire key is held on, and do the car's own with its own
- * key. A rocket goes the moment it is asked for, a bomb is dropped the
- * moment it is, the shockwave goes off at once, stunning every car near,
- * and the repair kit mends the car at once; the machine gun, trained on the nearest car ahead whether or not
- * it is firing, fires as long as the key is held and the ammunition lasts,
- * a shot every few ticks, and is gone when it runs dry; the siren sounds
- * as long as it is held, slowing every car near, until it runs out. A
- * cooldown runs down meanwhile. A wreck holds nothing and does nothing.
+ * key. Most weapons go all at once and are spent: a rocket or three, a
+ * bomb, a mine field or an oil slick dropped, the shockwave stunning every
+ * car near, the repair kit mending the car, and the shield, the magnet and
+ * the ram plow set going for a while, and the grappling hook shot at the
+ * car ahead, or at nothing. The machine gun, trained on the nearest car
+ * ahead whether or not it is firing, fires as long as the key is held and
+ * the ammunition lasts, a shot every few ticks, and is gone when it runs
+ * dry; the siren sounds as long as it is held, slowing every car near,
+ * until it runs out. A cooldown runs down meanwhile, and so does whatever
+ * lasts of what was used, the plow shoving all the while. A wreck holds
+ * nothing and does nothing.
  */
 export function fireWeapons(arena: Battlefield): void {
   arena.shots.length = 0
@@ -836,36 +1115,18 @@ export function fireWeapons(arena: Battlefield): void {
     const pressed = ability && !seat.abilityHeld
     seat.abilityHeld = ability
     if (seat.cooldownTicks > 0) seat.cooldownTicks -= 1
+    wearOff(seat)
     if (seat.vehicle.wrecked) {
       disarm(seat)
       seat.actionTicks = 0
       seat.lightsOn = false
       continue
     }
+    if (seat.plowTicks > 0) plow(arena, seat)
     trainGun(arena, seat)
     act(arena, seat, pressed)
     if (seat.weapon === 'none' || !fire) continue
-    if (seat.weapon === 'rocket') {
-      launchRocket(arena, seat, 1, false)
-      disarm(seat)
-      continue
-    }
-    if (seat.weapon === 'bomb') {
-      dropBomb(arena, seat, 1)
-      disarm(seat)
-      continue
-    }
-    if (seat.weapon === 'shockwave') {
-      reach(arena, seat, SHOCKWAVE_RANGE, stun(SHOCKWAVE_STUN_TICKS))
-      disarm(seat)
-      continue
-    }
-    // The repair kit mends the car whole, at once, and is spent.
-    if (seat.weapon === 'repair') {
-      seat.vehicle.damage = 0
-      disarm(seat)
-      continue
-    }
+    if (useAtOnce(arena, seat)) continue
     // The rest last as long as the button is held: the gun firing, the
     // engine burning, the wings holding the car up, the siren sounding,
     // until they run out.
@@ -874,6 +1135,53 @@ export function fireWeapons(arena: Battlefield): void {
     seat.ammoTicks -= 1
     if (seat.ammoTicks <= 0) disarm(seat)
   }
+}
+
+/** Use a weapon that goes all at once, and spend it; whether it was one. */
+function useAtOnce(arena: Battlefield, seat: Gunner): boolean {
+  switch (seat.weapon) {
+    case 'rocket':
+      launchRocket(arena, seat, 1, false)
+      break
+    case 'tripleRocket':
+      launchTriple(arena, seat)
+      break
+    case 'bomb':
+      drop(arena, seat, 'bomb', 1)
+      break
+    case 'mines':
+      layMines(arena, seat)
+      break
+    case 'oil':
+      drop(arena, seat, 'oil', 1)
+      break
+    case 'shockwave':
+      reach(arena, seat, SHOCKWAVE_RANGE, stun(SHOCKWAVE_STUN_TICKS))
+      break
+    case 'repair':
+      seat.vehicle.damage = 0
+      break
+    case 'shield':
+      seat.shieldTicks = SHIELD_TICKS
+      break
+    case 'magnet':
+      seat.magnetTicks = MAGNET_TICKS
+      break
+    case 'plow':
+      seat.plowTicks = PLOW_TICKS
+      break
+    case 'grapple': {
+      // With nothing ahead to catch, the line shoots out and back, and the hook is spent all the same.
+      const target = pickOut(arena, seat, seat.vehicle.frame.position, GRAPPLE_RANGE, GRAPPLE_COS)
+      seat.grappleTarget = target
+      seat.grappleTicks = target === NO_TARGET ? GRAPPLE_MISS_TICKS : GRAPPLE_TICKS
+      break
+    }
+    default:
+      return false
+  }
+  disarm(seat)
+  return true
 }
 
 /**
@@ -910,7 +1218,7 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
         if (other.id === rocket.owner || !other.occupied || other.vehicle.wrecked) continue
         vsub(toward, other.vehicle.frame.position, rocket.position)
         if (vlength(toward) > ROCKET_REACH) continue
-        hurtVehicle(other.vehicle, other.tuning, ROCKET_DAMAGE * rocket.power)
+        harm(other, ROCKET_DAMAGE * rocket.power)
         spent = true
         break
       }

@@ -14,7 +14,7 @@ import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
-import { aimPointOf } from './car-presence.ts'
+import { aimPointOf, hookPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
@@ -143,6 +143,7 @@ export async function joinOnline(
       }
       others.render(owed / FIXED_TIMESTEP, dt)
       car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction.seats))
+      car.presence.hookAt(hookPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       arena.update(dt)
       car.presence.aim(target)

@@ -53,6 +53,7 @@ const snapshot: SnapshotMessage = {
       wrecked: true,
       score: 60000,
       weapon: 'machineGun',
+      wins: 255,
       ammoTicks: 1234,
       actionTicks: 180,
       cooldownTicks: 600,
@@ -62,6 +63,12 @@ const snapshot: SnapshotMessage = {
       stunnedTicks: 300,
       slowedTicks: 2,
       slowedBy: 0.5,
+      shieldTicks: 480,
+      magnetTicks: 360,
+      plowTicks: 600,
+      slipTicks: 120,
+      grappleTicks: 240,
+      grappleTarget: 5,
       appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, fire: true, ability: false },
     },
     {
@@ -76,6 +83,7 @@ const snapshot: SnapshotMessage = {
       wrecked: false,
       score: 3,
       weapon: 'none',
+      wins: 0,
       ammoTicks: 0,
       actionTicks: 0,
       cooldownTicks: 0,
@@ -85,6 +93,12 @@ const snapshot: SnapshotMessage = {
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
+      shieldTicks: 0,
+      magnetTicks: 0,
+      plowTicks: 0,
+      slipTicks: 0,
+      grappleTicks: 0,
+      grappleTarget: -1,
       appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, fire: false, ability: true },
     },
   ],
@@ -96,6 +110,8 @@ const snapshot: SnapshotMessage = {
   loose: [
     { id: 0, kind: 'banana', owner: 3, power: 0, from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
     { id: 65535, kind: 'bomb', owner: -1, power: 1, from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
+    { id: 12, kind: 'mine', owner: 1, power: 0.3, from: { x: 5, y: 1, z: 5 }, position: { x: 6, y: 2, z: 7 }, age: 3 },
+    { id: 13, kind: 'oil', owner: 2, power: 0.5, from: { x: 5, y: 1, z: 5 }, position: { x: 6, y: 0.05, z: 7 }, age: 900 },
   ],
   removed: [3, 65000],
   rockets: [
@@ -142,7 +158,7 @@ describe('wire', () => {
         snapshot.props.length * SNAPSHOT_PROP_BYTES +
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
-        2 * SNAPSHOT_SPILLED_BYTES +
+        snapshot.loose.length * SNAPSHOT_SPILLED_BYTES +
         2 * SNAPSHOT_REMOVED_BYTES +
         2 * SNAPSHOT_ROCKET_BYTES,
     )
@@ -167,7 +183,8 @@ describe('wire', () => {
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
       const got = decoded.loose[i]!
-      expect(got).toMatchObject({ id: loose.id, kind: loose.kind, owner: loose.owner, power: loose.power, age: loose.age })
+      expect(got).toMatchObject({ id: loose.id, kind: loose.kind, owner: loose.owner, age: loose.age })
+      expect(got.power).toBeCloseTo(loose.power, 2)
       for (const axis of ['x', 'y', 'z'] as const) {
         expect(got.from[axis]).toBeCloseTo(loose.from[axis], 4)
         expect(got.position[axis]).toBeCloseTo(loose.position[axis], 4)
@@ -179,6 +196,7 @@ describe('wire', () => {
       expect(got.epoch).toBe(vehicle.epoch)
       expect(got.profile).toBe(vehicle.profile)
       expect(got.weapon).toBe(vehicle.weapon)
+      expect(got.wins).toBe(vehicle.wins)
       expect(got.ammoTicks).toBe(vehicle.ammoTicks)
       expect(got.actionTicks).toBe(vehicle.actionTicks)
       expect(got.cooldownTicks).toBe(vehicle.cooldownTicks)
@@ -188,6 +206,9 @@ describe('wire', () => {
       expect(got.stunnedTicks).toBe(vehicle.stunnedTicks)
       expect(got.slowedTicks).toBe(vehicle.slowedTicks)
       expect(got.slowedBy).toBeCloseTo(vehicle.slowedBy, 2)
+      for (const key of ['shieldTicks', 'magnetTicks', 'plowTicks', 'slipTicks', 'grappleTicks', 'grappleTarget'] as const) {
+        expect(got[key]).toBe(vehicle[key])
+      }
       expect(got.wrecked).toBe(vehicle.wrecked)
       expect(got.score).toBe(vehicle.score)
       expect(got.damage).toBeCloseTo(vehicle.damage, 2)

@@ -41,7 +41,7 @@ export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 18
-export const SNAPSHOT_VEHICLE_BYTES = 86
+export const SNAPSHOT_VEHICLE_BYTES = 98
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
@@ -97,6 +97,8 @@ export interface VehicleSnapshot {
   score: number
   /** What it is carrying, and how long the machine gun has left. */
   weapon: Weapon
+  /** How many weapons it has won, counted around past 255. */
+  wins: number
   ammoTicks: number
   /** Its own action: how long it has left, how long before it may go again, whether its lights are on, and whether its own key was down on the tick. */
   actionTicks: number
@@ -109,6 +111,13 @@ export interface VehicleSnapshot {
   stunnedTicks: number
   slowedTicks: number
   slowedBy: number
+  /** How much longer its shield, magnet, plow, slipping on oil and grappling hook last, and whom the hook has caught, or NO_TARGET. */
+  shieldTicks: number
+  magnetTicks: number
+  plowTicks: number
+  slipTicks: number
+  grappleTicks: number
+  grappleTarget: number
   /** What the driver was asking for on the tick this was taken. */
   appliedInput: VehicleInput
 }
@@ -466,6 +475,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(vehicle.wrecked ? 1 : 0)
     writer.u16(Math.min(vehicle.score, 0xffff))
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
+    writer.u8(vehicle.wins & 0xff)
     writer.u16(Math.min(Math.max(vehicle.ammoTicks, 0), 0xffff))
     writer.u16(Math.min(Math.max(vehicle.actionTicks, 0), 0xffff))
     writer.u16(Math.min(Math.max(vehicle.cooldownTicks, 0), 0xffff))
@@ -474,6 +484,10 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(Math.round(Math.min(Math.max(vehicle.slowedBy, 0), 1) * 255))
     writer.u8((vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0))
     writer.u16(vehicle.rocketsFired & 0xffff)
+    for (const ticks of [vehicle.shieldTicks, vehicle.magnetTicks, vehicle.plowTicks, vehicle.slipTicks, vehicle.grappleTicks]) {
+      writer.u16(Math.min(Math.max(ticks, 0), 0xffff))
+    }
+    writer.u8(vehicle.grappleTarget === NO_TARGET ? NOBODY_BYTE : vehicle.grappleTarget)
     writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
@@ -560,6 +574,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const score = reader.u16()
     const weapon = WEAPON_CODES[reader.u8()]
     if (weapon === undefined) return null
+    const wins = reader.u8()
     const ammoTicks = reader.u16()
     const actionTicks = reader.u16()
     const cooldownTicks = reader.u16()
@@ -570,6 +585,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const lightsOn = (flags & 1) === 1
     const abilityHeld = (flags & 2) === 2
     const rocketsFired = reader.u16()
+    const shieldTicks = reader.u16()
+    const magnetTicks = reader.u16()
+    const plowTicks = reader.u16()
+    const slipTicks = reader.u16()
+    const grappleTicks = reader.u16()
+    const hooked = reader.u8()
     vehicles.push({
       seat,
       epoch,
@@ -582,6 +603,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       wrecked,
       score,
       weapon,
+      wins,
       ammoTicks,
       actionTicks,
       cooldownTicks,
@@ -591,6 +613,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       stunnedTicks,
       slowedTicks,
       slowedBy,
+      shieldTicks,
+      magnetTicks,
+      plowTicks,
+      slipTicks,
+      grappleTicks,
+      grappleTarget: hooked === NOBODY_BYTE ? NO_TARGET : hooked,
       appliedInput: reader.input(createVehicleInput()),
     })
   }

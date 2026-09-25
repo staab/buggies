@@ -437,9 +437,10 @@ export class Sound {
   }
 
   /**
-   * A shockwave going off, this far off: an air horn's two notes and a
-   * third below them, blown hard for a second and a half, with a thump
-   * under them, heard from further away than anything but a blast.
+   * A shockwave going off, this far off: a boom, a burst of noise dropping
+   * away over a deep thump, under an air horn's two notes and a third below
+   * them, blown hard for a second and a half, heard from further away than
+   * anything but a blast.
    */
   shockwave(distance = 0): void {
     const loudness = 0.9 * earshot(distance * 0.5)
@@ -463,16 +464,28 @@ export class Sound {
       note.start(now)
       note.stop(now + 1.55)
     }
+    const bang = context.createBufferSource()
+    bang.buffer = this.noise
+    const muffle = context.createBiquadFilter()
+    muffle.type = 'lowpass'
+    muffle.frequency.setValueAtTime(1800, now)
+    muffle.frequency.exponentialRampToValueAtTime(60, now + 1.0)
+    const bangGain = context.createGain()
+    bangGain.gain.setValueAtTime(0.9 * loudness, now)
+    bangGain.gain.exponentialRampToValueAtTime(0.001, now + 1.1)
+    bang.connect(muffle).connect(bangGain).connect(this.master)
+    bang.start(now)
+    bang.stop(now + 1.1)
     const thump = context.createOscillator()
     thump.type = 'sine'
-    thump.frequency.setValueAtTime(60, now)
-    thump.frequency.exponentialRampToValueAtTime(30, now + 0.5)
+    thump.frequency.setValueAtTime(55, now)
+    thump.frequency.exponentialRampToValueAtTime(24, now + 0.8)
     const thumpGain = context.createGain()
-    thumpGain.gain.setValueAtTime(0.8 * loudness, now)
-    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
+    thumpGain.gain.setValueAtTime(1.0 * loudness, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.9)
     thump.connect(thumpGain).connect(this.master)
     thump.start(now)
-    thump.stop(now + 0.6)
+    thump.stop(now + 0.9)
   }
 
   /** A hop, this far off: a short springy note dropping away. */

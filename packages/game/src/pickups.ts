@@ -134,11 +134,16 @@ export function pickupOut(pickup: Pickup, tick: number): boolean {
   return tick >= pickup.spawnTick
 }
 
-/** Whether something at this point has reached a pickup. */
-export function reachesPickup(pickup: Pickup, point: Vec3): boolean {
-  const dx = point.x - pickup.position.x
-  const dz = point.z - pickup.position.z
-  return Math.abs(point.y - pickup.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= BANANA_REACH * BANANA_REACH
+/** Whether something at this point has reached a pickup: from a banana's own reach, or a magnet's if that is further. */
+export function reachesPickup(pickup: Pickup, point: Vec3, magnet = 0): boolean {
+  return within(point, pickup.position, Math.max(BANANA_REACH, magnet), Math.max(PICKUP_REACH_UP, magnet))
+}
+
+/** Whether a point is within this far of another across the ground, and this far up or down. */
+function within(point: Vec3, at: Vec3, reach: number, up: number): boolean {
+  const dx = point.x - at.x
+  const dz = point.z - at.z
+  return Math.abs(point.y - at.y) <= up && dx * dx + dz * dz <= reach * reach
 }
 
 /** How many of a wreck's bananas spill out, at most; the rest are lost in the blast. */
@@ -157,12 +162,17 @@ export const SPILL_LIFE_TICKS = 60 * 90
 /** How many loose things a map holds at once, bananas, bombs and rockets together; past that the oldest go. */
 export const LOOSE_MOST = 256
 
-/** What lies loose on the map: a banana spilled from a wreck, or a bomb dropped from a car. */
-export type LooseKind = 'banana' | 'bomb'
-export const LOOSE_KINDS: readonly LooseKind[] = ['banana', 'bomb']
+/** What lies loose on the map: a banana spilled from a wreck, or a bomb, a mine or an oil slick dropped from a car. */
+export type LooseKind = 'banana' | 'bomb' | 'mine' | 'oil'
+export const LOOSE_KINDS: readonly LooseKind[] = ['banana', 'bomb', 'mine', 'oil']
 
-/** How close a chassis has to come to a bomb to set it off. */
+/** How close a chassis has to come to a bomb or a mine to set it off, and to an oil slick to drive into it. */
 export const BOMB_REACH = 3.2
+export const MINE_REACH = 2.5
+export const OIL_REACH = 4
+
+/** How long an oil slick lies on the road before it is gone, in ticks. */
+export const OIL_LIFE_TICKS = 60 * 20
 
 /** Spilled bananas are numbered as they come, and the numbers come around after this many: far more than are ever out at once. */
 export const LOOSE_IDS = 0x10000
@@ -226,15 +236,17 @@ export function looseOut(loose: Loose, tick: number): boolean {
   return tick >= loose.bornTick + SPILL_FLIGHT_TICKS
 }
 
-/** Whether a spilled banana has lain about long enough to be gone. A bomb lies there until it goes off. */
+/** Whether a spilled banana or an oil slick has lain about long enough to be gone. A bomb or a mine lies there until it goes off. */
 export function looseGone(loose: Loose, tick: number): boolean {
-  return loose.kind === 'banana' && tick >= loose.bornTick + SPILL_LIFE_TICKS
+  if (loose.kind === 'banana') return tick >= loose.bornTick + SPILL_LIFE_TICKS
+  if (loose.kind === 'oil') return tick >= loose.bornTick + OIL_LIFE_TICKS
+  return false
 }
 
-/** Whether something at this point has reached a loose banana, or set off a bomb. */
-export function reachesLoose(loose: Loose, point: Vec3): boolean {
-  const reach = loose.kind === 'bomb' ? BOMB_REACH : BANANA_REACH
-  const dx = point.x - loose.position.x
-  const dz = point.z - loose.position.z
-  return Math.abs(point.y - loose.position.y) <= PICKUP_REACH_UP && dx * dx + dz * dz <= reach * reach
+const LOOSE_REACH: Readonly<Record<LooseKind, number>> = { banana: BANANA_REACH, bomb: BOMB_REACH, mine: MINE_REACH, oil: OIL_REACH }
+
+/** Whether something at this point has reached a loose banana, set off a bomb or a mine, or driven into oil; a banana from as far as a magnet's reach, if more. */
+export function reachesLoose(loose: Loose, point: Vec3, magnet = 0): boolean {
+  if (loose.kind === 'banana') return within(point, loose.position, Math.max(BANANA_REACH, magnet), Math.max(PICKUP_REACH_UP, magnet))
+  return within(point, loose.position, LOOSE_REACH[loose.kind], PICKUP_REACH_UP)
 }

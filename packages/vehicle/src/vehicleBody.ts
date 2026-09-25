@@ -84,6 +84,8 @@ export interface Vehicle {
   wrecked: boolean
   /** Pushed along this step by something other than its own engine, so the tires do not take hold against it. */
   boosted: boolean
+  /** How much of their grip the tires have this step: all of it, as a rule, and a share of it on oil. */
+  grip: number
   /** Held up this step by something other than the ground, so the wheels let go of the road rather than sticking to it. */
   lifted: boolean
   /** Carrying wings this step, held up by them or not: in the air they hold it level and the steering banks it, rather than the pedals pitching it. */
@@ -179,6 +181,7 @@ const NEUTRAL_VEHICLE_MOTION: Readonly<VehicleMotion> = Object.freeze({
   damage: 0,
   wrecked: false,
   boosted: false,
+  grip: 1,
   lifted: false,
   winged: false,
   lean: v3(),
