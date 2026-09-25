@@ -31,8 +31,8 @@ export const SERVER_REJECT = 0x82
 export const SERVER_SNAPSHOT = 0x83
 export const SERVER_ROOMS = 0x84
 
-/** How many of the busiest islands the server tells of. */
-export const ROOMS_LISTED = 8
+/** How many islands the server tells of: every one with anyone on it, up to what the wire counts in a byte. */
+export const ROOMS_LISTED = 255
 
 export const REJECT_PROTOCOL_MISMATCH = 1
 export const REJECT_SERVER_FULL = 2

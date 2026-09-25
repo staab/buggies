@@ -74,9 +74,8 @@ describe('a car on the screen', () => {
     expect(target.wrecked).toBe(false)
 
     seat.score = 2
-    const hud = presence.hudState('me', [], false)
+    const hud = presence.hudState('me', [])
     expect(hud).toMatchObject({ title: 'me', score: 2, damage: 0, maxSpeed: seat.tuning.maxSpeed })
-    expect(hud.state).toBe('')
 
     // Blown up: one burst, the car hidden, and the HUD says so.
     expect(explosions.object.children).toHaveLength(0)
@@ -85,7 +84,7 @@ describe('a car on the screen', () => {
     expect(explosions.object.children).toHaveLength(1)
     expect(presence.object.visible).toBe(false)
     expect(presence.wrecked).toBe(true)
-    expect(presence.hudState('me', [], false)).toMatchObject({ damage: 1, state: 'wrecked' })
+    expect(presence.hudState('me', [])).toMatchObject({ damage: 1 })
     // And not again while it lies there.
     presence.render(0.5, 0.016)
     expect(explosions.object.children).toHaveLength(1)

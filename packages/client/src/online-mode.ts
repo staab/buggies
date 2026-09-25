@@ -16,7 +16,7 @@ import type { Sound } from './audio.ts'
 import { aimPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
-import { cameraBounds, tunnelTest } from './driver-hud.ts'
+import { cameraBounds } from './driver-hud.ts'
 import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
 import type { DriverKeys } from './keys.ts'
@@ -101,7 +101,6 @@ export async function joinOnline(
   const chase = new ChaseCamera(cameraTuning)
   chase.setBoundsAt(cameraBounds(map))
   const target = createChaseTarget()
-  const inTunnel = tunnelTest(map)
 
   const onKey = (event: KeyboardEvent): void => {
     if (player.keys.respawn(event)) client.requestRespawn()
@@ -149,7 +148,7 @@ export async function joinOnline(
       const players = client.playerCount
       const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       if (lost !== null) return { title, state: `disconnected: ${lost}` }
-      return car.presence.hudState(title, player.keys.controls, inTunnel(prediction.vehicle.frame.position))
+      return car.presence.hudState(title, player.keys.controls)
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

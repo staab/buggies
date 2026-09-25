@@ -4,8 +4,6 @@ import * as THREE from 'three'
 export interface HudState {
   /** Who is driving what, where. */
   title: string
-  /** A word on the moment: airborne, in a tunnel, wrecked, disconnected. */
-  state?: string
   /** How fast, in m/s. */
   speed?: number
   /** The most this vehicle does, in m/s: the dial reads to just past it. */
@@ -180,13 +178,11 @@ export class Hud {
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
   private readonly damage = buildDial('damage')
-  private readonly state = div('state')
   private readonly drawer = div('drawer')
   private readonly controls = div('controls')
   private readonly toggle = document.createElement('button')
   private expanded = false
   private shownTitle = ''
-  private shownState = ''
   private shownControls = ''
   private shownScore = ''
   private shownWeapon = ''
@@ -224,7 +220,7 @@ export class Hud {
     this.toggle.append(caret())
     this.toggle.addEventListener('click', () => this.expand(!this.expanded))
     this.expand(false)
-    root.append(this.title, this.row, this.gauges, this.state, this.drawer, this.toggle)
+    root.append(this.title, this.row, this.gauges, this.drawer, this.toggle)
     this.render(null)
   }
 
@@ -246,13 +242,6 @@ export class Hud {
       this.shownTitle = state.title
       this.title.textContent = state.title
     }
-    const shownState = state.state ?? ''
-    if (shownState !== this.shownState) {
-      this.shownState = shownState
-      this.state.textContent = shownState
-    }
-    this.state.hidden = shownState === ''
-
     const score = state.score === undefined ? '' : String(state.score)
     if (score !== this.shownScore) {
       this.shownScore = score
