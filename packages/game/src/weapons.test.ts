@@ -33,6 +33,7 @@ import {
   looseGone,
   takeSeat,
   weaponWon,
+  wingsTurnRadius,
   disarm,
   BANANAS_PER_WEAPON,
   wreckVehicle,
@@ -250,17 +251,36 @@ describe('weapons', () => {
     expect(a.vehicle.frame.position.y - ground).toBeGreaterThan(8)
     expect(a.vehicle.groundedCount).toBe(0)
     expect(a.ammoTicks).toBe(WINGS_FLIGHT_TICKS - 180)
-    // Steered while aloft, it comes round, and stays level while it does.
-    const { x: fx, z: fz } = a.vehicle.frame.forward
-    for (let i = 0; i < 60; i++) advance(arena, () => ({ ...NEUTRAL_INPUT, fire: true, steer: 1 }))
-    const { x: gx, z: gz } = a.vehicle.frame.forward
-    expect(fx * gx + fz * gz).toBeLessThan(0.9)
-    expect(a.vehicle.frame.up.y).toBeGreaterThan(0.95)
-    // And the throttle drives it along up there.
+    // The throttle drives it along up there.
+    const drive: VehicleInput = { ...NEUTRAL_INPUT, fire: true, throttle: 1 }
     const before = { ...a.vehicle.frame.position }
-    for (let i = 0; i < 60; i++) advance(arena, () => ({ ...NEUTRAL_INPUT, fire: true, throttle: 1 }))
+    for (let i = 0; i < 90; i++) advance(arena, () => drive)
     expect(a.vehicle.groundedCount).toBe(0)
     expect(Math.hypot(a.vehicle.frame.position.x - before.x, a.vehicle.frame.position.z - before.z)).toBeGreaterThan(3)
+    // Steered, it banks into a wide turn: the way it is going comes round gradually, its nose
+    // following, and it levels off again once the steering is let go.
+    const heading = (v: { x: number; z: number }): number => Math.atan2(v.x, v.z)
+    const was = heading(a.vehicle.frame.linearVelocity)
+    const from = { ...a.vehicle.frame.position }
+    let leaned = 0
+    for (let i = 0; i < 120; i++) {
+      advance(arena, () => ({ ...drive, steer: 1 }))
+      leaned = Math.max(leaned, Math.abs(a.vehicle.frame.right.y))
+    }
+    const { linearVelocity: going, forward, position } = a.vehicle.frame
+    let swung = heading(going) - was
+    if (swung > Math.PI) swung -= Math.PI * 2
+    if (swung < -Math.PI) swung += Math.PI * 2
+    expect(Math.abs(swung)).toBeGreaterThan(0.3)
+    expect(Math.abs(swung)).toBeLessThan(2.5)
+    expect(leaned).toBeGreaterThan(0.15)
+    const speed = Math.hypot(going.x, going.z)
+    expect((forward.x * going.x + forward.z * going.z) / (Math.hypot(forward.x, forward.z) * speed)).toBeGreaterThan(0.8)
+    // The arc is a wide one: the chord it has flown round says so.
+    const chord = Math.hypot(position.x - from.x, position.z - from.z)
+    expect(chord / (2 * Math.sin(Math.abs(swung) / 2))).toBeGreaterThan(wingsTurnRadius(a.tuning) * 0.5)
+    for (let i = 0; i < 60; i++) advance(arena, () => drive)
+    expect(a.vehicle.frame.up.y).toBeGreaterThan(0.95)
     // Let go: down it comes.
     for (let i = 0; i < 60 * 6; i++) advance(arena)
     expect(a.vehicle.groundedCount).toBeGreaterThan(0)

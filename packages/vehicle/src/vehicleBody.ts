@@ -86,6 +86,8 @@ export interface Vehicle {
   boosted: boolean
   /** Held up this step by something other than the ground, so the wheels let go of the road rather than sticking to it. */
   lifted: boolean
+  /** How far, and which way, the car's up is tilted while it is held up: the bank its wings hold, as the horizontal part of the up they hold it to. */
+  lean: Vec3
   invertedRestTime: number
   selfRighting: boolean
   selfRightElapsed: number
@@ -176,6 +178,7 @@ const NEUTRAL_VEHICLE_MOTION: Readonly<VehicleMotion> = Object.freeze({
   wrecked: false,
   boosted: false,
   lifted: false,
+  lean: v3(),
   invertedRestTime: 0,
   selfRighting: false,
   selfRightElapsed: 0,

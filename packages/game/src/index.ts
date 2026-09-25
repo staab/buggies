@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP } from '@buggies/physics'
+import { FIXED_TIMESTEP, vset } from '@buggies/physics'
 import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
@@ -127,7 +127,11 @@ export {
   WINGS_CLIMB_SPEED,
   WINGS_FLIGHT_TICKS,
   WINGS_THRUST,
-  WINGS_TURN,
+  WINGS_FOLLOW,
+  WINGS_HOVER_TURN,
+  WINGS_LEAN,
+  WINGS_TURN_MIN_SPEED,
+  WINGS_TURN_WIDEN,
   BOOST_PUSH,
   EMERGENCY_SLOW,
   HOP_SPEED,
@@ -159,6 +163,7 @@ export {
   rocketId,
   stunned,
   weaponWon,
+  wingsTurnRadius,
   type Battlefield,
   type Gunner,
   type Muzzle,
@@ -454,6 +459,8 @@ export function advance(
     const lit = burning(seat, input.fire)
     seat.vehicle.boosted = lit
     seat.vehicle.lifted = lifting(seat, input.fire)
+    // Off its wings the car has no bank to hold.
+    if (!seat.vehicle.lifted) vset(seat.vehicle.lean, 0, 0, 0)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     pushWithWeapons(seat, gravity)
     hinder(seat)

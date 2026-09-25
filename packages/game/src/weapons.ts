@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import {
   FIXED_TIMESTEP,
   clamp,
@@ -8,6 +9,7 @@ import {
   vlength,
   vnormalize,
   vscale,
+  vset,
   vsub,
   type Vec3,
 } from '@buggies/physics'
@@ -91,7 +93,19 @@ export const ENGINE_TOP_SPEED = 1.8
  */
 export const WINGS_CLIMB_SPEED = 8
 export const WINGS_CLIMB_PUSH = 6
-export const WINGS_TURN = 1.6
+/**
+ * On wings the steering banks the car and swings its motion round rather
+ * than turning its nose: the arc is this many times as wide as the car's
+ * own tightest turn at speed, the car leans into it by this much of its up
+ * (the tangent of the bank) at full steer, and its nose is kept on the way
+ * it is going this firmly. Below this speed there is no motion to swing,
+ * so the nose is turned gently instead, this much of the way the steering asks.
+ */
+export const WINGS_TURN_WIDEN = 5
+export const WINGS_LEAN = 0.55
+export const WINGS_FOLLOW = 1.2
+export const WINGS_TURN_MIN_SPEED = 3
+export const WINGS_HOVER_TURN = 0.35
 export const WINGS_THRUST = 9
 
 /**
@@ -226,10 +240,15 @@ export interface Battlefield {
   readonly tick: number
 }
 
+// The exact trigonometry, so every copy of the simulation turns the same.
+const { atan2, cos: cosine, hypot, sin: sine } = exact
+
 const muzzle = v3()
 const toward = v3()
 const desired = v3()
 const heading = v3()
+const spin = v3()
+const aside = v3()
 
 /**
  * What a seat wins with its bananas: anyone's guess, but the same guess on
@@ -313,9 +332,50 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
   }
   const climb = clamp(1 - frame.linearVelocity.y / WINGS_CLIMB_SPEED, 0, 1)
   addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
-  addTorqueAbout(body, frame.up, -command.steer * tuning.airPitchTorque * WINGS_TURN)
   // The pedals drive it along, forward or back, wherever it is.
   addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
+  bank(seat)
+}
+
+/** How wide the turn a car on wings makes at full steer: a few times its own tightest turn at speed. */
+export function wingsTurnRadius(tuning: VehicleTuning): number {
+  const wheelbase = Math.abs(tuning.rearAxleZ - tuning.frontAxleZ)
+  const steer = tuning.maxSteerAngle * tuning.steerAtHighSpeed
+  return (wheelbase / (sine(steer) / cosine(steer))) * WINGS_TURN_WIDEN
+}
+
+/**
+ * Turn a car on wings the way a plane turns: the steering leans it into
+ * the turn, and the turn swings the way it is going round a wide arc,
+ * the nose following the motion. The lean is left for the wings to hold,
+ * and the swing is the pull a circle of the turn's radius asks for at the
+ * car's speed. Too slow for any of that, the nose is turned gently instead.
+ */
+function bank(seat: Gunner): void {
+  const { vehicle, tuning } = seat
+  const { body, frame, command, lean } = vehicle
+  const { linearVelocity: velocity } = frame
+  const speed = hypot(velocity.x, velocity.z)
+  body.angvel(spin)
+  const yawRate = spin.y
+  if (speed < WINGS_TURN_MIN_SPEED) {
+    vset(lean, 0, 0, 0)
+    addTorqueAbout(body, WORLD_UP, -command.steer * tuning.airPitchTorque * WINGS_HOVER_TURN - yawRate * tuning.airLevelDamping)
+    return
+  }
+  // Aside from the way it is going, the steering's way: where the turn pulls it, and what it leans toward.
+  const turn = command.steer
+  vset(aside, -velocity.z / speed, 0, velocity.x / speed)
+  addForceAlong(body, aside, (tuning.mass * speed * speed * turn) / wingsTurnRadius(tuning))
+  vset(lean, aside.x * WINGS_LEAN * turn, 0, aside.z * WINGS_LEAN * turn)
+  // The nose follows the way the car is going.
+  const { forward } = frame
+  const flat = hypot(forward.x, forward.z) || 1
+  const error = atan2(
+    (forward.x * velocity.z - forward.z * velocity.x) / (flat * speed),
+    (forward.x * velocity.x + forward.z * velocity.z) / (flat * speed),
+  )
+  addTorqueAbout(body, WORLD_UP, -error * tuning.airPitchTorque * WINGS_FOLLOW - yawRate * tuning.airLevelDamping)
 }
 
 export function disarm(seat: Gunner): void {
