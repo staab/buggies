@@ -7,7 +7,7 @@
  */
 
 import * as exact from '@buggies/physics'
-import { RAMP_PLATEAU, RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, isSurfaceRoad, roadLift } from './roads.ts'
+import { RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, ROAD_WIDTH, isSurfaceRoad, roadLift } from './roads.ts'
 import type { Road, RoadPoint } from './types.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
@@ -121,17 +121,19 @@ function finished(road: Road, points: RoadPoint[], side: number, atStart: boolea
 
 /** Every run of guardrail on the map. */
 export function railRuns(roads: Road[]): RailRun[] {
-  // A ramp's mouth is the whole of its plateau: the stretch it runs level
-  // beside the deck before it sweeps away, which a car crosses anywhere along.
+  // A ramp's mouth is its whole first stretch, from under the deck's edge
+  // out until its lane has pulled clear of the deck: a car leaves the deck
+  // for it anywhere along there.
+  const highwayPoints = roads.filter((road) => road.kind === 'highway').flatMap((road) => road.points)
+  const against = ROAD_WIDTH / 2 + RAMP_WIDTH / 2 + 1
   const mouths = roads
     .filter((road) => road.kind === 'ramp')
     .flatMap((road) => {
       const along: RoadPoint[] = []
-      let travelled = 0
-      for (const [i, point] of road.points.entries()) {
-        const last = road.points[i - 1]
-        if (last !== undefined) travelled += hypot(point.x - last.x, point.z - last.z)
-        if (travelled > RAMP_PLATEAU + RAMP_WIDTH / 2) break
+      for (const point of road.points) {
+        let nearest = Infinity
+        for (const other of highwayPoints) nearest = Math.min(nearest, hypot(other.x - point.x, other.z - point.z))
+        if (nearest > against) break
         along.push(point)
       }
       return along

@@ -272,6 +272,7 @@ const SIGN = { width: 0.5, depth: 2, height: 7 } as const
  */
 const CAMPS_MOST = 3
 const CAMP_TRIES = 80
+const CAMP_SALT = 0x0ca3_9e51
 const CAMP_NEAR_ROAD = { min: 28, max: 60 } as const
 const CLEARING_RADIUS = 20
 const TENTS = 6
@@ -1208,7 +1209,8 @@ export function generateBuildings(
   raiseLighthouses(stands)
   raiseChurches(stands, plant)
   raiseWaterTowers(stands)
-  pitchCamps(stands, plant)
+  // The camps throw their own dice too, for the same reason as the observatory.
+  pitchCamps({ ...stands, rng: createRng((seed ^ CAMP_SALT) >>> 0) }, plant)
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant)
   return { buildings, trees, ramps, sidewalks, fields }
 }

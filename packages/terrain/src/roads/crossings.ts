@@ -16,6 +16,7 @@ import {
   RAMP_REACH,
   RAMP_SEGMENTS,
   RAMP_TURN_RADIUS,
+  RAMP_UNDER_DECK,
   RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_SKIRT,
@@ -296,18 +297,16 @@ export function crossRoad(field: Heightfield, samples: Vec2[], c: number): Cross
  * and the cross road. Nothing else may be built inside it.
  */
 /**
- * A ramp's line in plan, from its mouth beside the deck to where it meets
- * the cross road: level and straight along the deck for the plateau, one
- * arc of `RAMP_TURN_RADIUS` turning out by whatever angle then lets a
- * straight run end exactly on the merge point. Laid out in the mouth's own
- * frame: `along` runs down the deck toward the crossing, `out` away from
- * it. `null` where no such line reaches the merge, for a deck that bends
- * too much between the two.
+ * A ramp's line in plan, from its mouth under the deck's edge to where it
+ * meets the cross road: one arc of `RAMP_TURN_RADIUS` turning out from
+ * along the deck by whatever angle then lets a straight run end exactly on
+ * the merge point. Laid out in the mouth's own frame: `along` runs down
+ * the deck toward the crossing, `out` away from it. `null` where no such
+ * line reaches the merge, for a deck that bends too much between the two.
  */
 function rampPlan(mouth: Vec2, along: Vec2, out: Vec2, merge: Vec2): Vec2[] | null {
-  const reachAlong = (merge.x - mouth.x) * along.x + (merge.z - mouth.z) * along.z
+  const run = (merge.x - mouth.x) * along.x + (merge.z - mouth.z) * along.z
   const reachOut = (merge.x - mouth.x) * out.x + (merge.z - mouth.z) * out.z
-  const run = reachAlong - RAMP_PLATEAU
   if (run <= 0 || reachOut <= 0) return null
   const radius = RAMP_TURN_RADIUS
   // The turn that lets the straight run land on the merge: with `s` its
@@ -327,22 +326,19 @@ function rampPlan(mouth: Vec2, along: Vec2, out: Vec2, merge: Vec2): Vec2[] | nu
   const arc = radius * turn
   const straight = (run - radius * Math.sin(turn)) / Math.cos(turn)
   if (straight < 0) return null
-  const total = RAMP_PLATEAU + arc + straight
+  const total = arc + straight
   const points: Vec2[] = []
   for (let k = 0; k <= RAMP_SEGMENTS; k++) {
     const s = (total * k) / RAMP_SEGMENTS
     let x: number
     let y: number
-    if (s <= RAMP_PLATEAU) {
-      x = s
-      y = 0
-    } else if (s <= RAMP_PLATEAU + arc) {
-      const swept = (s - RAMP_PLATEAU) / radius
-      x = RAMP_PLATEAU + radius * Math.sin(swept)
+    if (s <= arc) {
+      const swept = s / radius
+      x = radius * Math.sin(swept)
       y = radius * (1 - Math.cos(swept))
     } else {
-      const t = s - RAMP_PLATEAU - arc
-      x = RAMP_PLATEAU + radius * Math.sin(turn) + t * Math.cos(turn)
+      const t = s - arc
+      x = radius * Math.sin(turn) + t * Math.cos(turn)
       y = radius * (1 - Math.cos(turn)) + t * Math.sin(turn)
     }
     points.push({ x: mouth.x + along.x * x + out.x * y, z: mouth.z + along.z * x + out.z * y })
@@ -430,18 +426,19 @@ export function buildInterchanges(
         const mergeZ = centerZ + frame.dz * edgeOffset
         const attach = indexAtDistance(cum, (cum[c]! + sd * RAMP_ALONG + total) % total)
         const start = frameAt(samples, attach)
-        // The ramp's carriageway begins at the foot of the deck's skirt, not
-        // under it: a car on a ramp built over the skirt rides the skirt's
-        // slope instead of the ramp and drops off its edge as they part.
-        const startOffset = ROAD_WIDTH / 2 + ROAD_SKIRT + RAMP_WIDTH / 2
+        // The ramp begins under the deck, its outer edge at the deck's edge,
+        // and turns out from there: it comes out from under the highway as a
+        // widening sliver, the way a slip road leaves a carriageway, with the
+        // deck drawn over its first stretch and the ground under it level.
+        const startOffset = ROAD_WIDTH / 2 - RAMP_WIDTH / 2
         const startX = start.x + start.nx * sn * startOffset
         const startZ = start.z + start.nz * sn * startOffset
         const startY = profile[attach]!
 
-        // The ramp runs beside the deck for its plateau, turns out through one
-        // arc, and runs straight to the cross road from there: as gentle as
-        // the diagonal allows, where a curve swinging out and back square to
-        // the cross road has to be steeper than the diagonal in its middle.
+        // The ramp turns out from under the deck through one arc and runs
+        // straight to the cross road from there: as gentle as the diagonal
+        // allows, where a curve swinging out and back square to the cross
+        // road has to be steeper than the diagonal in its middle.
         // The ramp is the ground: it leaves the highway's own surface, which
         // rides ROAD_SURFACE above its centreline, and lands on the cross road.
         const points = rampPlan(
@@ -461,7 +458,7 @@ export function buildInterchanges(
           const next = (i + 1) % count
           const span = (next === 0 ? total : cum[next]!) - cum[i]!
           const t = span > 0 ? Math.min(Math.max((at - cum[i]!) / span, 0), 1) : 0
-          return profile[i]! + (profile[next]! - profile[i]!) * t + ROAD_SURFACE
+          return profile[i]! + (profile[next]! - profile[i]!) * t + ROAD_SURFACE - RAMP_UNDER_DECK
         }
         const heights = new Float32Array(RAMP_SEGMENTS + 1)
         const shelf = deckAlong(RAMP_PLATEAU)

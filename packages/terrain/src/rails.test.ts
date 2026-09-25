@@ -44,8 +44,9 @@ describe('guardrails', () => {
       if (nearestRunDistance(runs, middle.x, middle.z) < half + 1) railed++
     }
     expect(open).toBeGreaterThan(100)
-    // Only the ramps' mouths go without.
-    expect(railed / open).toBeGreaterThan(0.9)
+    // Only the ramps' mouths go without, each open along the lane's whole
+    // way out from under the deck and a flare's length either side.
+    expect(railed / open).toBeGreaterThan(0.8)
 
     for (const road of map.roads) {
       if (!isSurfaceRoad(road)) continue

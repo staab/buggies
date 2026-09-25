@@ -1,4 +1,4 @@
-import { WORLD_SCALE, generateTerrain } from '@buggies/terrain'
+import { ROAD_SKIRT, WORLD_SCALE, generateTerrain } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -75,12 +75,15 @@ describe('createTerrainView', () => {
     }
   })
 
-  it('paves the deck skirt beside each ramp mouth level with the deck, in the road colour', () => {
+  it('paves the deck skirt in the road colour where each ramp runs out from under the deck', () => {
     const map = generateTerrain(1)
     const view = createTerrainView(map)
     const highway = map.roads.find((road) => road.kind === 'highway')!
     const ramps = map.roads.filter((road) => road.kind === 'ramp')
     expect(ramps.length).toBeGreaterThan(0)
+    const half = highway.width / 2
+    const distanceToHighway = (x: number, z: number): number =>
+      Math.min(...highway.points.map((point) => Math.hypot(point.x - x, point.z - z)))
     // The highway's deck mesh: six coloured vertices per centreline point.
     const deck = view.children.find(
       (child): child is THREE.Mesh =>
@@ -93,7 +96,15 @@ describe('createTerrainView', () => {
     const positions = deck!.geometry.getAttribute('position')
     let paved = 0
     for (const ramp of ramps) {
-      const mouth = ramp.points[0]!
+      // The ramp begins under the deck's edge and comes out across the
+      // skirt: where its lane crosses the skirt's foot, the skirt is road.
+      const mouth = ramp.points.reduce((closest, point) =>
+        Math.abs(distanceToHighway(point.x, point.z) - (half + ROAD_SKIRT)) <
+        Math.abs(distanceToHighway(closest.x, closest.z) - (half + ROAD_SKIRT))
+          ? point
+          : closest,
+      )
+      expect(distanceToHighway(ramp.points[0]!.x, ramp.points[0]!.z)).toBeLessThan(half)
       let nearest = 0
       let best = Infinity
       for (const [i, point] of highway.points.entries()) {
@@ -116,8 +127,9 @@ describe('createTerrainView', () => {
         Math.abs(colors.getX(nearer) - colors.getX(edge)) < 1e-6 &&
         Math.abs(colors.getY(nearer) - colors.getY(edge)) < 1e-6 &&
         Math.abs(colors.getZ(nearer) - colors.getZ(edge)) < 1e-6
-      const level = Math.abs(positions.getY(nearer) - positions.getY(edge)) < 1e-6
-      if (sameColor && level) paved++
+      // The skirt runs down to the lane's surface at its foot, a hair below the deck.
+      const drop = positions.getY(edge) - positions.getY(nearer)
+      if (sameColor && drop >= 0 && drop < 1) paved++
     }
     expect(paved).toBe(ramps.length)
   })
