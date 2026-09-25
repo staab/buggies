@@ -195,6 +195,8 @@ const OBSERVATORY_RELIEF = 8
  */
 const FARMS_MOST = 5
 const FARM_TRIES = 150
+/** Farms keep this far from one another, so they do not bunch up. */
+const FARM_APART = 200
 const FIELDS_PER_FARM = { min: 2, max: 4 } as const
 const FIELD_LENGTH = { min: 45, max: 75 } as const
 const FIELD_WIDTH = { min: 28, max: 45 } as const
@@ -292,6 +294,13 @@ const DAM_RIVER = { fromEnds: 60, overSea: 3 } as const
 /** How wide a valley may be at the crest's height and still be dammed, and how narrow it must be to be worth it. */
 const DAM_SPAN = { least: 16, most: 120 } as const
 const DAM_ROAD_MARGIN = 6
+/**
+ * The reservoir a dam holds back: the river upstream of it is raised to
+ * this far below the crest and spread this wide, as far up as this or as
+ * the river's own level rising to meet it, and never over a road, which
+ * ends the reservoir where the road would go under.
+ */
+const RESERVOIR = { lip: 0.6, width: 70, reach: 320 } as const
 
 /**
  * A chair lift up a mountainside: a station at the foot of the slope, one
@@ -736,6 +745,11 @@ function fillCities(
     if (col < 0 || col >= width || row < 0 || row >= field.depth) return false
     return districtOf[row * width + col] === DISTRICT_CITY
   }
+  // The lots are laid out from the streets' old kerb, which is all the
+  // clearance asks of a street; a street that cuts through a block off the
+  // grid, joining two grids or an arterial, is kept off by its whole
+  // carriageway as well, or a lot could straddle it.
+  const offStreets = roadClearance(streets, STREET_WIDTH / 2)
   // The streets as straight lines, end to end, which is what they are: a
   // point is on a street when it lies within the carriageway of one.
   const lines = streets
@@ -854,7 +868,7 @@ function fillCities(
               if (!inCity(lot.x, lot.z)) continue
               // An open lot: a building site near the heart of the city, or a car park with its bays marked out, or a park.
               const heart = 1 - hypot(lot.x - district.cx, lot.z - district.cz) / district.radius
-              const open = clear(lot, 0) && !placed.meets(lot, 0)
+              const open = clear(lot, 0) && offStreets(lot, 0) && !placed.meets(lot, 0)
               const ground = open ? groundUnder(field, wet, lot) : null
               const level = ground !== null && !ground.wet && ground.high - ground.low <= BLOCK_RELIEF
               if (level && heart >= SQUARE_CORE && !squared) {
@@ -914,7 +928,7 @@ function fillCities(
             )
             const tone = rng()
             if (!inCity(footprint.x, footprint.z)) continue
-            if (!clear(footprint, ROAD_MARGIN)) continue
+            if (!clear(footprint, ROAD_MARGIN) || !offStreets(footprint, 0)) continue
             const ground = groundUnder(field, wet, footprint)
             if (ground.wet || ground.high - ground.low > BLOCK_RELIEF) continue
             if (placed.meets(footprint, BUILDING_GAP)) continue
@@ -1429,9 +1443,11 @@ export function generateBuildings(
   const clear = (footprint: Footprint, margin: number): boolean =>
     clearOfRoads(footprint, margin) && !meetsInterchange(zones, footprint)
   const clearOfStreets = roadClearance(roads, STREET_WIDTH / 2 + SIDEWALK_BAND)
-  const wet = wetTest(field, seaLevel, rivers, lakes, roads)
   const placed = new Placed()
   const buildings: Building[] = []
+  // The dams go up first: the reservoir each holds back is water the rest keeps out of.
+  raiseDams(field, seaLevel, rivers, lakes, roads, districtOf, clear, placed, buildings, rng)
+  const wet = wetTest(field, seaLevel, rivers, lakes, roads)
   const trees: Tree[] = []
   const ramps: Ramp[] = []
   const sidewalks: Sidewalk[] = []
@@ -1488,7 +1504,6 @@ export function generateBuildings(
   raiseStones(stands)
   raiseLighthouses(stands)
   moorBoats({ ...stands, rng: createRng((seed ^ BOAT_SALT) >>> 0) })
-  raiseDams(stands)
   raiseLifts(stands, mountains)
   raiseViewpoints(stands, fields)
   raiseChurches(stands, plant)
@@ -1593,7 +1608,7 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter): void {
   let farms = 0
   for (let attempt = 0; attempt < FARM_TRIES && farms < FARMS_MOST; attempt++) {
     const spot = countrySpot(stands)
-    if (spot === null || !farFromKind(stands, 'farm', spot.x, spot.z, FEATURE_APART)) continue
+    if (spot === null || !farFromKind(stands, 'farm', spot.x, spot.z, FARM_APART)) continue
     const yaw = randomRange(rng, 0, Math.PI)
     const count = randomInt(rng, FIELDS_PER_FARM.min, FIELDS_PER_FARM.max)
     const length = randomRange(rng, FIELD_LENGTH.min, FIELD_LENGTH.max)
@@ -2230,6 +2245,9 @@ interface DamSite {
   dz: number
   span: number
   water: number
+  /** The river it is on, and the point of it the wall stands at. */
+  river: River
+  index: number
 }
 
 /**
@@ -2276,14 +2294,54 @@ function damSite(field: Heightfield, seaLevel: number, river: River, from: numbe
         dz: dz / run,
         span,
         water: point.y,
+        river,
+        index: i,
       }
     }
   }
   return best
 }
 
-function raiseDams(stands: Stands): void {
-  const { field, seaLevel, rivers, lakes, districtOf, placed, buildings, rng } = stands
+/**
+ * Hold a reservoir back behind a dam: the river upstream of the wall is
+ * raised to just below the crest and spread wide, so it pools over the
+ * valley floor as far up as the crest's level reaches, stopping short of
+ * any road the water would cover, and of any lake the river comes out of.
+ */
+function flood(field: Heightfield, site: DamSite, crest: number, roads: Road[], lakes: Lake[]): void {
+  const { width, cellSize } = field
+  const lakeCells = new Set<number>()
+  for (const lake of lakes) for (const cell of lake.cells) lakeCells.add(cell)
+  const level = crest - RESERVOIR.lip
+  const { points } = site.river
+  let reach = 0
+  for (let i = site.index; i >= 0; i--) {
+    const point = points[i]!
+    if (i < site.index) reach += hypot(point.x - points[i + 1]!.x, point.z - points[i + 1]!.z)
+    if (reach > RESERVOIR.reach || point.y >= level) break
+    if (lakeCells.has(Math.floor(point.z / cellSize) * width + Math.floor(point.x / cellSize))) break
+    // No road goes under: the reservoir ends below the first that would.
+    const drowned = roads.some((road) =>
+      road.points.some((p) => hypot(p.x - point.x, p.z - point.z) < RESERVOIR.width / 2 && p.y < level),
+    )
+    if (drowned) break
+    point.y = level
+    point.width = Math.max(point.width, RESERVOIR.width)
+  }
+}
+
+function raiseDams(
+  field: Heightfield,
+  seaLevel: number,
+  rivers: River[],
+  lakes: Lake[],
+  roads: Road[],
+  districtOf: Uint8Array,
+  clear: (footprint: Footprint, margin: number) => boolean,
+  placed: Placed,
+  buildings: Building[],
+  rng: Rng,
+): void {
   const { width, cellSize } = field
   const cellAt = (x: number, z: number): number => Math.floor(z / cellSize) * width + Math.floor(x / cellSize)
   const riverLength = (river: River): number => {
@@ -2330,10 +2388,12 @@ function raiseDams(stands: Stands): void {
       depth: DAM.thick,
     }
     if (districtOf[cellAt(wall.x, wall.z)] !== DISTRICT_COUNTRY) continue
-    if (!stands.clear(wall, DAM_ROAD_MARGIN) || placed.meets(wall, FURNITURE_GAP)) continue
+    if (!clear(wall, DAM_ROAD_MARGIN) || placed.meets(wall, FURNITURE_GAP)) continue
     const bed = groundUnder(field, () => false, wall)
     placed.add(wall)
-    buildings.push({ kind: 'dam', ...wall, bottom: bed.low - BURY, top: site.water + DAM.height, tone: rng() })
+    const crest = site.water + DAM.height
+    buildings.push({ kind: 'dam', ...wall, bottom: bed.low - BURY, top: crest, tone: rng() })
+    flood(field, site, crest, roads, lakes)
     dams += 1
   }
 }

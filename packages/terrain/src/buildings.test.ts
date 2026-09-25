@@ -208,7 +208,7 @@ describe('buildings and trees', () => {
     expect(planted.length).toBeGreaterThan(houses.length * 0.7)
   })
 
-  it('dam a river at a gorge: one wall from bank to bank, the river under it, its crest over the water and level with the banks', () => {
+  it('dam a river at a gorge: one wall from bank to bank, a pool held just below its crest behind it, the river well below it in front, and its ends in the banks', () => {
     let dams = 0
     for (const seed of [1, 3]) {
       const island = seed === 1 ? map : generateTerrain(seed)
@@ -219,22 +219,24 @@ describe('buildings and trees', () => {
         const { heightfield } = island
         const cos = Math.cos(wall.yaw)
         const sin = Math.sin(wall.yaw)
-        // A river runs under it, well below its crest.
-        const river = island.rivers
-          .flatMap((r) => r.points)
-          .reduce((best, point) =>
-            Math.hypot(point.x - wall.x, point.z - wall.z) < Math.hypot(best.x - wall.x, best.z - wall.z) ? point : best,
-          )
-        expect(Math.hypot(river.x - wall.x, river.z - wall.z)).toBeLessThan(wall.width / 2)
-        expect(wall.top).toBeGreaterThan(river.y + 8)
+        // A river runs under it: pooled just below the crest on one side, well below it on the other.
+        const near = island.rivers.flatMap((r) => r.points).filter((point) => Math.hypot(point.x - wall.x, point.z - wall.z) < wall.width / 2 + 12)
+        expect(near.length).toBeGreaterThan(0)
+        expect(near.some((point) => point.y >= wall.top - 1 && point.y < wall.top)).toBe(true)
+        expect(near.some((point) => point.y < wall.top - 8)).toBe(true)
+        const river = near.reduce((best, point) => (point.y < best.y ? point : best))
         // Both ends stand in the banks, at about the crest's height.
         for (const su of [-1, 1]) {
           const x = wall.x + (su * wall.width * cos) / 2
           const z = wall.z - (su * wall.width * sin) / 2
           expect(sampleHeight(heightfield, x, z)).toBeGreaterThan(wall.top - 4)
         }
-        // And the wall's foot is on the riverbed, under the water.
-        expect(wall.bottom).toBeLessThan(river.y)
+        // And the wall's foot is on the riverbed, under the water of the nearest stretch in front of it.
+        const tail = near
+          .filter((point) => point.y < wall.top - 8)
+          .reduce((best, point) => (Math.hypot(point.x - wall.x, point.z - wall.z) < Math.hypot(best.x - wall.x, best.z - wall.z) ? point : best))
+        expect(wall.bottom).toBeLessThan(tail.y + 4)
+        expect(river.y).toBeLessThan(wall.top - 8)
       }
     }
     expect(dams).toBeGreaterThanOrEqual(1)
@@ -454,6 +456,16 @@ describe('buildings and trees', () => {
     expect(domes).toBeGreaterThan(0)
     expect(domes).toBeLessThan(8)
   }, 60_000)
+
+  it('keep the farms well apart from one another', () => {
+    const barns = map.buildings.filter((building) => building.kind === 'barn')
+    expect(barns.length).toBeGreaterThanOrEqual(2)
+    for (const a of barns) {
+      for (const b of barns) {
+        if (a !== b) expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(150)
+      }
+    }
+  })
 
   it('farm the open country: hedged fields in rows on ground flat enough to plough, a barn and a silo off the end', () => {
     const fields = map.fields.filter((field) => field.kind === 'crop')
@@ -745,8 +757,8 @@ describe('sidewalks', () => {
 
   it('ring the built city blocks, a block wide less the street, each side along a street inside the city', () => {
     expect(map.sidewalks.length).toBeGreaterThan(20)
-    const blocks = map.buildings.filter((building) => building.kind === 'block')
-    const carparks = map.fields.filter((field) => field.kind === 'carpark')
+    const blocks = map.buildings.filter((building) => building.kind === 'block' || building.kind === 'site' || building.kind === 'clocktower')
+    const carparks = map.fields.filter((field) => field.kind === 'carpark' || field.kind === 'square')
     const streets = map.roads.filter((road) => road.kind === 'street')
     /** Whether a street's centreline passes within a lane of the point. */
     const onStreet = (x: number, z: number): boolean =>

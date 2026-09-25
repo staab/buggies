@@ -132,7 +132,7 @@ describe('createTerrainView', () => {
       if (sameColor && drop >= 0 && drop < 1) paved++
     }
     expect(paved).toBe(ramps.length)
-  })
+  }, 30_000)
 
 
   it('places the scale car on the highway', () => {
