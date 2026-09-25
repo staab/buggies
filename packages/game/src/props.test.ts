@@ -47,6 +47,21 @@ describe('the props', () => {
     arena.world.free()
   })
 
+  it('a cone knocked onto its side comes to rest rather than rolling in circles', () => {
+    for (const spin of [{ x: 0, y: 4, z: 6 }, { x: 3, y: 0, z: -5 }, { x: -6, y: 2, z: 0 }, { x: 0, y: -8, z: 2 }]) {
+      const arena = createArena(map)
+      const cone = arena.props.find((prop) => prop.kind === 'cone')!
+      const { home } = cone
+      // Laid on its side a little above where it stood, and set spinning.
+      cone.body.setTranslation({ x: home.x, y: home.bottom + 0.6, z: home.z }, true)
+      cone.body.setRotation({ x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }, true)
+      cone.body.setAngvel(spin, true)
+      for (let i = 0; i < 60 * 5 && !cone.body.isSleeping(); i++) advance(arena)
+      expect(cone.body.isSleeping()).toBe(true)
+      arena.world.free()
+    }
+  })
+
   it('a prop off the map is put back where it started', () => {
     const arena = createArena(map)
     const prop = arena.props[0]!

@@ -1,4 +1,4 @@
-import { PROP_SHAPES, type ArenaProp } from '@buggies/game'
+import { CONE_SIDES, PROP_SHAPES, type ArenaProp } from '@buggies/game'
 import type { PropKind } from '@buggies/terrain'
 import * as THREE from 'three'
 import { disposeObject } from './dispose.ts'
@@ -24,7 +24,7 @@ function geometryFor(kind: PropKind): THREE.BufferGeometry {
     case 'drum':
       return new THREE.CylinderGeometry(shape.halfWidth, shape.halfWidth, shape.halfHeight * 2, 14)
     default:
-      return new THREE.ConeGeometry(shape.halfWidth, shape.halfHeight * 2, 12)
+      return new THREE.ConeGeometry(shape.halfWidth, shape.halfHeight * 2, CONE_SIDES)
   }
 }
 
