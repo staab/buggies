@@ -11,6 +11,7 @@ import {
   MAX_ARTERIAL_GRADE,
   MAX_RAMP_GRADE,
   MAX_ROAD_GRADE,
+  RAMP_ALONG,
   RAMP_WIDTH,
   RIVER_BANK_LAP,
   ROAD_BRIDGE,
@@ -1178,6 +1179,39 @@ describe('roads', () => {
       for (const count of perCity(seed)) expect(count).toBeLessThanOrEqual(1)
     }
     // Eight whole islands, each seconds of work on a busy machine.
+  }, 120_000)
+
+  it('keeps every interchange out of the tunnels, from one pair of ramp mouths to the other', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const map = generateTerrain(seed)
+      const highway = map.roads.find((road) => road.kind === 'highway')!
+      const count = highway.points.length
+      const along: number[] = [0]
+      for (let i = 1; i < count; i++) {
+        const a = highway.points[i - 1]!
+        const b = highway.points[i]!
+        along.push(along[i - 1]! + Math.hypot(b.x - a.x, b.z - a.z))
+      }
+      const step = along[count - 1]! / (count - 1)
+      const reach = Math.ceil((RAMP_ALONG + RAMP_WIDTH) / step)
+      const crossRoads = map.roads.filter((road) => road.kind === 'cross')
+      expect(crossRoads.length).toBeGreaterThan(0)
+      for (const cross of crossRoads) {
+        const under = cross.points[Math.floor(cross.points.length / 2)]!
+        let nearest = 0
+        let best = Infinity
+        for (const [i, point] of highway.points.entries()) {
+          const distance = Math.hypot(point.x - under.x, point.z - under.z)
+          if (distance < best) {
+            best = distance
+            nearest = i
+          }
+        }
+        for (let k = -reach; k <= reach; k++) {
+          expect(highway.structure[(nearest + k + count) % count]).not.toBe(ROAD_TUNNEL)
+        }
+      }
+    }
   }, 120_000)
 
   it('gives every road its own id', () => {
