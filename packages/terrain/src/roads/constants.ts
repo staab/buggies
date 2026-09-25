@@ -104,12 +104,19 @@ export const RAMP_ALONG = 80
 export const RAMP_REACH = 40
 
 /**
- * The radius of the one bend a ramp makes: leaving the deck it turns out
- * through this arc and then runs straight to the cross road, so it is never
- * steeper across than the diagonal itself, where a curve that swung out and
- * back square to the cross road would have to be.
+ * The radius of the one bend a ramp makes: from under the deck's edge it
+ * turns out through this arc and then runs straight to the cross road, so
+ * it is never steeper across than the diagonal itself, where a curve that
+ * swung out and back square to the cross road would have to be.
  */
-export const RAMP_TURN_RADIUS = 60
+export const RAMP_TURN_RADIUS = 40
+
+/**
+ * A ramp's surface runs this far below the deck's where it lies under the
+ * deck, so the deck is drawn over it and a car rolls off the deck's edge
+ * onto it without the two fighting for the same height.
+ */
+export const RAMP_UNDER_DECK = 0.05
 
 /**
  * Half-length of the cross road either side of the underpass: past the
@@ -152,11 +159,12 @@ export const CUT_SLOPE = 0.4
 export const RAMP_SEGMENTS = 24
 
 /**
- * A ramp holds the deck's level for this far before it starts down: a car
- * leaving the deck crosses the skirt onto ground still level with it, and
- * only descends once the ramp has pulled clear of the highway.
+ * A ramp holds the deck's level for this far before it starts down: long
+ * enough for its lane to have come right out from under the deck's edge,
+ * so a car leaves the deck onto ground level with it, and the ramp only
+ * descends once it has pulled clear of the highway.
  */
-export const RAMP_PLATEAU = 12
+export const RAMP_PLATEAU = 26
 
 /**
  * How far back from a ramp's highway end the deck must stand on the ground

@@ -184,10 +184,12 @@ describe('the ground under the roads', () => {
           deckAtTop = point.y + roadLift(highway)
         }
       }
-      // The top stands just clear of the deck's skirt, level with the deck.
-      expect(nearestDeck).toBeLessThan(highway.width / 2 + ROAD_SKIRT + RAMP_WIDTH / 2 + 1)
-      expect(nearestDeck).toBeGreaterThan(highway.width / 2 + ROAD_SKIRT)
-      expect(Math.abs(deckAtTop - top.y)).toBeLessThan(0.5)
+      // The top lies under the deck's edge, the lane's outer edge at the
+      // deck's, a hair below the deck's surface.
+      expect(nearestDeck).toBeLessThan(highway.width / 2 - RAMP_WIDTH / 2 + 1)
+      expect(nearestDeck).toBeGreaterThan(highway.width / 2 - RAMP_WIDTH / 2 - 1)
+      expect(deckAtTop - top.y).toBeGreaterThan(-0.05)
+      expect(deckAtTop - top.y).toBeLessThan(0.5)
     }
   })
 
