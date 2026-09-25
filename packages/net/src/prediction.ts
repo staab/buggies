@@ -380,6 +380,7 @@ export class LocalPrediction {
       position: { ...rocket.position },
       velocity: { ...rocket.velocity },
       bornTick: snapshot.tick - rocket.age,
+      power: rocket.power,
     }))
     // The bananas are the server's word alone: whatever the mirror took or
     // spilled since is put back as the server has it, to be taken again in

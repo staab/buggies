@@ -1,4 +1,4 @@
-import { VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
+import { NATURE_NOTES, OWN_ACTIONS, VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
 import type { RoomSummary } from '@buggies/net'
 
 import { modelCredits } from './car-model.ts'
@@ -159,6 +159,8 @@ export class Menu {
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
   private readonly vehicleLegend: HTMLLegendElement
+  /** What the chosen vehicle does of its own, on which key, and what it is by nature. */
+  private readonly ability = document.createElement('div')
   private choice: Choice
   private step: Step = 'mode'
   /** Each island asked for outranks the one before: a slow one that lands late is let go. */
@@ -227,8 +229,9 @@ export class Menu {
       this.vehicleButtons.set(vehicle, button)
       vehicleCards.append(button)
     }
+    this.ability.className = 'ability'
     const carPage = document.createElement('div')
-    carPage.append(vehicleGroup)
+    carPage.append(vehicleGroup, this.ability)
 
     this.pages = { mode: modePage, map: mapPage, car: carPage, car2: carPage }
 
@@ -376,6 +379,24 @@ export class Menu {
     this.render()
   }
 
+  /**
+   * Say what a vehicle does of its own, on the key that does it for this
+   * driver, and what it is by nature if it is anything in particular.
+   */
+  private describe(vehicle: VehicleProfileId, key: string): void {
+    const own = OWN_ACTIONS[vehicle]
+    const kbd = document.createElement('kbd')
+    kbd.textContent = key
+    const action = line('own')
+    action.append(kbd, ' ', span('name', own.label), ' ', span('note', own.about))
+    this.ability.replaceChildren(action)
+    const notes = NATURE_NOTES[vehicle]
+    if (notes.length === 0) return
+    const nature = line('nature')
+    nature.append(span('name', 'By nature'), ' ', span('note', notes.join(' ')))
+    this.ability.append(nature)
+  }
+
   private render(): void {
     const steps = stepsFor(this.choice.mode)
     const duo = this.choice.mode === 'duo'
@@ -399,6 +420,7 @@ export class Menu {
     for (const [vehicle, button] of this.vehicleButtons) {
       button.setAttribute('aria-pressed', String(vehicle === picking))
     }
+    this.describe(picking, duo && this.step === 'car' ? 'Shift' : 'M')
     for (const [seed, button] of this.popularButtons) {
       button.setAttribute('aria-pressed', String(seed === this.choice.seed))
     }

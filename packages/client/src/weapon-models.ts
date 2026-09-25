@@ -139,6 +139,26 @@ export function buildGun(): THREE.Group {
   return group
 }
 
+/** A repair kit: a red cross on a white disc, standing up over the roof and seen from either side. */
+export function buildRepair(): THREE.Group {
+  const group = new THREE.Group()
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 24), metal(new THREE.Color('#f4f2ee'), 0.7))
+  disc.rotation.x = Math.PI / 2
+  group.add(disc)
+  const red = metal(NOSE, 0.6)
+  for (const face of [-1, 1]) {
+    const upright = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.54, 0.02), red)
+    upright.position.z = face * 0.05
+    const across = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.16, 0.02), red)
+    across.position.z = face * 0.05
+    group.add(upright, across)
+  }
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh) node.castShadow = true
+  })
+  return group
+}
+
 /** A bomb: a black ball with a short fuse, its end glowing. */
 export function buildBomb(): THREE.Group {
   const group = new THREE.Group()

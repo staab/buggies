@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, OWN_ACTIONS, WEAPON_LABELS, acting, burning, hasBuiltInGun, type Seat, type Weapon } from '@buggies/game'
+import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, OWN_ACTIONS, WEAPON_LABELS, acting, hasBuiltInGun, type Seat, type Weapon } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
@@ -144,21 +144,12 @@ export class CarPresence {
 
   /**
    * What the HUD says it is carrying: the name, with the seconds left of
-   * one that lasts; or, carrying nothing, the car's own action, with the
-   * seconds left of it while it goes, or before it may go again.
+   * one that lasts, or nothing when it carries nothing. What the car does
+   * of its own is ambient, and not said here.
    */
   get weaponLabel(): string {
     const { shown } = this.reveal
-    if (shown === 'none') {
-      const { seat } = this
-      const own = OWN_ACTIONS[seat.profile]
-      if (own.kind === 'lights') return seat.lightsOn ? `${own.label} on` : own.label
-      if (seat.actionTicks > 0 && (own.kind === 'boost' || own.kind === 'gun' || own.kind === 'fly')) {
-        return `${own.label} ${Math.ceil(seat.actionTicks * FIXED_TIMESTEP)}s`
-      }
-      if (seat.cooldownTicks > 0) return `${own.label} ${Math.ceil(seat.cooldownTicks * FIXED_TIMESTEP)}s`
-      return own.label
-    }
+    if (shown === 'none') return ''
     if (this.reveal.rolling || this.seat.ammoTicks === 0) return WEAPON_LABELS[shown]
     return `${WEAPON_LABELS[shown]} ${Math.ceil(this.seat.ammoTicks * FIXED_TIMESTEP)}s`
   }
@@ -182,16 +173,15 @@ export class CarPresence {
     this.view.applySimulatedWheels(vehicle.wheels, tuning)
     this.reveal.update(this.seat.weapon, dt)
     const own = OWN_ACTIONS[this.seat.profile]
-    // A car with a gun of its own over the bonnet shows it whenever it carries nothing else.
-    const shown = this.reveal.shown === 'none' && own.kind === 'gun' ? 'machineGun' : this.reveal.shown
-    this.mount.show(vehicle.wrecked ? 'none' : shown)
+    // Only what the car carries is mounted over its roof: nothing of its own is.
+    this.mount.show(vehicle.wrecked ? 'none' : this.reveal.shown)
     this.mount.update(dt)
     this.mount.aim(this.aimPoint, dt)
-    const lit = burning(this.seat)
-    this.mount.burn(lit)
+    const engine = this.seat.weapon === 'engine' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
+    this.mount.burn(engine)
     const off = this.distance()
-    const boosting = lit && this.seat.weapon === 'none' && own.kind === 'boost'
-    this.thrust?.set(lit && (this.seat.weapon === 'engine' || boosting) ? 1 : 0, off)
+    const boosting = acting(this.seat) && own.kind === 'boost'
+    this.thrust?.set(engine || boosting ? 1 : 0, off)
     this.boostFlame.visible = boosting
     if (boosting) {
       const flicker = 0.75 + 0.25 * Math.sin(this.lightTime * 47) * Math.sin(this.lightTime * 31)
@@ -199,7 +189,7 @@ export class CarPresence {
     }
     // The roof lights flash in turn while they are on, and the siren wails.
     this.lightTime += dt
-    const lightsOn = this.seat.weapon === 'none' && this.seat.lightsOn && !vehicle.wrecked
+    const lightsOn = this.seat.lightsOn && !vehicle.wrecked
     for (const [k, lamp] of this.roofLights.entries()) {
       lamp.visible = lightsOn && Math.floor(this.lightTime * ROOF_LIGHT.flashes + k) % 2 === 0
     }
@@ -207,8 +197,8 @@ export class CarPresence {
     const sirenPower = this.seat.weapon === 'siren' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
     if ((lightsOn || sirenPower) && this.siren === null) this.siren = this.heard?.siren() ?? null
     this.siren?.set(lightsOn || sirenPower, off, sirenPower)
-    // The horn and the hop are heard as they go, and the shockwave as it goes off: it is gone the moment it is fired.
-    if (this.seat.weapon === 'none' && this.seat.actionTicks > 0 && this.lastActionTicks === 0 && !vehicle.wrecked) {
+    // The horn and the hop are heard as they go, or go again, and the shockwave as it goes off: it is gone the moment it is fired.
+    if (this.seat.actionTicks > this.lastActionTicks && !vehicle.wrecked) {
       if (own.kind === 'horn') sound?.horn(off)
       if (own.kind === 'hop') sound?.hop(off)
     }

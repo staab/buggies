@@ -85,7 +85,7 @@ describe('bananas as drawn', () => {
 
   it('fling spilled bananas out of the blast in an arc, lie them where they land, and pop them when taken', () => {
     const loose: Loose[] = [
-      { id: 1, kind: 'banana', from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 },
+      { id: 1, kind: 'banana', owner: 0, power: 0, from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 },
     ]
     const source = { pickups: pickups(0), loose, tick: 100 + SPILL_FLIGHT_TICKS / 2 }
     const field = new PickupField(source)
@@ -115,6 +115,8 @@ describe('bananas as drawn', () => {
     loose.push({
       id: 2,
       kind: 'banana',
+      owner: 0,
+      power: 0,
       from: { x: 0, y: 2, z: 0 },
       position: { x: -8, y: 3, z: 4 },
       bornTick: 100,
@@ -136,7 +138,7 @@ describe('bananas as drawn', () => {
     geometry.dispose()
 
     const loose: Loose[] = [
-      { id: 5, kind: 'bomb', from: { x: 0, y: 2, z: 0 }, position: { x: -5, y: 2, z: 0 }, bornTick: 0 },
+      { id: 5, kind: 'bomb', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -5, y: 2, z: 0 }, bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: { x: number; y: number; z: number }[] = []
@@ -162,8 +164,8 @@ describe('bananas as drawn', () => {
 
   it('pop a banana and burst a bomb harvested before their time, as if taken and set off', () => {
     const loose: Loose[] = [
-      { id: 1, kind: 'banana', from: { x: 0, y: 2, z: 0 }, position: { x: 6, y: 2, z: 0 }, bornTick: 0 },
-      { id: 2, kind: 'bomb', from: { x: 0, y: 2, z: 0 }, position: { x: -6, y: 2, z: 0 }, bornTick: 0 },
+      { id: 1, kind: 'banana', owner: 0, power: 0, from: { x: 0, y: 2, z: 0 }, position: { x: 6, y: 2, z: 0 }, bornTick: 0 },
+      { id: 2, kind: 'bomb', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -6, y: 2, z: 0 }, bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: number[] = []

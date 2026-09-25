@@ -6,19 +6,20 @@ export interface DriverKeys {
   bindings: KeyBindings
   /** Whether a key press is this driver asking to be put back on the road. */
   respawn: (event: KeyboardEvent) => boolean
-  controls: readonly ControlHint[]
+  /** What to tell the driver, given what their car does of its own, by name. */
+  controls: (ability: string) => readonly ControlHint[]
 }
 
-/** Alone: the whole keyboard. */
+/** Alone: the arrows, with the space bar, F, D and R under the other hand. */
 export const SOLO_KEYS: DriverKeys = {
   bindings: SOLO_BINDINGS,
-  respawn: (event) => event.key === 'Enter',
-  controls: [
-    { keys: ['W', 'A', 'S', 'D'], does: 'or arrows to drive' },
+  respawn: (event) => event.code === 'KeyR',
+  controls: (ability) => [
+    { keys: ['↑', '←', '↓', '→'], does: 'to drive' },
     { keys: ['Space'], does: 'handbrake' },
-    { keys: ['F'], does: 'or right shift to fire' },
-    { keys: ['Enter'], does: 'back to the road' },
-    { keys: ['M'], does: 'mute' },
+    { keys: ['F'], does: 'fire' },
+    { keys: ['D'], does: ability.toLowerCase() },
+    { keys: ['R'], does: 'back to the road' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -27,12 +28,12 @@ export const SOLO_KEYS: DriverKeys = {
 export const LEFT_KEYS: DriverKeys = {
   bindings: LEFT_BINDINGS,
   respawn: (event) => event.code === 'KeyQ',
-  controls: [
+  controls: (ability) => [
     { keys: ['W', 'A', 'S', 'D'], does: 'to drive' },
-    { keys: ['Space'], does: 'handbrake' },
-    { keys: ['F'], does: 'fire' },
+    { keys: ['Z'], does: 'handbrake' },
+    { keys: ['X'], does: 'fire' },
+    { keys: ['Shift'], does: ability.toLowerCase() },
     { keys: ['Q'], does: 'back to the road' },
-    { keys: ['M'], does: 'mute' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }
@@ -40,13 +41,13 @@ export const LEFT_KEYS: DriverKeys = {
 /** The right half of a split screen: the arrows. */
 export const RIGHT_KEYS: DriverKeys = {
   bindings: RIGHT_BINDINGS,
-  respawn: (event) => event.key === '?',
-  controls: [
+  respawn: (event) => event.key === 'Enter',
+  controls: (ability) => [
     { keys: ['↑', '←', '↓', '→'], does: 'to drive' },
-    { keys: ['Left Shift'], does: 'handbrake' },
-    { keys: ['Right Shift'], does: 'fire' },
-    { keys: ['?'], does: 'back to the road' },
-    { keys: ['M'], does: 'mute' },
+    { keys: [','], does: 'handbrake' },
+    { keys: ['.'], does: 'fire' },
+    { keys: ['M'], does: ability.toLowerCase() },
+    { keys: ['Enter'], does: 'back to the road' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }

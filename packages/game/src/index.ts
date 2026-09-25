@@ -15,11 +15,11 @@ import {
   createVehicle,
   createVehicleTuning,
   createWorldTuning,
+  hurtVehicle,
   resetVehicle,
   restingRideHeight,
   stepVehicle,
   worldGravity,
-  wreckVehicle,
   type Vehicle,
   type VehicleInput,
   type VehicleProfileId,
@@ -103,9 +103,13 @@ export {
   type LooseKind,
 } from './pickups.ts'
 export {
+  AMBULANCE_HEAL,
+  AMBULANCE_HEAL_TICKS,
   BANANAS_PER_WEAPON,
+  BOMB_DAMAGE,
   BOMB_DROP_BACK,
   BUILT_IN_GUNS,
+  EMERGENCY_VEHICLES,
   ENGINE_BURN_TICKS,
   ENGINE_PUSH,
   ENGINE_TOP_SPEED,
@@ -114,8 +118,17 @@ export {
   MACHINE_GUN_RANGE,
   MACHINE_GUN_SHOT_TICKS,
   MACHINE_GUN_SWEEP_COS,
+  FIRETRUCK_BOMB_SHARE,
   MOUNT_HEIGHT,
+  NATURE_NOTES,
+  NOSE_UP,
   NO_TARGET,
+  OWN_BOMBS_MOST,
+  OWN_BOMB_POWER,
+  OWN_GUN_POWER,
+  OWN_LIFT,
+  OWN_MISSILE_POWER,
+  POLICE_SHOT_SHARE,
   ROCKET_DAMAGE,
   ROCKET_LIFE_TICKS,
   ROCKET_LOCK_RANGE,
@@ -147,6 +160,7 @@ export {
   acting,
   ammoFor,
   arm,
+  bombShare,
   burning,
   disarm,
   fireWeapons,
@@ -154,17 +168,22 @@ export {
   hasBuiltInGun,
   hinder,
   lifting,
+  mend,
   mountPoint,
   muzzlePoint,
+  nosePoint,
   ownAction,
   pushWithWeapons,
   restAction,
   rocketId,
+  shotShare,
+  slowable,
   stunned,
   weaponWon,
   wingsTurnRadius,
   type Battlefield,
   type Gunner,
+  type WeaponKeys,
   type Muzzle,
   type OwnAction,
   type OwnActionKind,
@@ -175,14 +194,17 @@ export {
 
 import {
   BANANAS_PER_WEAPON,
+  BOMB_DAMAGE,
   NO_TARGET,
   arm,
+  bombShare,
   burning,
   disarm,
   fireWeapons,
   flyRockets,
   hinder,
   lifting,
+  mend,
   pushWithWeapons,
   restAction,
   stunned,
@@ -236,12 +258,12 @@ export interface Seat {
   ammoTicks: number
   /** The seat the machine gun is trained on, or none. */
   aimTarget: number
-  /** The car's own action, when it carries nothing: how long it has left, how long before it may go again, and whether its lights are on. */
+  /** The car's own action, had besides what it carries: how long it is seen going for, how long before it may go again, and whether its lights are on. */
   actionTicks: number
   cooldownTicks: number
   lightsOn: boolean
-  /** Whether the fire key was down last tick, so that a press is told from a hold. */
-  fireHeld: boolean
+  /** Whether the car's own key was down last tick, so that a press is told from a hold. */
+  abilityHeld: boolean
   /** How long it is stunned for, taking no driving, and slowed for, held back by this share of a full slow. */
   stunnedTicks: number
   slowedTicks: number
@@ -315,7 +337,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       actionTicks: 0,
       cooldownTicks: 0,
       lightsOn: false,
-      fireHeld: false,
+      abilityHeld: false,
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
@@ -455,14 +477,14 @@ export function advance(
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
     // A car its engine or wings are driving along is not one the tyres hold
     // still, and one its wings are lifting is not one the road holds down.
-    const lit = burning(seat, input.fire)
-    seat.vehicle.boosted = lit
-    seat.vehicle.lifted = lifting(seat, input.fire)
+    seat.vehicle.boosted = burning(seat, input)
+    seat.vehicle.lifted = lifting(seat, input)
     // Off its wings the car has no bank to hold.
     if (!seat.vehicle.lifted) vset(seat.vehicle.lean, 0, 0, 0)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     pushWithWeapons(seat, gravity)
     hinder(seat)
+    mend(seat)
     const level = waterUnder(arena, seat)
     seat.submersion =
       level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level)
@@ -565,9 +587,10 @@ function collectPickups(arena: Arena): void {
     }
   }
   // Spilled bananas go the same way, or fade if nobody comes for them; a
-  // bomb goes off on the first car to reach it once it has landed. Walked
-  // from the end, so taking one out moves nothing still to come, and i
-  // stays within the list.
+  // bomb goes off on the first car to reach it once it has landed, with
+  // whatever it has of a full blast, and the car takes of that what its
+  // nature lets it. Walked from the end, so taking one out moves nothing
+  // still to come, and i stays within the list.
   for (let i = arena.loose.length - 1; i >= 0; i--) {
     const loose = arena.loose[i]!
     if (looseGone(loose, arena.tick)) {
@@ -577,7 +600,7 @@ function collectPickups(arena: Arena): void {
     if (!looseOut(loose, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position)) continue
-      if (loose.kind === 'bomb') wreckVehicle(seat.vehicle, seat.tuning)
+      if (loose.kind === 'bomb') hurtVehicle(seat.vehicle, seat.tuning, BOMB_DAMAGE * loose.power * bombShare(seat.profile))
       else score(seat)
       arena.loose.splice(i, 1)
       break

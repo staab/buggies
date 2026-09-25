@@ -1,6 +1,7 @@
 import {
   FIXED_TIMESTEP,
   NEUTRAL_INPUT,
+  OWN_ACTIONS,
   VEHICLE_PROFILE_LABELS,
   createArena,
   takeSeat,
@@ -108,6 +109,8 @@ export async function joinOnline(
     if (player.keys.respawn(event)) client.requestRespawn()
   }
   window.addEventListener('keydown', onKey)
+  // The keys, told with what this car does of its own.
+  const controls = player.keys.controls(OWN_ACTIONS[welcome.profile].label)
 
   let owed = 0
   let chaseSnapped = false
@@ -153,7 +156,7 @@ export async function joinOnline(
       const players = client.playerCount
       const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       if (lost !== null) return { title, state: `disconnected: ${lost}` }
-      return car.presence.hudState(title, player.keys.controls)
+      return car.presence.hudState(title, controls)
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

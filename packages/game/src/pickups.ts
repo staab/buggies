@@ -178,6 +178,10 @@ export interface Loose {
   /** Its number, by which it is spoken of on the wire; no two out at once share one. */
   readonly id: number
   readonly kind: LooseKind
+  /** Whose it is: the seat of the wreck it spilled from, or of the car that dropped it. */
+  readonly owner: number
+  /** How much of a full bomb's blast it goes off with; a banana has none. */
+  readonly power: number
   readonly from: Vec3
   readonly position: Vec3
   readonly bornTick: number
@@ -207,6 +211,8 @@ export function spillFrom(
     loose.push({
       id: (firstId + i) % LOOSE_IDS,
       kind: 'banana',
+      owner: seat,
+      power: 0,
       from: origin,
       position: v3(x, sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT, z),
       bornTick: tick,

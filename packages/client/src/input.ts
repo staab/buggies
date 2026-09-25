@@ -7,44 +7,47 @@ interface Held {
   right: boolean
   handbrake: boolean
   fire: boolean
+  ability: boolean
 }
 
 /** Which key (by its `code`) does what. */
 export type KeyBindings = Readonly<Record<string, keyof Held>>
 
-/** The whole keyboard, for one driver: the letters and the arrows both. */
+/** A player alone: the arrows to drive, and the space bar, F and D under the other hand. */
 export const SOLO_BINDINGS: KeyBindings = {
-  KeyW: 'forward',
   ArrowUp: 'forward',
-  KeyS: 'back',
   ArrowDown: 'back',
-  KeyA: 'left',
   ArrowLeft: 'left',
-  KeyD: 'right',
   ArrowRight: 'right',
   Space: 'handbrake',
   KeyF: 'fire',
-  ShiftRight: 'fire',
+  KeyD: 'ability',
 }
 
-/** The letters, for whoever has the left of a shared keyboard. */
-export const LEFT_BINDINGS: KeyBindings = {
-  KeyW: 'forward',
-  KeyS: 'back',
-  KeyA: 'left',
-  KeyD: 'right',
-  Space: 'handbrake',
-  KeyF: 'fire',
-}
-
-/** The arrows, for whoever has the right. */
+/**
+ * The right of a shared keyboard: the arrows to drive, the comma and the
+ * full stop under the same hand for the handbrake and to fire, and M for
+ * what the car does of its own.
+ */
 export const RIGHT_BINDINGS: KeyBindings = {
   ArrowUp: 'forward',
   ArrowDown: 'back',
   ArrowLeft: 'left',
   ArrowRight: 'right',
-  ShiftLeft: 'handbrake',
-  ShiftRight: 'fire',
+  Comma: 'handbrake',
+  Period: 'fire',
+  KeyM: 'ability',
+}
+
+/** The same shape under the left hand, for whoever has the left of a shared keyboard. */
+export const LEFT_BINDINGS: KeyBindings = {
+  KeyW: 'forward',
+  KeyS: 'back',
+  KeyA: 'left',
+  KeyD: 'right',
+  KeyZ: 'handbrake',
+  KeyX: 'fire',
+  ShiftLeft: 'ability',
 }
 
 const RELEASED: Held = {
@@ -54,6 +57,7 @@ const RELEASED: Held = {
   right: false,
   handbrake: false,
   fire: false,
+  ability: false,
 }
 
 /**
@@ -82,12 +86,13 @@ export class Keyboard {
   }
 
   read(): VehicleInput {
-    const { forward, back, left, right, handbrake, fire } = this.held
+    const { forward, back, left, right, handbrake, fire, ability } = this.held
     this.command.throttle = forward ? 1 : 0
     this.command.brake = back ? 1 : 0
     this.command.steer = (right ? 1 : 0) - (left ? 1 : 0)
     this.command.handbrake = handbrake
     this.command.fire = fire
+    this.command.ability = ability
     return this.command
   }
 

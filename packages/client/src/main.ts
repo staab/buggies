@@ -30,13 +30,13 @@ for (const gesture of ['pointerdown', 'keydown'] as const) {
   window.addEventListener(gesture, () => sound.unlock())
 }
 
-// A speaker button in the corner does what M does, and shows which way it is.
+// A speaker button in the corner mutes the sound and shows which way it is.
 const muteButton = document.getElementById('mute') as HTMLButtonElement
 function setMuted(muted: boolean): void {
   sound.muted = muted
   muteButton.setAttribute('aria-pressed', String(muted))
   muteButton.setAttribute('aria-label', muted ? 'Unmute' : 'Mute')
-  muteButton.title = muted ? 'Unmute (M)' : 'Mute (M)'
+  muteButton.title = muted ? 'Unmute' : 'Mute'
 }
 muteButton.addEventListener('click', () => {
   setMuted(!sound.muted)
@@ -122,10 +122,6 @@ await Promise.all([initPhysics(), loadCarModels()])
 shell.welcome()
 
 window.addEventListener('keydown', (event) => {
-  if (event.code === 'KeyM' && !shell.menu.open) {
-    setMuted(!sound.muted)
-    return
-  }
   if (event.key === 'Escape') shell.toggleMenu()
 })
 

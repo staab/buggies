@@ -40,6 +40,8 @@ export class BananaLedger {
       this.looseById.set(loose.id, {
         id: loose.id,
         kind: loose.kind,
+        owner: loose.owner,
+        power: loose.power,
         from: { ...loose.from },
         position: { ...loose.position },
         bornTick: snapshot.tick - loose.age,

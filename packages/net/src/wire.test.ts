@@ -60,7 +60,7 @@ const snapshot: SnapshotMessage = {
       stunnedTicks: 300,
       slowedTicks: 2,
       slowedBy: 0.5,
-      appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, fire: true },
+      appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, fire: true, ability: false },
     },
     {
       seat: 5,
@@ -81,7 +81,7 @@ const snapshot: SnapshotMessage = {
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
-      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, fire: false },
+      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, fire: false, ability: true },
     },
   ],
   pickups: [
@@ -90,13 +90,13 @@ const snapshot: SnapshotMessage = {
     { slot: 63, generation: 65535, ticksUntilOut: 12 },
   ],
   loose: [
-    { id: 0, kind: 'banana', from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
-    { id: 65535, kind: 'bomb', from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
+    { id: 0, kind: 'banana', owner: 3, power: 0, from: { x: 1, y: 2, z: 3 }, position: { x: 10.5, y: 2.25, z: -3 }, age: 30 },
+    { id: 65535, kind: 'bomb', owner: -1, power: 1, from: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 }, age: 65535 },
   ],
   removed: [3, 65000],
   rockets: [
-    { id: 9, owner: 2, target: 5, position: { x: 1, y: 2, z: 3 }, velocity: { x: 40, y: -1, z: 20 }, age: 12 },
-    { id: 65535, owner: 7, target: -1, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, age: 0 },
+    { id: 9, owner: 2, target: 5, position: { x: 1, y: 2, z: 3 }, velocity: { x: 40, y: -1, z: 20 }, age: 12, power: 1 },
+    { id: 65535, owner: 7, target: -1, position: { x: 0, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, age: 0, power: 0 },
   ],
   props: [
     {
@@ -123,10 +123,10 @@ describe('wire', () => {
   })
 
   it('round-trips an input with its tick', () => {
-    const input = { steer: -0.25, throttle: 0.5, brake: 0, handbrake: true, fire: false }
+    const input = { steer: -0.25, throttle: 0.5, brake: 0, handbrake: true, fire: false, ability: true }
     const payload = encodeInput(77, input)
     expect(payload.length).toBe(INPUT_BYTES)
-    const out = { steer: 9, throttle: 9, brake: 9, handbrake: false, fire: true }
+    const out = { steer: 9, throttle: 9, brake: 9, handbrake: false, fire: true, ability: false }
     expect(decodeInput(payload, out)).toBe(77)
     expect(out).toEqual(input)
   })
@@ -151,7 +151,7 @@ describe('wire', () => {
     expect(decoded.removed).toEqual(snapshot.removed)
     for (const [i, rocket] of snapshot.rockets.entries()) {
       const got = decoded.rockets[i]!
-      expect(got).toMatchObject({ id: rocket.id, owner: rocket.owner, target: rocket.target, age: rocket.age })
+      expect(got).toMatchObject({ id: rocket.id, owner: rocket.owner, target: rocket.target, age: rocket.age, power: rocket.power })
       for (const axis of ['x', 'y', 'z'] as const) {
         expect(got.position[axis]).toBeCloseTo(rocket.position[axis], 4)
         expect(got.velocity[axis]).toBeCloseTo(rocket.velocity[axis], 4)
@@ -163,7 +163,7 @@ describe('wire', () => {
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
       const got = decoded.loose[i]!
-      expect(got).toMatchObject({ id: loose.id, kind: loose.kind, age: loose.age })
+      expect(got).toMatchObject({ id: loose.id, kind: loose.kind, owner: loose.owner, power: loose.power, age: loose.age })
       for (const axis of ['x', 'y', 'z'] as const) {
         expect(got.from[axis]).toBeCloseTo(loose.from[axis], 4)
         expect(got.position[axis]).toBeCloseTo(loose.position[axis], 4)

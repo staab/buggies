@@ -147,9 +147,11 @@ function gatherLoose(arena: Arena, out: RoomSnapshots, all: boolean): LooseSnaps
   let count = 0
   for (const thing of arena.loose) {
     if (!all && out.toldLoose.has(thing.id)) continue
-    const entry = (loose[count] ??= { id: 0, kind: 'banana', from: v3(), position: v3(), age: 0 })
+    const entry = (loose[count] ??= { id: 0, kind: 'banana', owner: 0, power: 0, from: v3(), position: v3(), age: 0 })
     entry.id = thing.id
     entry.kind = thing.kind
+    entry.owner = thing.owner
+    entry.power = thing.power
     vcopy(entry.from, thing.from)
     vcopy(entry.position, thing.position)
     entry.age = arena.tick - thing.bornTick
@@ -193,10 +195,11 @@ function gatherRockets(arena: Arena, out: RoomSnapshots): RocketSnapshot[] {
   const { rockets } = out
   let count = 0
   for (const rocket of arena.rockets) {
-    const entry = (rockets[count] ??= { id: 0, owner: 0, target: 0, position: v3(), velocity: v3(), age: 0 })
+    const entry = (rockets[count] ??= { id: 0, owner: 0, target: 0, position: v3(), velocity: v3(), age: 0, power: 1 })
     entry.id = rocket.id
     entry.owner = rocket.owner
     entry.target = rocket.target
+    entry.power = rocket.power
     vcopy(entry.position, rocket.position)
     vcopy(entry.velocity, rocket.velocity)
     entry.age = arena.tick - rocket.bornTick
