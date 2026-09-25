@@ -252,7 +252,7 @@ export class Shell implements MenuHost {
 
     this.setBackdrop(null)
     this.setGame(null)
-    this.notice(`connecting to ${this.server}...`)
+    this.notice('connecting...')
     try {
       const mode = await this.modes.play(
         this.scene,

@@ -208,8 +208,8 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
 }
 /** The actions that go on while the key is held. */
 const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'fly']
-/** The hop: this much speed straight up, from the ground. */
-export const HOP_SPEED = 4
+/** The hop: this much speed straight up, from the ground, which carries the kart a few meters into the air. */
+export const HOP_SPEED = 8
 /** The race car's boost: this much of the rocket engine's push. */
 export const BOOST_PUSH = ENGINE_PUSH * 0.5
 /** The semi's horn stuns every car within this for this long; an emergency vehicle's lights slow every car within the siren's reach by this much. */
@@ -440,13 +440,20 @@ export function lifting(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): 
   return using(seat, 'wings', keys) || (acting(seat, keys) && ownAction(seat).kind === 'fly')
 }
 
+/** Whether the car has wings out: the ones it has won, with time left of them, whether or not the key is held. A wreck has none. */
+export function winged(seat: Gunner): boolean {
+  return seat.weapon === 'wings' && seat.ammoTicks > 0 && !seat.vehicle.wrecked
+}
+
 /**
  * The push of the rocket engine and the lift of the wings, for the step:
  * the engine shoves the car the way its nose points, less and less as it
  * gets far past what its own engine could do, and the car's own boost
  * shoves it half as hard, with it if both are going; the wings push it up
  * toward a steady climb, arrest a fall, and turn it as it is steered, the
- * car's own wings a share as hard toward a climb as much slower.
+ * car's own wings a share as hard toward a climb as much slower. A car
+ * carrying wings is steered the same way whenever it is in the air, key
+ * or no key: gliding, it turns like a plane too.
  */
 export function pushWithWeapons(seat: Gunner, gravity: number): void {
   const { vehicle, tuning } = seat
@@ -458,13 +465,17 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
     const push = (engine ? ENGINE_PUSH : 0) + (boost ? BOOST_PUSH : 0)
     addForceAlong(body, frame.forward, tuning.mass * push * headroom)
   }
-  if (!lifting(seat)) return
-  const lift = using(seat, 'wings', command) ? 1 : OWN_LIFT
-  const climb = clamp(1 - frame.linearVelocity.y / (WINGS_CLIMB_SPEED * lift), 0, 1)
-  addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * lift * climb))
-  // The pedals drive it along, forward or back, wherever it is.
-  addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
-  bank(seat)
+  const lifted = lifting(seat)
+  if (lifted) {
+    const lift = using(seat, 'wings', command) ? 1 : OWN_LIFT
+    const climb = clamp(1 - frame.linearVelocity.y / (WINGS_CLIMB_SPEED * lift), 0, 1)
+    addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * lift * climb))
+    // The pedals drive it along, forward or back, wherever it is.
+    addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
+  }
+  if (lifted || (vehicle.winged && vehicle.groundedCount === 0)) bank(seat)
+  // Off its wings, or on the ground with them, the car has no bank to hold.
+  else vset(vehicle.lean, 0, 0, 0)
 }
 
 /** How wide the turn a car on wings makes at full steer: a few times its own tightest turn at speed. */

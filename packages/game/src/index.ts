@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP, vset } from '@buggies/physics'
+import { FIXED_TIMESTEP } from '@buggies/physics'
 import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
@@ -181,6 +181,7 @@ export {
   slowable,
   stunned,
   weaponWon,
+  winged,
   wingsTurnRadius,
   type Battlefield,
   type Gunner,
@@ -210,6 +211,7 @@ import {
   restAction,
   stunned,
   weaponWon,
+  winged,
   type Rocket,
   type Shot,
   type Weapon,
@@ -483,8 +485,8 @@ export function advance(
     // still, and one its wings are lifting is not one the road holds down.
     seat.vehicle.boosted = burning(seat, input)
     seat.vehicle.lifted = lifting(seat, input)
-    // Off its wings the car has no bank to hold.
-    if (!seat.vehicle.lifted) vset(seat.vehicle.lean, 0, 0, 0)
+    // One carrying wings is held level and steered by them in the air, lifted or not.
+    seat.vehicle.winged = winged(seat)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     pushWithWeapons(seat, gravity)
     hinder(seat)
