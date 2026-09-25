@@ -682,6 +682,29 @@ describe('a session', () => {
     map.props.length -= cones
   }, 120_000)
 
+  it('shows a player who joins late the props where they were knocked to, not where the map has them', async () => {
+    const spawn = map.roads[0]!.points[0]!
+    map.props.push({ kind: 'crate', x: spawn.x, z: spawn.z, bottom: spawn.y, yaw: 0 })
+    const session = new Session()
+    await session.join()
+    // The crate is moved further along the road and dropped, tumbling, to come to rest there before anyone else
+    // arrives, so that no snapshot of the changes carries it and only the whole one can.
+    const crate = session.arena.props.at(-1)!
+    const along = map.roads[0]!.points[4]!
+    crate.body.setTranslation({ x: along.x, y: along.y + 1, z: along.z }, true)
+    crate.body.setAngvel({ x: 0, y: 0, z: 6 }, true)
+    for (let second = 0; second < 10 && !crate.body.isSleeping(); second++) session.run(1)
+    expect(crate.body.isSleeping()).toBe(true)
+    const at = crate.body.translation()
+    expect(Math.hypot(at.x - spawn.x, at.z - spawn.z)).toBeGreaterThan(5)
+    const late = await session.join()
+    session.run(0.5)
+    const mirrored = late.prediction.props[crate.id]!.body.translation()
+    expect(Math.hypot(mirrored.x - at.x, mirrored.y - at.y, mirrored.z - at.z)).toBeLessThan(0.05)
+    session.dispose()
+    map.props.length -= 1
+  }, 120_000)
+
   it('keeps inputs to their ranges, drops a flood of them, and lets go of a player heard nothing from', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')

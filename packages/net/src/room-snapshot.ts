@@ -176,7 +176,7 @@ function gatherRemoved(arena: Arena, out: RoomSnapshots): number[] {
 }
 
 /** Every rocket in the air: few, and short-lived, so all of them every time. */
-/** The props on the move, or every prop when the whole is asked for: a newcomer has them where the map stands them, not where they have been knocked to. */
+/** The props on the move, or every prop when the whole is asked for, since a newcomer's copy starts with them where the map stands them. */
 function gatherProps(arena: Arena, out: RoomSnapshots, all: boolean): PropSnapshot[] {
   const { props } = out
   let count = 0

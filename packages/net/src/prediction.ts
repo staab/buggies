@@ -367,8 +367,8 @@ export class LocalPrediction {
       seat.slowedTicks = vehicle.slowedTicks
       seat.slowedBy = vehicle.slowedBy
     }
-    // The props are where the server says, moving as it says; the mirror runs them on from there.
-    for (const moved of snapshot.props) {
+    // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
+    for (const moved of this.bananas.takeProps()) {
       const prop = this.mirror.props[moved.id]
       if (prop === undefined) continue
       prop.body.setTranslation(moved.position, true)
