@@ -1,4 +1,4 @@
-import { createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
+import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
 import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RocketSnapshot, SnapshotMessage, VehicleSnapshot } from './wire.ts'
@@ -91,6 +91,7 @@ function gatherVehicles(
       wrecked: false,
       score: 0,
       weapon: 'none',
+      wins: 0,
       ammoTicks: 0,
       actionTicks: 0,
       cooldownTicks: 0,
@@ -100,6 +101,12 @@ function gatherVehicles(
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
+      shieldTicks: 0,
+      magnetTicks: 0,
+      plowTicks: 0,
+      slipTicks: 0,
+      grappleTicks: 0,
+      grappleTarget: NO_TARGET,
       appliedInput: createVehicleInput(),
     })
     vehicle.seat = seat.id
@@ -113,6 +120,7 @@ function gatherVehicles(
     vehicle.wrecked = seat.vehicle.wrecked
     vehicle.score = seat.score
     vehicle.weapon = seat.weapon
+    vehicle.wins = seat.wins
     vehicle.ammoTicks = seat.ammoTicks
     vehicle.actionTicks = seat.actionTicks
     vehicle.cooldownTicks = seat.cooldownTicks
@@ -122,6 +130,12 @@ function gatherVehicles(
     vehicle.stunnedTicks = seat.stunnedTicks
     vehicle.slowedTicks = seat.slowedTicks
     vehicle.slowedBy = seat.slowedBy
+    vehicle.shieldTicks = seat.shieldTicks
+    vehicle.magnetTicks = seat.magnetTicks
+    vehicle.plowTicks = seat.plowTicks
+    vehicle.slipTicks = seat.slipTicks
+    vehicle.grappleTicks = seat.grappleTicks
+    vehicle.grappleTarget = seat.grappleTarget
     Object.assign(vehicle.appliedInput, appliedInputOf(seat))
     count += 1
   }

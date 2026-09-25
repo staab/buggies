@@ -3,7 +3,26 @@ import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import { disposeObject } from './dispose.ts'
-import { buildBomb, buildEngine, buildGun, buildHorn, buildRepair, buildRocket, buildSpeaker, buildWings } from './weapon-models.ts'
+import {
+  buildBolt,
+  buildBomb,
+  buildEngine,
+  buildGrapple,
+  buildGun,
+  buildHorn,
+  buildMagnet,
+  buildMines,
+  buildOil,
+  buildPlow,
+  buildRepair,
+  buildRocket,
+  buildShield,
+  buildTripleRocket,
+  buildWings,
+} from './weapon-models.ts'
+
+/** What a car with a gun of its own fires from that gun, and so does not carry over its roof. */
+const FROM_THE_GUN: readonly Weapon[] = ['rocket', 'machineGun', 'tripleRocket']
 
 /** How the mount bobs and sways as it hovers. */
 const BOB = 0.08
@@ -26,14 +45,27 @@ const mountTurn = new THREE.Quaternion()
 export class WeaponMount {
   readonly object = new THREE.Group()
 
-  private readonly rocket = buildRocket()
   private readonly gun = buildGun()
-  private readonly bomb = buildBomb()
   private readonly engine = buildEngine()
-  private readonly wings = buildWings()
   private readonly horn = buildHorn()
-  private readonly speaker = buildSpeaker()
-  private readonly repair = buildRepair()
+  /** A model for everything that can be carried, one each. */
+  private readonly models: Readonly<Record<Exclude<Weapon, 'none'>, THREE.Object3D>> = {
+    rocket: buildRocket(),
+    machineGun: this.gun,
+    bomb: buildBomb(),
+    engine: this.engine.model,
+    wings: buildWings(),
+    shockwave: buildBolt(),
+    siren: this.horn,
+    repair: buildRepair(),
+    oil: buildOil(),
+    shield: buildShield(),
+    magnet: buildMagnet(),
+    tripleRocket: buildTripleRocket(),
+    plow: buildPlow(),
+    grapple: buildGrapple(),
+    mines: buildMines(),
+  }
   private readonly height: number
   /** Whether the car has a gun of its own: the rocket and the gun are not mounted over its roof. */
   private readonly builtInGun: boolean
@@ -48,16 +80,11 @@ export class WeaponMount {
     this.builtInGun = builtInGun
     this.sirenRest = sirenRest
     this.object.position.y = height
-    this.rocket.visible = false
-    this.gun.visible = false
-    this.bomb.visible = false
-    this.engine.model.visible = false
-    this.wings.visible = false
-    this.horn.visible = false
-    this.speaker.visible = false
-    this.repair.visible = false
+    for (const model of Object.values(this.models)) {
+      model.visible = false
+      this.object.add(model)
+    }
     this.gun.quaternion.copy(AHEAD)
-    this.object.add(this.rocket, this.gun, this.bomb, this.engine.model, this.wings, this.horn, this.speaker, this.repair)
   }
 
   /** Where the gun points: at this, or dead ahead for nothing. */
@@ -89,14 +116,8 @@ export class WeaponMount {
   show(weapon: Weapon): void {
     if (weapon === this.shownWeapon) return
     this.shownWeapon = weapon
-    this.rocket.visible = weapon === 'rocket' && !this.builtInGun
-    this.gun.visible = weapon === 'machineGun' && !this.builtInGun
-    this.bomb.visible = weapon === 'bomb'
-    this.engine.model.visible = weapon === 'engine'
-    this.wings.visible = weapon === 'wings'
-    this.horn.visible = weapon === 'siren'
-    this.speaker.visible = weapon === 'shockwave'
-    this.repair.visible = weapon === 'repair'
+    const hidden = this.builtInGun && FROM_THE_GUN.includes(weapon)
+    for (const [carried, model] of Object.entries(this.models)) model.visible = carried === weapon && !hidden
   }
 
   update(dt: number): void {
@@ -120,9 +141,7 @@ export class WeaponMount {
 
   dispose(): void {
     this.object.removeFromParent()
-    for (const model of [this.rocket, this.gun, this.bomb, this.engine.model, this.wings, this.horn, this.speaker, this.repair]) {
-      disposeObject(model)
-    }
+    for (const model of Object.values(this.models)) disposeObject(model)
     this.object.clear()
   }
 }

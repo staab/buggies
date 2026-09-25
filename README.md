@@ -42,16 +42,23 @@ The fire key uses whatever the car carries.
 - **Shockwave** stuns every other car within 30 meters for five seconds.
 - **Siren** slows every other car within 30 meters by half while the key is held, for ten seconds in total.
 - **Repair** fully repairs the car immediately. It appears as a red cross on a white disc.
+- **Oil slick** drops a pool of oil behind the car that lasts 20 seconds. Any car that drives into it, including the one that dropped it once it has landed, keeps a fifth of its grip while in it and for two seconds after.
+- **Shield** protects the car for eight seconds from weapon damage, stuns and slows, and from being shoved by a ram plow or dragged by a grappling hook.
+- **Magnet** collects every banana within 25 meters for six seconds.
+- **Triple rocket** fires three rockets in a fan, each with half the blast of a rocket. Each chases a different car ahead, nearest first, and any rocket left over chases the nearest.
+- **Ram plow** mounts a blade on the front of the car for ten seconds. Cars and props in front of it are thrown forward, faster than the car is closing on them.
+- **Grappling hook** catches the nearest car within 60 meters ahead and reels the two together for four seconds, pulling the car that fired it harder. With no car ahead, the line shoots out and back and the hook is spent.
+- **Mine field** lays five mines on the ground in a spread behind the car. Each mine goes off with 30% of a bomb's blast.
 
 ## Vehicles
 
-Each vehicle has an active ability on its own key, separate from any power-up it carries. Most are weaker forms of the power-ups, and only the tank's and the pickup's have a cooldown. Active abilities are not mounted over the roof or shown in the HUD, and their shots and missiles come from the front of the car. Some vehicles also have a passive ability. The vehicle page of the menu describes both.
+Each vehicle has an active ability on its own key, separate from any power-up it carries. Most are weaker forms of the power-ups, and only the tank's, the small car's and the pickup's have a cooldown. Active abilities are not mounted over the roof or shown in the HUD, and their shots and missiles come from the front of the car. Some vehicles also have a passive ability. The vehicle page of the menu describes both.
 
-- **Tank** fires a missile from its gun with half the blast of the rocket power-up, every three seconds. Its rocket and machine gun power-ups also fire from its gun, with nothing mounted over its roof.
+- **Tank** fires a missile from its gun with half the blast of the rocket power-up, every three seconds. Its rocket, triple rocket and machine gun power-ups also fire from its gun, with nothing mounted over its roof.
 - **Go-kart** jumps into the air whenever it is on the ground.
 - **Race car** boosts with half the force of the rocket engine power-up while the key is held.
 - **Sports car** fires a machine gun from its nose at the car ahead while the key is held, with a quarter of the damage of the machine gun power-up.
-- **Small car** holds itself up while the key is held, with a tenth of the lift of the wings power-up.
+- **Small car** drops an oil slick behind with half the slip of the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.
 - **Semi truck** honks its horn, stunning every car within 10 meters for a second.
 - **Heavy pickup** drops a bomb behind with a quarter of the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
 - **Police car, ambulance and fire truck** turn their lights on or off. While the lights are on, every car within 30 meters is slowed by 20%. As a passive ability, none of them is slowed by sirens or lights. The ambulance also repairs 1% of its health every five seconds, the fire truck takes a tenth of the damage from bombs, and the police car takes half damage from machine guns.

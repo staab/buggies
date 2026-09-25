@@ -49,6 +49,20 @@ import {
   disarm,
   BANANAS_PER_WEAPON,
   wreckVehicle,
+  GRAPPLE_TICKS,
+  GRAPPLE_MISS_TICKS,
+  MAGNET_REACH,
+  MINES,
+  MINE_POWER,
+  OIL_GRIP,
+  OIL_LIFE_TICKS,
+  OIL_SLIP_TICKS,
+  OWN_OILS_MOST,
+  OWN_OIL_POWER,
+  SHIELD_TICKS,
+  TRIPLE_ROCKETS,
+  TRIPLE_ROCKET_POWER,
+  type Loose,
   type Arena,
   type Seat,
   type VehicleInput,
@@ -427,6 +441,10 @@ function twoCars(arena: Arena, first: VehicleProfileId, second: VehicleProfileId
 function onto(seat: Seat, at: { x: number; y: number; z: number }): void {
   respawn(seat, { position: { x: at.x, y: at.y - PICKUP_HEIGHT, z: at.z }, yaw: 0 })
 }
+/** Put a car on the ground at a point: onto an oil slick, which lies on it. */
+function ontoGround(seat: Seat, at: { x: number; z: number }): void {
+  respawn(seat, { position: { x: at.x, y: sampleHeight(map.heightfield, at.x, at.z), z: at.z }, yaw: 0 })
+}
 
 describe("the car's own key", () => {
   beforeAll(() => {
@@ -583,19 +601,26 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the small car flies on wings of its own for as long as the key is held, lifted a tenth as hard', () => {
+  it('the small car drops a slick of its own on a press, half as slippery, not another for three seconds, and only so many out at once', () => {
     const arena = createArena(map)
-    const a = takeSeat(arena, 0, 'smallCar')
-    for (let i = 0; i < 30; i++) advance(arena)
-    const start = a.vehicle.frame.position.y
-    hold(arena, a, 60 * 4)
-    expect(a.vehicle.lifted).toBe(true)
-    expect(a.vehicle.groundedCount).toBe(0)
-    const risen = a.vehicle.frame.position.y - start
-    expect(risen).toBeGreaterThan(1)
-    // Far slower than the wings won would have lifted it, and with nothing running out.
-    expect(risen).toBeLessThan(12)
-    expect(a.cooldownTicks).toBe(0)
+    const [a, b] = twoCars(arena, 'smallCar', 'sportsCar', 40)
+    press(arena, a)
+    const slicks = (): Loose[] => arena.loose.filter((loose) => loose.kind === 'oil')
+    expect(slicks()).toHaveLength(1)
+    expect(slicks()[0]!.power).toBe(OWN_OIL_POWER)
+    press(arena, a)
+    expect(slicks()).toHaveLength(1)
+    // Driven into once it has landed, it slips for half as long as a full slick would have it.
+    ontoGround(b, slicks()[0]!.position)
+    for (let i = 0; i < SPILL_FLIGHT_TICKS; i++) advance(arena)
+    expect(b.slipTicks).toBeGreaterThan(0)
+    expect(b.slipTicks).toBeLessThanOrEqual(OIL_SLIP_TICKS * OWN_OIL_POWER)
+    // Only so many out at once.
+    for (let i = 0; i < OWN_OILS_MOST + 1; i++) {
+      for (let t = 0; t < OWN_ACTIONS.smallCar.cooldownTicks; t++) advance(arena)
+      press(arena, a)
+    }
+    expect(slicks()).toHaveLength(OWN_OILS_MOST)
     arena.world.free()
   })
 
@@ -747,6 +772,175 @@ describe("the car's own key", () => {
     expect(a.ammoTicks).toBe(SIREN_TICKS - 10)
     fire(arena, a, SIREN_TICKS)
     expect(a.weapon).toBe('none')
+    arena.world.free()
+  })
+
+  it('counts every weapon won, so one won again the moment the last runs out is a new one', () => {
+    const arena = createArena(map)
+    const [a] = pair(arena, 20, 0)
+    arm(a, 'siren')
+    const wins = a.wins
+    // A banana kept while it sounds buys the next the tick the siren runs out, whatever that is.
+    a.score = BANANAS_PER_WEAPON
+    a.ammoTicks = 5
+    fire(arena, a, 5)
+    expect(WEAPONS).toContain(a.weapon)
+    expect(a.score).toBe(0)
+    expect(a.wins).toBe(wins + 1)
+    arena.world.free()
+  })
+
+  it('an oil slick lies behind the car, takes the grip of every car in it for a while, and fades in time', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 40, 0)
+    arm(a, 'oil')
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    const slick = arena.loose.find((loose) => loose.kind === 'oil')!
+    expect(slick.power).toBe(1)
+    ontoGround(b, slick.position)
+    for (let i = 0; i < SPILL_FLIGHT_TICKS; i++) advance(arena)
+    advance(arena)
+    expect(b.slipTicks).toBeGreaterThan(OIL_SLIP_TICKS - 5)
+    expect(b.vehicle.grip).toBe(OIL_GRIP)
+    // It stays for the next car, and the grip comes back once out of it.
+    expect(arena.loose).toContain(slick)
+    ontoGround(b, { x: slick.position.x + 30, z: slick.position.z + 30 })
+    for (let i = 0; i < OIL_SLIP_TICKS + 2; i++) advance(arena)
+    expect(b.slipTicks).toBe(0)
+    expect(b.vehicle.grip).toBe(1)
+    for (let i = 0; i < OIL_LIFE_TICKS; i++) advance(arena)
+    expect(arena.loose).not.toContain(slick)
+    arena.world.free()
+  })
+
+  it('the shield keeps off damage, stuns and slows for a while, and then they reach the car again', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 10, 0)
+    arm(a, 'shield')
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    expect(a.shieldTicks).toBe(SHIELD_TICKS)
+    arm(b, 'shockwave')
+    fire(arena, b, 1)
+    expect(a.stunnedTicks).toBe(0)
+    arm(b, 'bomb')
+    fire(arena, b, 1)
+    const bomb = arena.loose.find((loose) => loose.kind === 'bomb')!
+    onto(a, bomb.position)
+    for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
+    expect(arena.loose).not.toContain(bomb)
+    expect(a.vehicle.damage).toBe(0)
+    // Down, and the next shockwave stuns it.
+    for (let i = 0; i < SHIELD_TICKS; i++) advance(arena)
+    expect(a.shieldTicks).toBe(0)
+    arm(b, 'shockwave')
+    fire(arena, b, 1)
+    expect(a.stunnedTicks).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
+  it('the magnet takes bananas from far off while it pulls, and not after', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    const slot = arena.pickups[3]!
+    const off = { x: slot.position.x + MAGNET_REACH * 0.6, z: slot.position.z }
+    ontoGround(a, off)
+    for (let i = 0; i < 30; i++) advance(arena)
+    expect(slot.generation).toBe(0)
+    arm(a, 'magnet')
+    fire(arena, a, 1)
+    expect(a.magnetTicks).toBeGreaterThan(0)
+    advance(arena)
+    expect(slot.generation).toBe(1)
+    arena.world.free()
+  })
+
+  it('the triple rocket fans three half rockets out, one after each car ahead, nearest first', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 30, 0)
+    const c = takeSeat(arena, 2, 'sportsCar')
+    const { position, forward, right } = a.vehicle.frame
+    const x = position.x + forward.x * 50 + right.x * 10
+    const z = position.z + forward.z * 50 + right.z * 10
+    respawn(c, { position: { x, y: sampleHeight(map.heightfield, x, z), z }, yaw: a.spawn.yaw })
+    for (let i = 0; i < 30; i++) advance(arena)
+    arm(a, 'tripleRocket')
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    expect(arena.rockets).toHaveLength(TRIPLE_ROCKETS)
+    expect(arena.rockets.map((rocket) => rocket.target)).toEqual([b.id, c.id, b.id])
+    expect(arena.rockets.every((rocket) => rocket.power === TRIPLE_ROCKET_POWER)).toBe(true)
+    expect(new Set(arena.rockets.map((rocket) => rocket.id)).size).toBe(TRIPLE_ROCKETS)
+    arena.world.free()
+  })
+
+  it('the ram plow throws a car it runs into much further than a car without one does', () => {
+    const shoved = (plowed: boolean): number => {
+      const arena = createArena(map)
+      const [a, b] = pair(arena, 12, 0)
+      if (plowed) {
+        arm(a, 'plow')
+        fire(arena, a, 1)
+        expect(a.plowTicks).toBeGreaterThan(0)
+      }
+      const start = { ...b.vehicle.frame.position }
+      const drive: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
+      for (let i = 0; i < 150; i++) advance(arena, (seat) => (seat === a ? drive : NEUTRAL_INPUT))
+      const { x, z } = b.vehicle.frame.position
+      arena.world.free()
+      return Math.hypot(x - start.x, z - start.z)
+    }
+    expect(shoved(true)).toBeGreaterThan(shoved(false) * 1.5)
+  })
+
+  it('the grappling hook shoots at nothing and is spent when there is no car ahead, pulling on nothing', () => {
+    const arena = createArena(map)
+    const [a] = pair(arena, -30, 0)
+    arm(a, 'grapple')
+    const before = { ...a.vehicle.frame.position }
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    expect(a.grappleTarget).toBe(NO_TARGET)
+    expect(a.grappleTicks).toBe(GRAPPLE_MISS_TICKS)
+    expect(a.vehicle.boosted).toBe(false)
+    for (let i = 0; i < GRAPPLE_MISS_TICKS; i++) advance(arena)
+    expect(a.grappleTicks).toBe(0)
+    const { x, z } = a.vehicle.frame.position
+    expect(Math.hypot(x - before.x, z - before.z)).toBeLessThan(0.5)
+    arena.world.free()
+  })
+
+  it('the grappling hook catches the car ahead, reels the two together, and lets go in time', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 35, 0)
+    arm(a, 'grapple')
+    const apart = (): number => Math.hypot(b.vehicle.frame.position.x - a.vehicle.frame.position.x, b.vehicle.frame.position.z - a.vehicle.frame.position.z)
+    const before = apart()
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    expect(a.grappleTarget).toBe(b.id)
+    for (let i = 0; i < 120; i++) advance(arena)
+    expect(apart()).toBeLessThan(before - 5)
+    for (let i = 0; i < GRAPPLE_TICKS; i++) advance(arena)
+    expect(a.grappleTicks).toBe(0)
+    expect(a.grappleTarget).toBe(NO_TARGET)
+    arena.world.free()
+  })
+
+  it('a mine field lays its mines in a spread behind the car, each going off with a share of a bomb', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 40, 0)
+    arm(a, 'mines')
+    fire(arena, a, 1)
+    expect(a.weapon).toBe('none')
+    const mines = arena.loose.filter((loose) => loose.kind === 'mine')
+    expect(mines).toHaveLength(MINES)
+    expect(mines.every((mine) => mine.power === MINE_POWER)).toBe(true)
+    onto(b, mines[2]!.position)
+    for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
+    expect(b.vehicle.damage).toBeCloseTo(MINE_POWER, 5)
+    expect(arena.loose.filter((loose) => loose.kind === 'mine').length).toBeLessThan(MINES)
     arena.world.free()
   })
 })

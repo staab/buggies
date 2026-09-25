@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { WEAPONS } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
 import { WeaponMount } from './weapon-mount.ts'
@@ -62,5 +63,20 @@ describe('the weapon mount', () => {
     }
     expect(mount.object.position.y).not.toBeCloseTo(1.8, 5)
     mount.dispose()
+  })
+
+  it('shows one model for every power-up, and none of those a car with a gun of its own fires from it', () => {
+    const mount = new WeaponMount(1.8)
+    for (const weapon of WEAPONS) {
+      mount.show(weapon)
+      expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
+    }
+    mount.show('none')
+    expect(mount.object.children.some((child) => child.visible)).toBe(false)
+    mount.dispose()
+    const tank = new WeaponMount(1.8, true)
+    tank.show('tripleRocket')
+    expect(tank.object.children.some((child) => child.visible)).toBe(false)
+    tank.dispose()
   })
 })

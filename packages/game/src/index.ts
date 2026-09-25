@@ -90,6 +90,9 @@ export {
   LOOSE_IDS,
   LOOSE_KINDS,
   BOMB_REACH,
+  MINE_REACH,
+  OIL_LIFE_TICKS,
+  OIL_REACH,
   LOOSE_MOST,
   pickupOut,
   pickupSeed,
@@ -128,7 +131,33 @@ export {
   OWN_BOMBS_MOST,
   OWN_BOMB_POWER,
   OWN_GUN_POWER,
-  OWN_LIFT,
+  OWN_OIL_POWER,
+  OWN_OILS_MOST,
+  OIL_GRIP,
+  OIL_SLIP_TICKS,
+  SHIELD_TICKS,
+  MAGNET_REACH,
+  MAGNET_TICKS,
+  TRIPLE_ROCKETS,
+  TRIPLE_ROCKET_FAN,
+  TRIPLE_ROCKET_POWER,
+  PLOW_TICKS,
+  PLOW_AHEAD,
+  PLOW_ASIDE,
+  PLOW_SHOVE,
+  PLOW_LIFT,
+  GRAPPLE_RANGE,
+  GRAPPLE_COS,
+  GRAPPLE_TICKS,
+  GRAPPLE_MISS_TICKS,
+  GRAPPLE_BREAK,
+  GRAPPLE_SLACK,
+  GRAPPLE_PULL,
+  GRAPPLE_DRAG,
+  MINES,
+  MINE_POWER,
+  MINES_WIDE,
+  MINES_DEEP,
   OWN_MISSILE_POWER,
   POLICE_SHOT_SHARE,
   ROCKETS_COUNTED,
@@ -168,8 +197,11 @@ export {
   disarm,
   fireWeapons,
   flyRockets,
+  gripOf,
+  harm,
   hasBuiltInGun,
   hinder,
+  hooked,
   lifting,
   mend,
   mountPoint,
@@ -177,8 +209,10 @@ export {
   nosePoint,
   ownAction,
   pushWithWeapons,
+  reel,
   restAction,
   rocketId,
+  shielded,
   shotShare,
   slowable,
   stunned,
@@ -199,17 +233,23 @@ export {
 import {
   BANANAS_PER_WEAPON,
   BOMB_DAMAGE,
+  MAGNET_REACH,
   NO_TARGET,
+  OIL_SLIP_TICKS,
   arm,
   bombShare,
   burning,
   disarm,
   fireWeapons,
   flyRockets,
+  gripOf,
+  harm,
   hinder,
+  hooked,
   lifting,
   mend,
   pushWithWeapons,
+  reel,
   restAction,
   stunned,
   weaponWon,
@@ -260,6 +300,8 @@ export interface Seat {
   score: number
   /** What it is carrying over its roof, won with bananas, and how long the machine gun has left. */
   weapon: Weapon
+  /** How many weapons it has won, counted around past 255: a new one is told from the last even when it is the same. */
+  wins: number
   ammoTicks: number
   /** The seat the machine gun is trained on, or none. */
   aimTarget: number
@@ -275,6 +317,14 @@ export interface Seat {
   stunnedTicks: number
   slowedTicks: number
   slowedBy: number
+  /** How much longer its shield holds, its magnet pulls, its plow shoves and its tires slip on oil, in ticks. */
+  shieldTicks: number
+  magnetTicks: number
+  plowTicks: number
+  slipTicks: number
+  /** How much longer its grappling hook holds, and the seat it has caught, or none. */
+  grappleTicks: number
+  grappleTarget: number
 }
 
 /**
@@ -339,6 +389,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       lostTicks: 0,
       score: 0,
       weapon: 'none',
+      wins: 0,
       ammoTicks: 0,
       aimTarget: NO_TARGET,
       actionTicks: 0,
@@ -349,6 +400,12 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
+      shieldTicks: 0,
+      magnetTicks: 0,
+      plowTicks: 0,
+      slipTicks: 0,
+      grappleTicks: 0,
+      grappleTarget: NO_TARGET,
     }
   })
 
@@ -483,14 +540,16 @@ export function advance(
     if (!seat.occupied) continue
     // A stunned car takes no driving.
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
-    // A car its engine or wings are driving along is not one the tires hold
-    // still, and one its wings are lifting is not one the road holds down.
-    seat.vehicle.boosted = burning(seat, input)
+    // A car its engine or wings are driving along, or a grappling line
+    // reeling in, is not one the tires hold still, and one its wings are lifting is not one the road holds down.
+    seat.vehicle.boosted = burning(seat, input) || hooked(arena, seat)
     seat.vehicle.lifted = lifting(seat, input)
     // One carrying wings is held level and steered by them in the air, lifted or not.
     seat.vehicle.winged = winged(seat)
+    seat.vehicle.grip = gripOf(seat)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     pushWithWeapons(seat, gravity)
+    reel(arena, seat)
     hinder(seat)
     mend(seat)
     const level = waterUnder(arena, seat)
@@ -579,26 +638,34 @@ function spillBananas(arena: Arena): void {
   }
 }
 
+/** How far a car takes bananas from: its magnet's reach while that pulls, and a banana's own otherwise. */
+function magnetOf(seat: Seat): number {
+  return seat.magnetTicks > 0 ? MAGNET_REACH : 0
+}
+
 /**
  * Every banana a vehicle has reached is taken, a point to whoever reached
  * it, and its slot moves on to the next, to turn up elsewhere in a while.
- * A wreck takes nothing.
+ * A car with its magnet pulling reaches bananas from much further off. A
+ * wreck takes nothing.
  */
 function collectPickups(arena: Arena): void {
   for (const [slot, pickup] of arena.pickups.entries()) {
     if (!pickupOut(pickup, arena.tick)) continue
     for (const seat of arena.seats) {
-      if (!seat.occupied || seat.vehicle.wrecked || !reachesPickup(pickup, seat.vehicle.frame.position)) continue
+      if (!seat.occupied || seat.vehicle.wrecked || !reachesPickup(pickup, seat.vehicle.frame.position, magnetOf(seat))) continue
       score(seat)
       setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
       break
     }
   }
   // Spilled bananas go the same way, or fade if nobody comes for them; a
-  // bomb goes off on the first car to reach it once it has landed, with
-  // whatever it has of a full blast, and the car takes of that what its
-  // nature lets it. Walked from the end, so taking one out moves nothing
-  // still to come, and i stays within the list.
+  // bomb or a mine goes off on the first car to reach it once it has
+  // landed, with whatever it has of a full blast, and the car takes of that
+  // what its nature and its shield let it. An oil slick stays where it lies
+  // until it fades, and every car in it slips for a while, longer the more
+  // of a full slick it is. Walked from the end, so taking one out moves
+  // nothing still to come, and i stays within the list.
   for (let i = arena.loose.length - 1; i >= 0; i--) {
     const loose = arena.loose[i]!
     if (looseGone(loose, arena.tick)) {
@@ -607,9 +674,13 @@ function collectPickups(arena: Arena): void {
     }
     if (!looseOut(loose, arena.tick)) continue
     for (const seat of arena.seats) {
-      if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position)) continue
-      if (loose.kind === 'bomb') hurtVehicle(seat.vehicle, seat.tuning, BOMB_DAMAGE * loose.power * bombShare(seat.profile))
-      else score(seat)
+      if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position, magnetOf(seat))) continue
+      if (loose.kind === 'oil') {
+        seat.slipTicks = Math.max(seat.slipTicks, Math.round(OIL_SLIP_TICKS * loose.power))
+        continue
+      }
+      if (loose.kind === 'banana') score(seat)
+      else harm(seat, BOMB_DAMAGE * loose.power * bombShare(seat.profile))
       arena.loose.splice(i, 1)
       break
     }

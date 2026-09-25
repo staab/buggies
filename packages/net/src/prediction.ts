@@ -356,6 +356,7 @@ export class LocalPrediction {
       seat.vehicle.wrecked = vehicle.wrecked
       seat.score = vehicle.score
       seat.weapon = vehicle.weapon
+      seat.wins = vehicle.wins
       seat.ammoTicks = vehicle.ammoTicks
       seat.actionTicks = vehicle.actionTicks
       seat.cooldownTicks = vehicle.cooldownTicks
@@ -366,6 +367,12 @@ export class LocalPrediction {
       seat.stunnedTicks = vehicle.stunnedTicks
       seat.slowedTicks = vehicle.slowedTicks
       seat.slowedBy = vehicle.slowedBy
+      seat.shieldTicks = vehicle.shieldTicks
+      seat.magnetTicks = vehicle.magnetTicks
+      seat.plowTicks = vehicle.plowTicks
+      seat.slipTicks = vehicle.slipTicks
+      seat.grappleTicks = vehicle.grappleTicks
+      seat.grappleTarget = vehicle.grappleTarget
     }
     // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
     for (const moved of this.bananas.takeProps()) {

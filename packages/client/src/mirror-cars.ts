@@ -2,7 +2,7 @@ import type { Seat, VehicleProfileId } from '@buggies/game'
 import type { LocalPrediction, ReconcileOutcome } from '@buggies/net'
 import * as THREE from 'three'
 
-import { CarPresence, aimPointOf, type PresenceEffects } from './car-presence.ts'
+import { CarPresence, aimPointOf, hookPointOf, type PresenceEffects } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 
 interface Entry {
@@ -45,6 +45,7 @@ export class MirrorCars {
   render(fraction: number, dt: number): void {
     for (const entry of this.entries.values()) {
       entry.presence.aimAt(aimPointOf(entry.seat, this.prediction.seats))
+      entry.presence.hookAt(hookPointOf(entry.seat, this.prediction.seats))
       entry.presence.render(fraction, dt)
     }
   }

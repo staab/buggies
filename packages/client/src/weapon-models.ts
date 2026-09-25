@@ -58,19 +58,26 @@ export function buildHorn(): THREE.Group {
   return group
 }
 
-/** A shockwave: a dark speaker box with a grille on its face, over the roof. */
-export function buildSpeaker(): THREE.Group {
+/** A shockwave: a glowing yellow lightning bolt, standing up over the roof and seen from either side. */
+export function buildBolt(): THREE.Group {
   const group = new THREE.Group()
-  const cabinet = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.45), metal(STEEL, 0.7))
-  cabinet.position.y = 0.25
-  group.add(cabinet)
-  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.03), metal(BARREL, 0.9))
-  grille.position.set(0, 0.25, -0.24)
-  group.add(grille)
-  group.traverse((node) => {
-    if (node instanceof THREE.Mesh) node.castShadow = true
-  })
-  return group
+  // A zigzag, top to bottom, in its own plane.
+  const outline = new THREE.Shape()
+  outline.moveTo(0.1, 0.55)
+  outline.lineTo(-0.22, 0.02)
+  outline.lineTo(-0.02, 0.02)
+  outline.lineTo(-0.12, -0.55)
+  outline.lineTo(0.24, 0.1)
+  outline.lineTo(0.04, 0.1)
+  outline.lineTo(0.18, 0.55)
+  outline.closePath()
+  const bolt = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(outline, { depth: 0.1, bevelEnabled: false }).translate(0, 0, -0.05),
+    new THREE.MeshStandardMaterial({ color: '#ffd43a', emissive: '#ffb81c', emissiveIntensity: 0.9, roughness: 0.4 }),
+  )
+  bolt.position.y = 0.3
+  group.add(bolt)
+  return shadowed(group)
 }
 
 /** Wings: a pair of pale, swept, slightly raised wings, either side of the roof. */
@@ -176,5 +183,173 @@ export function buildBomb(): THREE.Group {
   group.traverse((node) => {
     if (node instanceof THREE.Mesh) node.castShadow = true
   })
+  return group
+}
+
+function shadowed(group: THREE.Group): THREE.Group {
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh) node.castShadow = true
+  })
+  return group
+}
+
+const OIL = new THREE.Color('#15171b')
+const SHIELD = new THREE.Color('#7fd4ff')
+const MAGNET = new THREE.Color('#d8402c')
+
+/** An oil slick: a black drum with a spout, a drip hanging off it. */
+export function buildOil(): THREE.Group {
+  const group = new THREE.Group()
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.7, 14), metal(OIL, 0.35))
+  drum.rotation.z = Math.PI / 2
+  group.add(drum)
+  for (const side of [-1, 1]) {
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.03, 6, 16), metal(BARREL, 0.5))
+    hoop.rotation.y = Math.PI / 2
+    hoop.position.x = side * 0.22
+    group.add(hoop)
+  }
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.2, 8), metal(BARREL, 0.4))
+  spout.rotation.x = Math.PI / 2
+  spout.position.set(0.1, 0.12, 0.34)
+  group.add(spout)
+  const drip = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), metal(OIL, 0.1))
+  drip.scale.y = 1.6
+  drip.position.set(0.1, 0.02, 0.44)
+  group.add(drip)
+  return shadowed(group)
+}
+
+/** A shield: a pale blue orb held up in a ring on a short post. */
+export function buildShield(): THREE.Group {
+  const group = new THREE.Group()
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 0.3, 8), metal(STEEL))
+  post.position.y = -0.15
+  group.add(post)
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.04, 8, 24), metal(BARREL, 0.4))
+  ring.position.y = 0.25
+  group.add(ring)
+  const orb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 16, 12),
+    new THREE.MeshStandardMaterial({ color: SHIELD, emissive: SHIELD, emissiveIntensity: 0.6, roughness: 0.2 }),
+  )
+  orb.position.y = 0.25
+  group.add(orb)
+  return shadowed(group)
+}
+
+/** A magnet: a red horseshoe, its silver ends pointing ahead. */
+export function buildMagnet(): THREE.Group {
+  const group = new THREE.Group()
+  const bend = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.1, 8, 20, Math.PI), metal(MAGNET, 0.4))
+  bend.rotation.x = -Math.PI / 2
+  bend.position.z = 0.1
+  group.add(bend)
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.3, 10), metal(MAGNET, 0.4))
+    arm.rotation.x = Math.PI / 2
+    arm.position.set(side * 0.3, 0, -0.05)
+    group.add(arm)
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.14, 10), metal(SHELL, 0.25))
+    tip.rotation.x = Math.PI / 2
+    tip.position.set(side * 0.3, 0, -0.27)
+    group.add(tip)
+  }
+  return shadowed(group)
+}
+
+/** A triple rocket: three rockets side by side on a rack. */
+export function buildTripleRocket(): THREE.Group {
+  const group = new THREE.Group()
+  const rack = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.5), metal(STEEL))
+  rack.position.y = -0.2
+  group.add(rack)
+  for (const side of [-1, 0, 1]) {
+    const rocket = buildRocket()
+    rocket.scale.setScalar(0.75)
+    rocket.position.x = side * 0.36
+    group.add(rocket)
+  }
+  return shadowed(group)
+}
+
+/** How far a plow's blade curves out from its middle. */
+export const PLOW_BLADE_RADIUS = 0.5
+
+/**
+ * A ram plow: a dark blade, a quarter of a drum across, hollow toward the
+ * front, with a yellow edge along the bottom. Its middle is the drum's,
+ * this far ahead of the blade.
+ */
+export function buildPlow(): THREE.Group {
+  const group = new THREE.Group()
+  const r = PLOW_BLADE_RADIUS
+  const bladeMaterial = metal(STEEL, 0.4)
+  bladeMaterial.side = THREE.DoubleSide
+  // A drum's side, laid across the car: the quarter of it behind the drum's middle, toward +Z.
+  const blade = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1.4, 16, 1, true, -Math.PI / 4, Math.PI / 2), bladeMaterial)
+  blade.rotation.z = Math.PI / 2
+  group.add(blade)
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.08), metal(new THREE.Color('#e8c23a'), 0.5))
+  edge.position.set(0, -r * Math.SQRT1_2, r * Math.SQRT1_2)
+  group.add(edge)
+  return shadowed(group)
+}
+
+/** A grappling hook's hook: a short shaft with three claws curling back from its tip, the tip toward -Z. */
+export function buildHook(): THREE.Group {
+  const group = new THREE.Group()
+  const iron = metal(BARREL, 0.35)
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 6), iron)
+  shaft.rotation.x = Math.PI / 2
+  shaft.position.z = 0.2
+  group.add(shaft)
+  for (let prong = 0; prong < 3; prong++) {
+    const pivot = new THREE.Group()
+    pivot.rotation.z = (prong * 2 * Math.PI) / 3
+    const claw = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.03, 6, 10, Math.PI), iron)
+    claw.rotation.y = Math.PI / 2
+    claw.position.y = 0.14
+    pivot.add(claw)
+    group.add(pivot)
+  }
+  return shadowed(group)
+}
+
+/** A grappling hook: a stubby launcher with its hook in its mouth. */
+export function buildGrapple(): THREE.Group {
+  const group = new THREE.Group()
+  const launcher = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.7, 12), metal(STEEL))
+  launcher.rotation.x = Math.PI / 2
+  group.add(launcher)
+  const hook = buildHook()
+  hook.position.z = -0.75
+  group.add(hook)
+  return shadowed(group)
+}
+
+/** A mine: a squat dark disc with a red light on top. */
+export function buildMine(): THREE.Group {
+  const group = new THREE.Group()
+  const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.16, 16), metal(new THREE.Color('#3a4030'), 0.6))
+  group.add(disc)
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 8, 6),
+    new THREE.MeshStandardMaterial({ color: '#ff3a2a', emissive: '#ff2a1a', emissiveIntensity: 1.6 }),
+  )
+  light.position.y = 0.1
+  group.add(light)
+  return shadowed(group)
+}
+
+/** A mine field: a stack of mines, carried over the roof. */
+export function buildMines(): THREE.Group {
+  const group = new THREE.Group()
+  for (let level = 0; level < 3; level++) {
+    const mine = buildMine()
+    mine.position.y = level * 0.18 - 0.18
+    mine.rotation.y = level * 0.6
+    group.add(mine)
+  }
   return group
 }

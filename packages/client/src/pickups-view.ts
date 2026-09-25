@@ -1,4 +1,15 @@
-import { LOOSE_MOST, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, pickupOut, type LooseKind, type Pickup, type Loose } from '@buggies/game'
+import {
+  LOOSE_KINDS,
+  LOOSE_MOST,
+  OIL_LIFE_TICKS,
+  OIL_REACH,
+  SPILL_FLIGHT_TICKS,
+  SPILL_LIFE_TICKS,
+  pickupOut,
+  type LooseKind,
+  type Pickup,
+  type Loose,
+} from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
@@ -84,34 +95,21 @@ const IRON = new THREE.Color('#202226')
 const FUSE = new THREE.Color('#8a7a5a')
 const EMBER = new THREE.Color('#ff9a3c')
 
-/** A bomb: a black ball with a short fuse and a glowing end, colored by vertex. Built once and shared. */
-export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
-  const paint = (geometry: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry => {
-    const count = geometry.getAttribute('position').count
-    const colors = new Float32Array(count * 3)
-    for (let i = 0; i < count; i++) color.toArray(colors, i * 3)
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    return geometry
-  }
-  const parts = [
-    paint(new THREE.SphereGeometry(radius, 14, 10), IRON),
-    paint(new THREE.CylinderGeometry(radius * 0.08, radius * 0.08, radius * 0.5, 6).translate(0, radius * 1.2, 0), FUSE),
-    paint(new THREE.SphereGeometry(radius * 0.14, 6, 5).translate(0, radius * 1.45, 0), EMBER),
-  ]
+/** Parts, each painted one color, merged into one geometry colored by vertex. */
+function mergePainted(parts: readonly [THREE.BufferGeometry, THREE.Color][]): THREE.BufferGeometry {
   const positions: number[] = []
   const normals: number[] = []
   const colors: number[] = []
   const indices: number[] = []
   let vertices = 0
-  for (const part of parts) {
+  for (const [part, color] of parts) {
     const position = part.getAttribute('position')
     const normal = part.getAttribute('normal')
-    const color = part.getAttribute('color')
     const index = part.getIndex()
     for (let i = 0; i < position.count; i++) {
       positions.push(position.getX(i), position.getY(i), position.getZ(i))
       normals.push(normal.getX(i), normal.getY(i), normal.getZ(i))
-      colors.push(color.getX(i), color.getY(i), color.getZ(i))
+      colors.push(color.r, color.g, color.b)
     }
     if (index !== null) for (let i = 0; i < index.count; i++) indices.push(index.getX(i) + vertices)
     vertices += position.count
@@ -123,6 +121,52 @@ export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
   merged.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   merged.setIndex(indices)
   return merged
+}
+
+/** A bomb: a black ball with a short fuse and a glowing end, colored by vertex. Built once and shared. */
+export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
+  return mergePainted([
+    [new THREE.SphereGeometry(radius, 14, 10), IRON],
+    [new THREE.CylinderGeometry(radius * 0.08, radius * 0.08, radius * 0.5, 6).translate(0, radius * 1.2, 0), FUSE],
+    [new THREE.SphereGeometry(radius * 0.14, 6, 5).translate(0, radius * 1.45, 0), EMBER],
+  ])
+}
+
+/** How wide a mine is. */
+export const MINE_RADIUS = 0.55
+const MINE_CASE = new THREE.Color('#3a4030')
+const MINE_LIGHT = new THREE.Color('#ff3a2a')
+
+/** A mine: a squat dark disc sitting on the ground, with a red light on top, colored by vertex. Built once and shared. */
+export function mineGeometry(radius = MINE_RADIUS): THREE.BufferGeometry {
+  return mergePainted([
+    [new THREE.CylinderGeometry(radius * 0.85, radius, radius * 0.4, 16).translate(0, radius * 0.2, 0), MINE_CASE],
+    [new THREE.SphereGeometry(radius * 0.18, 8, 6).translate(0, radius * 0.45, 0), MINE_LIGHT],
+  ])
+}
+
+/** How big an oil slick starts, as a share of its full size, the moment it is dropped. */
+const OIL_SEED = 0.05
+
+/** An oil slick: a flat, ragged black pool, as wide as a car has to come to it. Built once and shared. */
+export function oilGeometry(radius = OIL_REACH): THREE.BufferGeometry {
+  const around = 24
+  const shape = new THREE.Shape()
+  for (let k = 0; k <= around; k++) {
+    const angle = (k / around) * Math.PI * 2
+    // Ragged, the same way every time: a few lobes and a little wobble.
+    const reach = radius * (0.85 + 0.1 * Math.sin(angle * 3 + 1) + 0.05 * Math.sin(angle * 7))
+    if (k === 0) shape.moveTo(Math.cos(angle) * reach, Math.sin(angle) * reach)
+    else shape.lineTo(Math.cos(angle) * reach, Math.sin(angle) * reach)
+  }
+  return new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2)
+}
+
+/** When a loose thing would fade on its own: a banana or a slick in time, a bomb or a mine never. */
+function goneTick(thing: Loose): number {
+  if (thing.kind === 'banana') return thing.bornTick + SPILL_LIFE_TICKS
+  if (thing.kind === 'oil') return thing.bornTick + OIL_LIFE_TICKS
+  return Number.POSITIVE_INFINITY
 }
 
 /** What a loose thing is known by from one frame to the next: what it is, where it was last drawn, and when it would fade. */
@@ -147,10 +191,11 @@ interface Pop {
 /**
  * The map's bananas, drawn where the simulation has them, turning slowly
  * and bobbing; the bananas spilled from wrecks, each flying out of the
- * blast in an arc, spinning, to lie where it lands; and the bombs dropped
- * behind cars, floating where they were left. A banana taken pops: it
- * shoots up spinning and shrinks away in a ring of sparks. A bomb gone
- * went off, and whoever draws the field is told where.
+ * blast in an arc, spinning, to lie where it lands; and what cars drop
+ * behind them: bombs floating where they were left, mines sitting there,
+ * and oil slicks spreading flat where they are dropped. A banana taken pops: it shoots up spinning
+ * and shrinks away in a ring of sparks. A bomb or a mine gone went off,
+ * and whoever draws the field is told where.
  */
 export class PickupField {
   readonly object = new THREE.Group()
@@ -165,10 +210,10 @@ export class PickupField {
     emissiveIntensity: 0.12,
   })
   private readonly bananas: THREE.InstancedMesh
-  private readonly looseBananas: THREE.InstancedMesh
-  private readonly bombShape = bombGeometry()
   private readonly bombMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.3 })
-  private readonly bombs: THREE.InstancedMesh
+  private readonly oilMaterial = new THREE.MeshStandardMaterial({ color: '#0d0e10', roughness: 0.08, metalness: 0.4 })
+  /** Everything loose, a mesh a kind. */
+  private readonly loose: Readonly<Record<LooseKind, THREE.InstancedMesh>>
   private readonly onBomb: (at: Vec3) => void
   private looseSeen = new Map<number, Seen>()
   private readonly spark = new THREE.OctahedronGeometry(0.12)
@@ -184,16 +229,22 @@ export class PickupField {
     this.source = source
     this.onBomb = onBomb
     this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(source.pickups.length, 1))
-    this.looseBananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST)
-    this.bombs = new THREE.InstancedMesh(this.bombShape, this.bombMaterial, LOOSE_MOST)
-    for (const mesh of [this.bananas, this.looseBananas, this.bombs]) {
+    this.loose = {
+      banana: new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST),
+      bomb: new THREE.InstancedMesh(bombGeometry(), this.bombMaterial, LOOSE_MOST),
+      mine: new THREE.InstancedMesh(mineGeometry(), this.bombMaterial, LOOSE_MOST),
+      oil: new THREE.InstancedMesh(oilGeometry(), this.oilMaterial, LOOSE_MOST),
+    }
+    for (const mesh of [this.bananas, ...Object.values(this.loose)]) {
       mesh.castShadow = true
       mesh.frustumCulled = false
       this.object.add(mesh)
     }
+    // An oil slick is a film on the road: it takes shadows, and casts none.
+    this.loose.oil.castShadow = false
+    this.loose.oil.receiveShadow = true
     this.bananas.count = source.pickups.length
-    this.looseBananas.count = 0
-    this.bombs.count = 0
+    for (const mesh of Object.values(this.loose)) mesh.count = 0
     this.seen = source.pickups.map((pickup) => pickup.generation)
     this.wasOut = source.pickups.map(() => false)
     this.lastPositions = source.pickups.map((pickup) => new THREE.Vector3().copy(pickup.position))
@@ -231,27 +282,26 @@ export class PickupField {
   }
 
   /**
-   * The spilled bananas: in the air for a while after the blast, then lying
-   * where they land. One that goes before its time was taken, and pops.
-   */
-  /**
    * The loose things: bananas in the air for a while after the blast, then
-   * lying where they land, and bombs floating where they were dropped. A
-   * banana that goes before its time was taken, and pops; a bomb that goes
-   * went off.
+   * lying where they land; bombs floating where they were dropped, mines
+   * sitting there and oil slicks lying flat. A banana that goes before its
+   * time was taken, and pops; a bomb or a mine that goes went off.
    */
   private updateLoose(): void {
     const { tick } = this.source
     const seen = new Map<number, Seen>()
-    let bananas = 0
-    let bombs = 0
+    const drawn: Record<LooseKind, number> = { banana: 0, bomb: 0, mine: 0, oil: 0 }
     for (const thing of this.source.loose) {
-      const bomb = thing.kind === 'bomb'
-      const slot = bomb ? bombs : bananas
+      const { kind } = thing
+      const slot = drawn[kind]
       if (slot >= LOOSE_MOST) continue
       const flight = Math.min(Math.max((tick - thing.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
       const { from, position } = thing
-      if (flight < 1) {
+      if (kind === 'oil') {
+        // A slick is not thrown: it spreads where it lies, out to its full size as it would have landed.
+        this.place(thing, slot)
+        this.placer.scale.setScalar(Math.max(1 - (1 - flight) * (1 - flight), OIL_SEED))
+      } else if (flight < 1) {
         // Out of the blast, or off the back of the car, in an arc, tumbling.
         const across = Math.hypot(position.x - from.x, position.z - from.z)
         const lift = Math.sin(Math.PI * flight) * (FLING_HEIGHT + FLING_LIFT * across)
@@ -260,42 +310,50 @@ export class PickupField {
           from.y + (position.y - from.y) * flight + lift,
           from.z + (position.z - from.z) * flight,
         )
-        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + thing.bornTick, bomb ? 0 : TILT, 'YXZ')
+        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + thing.bornTick, kind === 'banana' ? TILT : 0, 'YXZ')
         this.placer.scale.setScalar(0.4 + 0.6 * Math.min(flight * 4, 1))
       } else {
-        const phase = this.time * BOB_RATE + slot * 1.7
-        this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
-        if (bomb) this.placer.rotation.set(0, this.time * BOMB_SPIN + slot * 0.9, 0, 'YXZ')
-        else this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, TILT, 'YXZ')
-        this.placer.scale.setScalar(1)
+        this.place(thing, slot)
       }
       this.placer.updateMatrix()
-      if (bomb) {
-        this.bombs.setMatrixAt(bombs, this.placer.matrix)
-        bombs += 1
-      } else {
-        this.looseBananas.setMatrixAt(bananas, this.placer.matrix)
-        bananas += 1
-      }
+      this.loose[kind].setMatrixAt(slot, this.placer.matrix)
+      drawn[kind] += 1
       const known = this.looseSeen.get(thing.id)
-      const drawn = known?.position ?? new THREE.Vector3()
-      drawn.copy(this.placer.position)
-      seen.set(thing.id, {
-        kind: thing.kind,
-        position: drawn,
-        goneTick: bomb ? Number.POSITIVE_INFINITY : thing.bornTick + SPILL_LIFE_TICKS,
-      })
+      const at = known?.position ?? new THREE.Vector3()
+      at.copy(this.placer.position)
+      seen.set(thing.id, { kind, position: at, goneTick: goneTick(thing) })
     }
     for (const [id, known] of this.looseSeen) {
       if (seen.has(id)) continue
-      if (known.kind === 'bomb') this.onBomb(known.position)
-      else if (tick < known.goneTick) this.pop(known.position)
+      if (known.kind === 'bomb' || known.kind === 'mine') this.onBomb(known.position)
+      else if (known.kind === 'banana' && tick < known.goneTick) this.pop(known.position)
     }
     this.looseSeen = seen
-    this.looseBananas.count = bananas
-    this.looseBananas.instanceMatrix.needsUpdate = true
-    this.bombs.count = bombs
-    this.bombs.instanceMatrix.needsUpdate = true
+    for (const kind of LOOSE_KINDS) {
+      this.loose[kind].count = drawn[kind]
+      this.loose[kind].instanceMatrix.needsUpdate = true
+    }
+  }
+
+  /** Put a loose thing that has landed where it lies: a banana or a bomb bobbing and turning, a mine or a slick still. */
+  private place(thing: Loose, slot: number): void {
+    const { position } = thing
+    const phase = this.time * BOB_RATE + slot * 1.7
+    this.placer.scale.setScalar(1)
+    switch (thing.kind) {
+      case 'banana':
+        this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
+        this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, TILT, 'YXZ')
+        return
+      case 'bomb':
+        this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
+        this.placer.rotation.set(0, this.time * BOMB_SPIN + slot * 0.9, 0, 'YXZ')
+        return
+      default:
+        // Turned by its number, so no two lie alike.
+        this.placer.position.set(position.x, position.y, position.z)
+        this.placer.rotation.set(0, thing.id * 2.4, 0, 'YXZ')
+    }
   }
 
   dispose(): void {
@@ -304,12 +362,14 @@ export class PickupField {
     this.object.removeFromParent()
     this.object.clear()
     this.bananas.dispose()
-    this.looseBananas.dispose()
-    this.bombs.dispose()
+    for (const mesh of Object.values(this.loose)) {
+      if (mesh.geometry !== this.bananaShape) mesh.geometry.dispose()
+      mesh.dispose()
+    }
     this.bananaShape.dispose()
     this.bananaMaterial.dispose()
-    this.bombShape.dispose()
     this.bombMaterial.dispose()
+    this.oilMaterial.dispose()
     this.spark.dispose()
     this.ringGeometry.dispose()
   }

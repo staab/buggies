@@ -38,6 +38,8 @@ export interface TireDriveContext {
   massPerWheel: number
   /** Whether something other than the engine is driving the car along this step. */
   boosted: boolean
+  /** How much of its grip the tire has: all of it, but on oil. */
+  grip: number
 }
 
 export function createTireDriveContext(): TireDriveContext {
@@ -49,6 +51,7 @@ export function createTireDriveContext(): TireDriveContext {
     remainingDriveFraction: 0,
     massPerWheel: 0,
     boosted: false,
+    grip: 1,
   }
 }
 
@@ -111,7 +114,8 @@ function retardingForce(wheel: WheelState, drive: TireDriveContext, tuning: Vehi
  * The handbrake or the brake at speed ask nothing: they are stopping it.
  */
 function takeHold(wheel: WheelState, drive: TireDriveContext): void {
-  const asked = drive.throttle > 0 || (drive.brake > 0 && drive.brakePedalDrivesReverse) || drive.boosted
+  // A tire on oil takes hold of nothing.
+  const asked = drive.throttle > 0 || (drive.brake > 0 && drive.brakePedalDrivesReverse) || drive.boosted || drive.grip < 1
   const still =
     Math.abs(wheel.slipSpeedLongitudinal) < HOLD_SLIP_SPEED && Math.abs(wheel.slipSpeedLateral) < HOLD_SLIP_SPEED
   if (asked || !still) {
@@ -146,7 +150,7 @@ export function solveTireForces(wheel: WheelState, drive: TireDriveContext, tuni
   // A corner the stick is pulling down to the ground has nothing pressing
   // its tire into it: no grip, rather than the grip of a load below nothing,
   // which would turn every bound here inside out.
-  const load = Math.max(wheel.suspensionForce, 0)
+  const load = Math.max(wheel.suspensionForce, 0) * drive.grip
   const longitudinalCeiling = tuning.longitudinalGrip * load
   takeHold(wheel, drive)
 

@@ -9,12 +9,14 @@ const LAST_STEP = 0.45
  * What is shown of a car's weapon. Something won is not shown at once: the
  * names roll past, fast and then slower, and stop on it, like a fruit
  * machine. Nothing may be fired until they have. Something fired or spent
- * goes at once.
+ * goes at once. A win is told by the count of them, so that the same
+ * weapon won again the moment the last ran out rolls too.
  */
 export class WeaponReveal {
   /** The weapon, or during the roll whichever name is passing. */
   shown: Weapon = 'none'
   private known: Weapon = 'none'
+  private wins = 0
   /** How far into the roll, or nothing when there is none. */
   private elapsed: number | null = null
   private untilStep = 0
@@ -29,9 +31,11 @@ export class WeaponReveal {
     return this.elapsed === null && this.known !== 'none'
   }
 
-  update(actual: Weapon, dt: number): void {
-    if (actual !== this.known) {
+  /** Take in what the car carries and how many weapons it has won, and move the roll on. */
+  update(actual: Weapon, wins: number, dt: number): void {
+    if (actual !== this.known || (actual !== 'none' && wins !== this.wins)) {
       this.known = actual
+      this.wins = wins
       if (actual === 'none') {
         this.elapsed = null
         this.shown = 'none'

@@ -1,4 +1,18 @@
-import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, OWN_ACTIONS, WEAPON_LABELS, acting, hasBuiltInGun, type Seat, type Weapon } from '@buggies/game'
+import {
+  FIXED_TIMESTEP,
+  GRAPPLE_MISS_TICKS,
+  GRAPPLE_RANGE,
+  MAGNET_REACH,
+  MOUNT_HEIGHT,
+  NO_TARGET,
+  OWN_ACTIONS,
+  SHOCKWAVE_RANGE,
+  WEAPON_LABELS,
+  acting,
+  hasBuiltInGun,
+  type Seat,
+  type Weapon,
+} from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
@@ -6,11 +20,13 @@ import { engineRev, skidAmount, type EngineVoice, type SirenVoice, type SkidVoic
 import { CarView } from './car-view.ts'
 import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
+import { disposeObject } from './dispose.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import type { Explosions } from './explosion.ts'
 import type { ControlHint, HudState } from './hud.ts'
 import type { Smoke } from './smoke.ts'
 import { SmoothedBody } from './smoothed-body.ts'
+import { PLOW_BLADE_RADIUS, buildHook, buildPlow } from './weapon-models.ts'
 import { WeaponMount } from './weapon-mount.ts'
 import { WeaponReveal } from './weapon-reveal.ts'
 
@@ -18,6 +34,14 @@ import { WeaponReveal } from './weapon-reveal.ts'
 const LOUD_KNOCK = 0.25
 /** How many times a second an emergency vehicle's roof lights flash from one side to the other. */
 const SIREN_FLASHES = 4
+const hooked = new THREE.Vector3()
+const ropeFrom = new THREE.Vector3()
+const ropeWay = new THREE.Vector3()
+const UP = new THREE.Vector3(0, 1, 0)
+const AHEAD = new THREE.Vector3(0, 0, -1)
+/** How thick the grappling rope is, and how big its hook is drawn, to be seen from the chase camera. */
+const ROPE_RADIUS = 0.06
+const HOOK_SCALE = 1.6
 const overhead = new THREE.Raycaster()
 const above = new THREE.Vector3()
 const down = new THREE.Vector3()
@@ -35,6 +59,25 @@ function roofAt(car: THREE.Object3D, x: number, z: number, chassisTop: number): 
 const SIREN_FOOTPRINT = { xs: [-0.26, 0, 0.26], zs: [-0.65, -0.35, 0, 0.2], base: 0.07 } as const
 /** The boost's flame at the back of the car, this long. */
 const BOOST_FLAME = { radius: 0.18, length: 0.8 } as const
+
+/**
+ * Where a seat's grappling line runs to: the middle of the car it has
+ * caught, or, having caught nothing, a point straight ahead, going out to
+ * the line's full reach and coming back; nowhere when the line is not out.
+ */
+export function hookPointOf(seat: Seat, seats: readonly Seat[]): Vec3 | null {
+  if (seat.grappleTicks <= 0) return null
+  if (seat.grappleTarget !== NO_TARGET) return seats[seat.grappleTarget]?.vehicle.frame.position ?? null
+  const along = 1 - seat.grappleTicks / GRAPPLE_MISS_TICKS
+  const out = GRAPPLE_RANGE * (1 - Math.abs(1 - 2 * along))
+  const { position, forward } = seat.vehicle.frame
+  return { x: position.x + forward.x * out, y: position.y + forward.y * out, z: position.z + forward.z * out }
+}
+
+/** How much bigger than the chassis the shield's bubble is, and how see-through. */
+const SHIELD_BUBBLE = { scale: 1.6, opacity: 0.28 } as const
+/** How far in front of the chassis the ram plow's blade is set. */
+const PLOW_OUT = 0.35
 
 /** Where a seat's gun is trained: the middle of the car it has picked out, if any. */
 export function aimPointOf(seat: Seat, seats: readonly Seat[]): Vec3 | null {
@@ -85,11 +128,20 @@ export class CarPresence {
   private siren: SirenVoice | null = null
   private readonly boostFlame: THREE.Mesh
   private aimPoint: Vec3 | null = null
+  private hookPoint: Vec3 | null = null
+  /** What lasts of what the car has used, drawn on it: the shield's bubble, the plow's blade, the magnet's reach and the grappling line with its hook. */
+  private readonly bubble: THREE.Mesh
+  private readonly blade: THREE.Group
+  private readonly pull: THREE.Mesh
+  /** The grappling line: a rope a meter long, stretched to fit, and the hook on its end. */
+  private readonly rope: THREE.Mesh
+  private readonly hook: THREE.Group
   private wasWrecked: boolean
   private lastDamage: number
   private lastScore: number
   private lastActionTicks: number
   private lastWeapon: Weapon
+  private lastWins: number
   private lightTime = 0
 
   constructor(seat: Seat, color: number, effects: PresenceEffects, options: PresenceOptions = {}) {
@@ -120,11 +172,43 @@ export class CarPresence {
     this.boostFlame.position.set(0, seat.tuning.chassisHalfHeight * 0.4, seat.tuning.chassisHalfLength + BOOST_FLAME.length / 2)
     this.boostFlame.visible = false
     this.object.add(this.boostFlame)
+    const { chassisHalfWidth, chassisHalfHeight, chassisHalfLength } = seat.tuning
+    this.bubble = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 24, 16),
+      new THREE.MeshStandardMaterial({ color: 0x7fd4ff, emissive: 0x3aa8ff, emissiveIntensity: 0.5, transparent: true, opacity: SHIELD_BUBBLE.opacity, depthWrite: false }),
+    )
+    this.bubble.scale.set(chassisHalfWidth, chassisHalfHeight * 1.5, chassisHalfLength).multiplyScalar(SHIELD_BUBBLE.scale)
+    this.bubble.visible = false
+    // The blade stood up across the front of the car, its edge down at the road.
+    this.blade = buildPlow()
+    this.blade.scale.set((chassisHalfWidth * 2.2) / 1.4, 1, 1)
+    this.blade.position.set(0, -chassisHalfHeight * 0.3, -chassisHalfLength - PLOW_OUT - PLOW_BLADE_RADIUS)
+    this.blade.visible = false
+    this.pull = new THREE.Mesh(
+      new THREE.RingGeometry(MAGNET_REACH - 0.4, MAGNET_REACH, 64),
+      new THREE.MeshBasicMaterial({ color: 0xd8402c, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false }),
+    )
+    this.pull.rotation.x = -Math.PI / 2
+    this.pull.position.y = -chassisHalfHeight
+    this.pull.visible = false
+    // Up +Y from its foot, so it is stood from one end of the line and turned and stretched to the other.
+    this.rope = new THREE.Mesh(
+      new THREE.CylinderGeometry(ROPE_RADIUS, ROPE_RADIUS, 1, 6).translate(0, 0.5, 0),
+      new THREE.MeshStandardMaterial({ color: 0xc8b98a, roughness: 0.9 }),
+    )
+    this.rope.castShadow = true
+    this.rope.frustumCulled = false
+    this.rope.visible = false
+    this.hook = buildHook()
+    this.hook.scale.setScalar(HOOK_SCALE)
+    this.hook.visible = false
+    this.object.add(this.bubble, this.blade, this.pull, this.rope, this.hook)
     this.wasWrecked = seat.vehicle.wrecked
     this.lastDamage = seat.vehicle.damage
     this.lastScore = seat.score
     this.lastActionTicks = seat.actionTicks
     this.lastWeapon = seat.weapon
+    this.lastWins = seat.wins
   }
 
   get wrecked(): boolean {
@@ -158,6 +242,38 @@ export class CarPresence {
     this.aimPoint = point
   }
 
+  /** Run the grappling line to a point in the world, or put it away, before the next render. */
+  hookAt(point: Vec3 | null): void {
+    this.hookPoint = point
+  }
+
+  /** Draw what lasts of what the car has used: the shield up, the plow set, the magnet pulling, the line out. */
+  private showEffects(): void {
+    const { seat } = this
+    const out = !seat.vehicle.wrecked
+    this.bubble.visible = out && seat.shieldTicks > 0
+    this.blade.visible = out && seat.plowTicks > 0
+    this.pull.visible = out && seat.magnetTicks > 0
+    const lineOut = out && this.hookPoint !== null
+    this.rope.visible = lineOut
+    this.hook.visible = lineOut
+    if (!lineOut || this.hookPoint === null) return
+    // From the front of the car to where the hook is, in the car's own frame: the rope stretched between, the hook on the end, pointing on.
+    this.object.updateMatrixWorld()
+    const from = ropeFrom.set(0, 0, -seat.tuning.chassisHalfLength)
+    hooked.set(this.hookPoint.x, this.hookPoint.y, this.hookPoint.z)
+    this.object.worldToLocal(hooked)
+    ropeWay.subVectors(hooked, from)
+    const length = ropeWay.length()
+    if (length > 0) ropeWay.divideScalar(length)
+    else ropeWay.set(0, 0, -1)
+    this.rope.position.copy(from)
+    this.rope.quaternion.setFromUnitVectors(UP, ropeWay)
+    this.rope.scale.set(1, Math.max(length, 0.01), 1)
+    this.hook.position.copy(hooked)
+    this.hook.quaternion.setFromUnitVectors(AHEAD, ropeWay)
+  }
+
   /** How far off it is from whoever is listening. */
   private distance(): number {
     return this.ear === null ? 0 : distanceFrom(this.ear, this.seat.vehicle.frame.position)
@@ -170,12 +286,13 @@ export class CarPresence {
     const sound = this.voice !== null ? this.effects.sound : null
     this.body.render(fraction, dt)
     this.view.applySimulatedWheels(vehicle.wheels, tuning)
-    this.reveal.update(this.seat.weapon, dt)
+    this.reveal.update(this.seat.weapon, this.seat.wins, dt)
     const own = OWN_ACTIONS[this.seat.profile]
     // Only what the car carries is mounted over its roof: nothing of its own is.
     this.mount.show(vehicle.wrecked ? 'none' : this.reveal.shown)
     this.mount.update(dt)
     this.mount.aim(this.aimPoint, dt)
+    this.showEffects()
     const engine = this.seat.weapon === 'engine' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
     this.mount.burn(engine)
     const off = this.distance()
@@ -199,8 +316,14 @@ export class CarPresence {
       if (own.kind === 'horn') sound?.horn(off)
       if (own.kind === 'hop') sound?.hop(off)
     }
-    if (this.lastWeapon === 'shockwave' && this.seat.weapon === 'none' && !vehicle.wrecked) sound?.shockwave(off)
+    // Gone, or won again the moment it went: either way it went off, unless the car was wrecked.
+    const shocked = this.lastWeapon === 'shockwave' && (this.seat.weapon !== 'shockwave' || this.seat.wins !== this.lastWins)
+    if (shocked && !vehicle.wrecked) {
+      explosions.shockwave(vehicle.frame.position, SHOCKWAVE_RANGE)
+      sound?.shockwave(off)
+    }
     this.lastWeapon = this.seat.weapon
+    this.lastWins = this.seat.wins
     this.lastActionTicks = this.seat.actionTicks
     if (vehicle.wrecked && !this.wasWrecked) {
       explosions.burst(vehicle.frame.position)
@@ -252,6 +375,12 @@ export class CarPresence {
     this.siren?.stop()
     this.thrust?.stop()
     this.mount.dispose()
+    disposeObject(this.blade)
+    disposeObject(this.hook)
+    for (const mesh of [this.bubble, this.pull, this.rope]) {
+      mesh.geometry.dispose()
+      ;(mesh.material as THREE.Material).dispose()
+    }
     this.view.dispose()
   }
 }

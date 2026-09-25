@@ -351,6 +351,7 @@ function applyTyreForces(vehicle: Vehicle, tuning: VehicleTuning, dt: number): v
   driveContext.remainingDriveFraction = clamp(1 - vehicle.speed / Math.max(tuning.maxSpeed, MIN_SPEED_LIMIT), 0, 1)
   driveContext.massPerWheel = tuning.mass / WHEEL_COUNT
   driveContext.boosted = vehicle.boosted
+  driveContext.grip = vehicle.grip
 
   for (const wheel of wheels) {
     if (!wheel.grounded) continue
