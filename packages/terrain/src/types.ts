@@ -130,6 +130,8 @@ export type BuildingKind =
   | 'firepit'
   | 'boat'
   | 'dam'
+  | 'pylon'
+  | 'station'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']

@@ -233,6 +233,49 @@ describe('buildings and trees', () => {
     expect(dams).toBeGreaterThanOrEqual(1)
   }, 120_000)
 
+  it('run a chair lift up a mountainside: two stations, and pylons on one line between them, spaced and climbing', () => {
+    let lifts = 0
+    for (const seed of [1, 2, 3]) {
+      const island = seed === 1 ? map : generateTerrain(seed)
+      const stations = island.buildings.filter((building) => building.kind === 'station')
+      const pylons = island.buildings.filter((building) => building.kind === 'pylon')
+      expect(stations.length === 0 || stations.length === 2).toBe(true)
+      if (stations.length === 0) {
+        expect(pylons).toHaveLength(0)
+        continue
+      }
+      lifts++
+      const [a, b] = stations as [Building, Building]
+      const bottom = a.top < b.top ? a : b
+      const top = a.top < b.top ? b : a
+      const length = Math.hypot(top.x - bottom.x, top.z - bottom.z)
+      const dx = (top.x - bottom.x) / length
+      const dz = (top.z - bottom.z) / length
+      expect(pylons.length).toBeGreaterThanOrEqual(2)
+      // On the line, evenly spaced, each higher than the last, and all on a mountain.
+      const ordered = [...pylons].sort((p, q) => p.tone - q.tone)
+      let lastAlong = 0
+      let lastTop = bottom.top
+      for (const pylon of ordered) {
+        const along = (pylon.x - bottom.x) * dx + (pylon.z - bottom.z) * dz
+        const off = Math.abs((pylon.x - bottom.x) * dz - (pylon.z - bottom.z) * dx)
+        expect(off).toBeLessThan(0.5)
+        expect(along - lastAlong).toBeCloseTo(40, 0)
+        expect(pylon.top).toBeGreaterThan(lastTop)
+        expect(pylon.top - pylon.bottom).toBeGreaterThan(13)
+        expect(island.mountains.some((mountain) => signedDistanceToTriangle(pylon.x, pylon.z, orientedTriangle(mountain)) >= -mountain.skirt)).toBe(true)
+        lastAlong = along
+        lastTop = pylon.top
+      }
+      expect(top.top).toBeGreaterThan(lastTop)
+      // Steep enough to be a lift, and not a cliff.
+      const grade = (top.top - bottom.top) / length
+      expect(grade).toBeGreaterThan(0.2)
+      expect(grade).toBeLessThan(1.1)
+    }
+    expect(lifts).toBeGreaterThanOrEqual(1)
+  }, 120_000)
+
   it('moor a few boats off the shore, in deep enough water, with the shore in sight but not close, and apart', () => {
     const boats = map.buildings.filter((building) => building.kind === 'boat')
     expect(boats.length).toBeGreaterThanOrEqual(3)

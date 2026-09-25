@@ -227,6 +227,12 @@ const DAM_COLOR = new THREE.Color('#c9c6bd')
 const SPILLWAY_COLOR = new THREE.Color('#9a9993')
 const SPILL_WATER = new THREE.Color('#eaf3f6')
 const DAM_RAIL = { height: 0.9, thick: 0.15 } as const
+/** A chair lift: grey pylons with a crossbar and sheaves, a cable strung over them, chairs hung from it and moving up and down, and a shed at each end. */
+const PYLON_COLOR = new THREE.Color('#8e9096')
+const CABLE_COLOR = new THREE.Color('#3a3c40')
+const CHAIR_COLOR = new THREE.Color('#d8452e')
+const STATION_COLOR = new THREE.Color('#b9b2a4')
+const LIFT = { crossbar: 6, sag: 1.2, chairEvery: 20, chairDrop: 3, speed: 2.5, cableOver: 0.4 } as const
 /** How far a building's bottom is buried below the ground, as the generator does it. */
 const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
@@ -1327,6 +1333,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const firepits = ofKind('firepit')
   const boats = ofKind('boat')
   const dams = ofKind('dam')
+  const stations = ofKind('station')
+  const pylons = ofKind('pylon')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -1902,6 +1910,100 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       }),
     ),
   )
+
+  // A chair lift: the pylons as grey posts with a crossbar and a sheave at
+  // each end of it, the stations as sheds, the cable strung from crossbar
+  // to crossbar with a little sag in each span, and the chairs hung from
+  // it, riding up one side and down the other.
+  meshes.push(
+    instanced(box, plain, pylons, (pylon, matrix, color) => {
+      boxAt(pylon, matrix)
+      color.copy(PYLON_COLOR)
+    }),
+    instanced(box, plain, pylons, (pylon, matrix, color) => {
+      upright(pylon, matrix, 0.5, 0.5, LIFT.crossbar, pylon.top + 0.25)
+      color.copy(PYLON_COLOR)
+    }),
+    ...[-1, 1].map((side) =>
+      instanced(lamp, plain, pylons, (pylon, matrix, color) => {
+        upright(pylon, matrix, 0.9, 0.9, 0.9, pylon.top + LIFT.cableOver, 0, (side * LIFT.crossbar) / 2)
+        color.copy(IRONWORK)
+      }),
+    ),
+    instanced(box, walled(plain, slateRoof), stations, (station, matrix, color) => {
+      boxAt(station, matrix)
+      color.copy(STATION_COLOR)
+    }),
+  )
+  if (stations.length === 2 && pylons.length > 0) {
+    const [a, b] = stations as [Building, Building]
+    const bottom = a.top < b.top ? a : b
+    const top = a.top < b.top ? b : a
+    // The cable's high points, from the bottom station over each pylon to the top station.
+    const posts = [bottom, ...[...pylons].sort((p, q) => p.tone - q.tone), top]
+    const hang = (post: Building, side: number): THREE.Vector3 => {
+      const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), post.yaw)
+      const offset = new THREE.Vector3(0, 0, (side * LIFT.crossbar) / 2).applyQuaternion(turn)
+      return new THREE.Vector3(post.x + offset.x, post.top + LIFT.cableOver, post.z + offset.z)
+    }
+    /** The cable on one side, sagging between each pair of posts, as points a few metres apart. */
+    const cable = (side: number): THREE.Vector3[] => {
+      const points: THREE.Vector3[] = []
+      for (let i = 0; i + 1 < posts.length; i++) {
+        const from = hang(posts[i]!, side)
+        const to = hang(posts[i + 1]!, side)
+        const steps = 6
+        for (let k = 0; k < steps; k++) {
+          const t = k / steps
+          points.push(from.clone().lerp(to, t).add(new THREE.Vector3(0, -LIFT.sag * Math.sin(t * Math.PI), 0)))
+        }
+      }
+      points.push(hang(posts[posts.length - 1]!, 1 * side))
+      return points
+    }
+    const lines = [-1, 1].map((side) => cable(side))
+    for (const line of lines) {
+      meshes.push(new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), new THREE.LineBasicMaterial({ color: CABLE_COLOR })))
+    }
+    // The chairs: one every so many metres of the cable, going up on one side and down the other.
+    const runs = lines.map((line) => {
+      const along = [0]
+      for (let i = 1; i < line.length; i++) along.push(along[i - 1]! + line[i]!.distanceTo(line[i - 1]!))
+      return { line, along, length: along[along.length - 1]! }
+    })
+    const seats = runs.map((run) => Math.floor(run.length / LIFT.chairEvery))
+    const chairCount = seats[0]! + seats[1]!
+    if (chairCount > 0) {
+      const chair = new THREE.BoxGeometry(1, 1.2, 0.8)
+      const chairs = new THREE.InstancedMesh(chair, plain, chairCount)
+      const at = (run: { line: THREE.Vector3[]; along: number[]; length: number }, distance: number): THREE.Vector3 => {
+        const d = ((distance % run.length) + run.length) % run.length
+        let i = 1
+        while (i < run.along.length - 1 && run.along[i]! < d) i++
+        const t = (d - run.along[i - 1]!) / (run.along[i]! - run.along[i - 1]! || 1)
+        return run.line[i - 1]!.clone().lerp(run.line[i]!, t).add(new THREE.Vector3(0, -LIFT.chairDrop, 0))
+      }
+      const one = new THREE.Vector3(1, 1, 1)
+      const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), bottom.yaw)
+      const place = (time: number): void => {
+        let k = 0
+        for (const [r, run] of runs.entries()) {
+          const direction = r === 0 ? 1 : -1
+          for (let c = 0; c < seats[r]!; c++) {
+            const distance = c * LIFT.chairEvery + direction * time * LIFT.speed
+            chairs.setMatrixAt(k, new THREE.Matrix4().compose(at(run, distance), turn, one))
+            chairs.setColorAt(k, CHAIR_COLOR)
+            k++
+          }
+        }
+        chairs.instanceMatrix.needsUpdate = true
+        if (chairs.instanceColor) chairs.instanceColor.needsUpdate = true
+      }
+      place(0)
+      chairs.onBeforeRender = () => place(performance.now() / 1000)
+      meshes.push(chairs)
+    }
+  }
 
   return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)
 }

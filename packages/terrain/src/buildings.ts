@@ -244,6 +244,25 @@ const DAM_RIVER = { fromEnds: 60, overSea: 3 } as const
 const DAM_SPAN = { least: 16, most: 120 } as const
 const DAM_ROAD_MARGIN = 6
 
+/**
+ * A chair lift up a mountainside: a station at the foot of the slope, one
+ * near the crest, and a line of pylons between them for the cable and the
+ * chairs. On a mountain without an observatory for choice, up the side
+ * that faces the nearest city. One per island at most.
+ */
+const LIFTS_MOST = 1
+const PYLON = { size: 2, height: 14, spacing: 40, least: 2 } as const
+const LIFT_STATION = { width: 10, depth: 8, height: 6 } as const
+/** The lift's line must climb this steeply at the least and at the most, rise over run: these mountains are steep. */
+const LIFT_GRADE = { min: 0.25, max: 1 } as const
+/** The top station stands this far below the peak, and the bottom one this far short of the foot of the slope. */
+const LIFT_ENDS = { belowPeak: 15, aboveFoot: 10 } as const
+/** The foot of the slope is where the ground has eased to this grade over a stretch, foothills and all. */
+const LIFT_FOOT = { grade: 0.12, stretch: 30, step: 5, mostDown: 500 } as const
+const LIFT_ROAD_MARGIN = 4
+const PYLON_RELIEF = 6
+const LIFT_STATION_RELIEF = 8
+
 /** How far anything that stands about keeps from anything else that does. */
 const FURNITURE_GAP = 2
 /** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
@@ -1243,6 +1262,7 @@ export function generateBuildings(
   raiseLighthouses(stands)
   moorBoats({ ...stands, rng: createRng((seed ^ BOAT_SALT) >>> 0) })
   raiseDams(stands)
+  raiseLifts(stands, mountains)
   raiseChurches(stands, plant)
   raiseWaterTowers(stands)
   // The camps throw their own dice too, for the same reason as the observatory.
@@ -2036,6 +2056,119 @@ function raiseDams(stands: Stands): void {
     buildings.push({ kind: 'dam', ...wall, bottom: bed.low - BURY, top: site.water + DAM.height, tone: rng() })
     dams += 1
   }
+}
+
+function raiseLifts(stands: Stands, mountains: Mountain[]): void {
+  const { field, seaLevel, districts, placed, buildings, wet, rng } = stands
+  if (districts.length === 0) return
+  /** The cities in order of how near they are to a point: the slope facing the nearest is tried first. */
+  const districtsFrom = (x: number, z: number): District[] =>
+    [...districts].sort((a, b) => hypot(a.cx - x, a.cz - z) - hypot(b.cx - x, b.cz - z))
+  // Mountains without an observatory first, then the rest.
+  const observatories = buildings.filter((building) => building.kind === 'observatory')
+  const crowned = (mountain: Mountain): boolean => {
+    const triangle = orientedTriangle(mountain)
+    return observatories.some((dome) => signedDistanceToTriangle(dome.x, dome.z, triangle) >= 0)
+  }
+  const tried = [...mountains].sort((a, b) => Number(crowned(a)) - Number(crowned(b)))
+  let lifts = 0
+  for (const mountain of tried) {
+    if (lifts >= LIFTS_MOST) break
+    const peak = highestWithin(field, orientedTriangle(mountain))
+    if (peak === null) continue
+    for (const city of districtsFrom(peak.x, peak.z)) {
+      if (lifts >= LIFTS_MOST) break
+      if (raiseLift(stands, peak, city)) lifts += 1
+    }
+  }
+}
+
+/**
+ * One lift down a mountain's slope from its peak toward a city, if the
+ * slope will take it: down to where the ground eases off or gets wet, a
+ * station at each end and pylons between, on a line no road crosses.
+ */
+function raiseLift(stands: Stands, peak: { x: number; z: number }, city: District): boolean {
+  const { field, seaLevel, placed, buildings, wet, rng } = stands
+  const reach = hypot(city.cx - peak.x, city.cz - peak.z) || 1
+  const dx = (city.cx - peak.x) / reach
+  const dz = (city.cz - peak.z) / reach
+  const heightAlong = (down: number): number => sampleHeight(field, peak.x + dx * down, peak.z + dz * down)
+  // Down the slope toward the city to where it eases off, or gets wet.
+  let foot = -1
+  for (let down = LIFT_FOOT.stretch; down <= LIFT_FOOT.mostDown; down += LIFT_FOOT.step) {
+    const x = peak.x + dx * down
+    const z = peak.z + dz * down
+    if (wet(x, z) || sampleHeight(field, x, z) <= seaLevel) break
+    const grade = (heightAlong(down - LIFT_FOOT.stretch) - heightAlong(down)) / LIFT_FOOT.stretch
+    if (grade < LIFT_FOOT.grade) {
+      foot = down
+      break
+    }
+  }
+  if (foot < 0) return false
+  const yaw = -atan2(dz, dx)
+    const bottom: Footprint = {
+      x: peak.x + dx * (foot - LIFT_ENDS.aboveFoot),
+      z: peak.z + dz * (foot - LIFT_ENDS.aboveFoot),
+      yaw,
+      width: LIFT_STATION.width,
+      depth: LIFT_STATION.depth,
+    }
+    const top: Footprint = {
+      x: peak.x + dx * LIFT_ENDS.belowPeak,
+      z: peak.z + dz * LIFT_ENDS.belowPeak,
+      yaw,
+      width: LIFT_STATION.width,
+      depth: LIFT_STATION.depth,
+    }
+    const length = hypot(top.x - bottom.x, top.z - bottom.z)
+    const rise = sampleHeight(field, top.x, top.z) - sampleHeight(field, bottom.x, bottom.z)
+    if (length < PYLON.spacing * (PYLON.least + 1) || rise / length < LIFT_GRADE.min || rise / length > LIFT_GRADE.max) return false
+    const bottomGround = standsHere(stands, bottom, LIFT_ROAD_MARGIN, LIFT_STATION_RELIEF, FURNITURE_GAP)
+    const topGround = standsHere(stands, top, LIFT_ROAD_MARGIN, LIFT_STATION_RELIEF, FURNITURE_GAP)
+    if (bottomGround === null || topGround === null) return false
+    // The pylons, up the line from the bottom station, none too near either station.
+    const pylons: { footprint: Footprint; ground: Ground }[] = []
+    let sound = true
+    for (let along = PYLON.spacing; along < length - PYLON.spacing / 2 && sound; along += PYLON.spacing) {
+      const footprint: Footprint = {
+        x: bottom.x + (dx * -1 * along),
+        z: bottom.z + (dz * -1 * along),
+        yaw,
+        width: PYLON.size,
+        depth: PYLON.size,
+      }
+      const ground = standsHere(stands, footprint, LIFT_ROAD_MARGIN, PYLON_RELIEF, FURNITURE_GAP)
+      if (ground === null) sound = false
+      else pylons.push({ footprint, ground })
+    }
+    if (!sound || pylons.length < PYLON.least) return false
+    // The cable's way between must cross no road: looked at every few metres.
+    for (let along = 0; along <= length && sound; along += 8) {
+      const probe: Footprint = { x: bottom.x - dx * along, z: bottom.z - dz * along, yaw, width: 4, depth: 4 }
+      if (!stands.clear(probe, LIFT_ROAD_MARGIN)) sound = false
+    }
+    if (!sound) return false
+    for (const [station, ground] of [
+      [bottom, bottomGround],
+      [top, topGround],
+    ] as const) {
+      placed.add(station)
+      buildings.push({ kind: 'station', ...station, bottom: ground.low - BURY, top: ground.high + LIFT_STATION.height, tone: rng() })
+    }
+    for (const [k, pylon] of pylons.entries()) {
+      placed.add(pylon.footprint)
+      // The tone counts the pylons up the line, for whoever strings the cable.
+      buildings.push({
+        kind: 'pylon',
+        ...pylon.footprint,
+        bottom: pylon.ground.low - BURY,
+        top: pylon.ground.high + PYLON.height,
+        tone: (k + 1) / (pylons.length + 1),
+      })
+    }
+    return true
 }
 
 function moorBoats(stands: Stands): void {
