@@ -3,18 +3,7 @@
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import {
-  inverseLerpClamped,
-  lerp,
-  v3,
-  vaddScaled,
-  vcopy,
-  vcross,
-  vdot,
-  vnormalize,
-  vscale,
-  vset,
-} from '@buggies/physics'
+import { inverseLerpClamped, lerp, v3, vaddScaled, vcopy, vcross, vdot, vnormalize, vscale, vset } from '@buggies/physics'
 import { addTorqueAbout } from './bodyForces.ts'
 import { WHEEL_RAY_GROUPS } from './groups.ts'
 import type { DriverCommand } from './input.ts'
@@ -29,6 +18,7 @@ const uprightError = v3()
 const targetUp = v3()
 const pitchRollRate = v3()
 const levelTorque = v3()
+const bankedUp = v3()
 
 /**
  * In the air the throttle and brake pitch the nose, and that is all.
@@ -99,11 +89,15 @@ const WINGS_LEVEL = 2.5
 
 /**
  * Hold a car on wings level, at once and firmly, whatever it is doing:
- * the wings are what keep it up, and they keep it upright too.
+ * the wings are what keep it up, and they keep it upright too. Level is
+ * about the bank it is asked for: its up is held tilted the way of its
+ * lean, so that it leans into a turn and rights itself out of one.
  */
 export function holdLevel(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const { body, frame } = vehicle
-  vcross(uprightError, frame.up, WORLD_UP)
+  const { body, frame, lean } = vehicle
+  vset(bankedUp, lean.x, 1, lean.z)
+  vnormalize(bankedUp, bankedUp)
+  vcross(uprightError, frame.up, bankedUp)
   body.angvel(angularVelocity)
   const yawRate = vdot(angularVelocity, frame.up)
   vaddScaled(pitchRollRate, angularVelocity, frame.up, -yawRate)
