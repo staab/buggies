@@ -220,21 +220,40 @@ export function buildOil(): THREE.Group {
   return shadowed(group)
 }
 
-/** A shield: a pale blue orb held up in a ring on a short post. */
+/** A shield's outline: a flat top, straight sides, and curves meeting at a point at the bottom, this wide and this tall. */
+function shieldOutline(width: number, height: number): THREE.Shape {
+  const w = width / 2
+  const top = height / 2
+  const shoulder = top - height * 0.35
+  const outline = new THREE.Shape()
+  outline.moveTo(-w, top)
+  outline.lineTo(w, top)
+  outline.lineTo(w, shoulder)
+  outline.quadraticCurveTo(w, -top * 0.45, 0, -top)
+  outline.quadraticCurveTo(-w, -top * 0.45, -w, shoulder)
+  outline.closePath()
+  return outline
+}
+
+/**
+ * A shield: a blue heater shield with a pale rim, standing up over the
+ * roof and seen from either side.
+ */
 export function buildShield(): THREE.Group {
   const group = new THREE.Group()
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 0.3, 8), metal(STEEL))
-  post.position.y = -0.15
-  group.add(post)
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.04, 8, 24), metal(BARREL, 0.4))
-  ring.position.y = 0.25
-  group.add(ring)
-  const orb = new THREE.Mesh(
-    new THREE.SphereGeometry(0.26, 16, 12),
-    new THREE.MeshStandardMaterial({ color: SHIELD, emissive: SHIELD, emissiveIntensity: 0.6, roughness: 0.2 }),
+  const rim = new THREE.Mesh(
+    new THREE.ExtrudeGeometry(shieldOutline(0.7, 0.85), { depth: 0.08, bevelEnabled: false }).translate(0, 0, -0.04),
+    metal(SHELL, 0.4),
   )
-  orb.position.y = 0.25
-  group.add(orb)
+  group.add(rim)
+  const face = new THREE.MeshStandardMaterial({ color: SHIELD, emissive: SHIELD, emissiveIntensity: 0.35, roughness: 0.35 })
+  for (const side of [-1, 1]) {
+    const inlay = new THREE.Mesh(new THREE.ShapeGeometry(shieldOutline(0.56, 0.7)), face)
+    inlay.position.set(0, 0.01, side * 0.045)
+    if (side < 0) inlay.rotation.y = Math.PI
+    group.add(inlay)
+  }
+  group.position.y = 0.1
   return shadowed(group)
 }
 

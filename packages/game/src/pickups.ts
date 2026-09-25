@@ -172,7 +172,7 @@ export const MINE_REACH = 2.5
 export const OIL_REACH = 4
 
 /** How long an oil slick lies on the road before it is gone, in ticks. */
-export const OIL_LIFE_TICKS = 60 * 20
+export const OIL_LIFE_TICKS = 60 * 60
 
 /** Spilled bananas are numbered as they come, and the numbers come around after this many: far more than are ever out at once. */
 export const LOOSE_IDS = 0x10000
