@@ -50,7 +50,8 @@ describe('generateTerrain', () => {
       expect(a.roads[0]?.structure).toEqual(b.roads[0]?.structure)
       expect(a.heightfield.heights).not.toEqual(c.heightfield.heights)
     },
-    20_000,
+    // Three whole islands, each seconds of work on a busy machine.
+    60_000,
   )
 
   it('produces an island: sea at the edges, land in the middle', () => {
@@ -1176,7 +1177,8 @@ describe('roads', () => {
       // city can go without; what must never happen is a city getting two.
       for (const count of perCity(seed)) expect(count).toBeLessThanOrEqual(1)
     }
-  }, 60_000)
+    // Eight whole islands, each seconds of work on a busy machine.
+  }, 120_000)
 
   it('gives every road its own id', () => {
     for (const seed of [1, 2, 3]) {

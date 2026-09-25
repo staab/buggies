@@ -48,6 +48,8 @@ const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
 
 /** How many of the busiest islands the island page offers. */
 export const POPULAR_ISLANDS = 4
+/** How often the islands are asked after while the island page is up, so the count on the chosen one stays fresh. */
+const ROOMS_REFRESH_MS = 5000
 
 const STEP_NAMES: Record<Step, string> = {
   mode: 'Players',
@@ -126,6 +128,11 @@ function driving(players: number): string {
   return players === 1 ? '1 driving' : `${players} driving`
 }
 
+/** How many are on the island the seed names, said under the seed. */
+function drivingHere(players: number): string {
+  return players === 0 ? 'Nobody on this island yet' : `${driving(players)} on this island`
+}
+
 /**
  * The one place a player picks anything, a page at a time: how many are
  * playing, then which island (looked over from above while it is chosen),
@@ -144,6 +151,10 @@ export class Menu {
   private readonly popular: HTMLFieldSetElement
   private readonly popularCards: HTMLDivElement
   private readonly popularButtons = new Map<number, HTMLButtonElement>()
+  private readonly here = line('here')
+  /** The islands with people on them, as last heard from the server. */
+  private rooms: RoomSummary[] = []
+  private watching: ReturnType<typeof setInterval> | null = null
   private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
@@ -196,6 +207,7 @@ export class Menu {
       void this.generate()
     })
     mapRow.append(this.seedField, shuffle)
+    mapGroup.append(this.here)
     // The islands with people on them, a card each, for joining in.
     ;[this.popular, this.popularCards] = group('Popular islands')
     this.popular.hidden = true
@@ -270,6 +282,18 @@ export class Menu {
 
   hide(): void {
     this.root.hidden = true
+    this.watchRooms(false)
+  }
+
+  /** Keep asking after the islands while the island page is up, and stop when it is not. */
+  private watchRooms(on: boolean): void {
+    if (!on && this.watching !== null) {
+      clearInterval(this.watching)
+      this.watching = null
+    }
+    if (on && this.watching === null) {
+      this.watching = setInterval(() => void this.listPopular(), ROOMS_REFRESH_MS)
+    }
   }
 
   /**
@@ -295,6 +319,7 @@ export class Menu {
       void this.generate()
       void this.listPopular()
     }
+    this.watchRooms(step === 'map')
     if (step === 'car' || step === 'car2') this.host.showVehicle(this.choice[vehicleKey(step)])
   }
 
@@ -330,11 +355,12 @@ export class Menu {
     this.render()
   }
 
-  /** Ask which islands are busy, and offer the busiest few; the cards go when there are none. */
+  /** Ask which islands have people on them, offer the busiest few, and say how many are on the one chosen; the cards go when there are none. */
   private async listPopular(): Promise<void> {
     const stamp = ++this.listings
     const rooms = await this.host.listRooms()
     if (stamp !== this.listings) return
+    this.rooms = rooms
     this.popularButtons.clear()
     this.popularCards.replaceChildren()
     for (const room of rooms.slice(0, POPULAR_ISLANDS)) {
@@ -364,6 +390,7 @@ export class Menu {
     )
     for (const page of new Set(Object.values(this.pages))) page.hidden = page !== this.pages[this.step]
     if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
+    this.here.textContent = drivingHere(this.rooms.find((room) => room.seed === this.choice.seed)?.players ?? 0)
     this.vehicleLegend.textContent = duo ? (this.step === 'car2' ? 'Vehicle 2: the arrows' : 'Vehicle 1: the letters') : 'Vehicle'
     for (const [mode, button] of this.modeButtons) {
       button.setAttribute('aria-pressed', String(mode === this.choice.mode))

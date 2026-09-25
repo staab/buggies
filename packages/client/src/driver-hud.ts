@@ -13,7 +13,6 @@ import {
 import type { CameraBoundsAt } from './chase-camera.ts'
 
 /** Slip angle past which the HUD starts calling it a slide, in radians. */
-const SLIDE_ANGLE = 0.35
 
 /**
  * Whether a point is inside one of a map's tunnels. Tunnels are the one place
@@ -52,21 +51,4 @@ export function cameraBounds(map: TerrainMap): CameraBoundsAt {
     out.ceiling = Math.min(out.ceiling, lowestDeckOver(decks, x, z, above + DECK_HEADROOM) - DECK_UNDERSIDE)
     return out
   }
-}
-
-/** The speed line of the HUD: how fast, and what the car is up to. */
-export function driverState(vehicle: Vehicle, submersion: number, inTunnel: boolean): string {
-  return vehicle.wrecked
-    ? 'wrecked'
-    : submersion > 0.2
-      ? 'in the water'
-      : vehicle.selfRighting
-        ? 'righting itself'
-        : inTunnel
-          ? 'in a tunnel'
-          : vehicle.groundedCount === 0
-            ? 'airborne'
-            : Math.abs(vehicle.slipAngle) > SLIDE_ANGLE
-              ? 'sliding'
-              : ''
 }

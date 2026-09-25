@@ -6,7 +6,6 @@ import { engineRev, skidAmount, type EngineVoice, type SkidVoice, type Sound, ty
 import { CarView } from './car-view.ts'
 import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
-import { driverState } from './driver-hud.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import type { Explosions } from './explosion.ts'
 import type { ControlHint, HudState } from './hud.ts'
@@ -157,11 +156,10 @@ export class CarPresence {
   }
 
   /** What the HUD says of it. */
-  hudState(title: string, controls: readonly ControlHint[], inTunnel: boolean): HudState {
-    const { vehicle, tuning, submersion, score } = this.seat
+  hudState(title: string, controls: readonly ControlHint[]): HudState {
+    const { vehicle, tuning, score } = this.seat
     return {
       title,
-      state: driverState(vehicle, submersion, inTunnel),
       speed: vehicle.speed,
       maxSpeed: tuning.maxSpeed,
       damage: vehicle.wrecked ? 1 : vehicle.damage,

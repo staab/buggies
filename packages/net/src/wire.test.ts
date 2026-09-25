@@ -182,6 +182,9 @@ describe('wire', () => {
     ]
     expect(decodeRooms(encodeRooms(rooms))).toEqual(rooms)
     expect(decodeRooms(encodeRooms([]))).toEqual([])
+    // Every island with anyone on it fits, up to a byte's count.
+    const many = Array.from({ length: 255 }, (_, i) => ({ seed: i + 1, players: 1 }))
+    expect(decodeRooms(encodeRooms(many))).toEqual(many)
     // A crowd beyond a byte is a byte's worth.
     expect(decodeRooms(encodeRooms([{ seed: 1, players: 900 }]))).toEqual([{ seed: 1, players: 255 }])
     expect(decodeRooms(encodeRooms(rooms).subarray(0, 6))).toBeNull()

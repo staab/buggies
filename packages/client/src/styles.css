@@ -171,9 +171,6 @@ body {
   text-transform: uppercase;
   text-anchor: middle;
 }
-.state {
-  color: var(--dim);
-}
 /* The keys, in a drawer that slides open under the dials and shut again. */
 .drawer {
   display: grid;
@@ -276,6 +273,12 @@ body {
 .status {
   margin: 0 0 12px;
   min-height: 1.5em;
+  font-size: 12px;
+  color: var(--dim);
+}
+/* How many are driving the island the seed names. */
+.here {
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--dim);
 }

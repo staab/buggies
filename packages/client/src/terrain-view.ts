@@ -207,11 +207,7 @@ const TENT_COLORS: [THREE.Color, ...THREE.Color[]] = [
 ]
 const CARAVAN_COLOR = new THREE.Color('#f2f1ec')
 const CARAVAN_STRIPE = new THREE.Color('#4a7fb5')
-/** A harbour's stone: the quay and breakwater's dark sides and lighter tops, and the bollards along the quay. */
-const QUAY_COLOR = new THREE.Color('#585b60')
-const QUAY_TOP = new THREE.Color('#a3a49f')
-const BOLLARD_SPACING = 6
-/** The moored boats: hulls in a few colours, a pale cabin, and a mast. */
+/** The boats moored off the shore: hulls in a few colours over a dark boot-top, a pale deck, a wheelhouse and a mast. */
 const BOAT_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#f4f2ec'),
   new THREE.Color('#2f4f7f'),
@@ -219,16 +215,13 @@ const BOAT_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#2e6b45'),
   new THREE.Color('#e0b02c'),
 ]
+const BOOT_TOP = new THREE.Color('#2b2b2f')
+const DECK_COLOR = new THREE.Color('#d8c9a3')
 const CABIN_COLOR = new THREE.Color('#f7f5ef')
-/** A wreck's hull: rust, with a dark band at the waterline, and its funnel and mast. */
-const HULL_COLORS: [THREE.Color, ...THREE.Color[]] = [
-  new THREE.Color('#8a3d2b'),
-  new THREE.Color('#7a4a35'),
-  new THREE.Color('#9a4a2e'),
-]
-const WATERLINE_COLOR = new THREE.Color('#2b2724')
-const FUNNEL = { radius: 1.1, height: 5 } as const
-const MAST = { height: 10, yard: 6 } as const
+const CABIN_ROOF = new THREE.Color('#c9c4b8')
+const CABIN_GLASS = new THREE.Color('#3a4750')
+/** How far over the sea the boot-top's dark band shows. */
+const BOOT_TOP_OVER = 0.15
 /** How far a building's bottom is buried below the ground, as the generator does it. */
 const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
@@ -1221,6 +1214,75 @@ const GAMBREL: [number, number][] = [
 ]
 
 /** The buildings, trees and shrubs of a map, as a few instanced meshes. */
+/**
+ * A boat's hull in unit measure: a metre long along X, from the transom
+ * at the stern to the stem at the bow, a metre in the beam along Z, its
+ * keel at y = 0 and its gunwale at y = 1, rising a little toward the bow.
+ * Lofted through a run of sections, with a V under it and the transom
+ * flat, its faces left flat; the deck comes as a piece of its own, so it
+ * can be another colour.
+ */
+function hullGeometry(): { skin: THREE.BufferGeometry; deck: THREE.BufferGeometry } {
+  const sections = [
+    { x: -0.5, w: 0.36 },
+    { x: -0.3, w: 0.46 },
+    { x: -0.05, w: 0.5 },
+    { x: 0.2, w: 0.46 },
+    { x: 0.38, w: 0.3 },
+    { x: 0.5, w: 0.02 },
+  ]
+  const sheer = (x: number): number => 1 + 0.12 * Math.max(0, x + 0.1)
+  // Each section round from the keel: the keel, the chine and the gunwale on the left, then the gunwale and the chine on the right.
+  const rings = sections.map((s) => [
+    [s.x, 0, 0],
+    [s.x, 0.4, -s.w * 0.72],
+    [s.x, sheer(s.x), -s.w],
+    [s.x, sheer(s.x), s.w],
+    [s.x, 0.4, s.w * 0.72],
+  ])
+  const outward = (triangles: number[]): THREE.BufferGeometry => {
+    // Every face turned to face out from the hull's middle, whichever way it was wound.
+    const positions: number[] = []
+    for (let i = 0; i < triangles.length; i += 9) {
+      const a = triangles.slice(i, i + 3)
+      const b = triangles.slice(i + 3, i + 6)
+      const c = triangles.slice(i + 6, i + 9)
+      const ab = [b[0]! - a[0]!, b[1]! - a[1]!, b[2]! - a[2]!]
+      const ac = [c[0]! - a[0]!, c[1]! - a[1]!, c[2]! - a[2]!]
+      const normal = [ab[1]! * ac[2]! - ab[2]! * ac[1]!, ab[2]! * ac[0]! - ab[0]! * ac[2]!, ab[0]! * ac[1]! - ab[1]! * ac[0]!]
+      const middle = [(a[0]! + b[0]! + c[0]!) / 3, (a[1]! + b[1]! + c[1]!) / 3 - 0.5, (a[2]! + b[2]! + c[2]!) / 3]
+      const facing = normal[0]! * middle[0]! + normal[1]! * middle[1]! + normal[2]! * middle[2]!
+      positions.push(...a, ...(facing < 0 ? c : b), ...(facing < 0 ? b : c))
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    geometry.computeVertexNormals()
+    return geometry
+  }
+  const skin: number[] = []
+  const deck: number[] = []
+  const quad = (into: number[], a: number[], b: number[], c: number[], d: number[]): void => {
+    into.push(...a, ...b, ...c, ...a, ...c, ...d)
+  }
+  for (let i = 0; i + 1 < rings.length; i++) {
+    const near = rings[i]!
+    const far = rings[i + 1]!
+    for (const [k, l] of [
+      [0, 1],
+      [1, 2],
+      [3, 4],
+      [4, 0],
+    ] as const) {
+      quad(skin, near[k]!, near[l]!, far[l]!, far[k]!)
+    }
+    quad(deck, near[2]!, near[3]!, far[3]!, far[2]!)
+  }
+  // The transom, closing the stern.
+  const stern = rings[0]!
+  skin.push(...stern[0]!, ...stern[1]!, ...stern[2]!, ...stern[0]!, ...stern[2]!, ...stern[3]!, ...stern[0]!, ...stern[3]!, ...stern[4]!)
+  return { skin: outward(skin), deck: outward(deck) }
+}
+
 function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const box = new THREE.BoxGeometry(1, 1, 1)
   const plain = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 })
@@ -1258,9 +1320,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const tents = ofKind('tent')
   const caravans = ofKind('caravan')
   const firepits = ofKind('firepit')
-  const quays = ofKind('quay')
   const boats = ofKind('boat')
-  const hulls = ofKind('hull')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -1771,74 +1831,43 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       sampleRamp(tree.tone, FRUIT_STOPS, color)
     }),
   )
-  // A harbour: the quay and the breakwater's slabs as dark stone with a
-  // lighter top, bollards along the quay's edges, and the boats moored off
-  // it, each a hull with a pointed bow, a cabin aft and a mast.
-  const quayTop = new THREE.MeshStandardMaterial({ color: QUAY_TOP, roughness: 0.95, metalness: 0 })
-  const bow = new THREE.ConeGeometry(1, 1, 12).rotateZ(-Math.PI / 2)
-  const long = quays.filter((quay) => quay.width > BOLLARD_SPACING * 4)
-  const bollards: { quay: Building; along: number; across: number }[] = []
-  for (const quay of long) {
-    const count = Math.floor(quay.width / BOLLARD_SPACING)
-    for (let k = 0; k < count; k++) {
-      for (const side of [-1, 1]) bollards.push({ quay, along: (k + 0.5 - count / 2) * BOLLARD_SPACING, across: side * (quay.depth / 2 - 0.7) })
-    }
-  }
+  // A boat: a lofted hull with a V under it, a transom and a stem, over a
+  // dark boot-top that shows just over the water; a pale deck; a wheelhouse
+  // aft with its glass and roof; and a mast forward with a crossbar.
+  const { skin, deck } = hullGeometry()
   const { seaLevel } = map
   meshes.push(
-    instanced(box, walled(plain, quayTop), quays, (quay, matrix, color) => {
-      boxAt(quay, matrix)
-      color.copy(QUAY_COLOR)
-    }),
-    instanced(tower, plain, bollards, ({ quay, along, across }, matrix, color) => {
-      upright(quay, matrix, 0.3, 0.8, 0.3, quay.top + 0.4, along, across)
-      color.copy(IRONWORK)
-    }),
-    instanced(box, plain, boats, (boat, matrix, color) => {
-      boxAt(boat, matrix)
+    instanced(skin, plain, boats, (boat, matrix, color) => {
+      upright(boat, matrix, boat.width, boat.top - boat.bottom, boat.depth, boat.bottom)
       color.copy(pick(BOAT_COLORS, boat.tone))
     }),
-    instanced(bow, plain, boats, (boat, matrix, color) => {
-      const length = boat.width * 0.3
-      upright(boat, matrix, length, boat.top - boat.bottom, boat.depth, (boat.top + boat.bottom) / 2, boat.width / 2 + length / 2)
-      color.copy(pick(BOAT_COLORS, boat.tone))
+    instanced(deck, plain, boats, (boat, matrix, color) => {
+      upright(boat, matrix, boat.width, boat.top - boat.bottom, boat.depth, boat.bottom)
+      color.copy(DECK_COLOR)
+    }),
+    instanced(skin, plain, boats, (boat, matrix, color) => {
+      upright(boat, matrix, boat.width * 1.02, seaLevel + BOOT_TOP_OVER - boat.bottom, boat.depth * 1.02, boat.bottom)
+      color.copy(BOOT_TOP)
     }),
     instanced(box, plain, boats, (boat, matrix, color) => {
-      upright(boat, matrix, boat.width * 0.3, 1.4, boat.depth * 0.7, boat.top + 0.7, -boat.width * 0.2)
+      upright(boat, matrix, boat.width * 0.28, 1.5, boat.depth * 0.6, boat.top + 0.75, -boat.width * 0.12)
       color.copy(CABIN_COLOR)
     }),
     instanced(box, plain, boats, (boat, matrix, color) => {
-      upright(boat, matrix, 0.18, 6, 0.18, boat.top + 3, boat.width * 0.15)
+      upright(boat, matrix, boat.width * 0.29, 0.45, boat.depth * 0.62, boat.top + 1.05, -boat.width * 0.12)
+      color.copy(CABIN_GLASS)
+    }),
+    instanced(box, plain, boats, (boat, matrix, color) => {
+      upright(boat, matrix, boat.width * 0.33, 0.1, boat.depth * 0.7, boat.top + 1.55, -boat.width * 0.12)
+      color.copy(CABIN_ROOF)
+    }),
+    instanced(box, plain, boats, (boat, matrix, color) => {
+      upright(boat, matrix, 0.16, 5, 0.16, boat.top + 2.5, boat.width * 0.2)
       color.copy(IRONWORK)
     }),
-  )
-
-  // A wreck: each half of the hull as a rust box with a dark band at the
-  // waterline, the stern half with a funnel and the bow half with a mast
-  // and a yard across it.
-  const sterns = hulls.filter((hull) => hull.tone < 0.5)
-  const bows = hulls.filter((hull) => hull.tone >= 0.5)
-  const rustOf = (hull: Building): THREE.Color => pick(HULL_COLORS, (hull.tone * 2) % 1)
-  meshes.push(
-    instanced(box, plain, hulls, (hull, matrix, color) => {
-      boxAt(hull, matrix)
-      color.copy(rustOf(hull))
-    }),
-    instanced(box, plain, hulls, (hull, matrix, color) => {
-      upright(hull, matrix, hull.width + 0.1, 0.6, hull.depth + 0.1, seaLevel + 0.2)
-      color.copy(WATERLINE_COLOR)
-    }),
-    instanced(tower, plain, sterns, (hull, matrix, color) => {
-      upright(hull, matrix, FUNNEL.radius, FUNNEL.height, FUNNEL.radius, hull.top + FUNNEL.height / 2, -hull.width * 0.15)
-      color.copy(WATERLINE_COLOR)
-    }),
-    instanced(box, plain, bows, (hull, matrix, color) => {
-      upright(hull, matrix, 0.4, MAST.height, 0.4, hull.top + MAST.height / 2, hull.width * 0.1)
-      color.copy(rustOf(hull))
-    }),
-    instanced(box, plain, bows, (hull, matrix, color) => {
-      upright(hull, matrix, 0.3, 0.3, MAST.yard, hull.top + MAST.height * 0.7, hull.width * 0.1)
-      color.copy(rustOf(hull))
+    instanced(box, plain, boats, (boat, matrix, color) => {
+      upright(boat, matrix, 0.12, 0.12, 1.6, boat.top + 4.2, boat.width * 0.2)
+      color.copy(IRONWORK)
     }),
   )
 

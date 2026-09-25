@@ -27,6 +27,8 @@ import {
   looseGone,
   takeSeat,
   weaponWon,
+  disarm,
+  BANANAS_PER_WEAPON,
   wreckVehicle,
   type Arena,
   type Seat,
@@ -65,7 +67,7 @@ describe('weapons', () => {
     map = generateTerrain(11, { size: 513 })
   }, 60_000)
 
-  it('are won every tenth banana, and the same one everywhere', () => {
+  it('are bought with bananas, the same one everywhere, by a car carrying nothing', () => {
     expect(weaponWon(5, 0, 100, 10)).toBe(weaponWon(5, 0, 100, 10))
     const won = new Set<string>()
     for (let tick = 0; tick < 60; tick++) won.add(weaponWon(5, 0, tick, 10))
@@ -73,13 +75,31 @@ describe('weapons', () => {
 
     const arena = createArena(map)
     const seat = takeSeat(arena, 0, 'sportsCar')
-    seat.score = 9
+    // One banana short: nothing bought until the next is taken, and then it is spent at once.
+    seat.score = BANANAS_PER_WEAPON - 1
     const { position } = arena.pickups[3]!
     respawn(seat, { position: { x: position.x, y: position.y - PICKUP_HEIGHT, z: position.z }, yaw: 0 })
     for (let i = 0; i < 30; i++) advance(arena)
-    expect(seat.score).toBe(10)
+    expect(seat.score).toBe(0)
     expect(WEAPONS).toContain(seat.weapon)
     expect(seat.ammoTicks).toBe(ammoFor(seat.weapon))
+
+    // Taken while armed, a banana is kept, and what is carried stays.
+    const held = seat.weapon
+    seat.score = 0
+    const next = arena.pickups[4]!.position
+    respawn(seat, { position: { x: next.x, y: next.y - PICKUP_HEIGHT, z: next.z }, yaw: 0 })
+    for (let i = 0; i < 30; i++) advance(arena)
+    expect(seat.score).toBe(1)
+    expect(seat.weapon).toBe(held)
+
+    // Once what is carried is gone, the bananas kept buy the next at once.
+    seat.score = BANANAS_PER_WEAPON + 2
+    disarm(seat)
+    respawn(seat, { position: { x: 0, y: 200, z: 0 }, yaw: 0 })
+    advance(arena)
+    expect(WEAPONS).toContain(seat.weapon)
+    expect(seat.score).toBe(2)
     arena.world.free()
   })
 

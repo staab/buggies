@@ -2,6 +2,7 @@ import { DRY, generateTerrain, sampleHeight, waterLevelAt, type TerrainMap } fro
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  arm,
   BANANA_REACH,
   NEUTRAL_INPUT,
   PICKUP_HEIGHT,
@@ -68,7 +69,9 @@ describe('pickups', () => {
   function driveOnto(arena: Arena, slot: number): ReturnType<typeof takeSeat> {
     const seat = takeSeat(arena, 0, 'sportsCar')
     const { position } = arena.pickups[slot]!
-    // On the ground under the pickup, rolling.
+    // On the ground under the pickup, rolling, and armed already, so the
+    // banana it takes is kept and counted rather than spent on a weapon.
+    arm(seat, 'rocket')
     respawn(seat, { position: { x: position.x, y: position.y - PICKUP_HEIGHT, z: position.z }, yaw: 0 })
     return seat
   }
@@ -132,6 +135,7 @@ describe('pickups', () => {
       )
     const target = arena.loose.reduce((best, banana) => (apart(banana) > apart(best) ? banana : best))
     expect(apart(target)).toBeGreaterThan(BANANA_REACH + 1)
+    arm(b, 'rocket')
     respawn(b, { position: { x: target.position.x, y: target.position.y - PICKUP_HEIGHT, z: target.position.z }, yaw: 0 })
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(b.score).toBe(0)
@@ -160,7 +164,9 @@ describe('pickups', () => {
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(0)
     expect(arena.pickups[5]!.generation).toBe(0)
+    // Back on its wheels, and armed again, since a wreck is disarmed: the banana is taken and kept.
     seat.vehicle.wrecked = false
+    arm(seat, 'rocket')
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
     // Sitting down afresh starts from nothing.

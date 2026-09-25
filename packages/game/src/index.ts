@@ -396,6 +396,7 @@ export function advance(
   collectPickups(arena)
   spillBananas(arena)
   fireWeapons(arena)
+  armFromBananas(arena)
   flyRockets(arena, dt)
   trimLoose(arena)
 }
@@ -413,10 +414,23 @@ function trimLoose(arena: Arena): void {
   }
 }
 
-/** A banana taken: a point, and every so many of them something to fire. */
-function score(arena: Arena, seat: Seat): void {
+/** A banana taken: one more to spend. */
+function score(seat: Seat): void {
   seat.score += 1
-  if (seat.score % BANANAS_PER_WEAPON === 0) arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score))
+}
+
+/**
+ * Bananas buy weapons: a car carrying nothing that has enough of them
+ * spends that many on the next weapon, at once, whether it has just taken
+ * a banana or just used the last of what it had. Taking a banana while
+ * armed keeps it for later, and never replaces what is carried.
+ */
+function armFromBananas(arena: Arena): void {
+  for (const seat of arena.seats) {
+    if (!seat.occupied || seat.vehicle.wrecked || seat.weapon !== 'none' || seat.score < BANANAS_PER_WEAPON) continue
+    seat.score -= BANANAS_PER_WEAPON
+    arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score))
+  }
 }
 
 /**
@@ -446,7 +460,7 @@ function collectPickups(arena: Arena): void {
     if (!pickupOut(pickup, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesPickup(pickup, seat.vehicle.frame.position)) continue
-      score(arena, seat)
+      score(seat)
       setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
       break
     }
@@ -465,7 +479,7 @@ function collectPickups(arena: Arena): void {
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position)) continue
       if (loose.kind === 'bomb') wreckVehicle(seat.vehicle, seat.tuning)
-      else score(arena, seat)
+      else score(seat)
       arena.loose.splice(i, 1)
       break
     }
