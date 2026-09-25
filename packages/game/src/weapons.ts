@@ -91,20 +91,20 @@ export const ENGINE_BURN_TICKS = 60 * 10
 export const WINGS_FLIGHT_TICKS = 60 * 10
 export const MACHINE_GUN_SHOT_TICKS = 6
 
-/** How hard the rocket engine pushes, in metres a second a second, fading out toward this many times the car's own top speed. */
+/** How hard the rocket engine pushes, in meters a second a second, fading out toward this many times the car's own top speed. */
 export const ENGINE_PUSH = 12
 export const ENGINE_TOP_SPEED = 1.8
 
 /**
- * How fast the wings climb, in metres a second, and how hard they push up
+ * How fast the wings climb, in meters a second, and how hard they push up
  * toward that; how hard they turn the car in the air, as a share of what
  * the pedals pitch it by; and how hard the pedals drive it along up there,
- * in metres a second a second.
+ * in meters a second a second.
  */
 export const WINGS_CLIMB_SPEED = 8
 export const WINGS_CLIMB_PUSH = 6
 /**
- * On wings the steering banks the car and swings its motion round rather
+ * On wings the steering banks the car and swings its motion around rather
  * than turning its nose: the arc is this many times as wide as the car's
  * own tightest turn at speed, the car leans into it by this much of its up
  * (the tangent of the bank) at full steer, and its nose is put on the way
@@ -120,7 +120,7 @@ export const WINGS_THRUST = 9
 /**
  * The siren sounds this long, held, and slows every other car within this
  * of it by this much; the shockwave stuns every car within this for this
- * long. A slowed car is held back this hard, in metres a second each
+ * long. A slowed car is held back this hard, in meters a second each
  * second at a full slow, and stays slowed this long after the siren has
  * passed it.
  */
@@ -148,13 +148,13 @@ export interface OwnAction {
   about: string
   /** How long one that goes all at once is seen and heard going, in ticks. */
   activeTicks: number
-  /** How long before it may go again: nothing, for all but the missile. */
+  /** How long before it may go again: nothing, for all but the missile and the bomb. */
   cooldownTicks: number
 }
 const LIGHTS: OwnAction = {
   kind: 'lights',
   label: 'Lights',
-  about: 'A press turns them on or off: while on, every car within thirty metres is slowed by a fifth.',
+  about: 'A press turns them on or off: while on, every car within thirty meters is slowed by a fifth.',
   activeTicks: 0,
   cooldownTicks: 0,
 }
@@ -194,16 +194,16 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   semi: {
     kind: 'horn',
     label: 'Horn',
-    about: 'Every press stuns every car within ten metres for a second.',
+    about: 'Every press stuns every car within ten meters for a second.',
     activeTicks: 60,
     cooldownTicks: 0,
   },
   pickup: {
     kind: 'bomb',
     label: 'Bomb',
-    about: 'Every press drops a bomb behind with a quarter of the blast of one won; five out at once at most, the oldest going for the next.',
+    about: 'Drops a bomb behind with a quarter of the blast of one won, every five seconds; five out at once at most, the oldest going for the next.',
     activeTicks: 0,
-    cooldownTicks: 0,
+    cooldownTicks: 60 * 5,
   },
 }
 /** The actions that go on while the key is held. */
@@ -294,7 +294,7 @@ export const ROCKET_DAMAGE = 0.6
 /** A rocket or a shot with no car in its sights. */
 export const NO_TARGET = -1
 
-/** How often the line of a shot is checked against the ground, in metres. */
+/** How often the line of a shot is checked against the ground, in meters. */
 const SIGHT_STEP = 4
 /** How high over the ground a line of fire has to stay. */
 const SIGHT_CLEARANCE = 0.3
@@ -320,6 +320,8 @@ export interface Gunner {
   lightsOn: boolean
   /** Whether the car's own key was down last tick, so that a press is told from a hold. */
   abilityHeld: boolean
+  /** How many rockets it has fired, which numbers the next. */
+  rocketsFired: number
   /** How long it is stunned for, taking no driving, and slowed for, held back by this share of a full slow. */
   stunnedTicks: number
   slowedTicks: number
@@ -474,7 +476,7 @@ export function wingsTurnRadius(tuning: VehicleTuning): number {
 
 /**
  * Turn a car on wings the way a plane turns: the steering leans it into
- * the turn, and the turn swings the way it is going round a wide arc,
+ * the turn, and the turn swings the way it is going around a wide arc,
  * the nose put on the motion outright, so the car faces where it goes.
  * The lean is left for the wings to hold, and the swing is the pull a
  * circle of the turn's radius asks for at the car's speed. Too slow for
@@ -526,6 +528,7 @@ export function restAction(seat: Gunner): void {
   seat.cooldownTicks = 0
   seat.lightsOn = false
   seat.abilityHeld = false
+  seat.rocketsFired = 0
   seat.stunnedTicks = 0
   seat.slowedTicks = 0
   seat.slowedBy = 0
@@ -585,9 +588,16 @@ export function muzzlePoint(out: Vec3, seat: Gunner, own = false): Vec3 {
   return vaddScaled(out, out, up, gun.up)
 }
 
-/** A rocket's number: the tick it went and whose it is, so every copy of the simulation numbers it the same. */
-export function rocketId(tick: number, seat: number): number {
-  return ((tick << 3) | (seat & 7)) & 0xffff
+/** Rockets fired by a seat are counted from zero again after this many. */
+export const ROCKETS_COUNTED = 0x2000
+
+/**
+ * A rocket's number: whose it is and how many went before it, so that a
+ * copy of the simulation that fires it a tick early or late, as a mirror
+ * running ahead of the server does, numbers it as the server will.
+ */
+export function rocketId(seat: number, fired: number): number {
+  return ((fired % ROCKETS_COUNTED) << 3) | (seat & 7)
 }
 
 /**
@@ -697,7 +707,7 @@ const slow =
 function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: boolean): void {
   muzzlePoint(muzzle, seat, own)
   arena.rockets.push({
-    id: rocketId(arena.tick, seat.id),
+    id: rocketId(seat.id, seat.rocketsFired),
     owner: seat.id,
     target: pickOut(arena, seat, muzzle, ROCKET_LOCK_RANGE, ROCKET_LOCK_COS),
     position: vcopy(v3(), muzzle),
@@ -705,6 +715,7 @@ function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: bool
     bornTick: arena.tick,
     power,
   })
+  seat.rocketsFired = (seat.rocketsFired + 1) % ROCKETS_COUNTED
 }
 
 /**

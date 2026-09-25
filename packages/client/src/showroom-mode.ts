@@ -10,7 +10,7 @@ export const TURN_RATE = 0.45
 
 /**
  * Where a vehicle starts its turn: side on, nose to the left, so that it is
- * seen in profile first and swings round to face the player next.
+ * seen in profile first and swings around to face the player next.
  */
 export const START_YAW = Math.PI / 2
 
@@ -19,7 +19,7 @@ const FOV = 40
 const ELEVATION = 0.34
 /** How much of the frame the vehicle spans at its widest, as it turns. */
 const FILL = 0.5
-/** How far right of centre the vehicle sits, as a fraction of the frame's width: the panel is on the left. */
+/** How far right of center the vehicle sits, as a fraction of the frame's width: the panel is on the left. */
 const ASIDE = 0.15
 /** How hard the engine works on the turntable: idling, with a blip now and then. */
 const IDLE_REV = 0.08
@@ -33,14 +33,14 @@ export interface Framing {
 }
 
 /**
- * Where to stand to see something this big, centred on `centre`, turning on
+ * Where to stand to see something this big, centered on `center`, turning on
  * the spot: far enough back that its diagonal fits across the frame, above
  * it a little, and looking a little to its left so that it sits clear of
  * the panel.
  */
 export function frameShowroom(
   size: THREE.Vector3,
-  centre: THREE.Vector3,
+  center: THREE.Vector3,
   aspect: number,
   out: Framing = { position: new THREE.Vector3(), target: new THREE.Vector3() },
 ): Framing {
@@ -48,10 +48,10 @@ export function frameShowroom(
   const halfVertical = Math.tan(THREE.MathUtils.degToRad(FOV / 2))
   const halfHorizontal = halfVertical * aspect
   const distance = Math.max(across / (2 * halfHorizontal * FILL), size.y / (2 * halfVertical * FILL))
-  out.position.set(centre.x, centre.y + Math.sin(ELEVATION) * distance, centre.z + Math.cos(ELEVATION) * distance)
-  // The camera stands toward +Z looking back at the centre, so its right is
+  out.position.set(center.x, center.y + Math.sin(ELEVATION) * distance, center.z + Math.cos(ELEVATION) * distance)
+  // The camera stands toward +Z looking back at the center, so its right is
   // +X: a target to the left of the vehicle puts the vehicle to the right.
-  out.target.set(centre.x - 2 * distance * halfHorizontal * ASIDE, centre.y, centre.z)
+  out.target.set(center.x - 2 * distance * halfHorizontal * ASIDE, center.y, center.z)
   return out
 }
 
@@ -101,7 +101,7 @@ export function createShowroomMode(sound: Sound | null = null): ShowroomView {
   const framing: Framing = { position: new THREE.Vector3(), target: new THREE.Vector3() }
   const bounds = new THREE.Box3()
   const size = new THREE.Vector3()
-  const centre = new THREE.Vector3()
+  const center = new THREE.Vector3()
   let aspect = 1
   let car: CarView | null = null
   let vehicle: VehicleProfileId | null = null
@@ -116,9 +116,9 @@ export function createShowroomMode(sound: Sound | null = null): ShowroomView {
     turntable.updateMatrixWorld(true)
     bounds.setFromObject(car.object, true)
     bounds.getSize(size)
-    bounds.getCenter(centre)
+    bounds.getCenter(center)
     turntable.rotation.y = yaw
-    frameShowroom(size, centre, aspect, framing)
+    frameShowroom(size, center, aspect, framing)
     camera.position.copy(framing.position)
     camera.lookAt(framing.target)
   }

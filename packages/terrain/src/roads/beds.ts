@@ -39,7 +39,7 @@ export function isSurfaceRoad(road: Road): boolean {
   return road.kind !== 'highway'
 }
 
-/** How far above a road's recorded centreline its drivable surface sits. */
+/** How far above a road's recorded centerline its drivable surface sits. */
 export function roadLift(road: Road): number {
   return isSurfaceRoad(road) ? 0 : ROAD_SURFACE
 }
@@ -130,12 +130,12 @@ export function carveRoadBeds(
 }
 
 /**
- * The cells a surface road's carriageway lies over. The highway's bed must
+ * The cells a surface road's roadway lies over. The highway's bed must
  * not be cut into them where it passes close, as it does where a ramp leaves
  * it: that ground is a road, and a cut across it is a trench across a road.
  */
 /**
- * Every cell under a built road's carriageway, whatever it is built as. The
+ * Every cell under a built road's roadway, whatever it is built as. The
  * deck is what is driven there, and the ground under it stays cut clear of
  * it: a surface road's shoulder may not fill it back up to the deck.
  */
@@ -197,7 +197,7 @@ function shoresOf(road: Road): Shore[] {
 }
 
 /**
- * Every cell under a surface road's at-grade carriageway. A run ends square
+ * Every cell under a surface road's at-grade roadway. A run ends square
  * at the shore where it meets a bridge: the ground past it is under the
  * deck, and is cut clear of that rather than kept as road, however the
  * run's last segments' own ends round out over it.
@@ -246,10 +246,10 @@ export function surfaceRoadCells(field: Heightfield, roads: Road[]): Uint8Array 
 }
 
 /**
- * Shape the ground to every surface road. Across the carriageway the ground is
+ * Shape the ground to every surface road. Across the roadway the ground is
  * the road's own profile, cut or filled to reach it; the shoulders blend back
  * to the land beside it. Roads only compete with each other within their
- * carriageways: where two cross, their profiles are averaged over the
+ * roadways: where two cross, their profiles are averaged over the
  * overlap, so a crossing is one level rather than a step from one deck to
  * another, but a road's shoulder never reshapes the road beside it. Bridges
  * are left alone: there is water under them, and a deck is built over it.
@@ -312,9 +312,9 @@ function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array, b
     for (const cell of touched) {
       const distance = nearest[cell]!
       // A road's say over the ground beside it fades out over the shoulder;
-      // its say against another road ends at its own carriageway. The small
+      // its say against another road ends at its own roadway. The small
       // share kept beyond that only decides whose profile a lone shoulder
-      // takes, never a contest with a carriageway.
+      // takes, never a contest with a roadway.
       const land = 1 - smoothstep(flat, reach, distance)
       const contest = 1 - smoothstep(half, flat + cellSize, distance) + land * 0.01
       roadWeightSum[cell] = roadWeightSum[cell]! + contest
@@ -339,7 +339,7 @@ interface Mouth {
   z: number
   ux: number
   uz: number
-  /** The rise per metre over the ramp's first stretch, which is the deck's own grade there. */
+  /** The rise per meter over the ramp's first stretch, which is the deck's own grade there. */
   grade: number
 }
 
@@ -373,7 +373,7 @@ function mouthOf(road: Road, built: Road[]): Mouth | null {
       const prev = deck.points[deck.closed ? (i - 1 + count) % count : Math.max(i - 1, 0)]!
       const next = deck.points[deck.closed ? (i + 1) % count : Math.min(i + 1, count - 1)]!
       const run = hypot(next.x - prev.x, next.z - prev.z) || 1
-      // The deck's rise per metre, taken along the way the ramp leaves.
+      // The deck's rise per meter, taken along the way the ramp leaves.
       grade = ((next.y - prev.y) / run) * (((next.x - prev.x) * ux + (next.z - prev.z) * uz) / run)
     }
   }
@@ -467,7 +467,7 @@ function surfaceCurvatureLimit(road: Road): number {
  * Hold a road to its grade limit from end to end, bridges included, and ease
  * the crests and sags of every at-grade run to its curvature limit. A deck
  * is left where it was built, but the road is held to it: an at-grade run
- * that settles into the ground a metre above or below the deck it leads
+ * that settles into the ground a meter above or below the deck it leads
  * onto is brought back down to meet it, rather than stepping off the end.
  */
 function limitSurfaceRoadGrade(road: Road): void {
@@ -491,7 +491,7 @@ function limitSurfaceRoadGrade(road: Road): void {
  * Hold every bridge of a settled road up to the shores it leaves from. The
  * deck was set at routing, over ground the shores have since been shaped
  * away from, and a shore is the ground: the deck comes up to meet it, never
- * the other way round. Between its shores a deck is at least the straight
+ * the other way around. Between its shores a deck is at least the straight
  * line from one to the other, so a river is crossed level rather than dipped
  * into and climbed out of, and from either shore it falls no faster than the
  * road's grade. A road's end counts as a shore: it is held where the road it
@@ -612,8 +612,8 @@ export function settleSurfaceRoads(field: Heightfield, roads: Road[], built: Roa
   // runs under it: a cross road passing beneath an underpass is that road's
   // ground to shape, or the hill it cuts through is left standing across it.
   const keepOff = builtRoadCells(field, built)
-  const carriageways = surfaceRoadCells(field, roads)
-  for (let cell = 0; cell < keepOff.length; cell++) if (carriageways[cell]) keepOff[cell] = 0
+  const roadways = surfaceRoadCells(field, roads)
+  for (let cell = 0; cell < keepOff.length; cell++) if (roadways[cell]) keepOff[cell] = 0
   for (let pass = 0; pass < SETTLE_PASSES; pass++) {
     stampRoadBeds(field, roads, keepOff, built)
     seatSurfaceRoads(field, roads)

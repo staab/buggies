@@ -6,14 +6,14 @@ import type { Road } from '../types.ts'
  */
 
 /**
- * How far the carriageway sits above the centreline a road is recorded on.
+ * How far the roadway sits above the centerline a road is recorded on.
  * Both the mesh that gets drawn and the surface that gets driven on have to
  * agree about this, or vehicles ride buried in the road or float over it.
  */
 export const ROAD_SURFACE = 0.2
 
 /**
- * How far past the carriageway the shoulder reaches as it falls back to the
+ * How far past the roadway the shoulder reaches as it falls back to the
  * ground. Shared for the same reason: an edge the mesh ramps over and the
  * surface treats as a step is a step vehicles get thrown off.
  */
@@ -31,7 +31,7 @@ export const KIND_BRIDGE = 1
 
 export const KIND_TUNNEL = 2
 
-/** Highway carriageway width, in world units. */
+/** Highway roadway width, in world units. */
 export const ROAD_WIDTH = 16
 
 /** Control points are strung together with this spacing between samples. */
@@ -41,11 +41,11 @@ export const SAMPLE_STEP = 6
 export const MAX_ROAD_GRADE = 0.06
 
 /**
- * How sharply a road's grade may change, per metre travelled: the vertical
+ * How sharply a road's grade may change, per meter traveled: the vertical
  * curve at every crest and sag. A car at speed feels a grade change as
  * acceleration, `speed² × curvature`, and an abrupt one bottoms the
  * suspension in a sag or throws the car off the road at a crest. Six percent
- * over ten metres is 0.4g at 90km/h; a ramp, driven slower, may bend twice
+ * over ten meters is 0.4g at 90km/h; a ramp, driven slower, may bend twice
  * as hard.
  */
 export const MAX_ROAD_CURVATURE = 0.006
@@ -67,7 +67,7 @@ export const TUNNEL_DEPTH = 1
 /** World units around a sample probed for water, wide enough to catch a river ribbon. */
 export const WATER_PROBE_RADIUS = 3
 
-/** Points on the ring road drawn around a lone city. */
+/** Points on the beltway drawn around a lone city. */
 export const RING_POINTS = 8
 
 /** A city-loop corner wider than this can be bowed; sharper needs a stadium or offset. */
@@ -146,7 +146,7 @@ export const RAMP_DROP = 7
 
 /**
  * Headroom a site is chosen with. The deck a site is judged against is the one
- * the highway comes to before any crossing has had a say; raising a neighbour
+ * the highway comes to before any crossing has had a say; raising a neighbor
  * for its own underpass can lift this one a little further through the grade
  * limit, and a site picked right on the limit would then fail to be built.
  */
@@ -229,7 +229,7 @@ export const CLIMB_LOOK = 12
 /** How much of the road's parting from the ground a leg makes up each step, never turning down the slope past this share of the step to do so. */
 export const CLIMB_STEER = 0.3
 export const CLIMB_DIP = 0
-/** The turns tried, in order, to get round something in the way on gentle ground. */
+/** The turns tried, in order, to get around something in the way on gentle ground. */
 export const CLIMB_TURNS = [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2] as const
 /** How far a climb keeps from its own earlier legs, all but the stretch this far behind it, and the last hairpin with the stretch this far into it until this far past it. */
 export const CLIMB_SELF_KEEP = { apart: 12, behind: 40, into: 12, after: 60 } as const
@@ -238,8 +238,8 @@ export const CLIMB_MOST_LENGTH = 3000
 export const CLIMB_MOST_HAIRPINS = 20
 /**
  * Where a climb may start: arterial points this near the peak and this far
- * below it, trying this many, this far apart, and each metre the bank
- * rises off the arterial counting as this many metres further off. The
+ * below it, trying this many, this far apart, and each meter the bank
+ * rises off the arterial counting as this many meters further off. The
  * road is level with the arterial until this far out, pays other roads no
  * mind until this far, and leaves the arterial at least this angle off it
  * for this long.
@@ -297,8 +297,8 @@ export const ARTERIAL_BLOCK_COST = 1e6
 /** Spacing of the field nodes the network links, in world units. */
 export const ARTERIAL_FIELD_SPACING = 300
 
-/** How many nearest neighbours each node links to before loop filling. */
-export const ARTERIAL_NEIGHBOURS = 2
+/** How many nearest neighbors each node links to before loop filling. */
+export const ARTERIAL_NEIGHBORS = 2
 
 /** Most arterial roads drawn per map. */
 export const ARTERIAL_MAX_COUNT = 40
@@ -309,14 +309,14 @@ export const ARTERIAL_STEP = 24
 /** Route cells between spline waypoints; larger means longer, smoother curves. */
 export const ARTERIAL_WAYPOINT_STRIDE = 4
 
-/** Sharpest corner left in a finished arterial, and the fillet used to round it. */
+/** Sharpest corner left in a finished arterial, and the fillet used to around it. */
 export const ARTERIAL_MAX_TURN = (12 * Math.PI) / 180
 
 export const ARTERIAL_MIN_RADIUS = 40
 
 /**
  * Two arterials leaving one junction closer together than this run side by side
- * instead of parting, and their carriageways smear into a single blob.
+ * instead of parting, and their roadways smear into a single blob.
  */
 export const ARTERIAL_MIN_JUNCTION_ANGLE = Math.PI / 4
 
@@ -337,7 +337,7 @@ export const ARTERIAL_MAX_POINTS = 400
 
 export const ARTERIAL_SALT = 0x51a2
 
-/** The ground is shaped to a surface road over this much beyond its carriageway. */
+/** The ground is shaped to a surface road over this much beyond its roadway. */
 export const SURFACE_SHOULDER = 9
 
 /** Turn is judged between samples at least this far apart, so dense fillet samples cannot hide a hairpin. */
@@ -347,13 +347,13 @@ export const TURN_WINDOW = 3
 export const STREET_WIDTH = 10
 
 /**
- * How far from a city street's centreline the blocks' lots begin, and what a
- * block keeps clear of the street: the kerb of the narrow street the blocks
+ * How far from a city street's centerline the blocks' lots begin, and what a
+ * block keeps clear of the street: the curb of the narrow street the blocks
  * were laid out against. The street has since been widened over the old
- * pavement, and the sidewalk now runs from the carriageway's edge in under
+ * sidewalk, and the sidewalk now runs from the roadway's edge in under
  * the buildings' fronts, so nothing in a block has had to move.
  */
-export const STREET_KERB = 3
+export const STREET_CURB = 3
 
 /** Spacing between city streets and the step along them, in world units. */
 export const STREET_SPACING = 48
@@ -374,8 +374,8 @@ export const STREET_MIN_POINTS = Math.round(STREET_SPACING / STREET_STEP) + 1
 export const STREET_ARTERIAL_ANGLE = Math.PI / 4
 
 /**
- * How close a street may come to an arterial's centreline: any nearer and the
- * two carriageways overlap, which is the smear itself. Trimming back to exactly
+ * How close a street may come to an arterial's centerline: any nearer and the
+ * two roadways overlap, which is the smear itself. Trimming back to exactly
  * here leaves the street touching the arterial, so a shallow meeting still
  * reads — and still counts — as a junction onto it.
  */
@@ -397,7 +397,7 @@ export const BRIDGE_SHOULDER_DROP = 1
  * roads, the roads are read back off it, and their grade limits are imposed
  * again: where two roads cross at different heights the ground takes the mean,
  * and the limit then spreads the difference back along each road instead of
- * leaving it as a step. A few times round is enough for the two to settle;
+ * leaving it as a step. A few times around is enough for the two to settle;
  * each round leaves a smaller kink where roads cross.
  */
 export const SETTLE_PASSES = 4

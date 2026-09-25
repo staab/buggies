@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { NEUTRAL_INPUT, type VehicleInput } from './input.ts'
 import { addHeightfield } from './terrain.ts'
 import { createVehicleTuning, type VehicleTuning } from './tuning.ts'
-import { HOLD_SLIP_SPEED } from './tyreModel.ts'
+import { HOLD_SLIP_SPEED } from './tireModel.ts'
 import { stepVehicle } from './vehicle.ts'
 import { createVehicle, type Vehicle } from './vehicleBody.ts'
 import { createVehicleStepState, readVehicleStepState, writeVehicleStepState } from './vehicleStepState.ts'
@@ -49,7 +49,7 @@ function park(field: Heightfield, tuning: VehicleTuning, grade: number): Parked 
   return { vehicle, drive, free: () => world.free() }
 }
 
-function travelled(vehicle: Vehicle, from: { x: number; z: number }): number {
+function traveled(vehicle: Vehicle, from: { x: number; z: number }): number {
   const { x, z } = vehicle.frame.position
   return Math.hypot(x - from.x, z - from.z)
 }
@@ -63,7 +63,7 @@ describe('a car left alone', () => {
     const parked = park(ground(0), createVehicleTuning(profile), 0)
     const from = { ...parked.vehicle.frame.position }
     parked.drive(5)
-    expect(travelled(parked.vehicle, from)).toBeLessThan(0.01)
+    expect(traveled(parked.vehicle, from)).toBeLessThan(0.01)
     expect(parked.vehicle.wheels.every((wheel) => wheel.held)).toBe(true)
     parked.free()
   })
@@ -71,16 +71,16 @@ describe('a car left alone', () => {
   it('stays put on a hill, and drives off it when asked', () => {
     const grade = 0.2
     const parked = park(ground(grade), createVehicleTuning('sportsCar'), grade)
-    // The handbrake coming off lets the car settle a few centimetres; from there it stays.
+    // The handbrake coming off lets the car settle a few centimeters; from there it stays.
     const released = { ...parked.vehicle.frame.position }
     parked.drive(2)
-    expect(travelled(parked.vehicle, released)).toBeLessThan(0.1)
+    expect(traveled(parked.vehicle, released)).toBeLessThan(0.1)
     const from = { ...parked.vehicle.frame.position }
     parked.drive(5)
-    expect(travelled(parked.vehicle, from)).toBeLessThan(0.01)
+    expect(traveled(parked.vehicle, from)).toBeLessThan(0.01)
     // Asked to go, it goes: the hold is not a brake.
     parked.drive(2, { ...NEUTRAL_INPUT, throttle: 1 })
-    expect(travelled(parked.vehicle, from)).toBeGreaterThan(5)
+    expect(traveled(parked.vehicle, from)).toBeGreaterThan(5)
     expect(parked.vehicle.wheels.some((wheel) => wheel.held)).toBe(false)
     parked.free()
   })
@@ -98,7 +98,7 @@ describe('a car left alone', () => {
     expect(parked.vehicle.wheels.every((wheel) => wheel.held)).toBe(true)
     const from = { ...parked.vehicle.frame.position }
     parked.drive(3)
-    expect(travelled(parked.vehicle, from)).toBeLessThan(0.01)
+    expect(traveled(parked.vehicle, from)).toBeLessThan(0.01)
     parked.free()
   })
 

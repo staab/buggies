@@ -11,7 +11,7 @@ pnpm dev
 
 That starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game is on the server. Open the client, pick **1 player** or **2 players** on the first page of the menu, then an island by its seed, then a vehicle each, and play. Everyone who picks the same seed shares that island. Each seed is a room of its own on the server, made when the first player asks for it and closed when the last leaves. A second screen opens the same URL.
 
-The page joins the server next to whichever address it was opened on. To point it elsewhere, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honours `PORT` and `HOST`, and `TRUST_PROXY=1` behind a reverse proxy, so that it tells players apart by the address the proxy forwards.
+The page joins the server next to whichever address it was opened on. To point it elsewhere, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`, and `TRUST_PROXY=1` behind a reverse proxy, so that it tells players apart by the address the proxy forwards.
 
 ## Keys
 
@@ -29,29 +29,29 @@ The fire key uses whatever the car carries.
 - **Machine gun** trains itself on the nearest car ahead and fires as long as the key is held, for ten seconds in all. A few seconds of hits blows a car up.
 - **Bomb** is dropped behind the car and floats there until a car runs into it and is wrecked, the one that dropped it included once it has landed.
 - **Rocket engine** shoves the car along while the key is held, for ten seconds in all.
-- **Wings** lift the car into the air while the key is held, for ten seconds in all. Up there the pedals drive it and the steering banks it round a wide turn like a plane.
-- **Shockwave** stuns every other car within thirty metres for five seconds.
-- **Siren** slows every other car within thirty metres by half while the key is held, for ten seconds in all.
+- **Wings** lift the car into the air while the key is held, for ten seconds in all. Up there the pedals drive it and the steering banks it around a wide turn like a plane.
+- **Shockwave** stuns every other car within thirty meters for five seconds.
+- **Siren** slows every other car within thirty meters by half while the key is held, for ten seconds in all.
 - **Repair** is a red cross on a white disc that mends the car whole at once.
 
 ## Vehicles
 
-Each vehicle does something of its own on its own key, whatever it carries. Most are lesser forms of the power-ups, and only the tank's has a wait before it goes again. Nothing is mounted over the roof for them, the power-up slot leaves them out, and their shots and missiles come from the front of the car. The vehicle page of the menu says what the chosen car does and what it is by nature.
+Each vehicle does something of its own on its own key, whatever it carries. Most are lesser forms of the power-ups, and only the tank's and the pickup's have a wait before they go again. Nothing is mounted over the roof for them, the power-up slot leaves them out, and their shots and missiles come from the front of the car. The vehicle page of the menu says what the chosen car does and what it is by nature.
 
 - **Tank** fires a missile from its gun with half a rocket's blast, every three seconds. Its rockets and shots always come from its own gun, with nothing over its roof.
 - **Go-kart** hops off the ground, whenever it is on it.
 - **Race car** boosts with half a rocket engine as long as the key is held.
 - **Sports car** fires a machine gun from its nose with a quarter of the bite, as long as the key is held.
 - **Small car** flies on wings with a tenth of the lift, as long as the key is held.
-- **Semi truck** honks on every press, stunning every car within ten metres for a second.
-- **Heavy pickup** drops a bomb with a quarter of the blast on every press, five out at once at most, the oldest going for the next.
-- **Police car, ambulance and fire truck** flash their lights on and off, slowing every car within thirty metres by a fifth while on. None of them is slowed by any siren or lights. The ambulance mends itself, a hundredth of its life every five seconds. The fire truck takes a tenth of a bomb's blast. The police car takes half the bite of a machine gun.
+- **Semi truck** honks on every press, stunning every car within ten meters for a second.
+- **Heavy pickup** drops a bomb with a quarter of the blast every five seconds, five out at once at most, the oldest going for the next.
+- **Police car, ambulance and fire truck** flash their lights on and off, slowing every car within thirty meters by a fifth while on. None of them is slowed by any siren or lights. The ambulance mends itself, a hundredth of its life every five seconds. The fire truck takes a tenth of a bomb's blast. The police car takes half the bite of a machine gun.
 
 ## Packages
 
 - `physics`: vectors, quaternions, a seeded RNG, the fixed timestep.
 - `terrain`: an island from a seed, with its heightfield, rivers, lakes, districts, roads and tunnels.
-- `vehicle`: the car, with its suspension, tyres, air control, self-righting and water, on Rapier.
+- `vehicle`: the car, with its suspension, tires, air control, self-righting and water, on Rapier.
 - `game`: an arena, a map with seats on it, stepped one fixed tick at a time.
 - `net`: the protocol, the server and the client's prediction, with no DOM and no three.js.
 - `server`: the arena that counts, over WebSockets.

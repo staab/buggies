@@ -26,7 +26,7 @@ export const SOLO_BINDINGS: KeyBindings = {
 
 /**
  * The right of a shared keyboard: the arrows to drive, the comma and the
- * full stop under the same hand for the handbrake and to fire, and M for
+ * period under the same hand for the handbrake and to fire, and M for
  * what the car does of its own.
  */
 export const RIGHT_BINDINGS: KeyBindings = {

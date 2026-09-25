@@ -39,15 +39,15 @@ const WALL_FRICTION = 0.08
 
 /**
  * How far under its road the floor of a bore is cut, matching the bed a graded
- * road is given. Cutting only to the road leaves the ground a few centimetres
- * proud of the deck wherever the tunnel climbs, and a few centimetres proud is
+ * road is given. Cutting only to the road leaves the ground a few centimeters
+ * proud of the deck wherever the tunnel climbs, and a few centimeters proud is
  * a lip across the road that a vehicle at speed hits as a step.
  */
 const BORE_BED = 0.6
 
 /**
  * The ground, as a heightfield collider. Rapier lays its samples out column by
- * column and centres the shape on its own origin, where a buggies heightfield
+ * column and centers the shape on its own origin, where a buggies heightfield
  * runs row by row from the world corner, so both have to be translated.
  */
 export function addHeightfield(
@@ -86,17 +86,17 @@ export function addHeightfield(
  * a tunnel, where the ground is cut away and the wheels need something to
  * ride on beside the deck.
  */
-type Shoulder = 'ground' | 'none' | 'verge'
+type Shoulder = 'ground' | 'none' | 'ledge'
 
 /**
- * How far a tunnel's verge runs on under the wall. A car leaning on the wall
+ * How far a tunnel's ledge runs on under the wall. A car leaning on the wall
  * can have wheels standing out past its chassis, over the wall's footing,
  * and they need floor under them or the car hangs off the wall by its side.
  */
-const VERGE_UNDER_WALL = 1
+const LEDGE_UNDER_WALL = 1
 
 function shoulderOf(road: Road, field: Heightfield, segment: number): Shoulder {
-  if (road.structure[segment] === ROAD_TUNNEL) return 'verge'
+  if (road.structure[segment] === ROAD_TUNNEL) return 'ledge'
   return deckShouldered(road, field, segment) ? 'ground' : 'none'
 }
 
@@ -110,7 +110,7 @@ function crossSection(
   lift: number,
 ): void {
   const count = road.points.length
-  // The sample is one of the road's points, and its neighbours are wrapped round a loop or held at an end.
+  // The sample is one of the road's points, and its neighbors are wrapped around a loop or held at an end.
   const point = road.points[index]!
   const previous = road.points[road.closed ? (index - 1 + count) % count : Math.max(index - 1, 0)]!
   const next = road.points[road.closed ? (index + 1) % count : Math.min(index + 1, count - 1)]!
@@ -124,8 +124,8 @@ function crossSection(
   const reach =
     shoulder === 'ground'
       ? half + ROAD_SKIRT
-      : shoulder === 'verge'
-        ? half + TUNNEL_CLEARANCE + VERGE_UNDER_WALL
+      : shoulder === 'ledge'
+        ? half + TUNNEL_CLEARANCE + LEDGE_UNDER_WALL
         : half
 
   // A shoulder runs down to the highest ground across the skirt, as the deck is drawn.
@@ -143,11 +143,11 @@ function crossSection(
 const LANES = 3
 
 /**
- * The built carriageways, as one triangle mesh. The ground has a bed cut into
+ * The built roadways, as one triangle mesh. The ground has a bed cut into
  * it under every built road, well below the surface the road is drawn at, so
  * without this a vehicle drives every highway buried to its axles and drops
  * through every bridge. Graded roads carry their shoulders down to the ground
- * with them so the edge is a ramp rather than a kerb to crash into; a bridge
+ * with them so the edge is a ramp rather than a curb to crash into; a bridge
  * gets only its deck, because there is supposed to be nothing beside it; in
  * a tunnel the deck runs level to the wall. A surface road is the ground
  * wherever it is at grade, so only its bridges are built.
@@ -172,7 +172,7 @@ function addRoads(world: RAPIER.World, map: TerrainMap): void {
       crossSection(road, field, (i + 1) % count, positions, shoulder, lift)
 
       // Without a shoulder the outer pair sits exactly on the edge pair, and
-      // the lanes either side of the carriageway come out as zero-area
+      // the lanes either side of the roadway come out as zero-area
       // triangles. A mesh full of those does not just waste space: the solver
       // gets contacts with no usable normal off them, and vehicles near one
       // stick to nothing and grind to a halt.
@@ -202,7 +202,7 @@ function addRoads(world: RAPIER.World, map: TerrainMap): void {
 /**
  * How far beyond the bore the ground is cut away: every cell that reaches
  * into the bore has all four corners cut, so no face of a standing cell
- * leans in over the verge. A cell is `cellSize` square, so a corner can be a
+ * leans in over the ledge. A cell is `cellSize` square, so a corner can be a
  * diagonal further out than the bit of the cell inside the bore.
  */
 function cutMargin(map: TerrainMap): number {
@@ -408,7 +408,7 @@ export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
   }
 }
 
-/** The sidewalks round the city blocks: a kerb's step up off the street, driven on like the road. */
+/** The sidewalks around the city blocks: a curb's step up off the street, driven on like the road. */
 export function addSidewalks(world: RAPIER.World, map: TerrainMap): void {
   if (map.sidewalks.length === 0) return
   const { positions, indices } = sidewalkMesh(map.heightfield, map.sidewalks)

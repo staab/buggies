@@ -45,7 +45,7 @@ export interface WheelState {
   forceLongitudinal: number
   forceLateral: number
 
-  /** Whether the tyre has taken hold of the ground at rest, and where it did. */
+  /** Whether the tire has taken hold of the ground at rest, and where it did. */
   held: boolean
   holdPoint: Vec3
 
@@ -82,7 +82,7 @@ export interface Vehicle {
   damage: number
   /** Blown up: past driving, and waiting to be put back on its spawn. */
   wrecked: boolean
-  /** Pushed along this step by something other than its own engine, so the tyres do not take hold against it. */
+  /** Pushed along this step by something other than its own engine, so the tires do not take hold against it. */
   boosted: boolean
   /** Held up this step by something other than the ground, so the wheels let go of the road rather than sticking to it. */
   lifted: boolean
@@ -307,7 +307,7 @@ function cuboidPrincipalInertia(out: Vec3, mass: number, tuning: VehicleTuning):
 
 export function applyChassisMassProperties(vehicle: Vehicle, tuning: VehicleTuning): void {
   // The rounding is kept, so the box inside it is set that much smaller, or
-  // the chassis would be a rounding bigger all round than the tuning says.
+  // the chassis would be a rounding bigger all around than the tuning says.
   vehicle.collider.setHalfExtents({
     x: tuning.chassisHalfWidth - CHASSIS_ROUNDING,
     y: tuning.chassisHalfHeight - CHASSIS_ROUNDING,

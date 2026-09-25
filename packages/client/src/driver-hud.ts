@@ -25,7 +25,7 @@ export function tunnelTest(map: TerrainMap): (position: { x: number; y: number; 
   return ({ x, y, z }) => boreClearance(bores, x, z, y) < 0
 }
 
-/** A deck has to clear the car's centre by this much to count as over it rather than under it. */
+/** A deck has to clear the car's center by this much to count as over it rather than under it. */
 const DECK_HEADROOM = 1.5
 /** How far below a deck's surface its underside is taken to be. */
 const DECK_UNDERSIDE = 0.4

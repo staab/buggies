@@ -11,6 +11,7 @@ import {
   setPickup,
   takeSeat,
   type Arena,
+  type Loose,
   type VehicleInput,
   type VehicleProfileId,
 } from '@buggies/game'
@@ -320,9 +321,9 @@ describe('a session', () => {
     session.run(5)
 
     // Inputs have learned to arrive just ahead of their tick over this wire:
-    // a round trip, plus a little, and the car runs that far ahead of the server.
+    // a round trip, plus the slack they keep, and the car runs that far ahead of the server.
     expect(a.client.leadTicks).toBeGreaterThanOrEqual(DELAY_TICKS * 2)
-    expect(a.client.leadTicks).toBeLessThanOrEqual(DELAY_TICKS * 2 + TICKS_PER_SNAPSHOT + 2)
+    expect(a.client.leadTicks).toBeLessThanOrEqual(DELAY_TICKS * 2 + TICKS_PER_SNAPSHOT + 3)
     expect(a.client.acknowledgedInputTick).toBeGreaterThan(0)
     expect(a.prediction.stats.ticksAheadOfServer).toBeGreaterThan(0)
     expect(a.prediction.stats.ticksAheadOfServer).toBeLessThan(INPUT_TIMELINE_TICKS / 2)
@@ -331,7 +332,7 @@ describe('a session', () => {
     // The prediction reconciles every snapshot with a small correction, never
     // a snap: identical physics from identical inputs should barely disagree.
     expect(a.prediction.stats.replayHorizonTicks).toBeGreaterThan(0)
-    expect(a.prediction.stats.lastCorrectionMetres).toBeLessThan(0.5)
+    expect(a.prediction.stats.lastCorrectionMeters).toBeLessThan(0.5)
     expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(1)
 
     // Predicted where the server will put it, give or take the lead.
@@ -348,7 +349,7 @@ describe('a session', () => {
     let worst = 0
     for (let i = 0; i < 8 * TICKS_PER_SECOND; i++) {
       session.step()
-      worst = Math.max(worst, a.prediction.stats.lastCorrectionMetres)
+      worst = Math.max(worst, a.prediction.stats.lastCorrectionMeters)
     }
     expect(a.prediction.vehicle.speed).toBeGreaterThan(40)
     // Corrections at speed stay a small fraction of a car length: anything
@@ -394,9 +395,9 @@ describe('a session', () => {
     // The car is stepped once per fixed step nearly every time: it never
     // lurches or stalls to follow the arrivals.
     expect(a.unevenPumps / a.pumps).toBeLessThan(0.03)
-    expect(a.prediction.stats.lastCorrectionMetres).toBeLessThan(0.5)
+    expect(a.prediction.stats.lastCorrectionMeters).toBeLessThan(0.5)
     expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(1)
-    expect(a.client.leadTicks).toBeLessThanOrEqual(DELAY_TICKS * 2 + 3 + TICKS_PER_SNAPSHOT + 2)
+    expect(a.client.leadTicks).toBeLessThanOrEqual(DELAY_TICKS * 2 + 3 + TICKS_PER_SNAPSHOT + 3)
     session.dispose()
   })
 
@@ -419,7 +420,7 @@ describe('a session', () => {
     // The mirror sits its lead ahead of the server, not seconds ahead or behind.
     expect(a.prediction.stats.ticksAheadOfServer).toBeGreaterThan(0)
     expect(a.prediction.stats.ticksAheadOfServer).toBeLessThan(INPUT_TIMELINE_TICKS / 2)
-    expect(a.prediction.stats.lastCorrectionMetres).toBeLessThan(0.5)
+    expect(a.prediction.stats.lastCorrectionMeters).toBeLessThan(0.5)
     expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(2)
     session.dispose()
   })
@@ -550,7 +551,7 @@ describe('a session', () => {
     const aSeat = arena.seats[a.client.welcome!.seat]!
     const bSeat = arena.seats[b.client.welcome!.seat]!
     session.run(0.5)
-    // The tank is put down on the road thirty metres ahead of the sports car, which is handed a rocket.
+    // The tank is put down on the road thirty meters ahead of the sports car, which is handed a rocket.
     const { position, forward } = aSeat.vehicle.frame
     bSeat.vehicle.body.setTranslation({ x: position.x + forward.x * 30, y: position.y, z: position.z + forward.z * 30 }, true)
     session.step()
@@ -602,6 +603,55 @@ describe('a session', () => {
     expect(bSeat.vehicle.damage).toBeGreaterThan(ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE)
     expect(aSeat.ammoTicks).toBeLessThan(MACHINE_GUN_AMMO_TICKS - 50)
     expect(a.prediction.ownSeat.ammoTicks).toBe(aSeat.ammoTicks)
+    session.dispose()
+  }, 120_000)
+
+  it("keeps a car's own bomb and missile on screen from the press onward, however long the key is held", async () => {
+    const session = new Session()
+    const a = await session.join('pickup')
+    const b = await session.join('tank')
+    const { arena } = session
+    session.run(0.5)
+    // The tank is put down on the road thirty meters ahead of the pickup, facing away from it, so
+    // that its missile has nothing to go after and flies on for as long as the test watches it.
+    const aSeat = arena.seats[a.client.welcome!.seat]!
+    const bSeat = arena.seats[b.client.welcome!.seat]!
+    const { position, forward } = aSeat.vehicle.frame
+    bSeat.vehicle.body.setTranslation({ x: position.x + forward.x * 30, y: position.y, z: position.z + forward.z * 30 }, true)
+    session.step()
+    respawnNearby(arena, bSeat)
+    session.run(0.5)
+    const bombs = (loose: readonly Loose[]): number[] => loose.filter((thing) => thing.kind === 'bomb').map((thing) => thing.id)
+    // The pickup's key goes down and stays down. The bomb is predicted at once, and the server has it
+    // soon after with the same number; in between, the snapshots that know nothing of it say the key
+    // was up, so the replay from them drops it again rather than losing it for a moment.
+    a.input.ability = true
+    session.run(0.05)
+    const predicted = bombs(a.prediction.loose)
+    expect(predicted).toHaveLength(1)
+    expect(bombs(arena.loose)).toEqual([])
+    let told = false
+    for (let i = 0; i < 30; i++) {
+      session.step()
+      told ||= bombs(arena.loose).length > 0
+      if (!told) expect(bombs(a.prediction.loose)).toEqual(predicted)
+    }
+    expect(told).toBe(true)
+    expect(bombs(arena.loose)).toEqual(predicted)
+    a.input.ability = false
+    // The tank's missile is one rocket from the press onward, the same way: the mirror never loses
+    // it before the server has had it, though the server's may go off on something before long.
+    b.input.ability = true
+    session.run(0.05)
+    const fired = b.prediction.rockets.map((rocket) => rocket.id)
+    expect(fired).toHaveLength(1)
+    told = false
+    for (let i = 0; i < 20; i++) {
+      session.step()
+      told ||= arena.rockets.length > 0
+      if (!told) expect(b.prediction.rockets.map((rocket) => rocket.id)).toEqual(fired)
+    }
+    expect(told).toBe(true)
     session.dispose()
   }, 120_000)
 

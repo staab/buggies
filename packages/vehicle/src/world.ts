@@ -35,7 +35,7 @@ export function resetWorldTuning(tuning: WorldTuning): void {
 }
 
 /**
- * How far ahead of a body a contact is made, in metres. Rapier's own 2cm
+ * How far ahead of a body a contact is made, in meters. Rapier's own 2cm
  * turns every seam of a wall a car scrapes along into a head-on collision:
  * a chassis corner a few millimetres short of the next facet is held back
  * from it as though it were about to hit it square. A couple of millimetres

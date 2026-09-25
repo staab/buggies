@@ -52,6 +52,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     cooldownTicks: 0,
     lightsOn: false,
     abilityHeld: false,
+    rocketsFired: 0,
     stunnedTicks: 0,
     slowedTicks: 0,
     slowedBy: 0,
@@ -149,6 +150,29 @@ describe('a car on the screen', () => {
 
   beforeAll(async () => {
     await initPhysics()
+  })
+
+  it('sets the roof lights of an emergency vehicle on its roof, clear of the body', () => {
+    const { seat, free } = seatOnFlat()
+    seat.profile = 'firetruck'
+    const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })
+    const lamps = presence.object.children.filter(
+      (child) => child instanceof THREE.Mesh && child.geometry instanceof THREE.BoxGeometry && !child.visible && child.position.y > 0,
+    )
+    expect(lamps).toHaveLength(2)
+    // Each lamp's underside is on top of whatever the car shows under it, and never inside it.
+    const shown = (object: THREE.Object3D): boolean => object.visible && (object.parent === null || shown(object.parent))
+    const ray = new THREE.Raycaster()
+    presence.object.updateMatrixWorld(true)
+    for (const lamp of lamps) {
+      const at = lamp.getWorldPosition(new THREE.Vector3())
+      ray.set(new THREE.Vector3(at.x, at.y + 10, at.z), new THREE.Vector3(0, -1, 0))
+      const under = ray.intersectObject(presence.object, true).find((hit) => hit.object !== lamp && shown(hit.object))
+      expect(under).toBeDefined()
+      expect(at.y - 0.07).toBeCloseTo(under!.point.y, 2)
+    }
+    presence.dispose()
+    free()
   })
 
   it('draws its body, says its state, and bursts when it is wrecked', () => {

@@ -12,7 +12,7 @@ function arcRadius(ramp: Ramp): number {
   return (ramp.length * ramp.length + rise * rise) / (2 * rise)
 }
 
-/** Height of a ramp's top above its foot, `along` metres from the foot. */
+/** Height of a ramp's top above its foot, `along` meters from the foot. */
 export function rampRise(ramp: Ramp, along: number): number {
   const radius = arcRadius(ramp)
   const reach = Math.min(Math.max(along, 0), ramp.length)

@@ -96,8 +96,8 @@ function findDryCrossing(
       }
       if (bridged && strict) continue
       const frame = frameAt(samples, c)
-      const centre = sampleTerrain(field, frame.x, frame.z)
-      if (centre <= seaLevel) continue
+      const center = sampleTerrain(field, frame.x, frame.z)
+      if (center <= seaLevel) continue
       const left = sampleTerrain(field, frame.x - frame.nx * CROSS_REACH, frame.z - frame.nz * CROSS_REACH)
       const right = sampleTerrain(field, frame.x + frame.nx * CROSS_REACH, frame.z + frame.nz * CROSS_REACH)
       if (left <= seaLevel || right <= seaLevel) continue
@@ -113,15 +113,15 @@ function findDryCrossing(
       // Keep the crossing fairly level, or the ramps have to descend a valley.
       const nearLeft = sampleTerrain(field, frame.x - frame.nx * RAMP_REACH, frame.z - frame.nz * RAMP_REACH)
       const nearRight = sampleTerrain(field, frame.x + frame.nx * RAMP_REACH, frame.z + frame.nz * RAMP_REACH)
-      const high = Math.max(centre, nearLeft, nearRight, left, right)
-      const low = Math.min(centre, nearLeft, nearRight, left, right)
+      const high = Math.max(center, nearLeft, nearRight, left, right)
+      const low = Math.min(center, nearLeft, nearRight, left, right)
       if (high - low > CROSS_RELIEF) continue
       // The deck rides where the grade limit puts it, not where the ground is,
       // so a site in a dip can sit far too high for the ramps to reach the
       // cross road however level the ground across it looks. Judge the drop the
       // ramps would really have to make, against the deck raised just enough to
       // clear the underpass, which is what the finished highway does here.
-      if (centre - deck[c]! > TUNNEL_DEPTH) continue
+      if (center - deck[c]! > TUNNEL_DEPTH) continue
       const cross = crossRoad(field, samples, c)
       const roof = Math.max(deck[c]!, cross.heights[cross.centerIndex]! + UNDERPASS_CLEARANCE)
       const landing = Math.min(
@@ -151,7 +151,7 @@ function findDryCrossing(
  * Interchange crossings around the highway loop: one serving each city, then
  * periodic ones along the country between them.
  *
- * Cities are served first and from as near their centre as the ground allows,
+ * Cities are served first and from as near their center as the ground allows,
  * so a city gets its exit before the spacing rule has any say. The periodic pass
  * then skips any candidate standing on a city, which is what holds a city to one
  * and never two. A city whose highway frontage is too steep or too broken to
@@ -175,7 +175,7 @@ export function interchangeCenters(
   const minGap = Math.round((INTERCHANGE_SPACING * 0.6) / step)
   const centers: number[] = []
 
-  /** Shortest way round the loop from `c` to the nearest crossing already placed. */
+  /** Shortest way around the loop from `c` to the nearest crossing already placed. */
   const gapTo = (c: number): number => {
     let gap = Infinity
     for (const other of centers) {
@@ -185,7 +185,7 @@ export function interchangeCenters(
     return gap
   }
 
-  /** The city a crossing at `c` belongs to: whichever centre is nearest it. */
+  /** The city a crossing at `c` belongs to: whichever center is nearest it. */
   const nearestCity = (c: number): District | null => {
     let best: District | null = null
     let nearest = Infinity
@@ -224,7 +224,7 @@ export function interchangeCenters(
     }
     // Search out as far as the city reaches, then a little further, rather than
     // give up on a city whose own ground will not take a crossing. Ground
-    // nearer to another city is that city's to use: without that, a neighbour
+    // nearer to another city is that city's to use: without that, a neighbor
     // standing on better land takes the exits and this city is left with none.
     const reach = Math.round((district.radius + district.suburbWidth) / step) + search
     const permits = (candidate: number): boolean =>
@@ -261,7 +261,7 @@ export function interchangeCenters(
   return centers
 }
 
-/** Linearly interpolate an open road's profile at a signed offset from its centre. */
+/** Linearly interpolate an open road's profile at a signed offset from its center. */
 export function sampleOpen(heights: Float32Array, offset: number): number {
   const steps = heights.length - 1
   const position = ((offset + CROSS_REACH) / (2 * CROSS_REACH)) * steps
@@ -429,8 +429,8 @@ export function buildInterchanges(
       const mergeOffset = sn * RAMP_REACH
       const centerX = frame.x + n.x * mergeOffset
       const centerZ = frame.z + n.z * mergeOffset
-      // Stop at the near edge of the cross road, not its centreline, so the
-      // ramp does not pave over the far carriageway.
+      // Stop at the near edge of the cross road, not its centerline, so the
+      // ramp does not pave over the far roadway.
       const mergeY = sampleOpen(crossHeights, mergeOffset)
       for (const sd of [1, -1]) {
         const edgeOffset = sd * (CROSS_WIDTH / 2)
@@ -440,7 +440,7 @@ export function buildInterchanges(
         const start = frameAt(samples, attach)
         // The ramp begins under the deck, its outer edge at the deck's edge,
         // and turns out from there: it comes out from under the highway as a
-        // widening sliver, the way a slip road leaves a carriageway, with the
+        // widening sliver, the way a ramp leaves a roadway, with the
         // deck drawn over its first stretch and the ground under it level.
         const startOffset = ROAD_WIDTH / 2 - RAMP_WIDTH / 2
         const startX = start.x + start.nx * sn * startOffset
@@ -452,7 +452,7 @@ export function buildInterchanges(
         // allows, where a curve swinging out and back square to the cross
         // road has to be steeper than the diagonal in its middle.
         // The ramp is the ground: it leaves the highway's own surface, which
-        // rides ROAD_SURFACE above its centreline, and lands on the cross road.
+        // rides ROAD_SURFACE above its centerline, and lands on the cross road.
         const points = rampPlan(
           { x: startX, z: startZ },
           { x: -sd * start.dx, z: -sd * start.dz },

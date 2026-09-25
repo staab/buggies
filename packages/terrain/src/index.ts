@@ -19,7 +19,7 @@ export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
 export { insidePolygon, interchangeZones, meetsInterchange } from './interchanges.ts'
 export { deckSpans, lowestDeckOver, type DeckSpan } from './overhead.ts'
 export { RAMP_FACETS, rampFacets, rampRise } from './ramps.ts'
-export { KERB_HEIGHT, sidewalkMesh, type SidewalkMesh } from './sidewalks.ts'
+export { CURB_HEIGHT, sidewalkMesh, type SidewalkMesh } from './sidewalks.ts'
 export {
   ARTERIAL_BRIDGE_GRADE,
   ARTERIAL_WIDTH,
@@ -43,7 +43,7 @@ export {
   ROAD_SURFACE,
   ROAD_TUNNEL,
   ROAD_WIDTH,
-  STREET_KERB,
+  STREET_CURB,
   STREET_SPACING,
   STREET_WIDTH,
   SURFACE_SHOULDER,

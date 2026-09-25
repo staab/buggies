@@ -9,7 +9,7 @@
 import { ROAD_BRIDGE, ROAD_TUNNEL, isSurfaceRoad, roadLift } from './roads.ts'
 import type { Road } from './types.ts'
 
-/** One straight piece of deck: its centreline in plan, the surface height at each end, and how far it reaches either side. */
+/** One straight piece of deck: its centerline in plan, the surface height at each end, and how far it reaches either side. */
 export interface DeckSpan {
   ax: number
   az: number
@@ -20,7 +20,7 @@ export interface DeckSpan {
   half: number
 }
 
-/** The deck reaches this far past the carriageway's edge. */
+/** The deck reaches this far past the roadway's edge. */
 const DECK_OVERHANG = 1
 
 export function deckSpans(roads: Road[]): DeckSpan[] {

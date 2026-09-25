@@ -91,7 +91,7 @@ export type ReconcileOutcome = 'idle' | 'replayed' | 'resynced'
 
 export interface PredictionStats {
   replayHorizonTicks: number
-  lastCorrectionMetres: number
+  lastCorrectionMeters: number
   lastCorrectionRadians: number
   ticksAheadOfServer: number
   hardResyncs: number
@@ -131,7 +131,7 @@ function angleBetween(a: Quat, b: Quat): number {
 export class LocalPrediction {
   readonly stats: PredictionStats = {
     replayHorizonTicks: 0,
-    lastCorrectionMetres: 0,
+    lastCorrectionMeters: 0,
     lastCorrectionRadians: 0,
     ticksAheadOfServer: 0,
     hardResyncs: 0,
@@ -245,7 +245,7 @@ export class LocalPrediction {
     }
 
     this.stats.replayHorizonTicks = horizon
-    this.stats.lastCorrectionMetres = vlength(vsub(this.displacement, predicted.translation, own.position))
+    this.stats.lastCorrectionMeters = vlength(vsub(this.displacement, predicted.translation, own.position))
     this.stats.lastCorrectionRadians = angleBetween(predicted.rotation, own.rotation)
 
     this.writeSnapshotBodies(snapshot)
@@ -360,6 +360,9 @@ export class LocalPrediction {
       seat.actionTicks = vehicle.actionTicks
       seat.cooldownTicks = vehicle.cooldownTicks
       seat.lightsOn = vehicle.lightsOn
+      // Whether the key was down, so that a replay from here tells a press from a hold as the server will.
+      seat.abilityHeld = vehicle.abilityHeld
+      seat.rocketsFired = vehicle.rocketsFired
       seat.stunnedTicks = vehicle.stunnedTicks
       seat.slowedTicks = vehicle.slowedTicks
       seat.slowedBy = vehicle.slowedBy

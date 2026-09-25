@@ -6,17 +6,17 @@ import { START_YAW, TURN_RATE, createShowroomMode, frameShowroom } from './showr
 describe('showroom', () => {
   it('stands far enough back to see the whole vehicle turn, and to its right', () => {
     const size = new THREE.Vector3(2, 1.5, 4.5)
-    const centre = new THREE.Vector3(0, 1, 0)
-    const framing = frameShowroom(size, centre, 16 / 9)
-    const distance = framing.position.distanceTo(centre)
+    const center = new THREE.Vector3(0, 1, 0)
+    const framing = frameShowroom(size, center, 16 / 9)
+    const distance = framing.position.distanceTo(center)
     // Its diagonal has to fit across the frame at half the width, and the
     // camera is above it, looking down.
     expect(distance).toBeGreaterThan(Math.hypot(2, 4.5))
-    expect(framing.position.y).toBeGreaterThan(centre.y)
-    expect(framing.target.x).toBeLessThan(centre.x)
-    expect(framing.target.y).toBe(centre.y)
+    expect(framing.position.y).toBeGreaterThan(center.y)
+    expect(framing.target.x).toBeLessThan(center.x)
+    expect(framing.target.y).toBe(center.y)
     // A wider frame lets it stand nearer.
-    expect(frameShowroom(size, centre, 21 / 9).position.distanceTo(centre)).toBeLessThan(distance)
+    expect(frameShowroom(size, center, 21 / 9).position.distanceTo(center)).toBeLessThan(distance)
   })
 
   it('turns whatever is on the turntable, and swaps it for another', () => {

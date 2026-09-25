@@ -95,7 +95,7 @@ describe('the garage', () => {
         expect(run.vehicle.speed).toBeGreaterThan(run.tuning.maxSpeed * 0.45)
         expect(run.vehicle.speed).toBeLessThanOrEqual(run.tuning.maxSpeed * 1.02)
         // On the brakes until it has stopped: held on past that, the pedal
-        // would drive it backwards.
+        // would drive it backward.
         const stopping = hold(run, { brake: 1 }, 8, (vehicle) => vehicle.speed < 1)
         expect(stopping.minUp).toBeGreaterThan(0.95)
         expect(run.vehicle.speed).toBeLessThan(1)
@@ -110,7 +110,7 @@ describe('the garage', () => {
         const turning = hold(run, { throttle: 1, steer: 1 }, 4)
         expect(turning.minUp).toBeGreaterThan(0.75)
         expect(run.vehicle.wrecked).toBe(false)
-        // It did turn: the nose has come round from straight down the runway.
+        // It did turn: the nose has come around from straight down the runway.
         expect(Math.abs(run.vehicle.frame.forward.z - before)).toBeGreaterThan(0.3)
         run.world.free()
       })
@@ -119,7 +119,7 @@ describe('the garage', () => {
         const run = start(createVehicleTuning(profile), flatHeightfield(300, 300, 6), { x: 900, z: 1700 })
         // Settled, then sent off at three fifths of its top speed, or 40m/s
         // if that is less (full lock at 75m/s is asking too much of a race
-        // car), and given a moment for the tyres to catch up with it.
+        // car), and given a moment for the tires to catch up with it.
         hold(run, {}, 1)
         const speed = Math.min(run.tuning.maxSpeed * 0.6, 40)
         run.vehicle.body.setLinvel({ x: 0, y: 0, z: -speed }, true)
@@ -133,7 +133,7 @@ describe('the garage', () => {
           maxSlip = Math.max(maxSlip, Math.abs(run.vehicle.slipAngle))
           minUp = Math.min(minUp, run.vehicle.frame.up.y)
         }
-        // It slides a little at most: the tail never comes round.
+        // It slides a little at most: the tail never comes around.
         expect(maxSlip).toBeLessThan(Math.PI / 4)
         expect(minUp).toBeGreaterThan(0.75)
         run.world.free()

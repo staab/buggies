@@ -22,13 +22,13 @@ function runway(profile: (z: number) => number): Heightfield {
 }
 
 /**
- * A rounded crest, a metre and a half over forty metres: at 30m/s it throws a
+ * A rounded crest, a meter and a half over forty meters: at 30m/s it throws a
  * car off the ground for a third of a second, and it reads as a bump.
  */
 function crest(z: number): number {
-  const centre = 480
+  const center = 480
   const halfWidth = 20
-  const distance = Math.abs(z - centre)
+  const distance = Math.abs(z - center)
   return distance >= halfWidth ? 0 : 1.5 * 0.5 * (1 + Math.cos((Math.PI * distance) / halfWidth))
 }
 

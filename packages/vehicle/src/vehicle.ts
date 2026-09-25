@@ -1,4 +1,4 @@
-// One step of a vehicle: wheels cast to the ground, springs and tyres
+// One step of a vehicle: wheels cast to the ground, springs and tires
 // pushing back, the engine and brakes, knocks read off the chassis, and
 // the car held to the road over a crest by the ground stick.
 
@@ -31,7 +31,7 @@ import { WHEEL_RAY_GROUPS, isGround } from './groups.ts'
 import { NEUTRAL_INPUT, readDriverCommand, type VehicleInput } from './input.ts'
 import { updateSelfRighting } from './selfRighting.ts'
 import type { VehicleTuning } from './tuning.ts'
-import { createTyreDriveContext, solveTyreForces } from './tyreModel.ts'
+import { createTireDriveContext, solveTireForces } from './tireModel.ts'
 import {
   restingRideHeight,
   wheelMountLocal,
@@ -52,13 +52,13 @@ const mountWorld = v3()
 const steeredForward = v3()
 const pointVelocity = v3()
 const contactForce = v3()
-const driveContext = createTyreDriveContext()
+const driveContext = createTireDriveContext()
 
 /**
  * Tell a crash from a jump by what hit the chassis over
  * the last step. The ground is no crash: a low car's belly touches down at
  * the foot of a steep ramp and flies on. A wall, a tree or another car is,
- * when it hits harder than the tyres ever could, and for a while after it
+ * when it hits harder than the tires ever could, and for a while after it
  * the car is left to tumble as it will.
  */
 function noteImpacts(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
@@ -82,9 +82,9 @@ function noteImpacts(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTunin
 
 /**
  * Damage is read off the car's own motion: how sharply
- * its level speed changed over the step. The tyres can only pull so hard;
+ * its level speed changed over the step. The tires can only pull so hard;
  * anything sharper is a knock, from a wall, a rail, a tree or another car,
- * and every bit of it past what the tyres could have done is damage. Only
+ * and every bit of it past what the tires could have done is damage. Only
  * level motion counts, so coming down hard from a jump is a landing, not a
  * hit, and a rail scraped along at a shallow angle costs little while one
  * met square costs a lot.
@@ -333,7 +333,7 @@ function applySuspensionForces(world: RAPIER.World, vehicle: Vehicle, tuning: Ve
   }
 }
 
-function updateTyreBasis(wheel: WheelState, frame: ChassisFrame): void {
+function updateTireBasis(wheel: WheelState, frame: ChassisFrame): void {
   rotateAboutAxis(steeredForward, frame.forward, frame.up, -wheel.steerAngle)
   vprojectOntoPlane(wheel.forward, steeredForward, wheel.contactNormal)
   vnormalize(wheel.forward, wheel.forward)
@@ -355,13 +355,13 @@ function applyTyreForces(vehicle: Vehicle, tuning: VehicleTuning, dt: number): v
   for (const wheel of wheels) {
     if (!wheel.grounded) continue
 
-    updateTyreBasis(wheel, frame)
+    updateTireBasis(wheel, frame)
     velocityAtPoint(pointVelocity, body, frame, wheel.contactPoint)
 
     wheel.slipSpeedLongitudinal = vdot(pointVelocity, wheel.forward)
     wheel.slipSpeedLateral = vdot(pointVelocity, wheel.right)
 
-    solveTyreForces(wheel, driveContext, tuning, dt)
+    solveTireForces(wheel, driveContext, tuning, dt)
 
     vscale(contactForce, wheel.forward, wheel.forceLongitudinal)
     vaddScaled(contactForce, contactForce, wheel.right, wheel.forceLateral)

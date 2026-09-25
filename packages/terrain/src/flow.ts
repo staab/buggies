@@ -3,7 +3,7 @@ import type { Heightfield, Lake } from './types.ts'
 export interface FlowRouting {
   /** Water surface after depressions are filled. Never lower than the terrain. */
   filled: Float32Array
-  /** Downhill neighbour for each cell, or -1 for cells with no outlet. */
+  /** Downhill neighbor for each cell, or -1 for cells with no outlet. */
   flow: Int32Array
   /** Order cells were finalized; lower means closer to the sea. */
   order: Int32Array
@@ -55,7 +55,7 @@ function heapPop(heap: number[], filled: Float32Array): number | undefined {
  * Priority-flood depression filling with drainage routing.
  *
  * Every cell is raised to the level at which it can escape to the boundary,
- * and is given a downhill neighbour. This means rivers always have a path to
+ * and is given a downhill neighbor. This means rivers always have a path to
  * the sea, and any cell raised above its terrain becomes a lake.
  */
 export function computeFlowRouting(field: Heightfield, seaLevel: number): FlowRouting {

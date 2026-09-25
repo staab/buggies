@@ -77,16 +77,16 @@ describe('car models', () => {
           for (const wheel of matching) {
             expect(wheel.radius).toBeCloseTo(tuning.wheelRadius, 1)
             expect(Math.sign(wheel.x)).toBe(Math.sign(mount.x))
-            // The tyres may stand wider than the wheels are drawn, but not the other way about.
+            // The tires may stand wider than the wheels are drawn, but not the other way about.
             expect(Math.abs(wheel.x)).toBeLessThanOrEqual(Math.abs(mount.x) + 0.05)
             expect(Math.abs(wheel.x)).toBeGreaterThan(Math.abs(mount.x) * 0.6)
             // A tandem axle's two wheels sit either side of the one axle the simulation has.
             expect(Math.abs(wheel.z - mount.z)).toBeLessThan(profile === 'semi' && !corner.isFront ? 0.7 : 0.05)
           }
-          // The wheel is centred on its hub, so it spins and steers about it.
+          // The wheel is centered on its hub, so it spins and steers about it.
           const box = new THREE.Box3().setFromObject(matching[0]!.group)
-          const centre = box.getCenter(new THREE.Vector3())
-          expect(centre.length()).toBeLessThan(0.01)
+          const center = box.getCenter(new THREE.Vector3())
+          expect(center.length()).toBeLessThan(0.01)
         }
         const left = wheels.filter((wheel) => wheel.isLeft).length
         expect(left).toBe(wheels.length - left)
@@ -119,11 +119,11 @@ describe('car models', () => {
     expect(semi.wheels).toHaveLength(6)
   })
 
-  it('credits every maker once, with a licence', () => {
+  it('credits every maker once, with a license', () => {
     const credits = modelCredits()
     expect(credits.map((credit) => credit.author)).toEqual(['Kenney', 'Quaternius', 'J-Toastie'])
     for (const credit of credits) {
-      expect(credit.licenceUrl).toMatch(/^https:\/\/creativecommons\.org\//)
+      expect(credit.licenseUrl).toMatch(/^https:\/\/creativecommons\.org\//)
       expect(credit.url).toMatch(/^https:\/\//)
     }
   })

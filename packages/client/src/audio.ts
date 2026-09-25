@@ -33,7 +33,7 @@ export const ENGINE_TIMBRES: Readonly<Record<VehicleProfileId, EngineTimbre>> = 
   goKart: { wave: 'square', idle: 120, span: 620, cutoff: 3200, volume: 0.28, chug: 0, chugRate: 0 },
 })
 
-/** How far away a sound can be heard from at all, in metres. */
+/** How far away a sound can be heard from at all, in meters. */
 export const EARSHOT = 140
 
 /**
@@ -63,7 +63,7 @@ const ENGINE_FOLLOW = 0.08
 /** How loud engines are against everything else: they run all the time, so they sit well back. */
 const ENGINE_LEVEL = 0.6
 
-/** The tyres' grip curve, as far as the squeal needs it: where the grip stops rising, and how far past that it falls. */
+/** The tires' grip curve, as far as the squeal needs it: where the grip stops rising, and how far past that it falls. */
 export interface SkidTuning {
   lateralPlateauEndSlip: number
   lateralFalloffRange: number
@@ -73,9 +73,9 @@ export interface SkidTuning {
 const SKID_FULL_FALLOFF = 0.5
 
 /**
- * How hard the tyres are sliding, 0 to 1: the worst of the wheels on the
+ * How hard the tires are sliding, 0 to 1: the worst of the wheels on the
  * ground, and only once it is past the end of its grip and letting go. A
- * tyre working hard in a bend is still gripping, and makes no noise.
+ * tire working hard in a bend is still gripping, and makes no noise.
  * Wheels in the air make none either, whatever they are doing.
  */
 export function skidAmount(
@@ -177,7 +177,7 @@ export class EngineVoice {
 }
 
 /**
- * Tyres sliding sideways: a low, breathy squeal that rises and hardens with
+ * Tires sliding sideways: a low, breathy squeal that rises and hardens with
  * the slip. Kept well down the range, and broad, so it reads as rubber on
  * a road rather than a whistle.
  */
@@ -218,7 +218,7 @@ export class SkidVoice {
     this.tone.start(now)
   }
 
-  /** How hard the tyres are sliding, 0 to 1, and how far off. */
+  /** How hard the tires are sliding, 0 to 1, and how far off. */
   set(slip: number, distance = 0): void {
     if (this.stopped) return
     const now = this.context.currentTime
@@ -397,7 +397,7 @@ export class Sound {
     return new EngineVoice(this.context, ENGINE_TIMBRES[profile], this.master)
   }
 
-  /** A set of tyres, silent until they slide. */
+  /** A set of tires, silent until they slide. */
   skid(): SkidVoice {
     return new SkidVoice(this.context, this.noise, this.master)
   }

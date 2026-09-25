@@ -53,7 +53,7 @@ export interface Lake {
  */
 export interface District {
   id: number
-  /** City centre, in world units. */
+  /** City center, in world units. */
   cx: number
   cz: number
   /** City core radius, in world units. */
@@ -64,7 +64,7 @@ export interface District {
   area: number
 }
 
-/** A sample along a road centreline, in world units. */
+/** A sample along a road centerline, in world units. */
 export interface RoadPoint {
   x: number
   y: number
@@ -79,7 +79,7 @@ export interface RoadPoint {
 export type RoadKind = 'highway' | 'ramp' | 'cross' | 'arterial' | 'street' | 'climb'
 
 /**
- * A carriageway. Highways form closed loops through every city; interchanges
+ * A roadway. Highways form closed loops through every city; interchanges
  * add open cross roads and one-lane ramps. `structure` holds one `ROAD_*`
  * code per segment: segment `i` runs from `points[i]` to the next point,
  * wrapping for a closed road, so it is one shorter than `points` when open.
@@ -88,15 +88,15 @@ export interface Road {
   id: number
   kind: RoadKind
   closed: boolean
-  /** Full carriageway width, in world units. */
+  /** Full roadway width, in world units. */
   width: number
   points: RoadPoint[]
   structure: Uint8Array
-  /** The level lot a mountain road ends in, terraced into the hillside with the road, for the car park built on it. */
+  /** The level lot a mountain road ends in, terraced into the hillside with the road, for the parking lot built on it. */
   lot?: Lot
 }
 
-/** A level rectangle terraced into the ground at `y`, turned by `yaw` about its centre like a footprint. */
+/** A level rectangle terraced into the ground at `y`, turned by `yaw` about its center like a footprint. */
 export interface Lot {
   x: number
   y: number
@@ -108,7 +108,7 @@ export interface Lot {
 
 /**
  * A box standing on the ground: a city block's building, or a house. It is
- * turned by `yaw` about its centre, `width` along its local X and `depth`
+ * turned by `yaw` about its center, `width` along its local X and `depth`
  * along its local Z, and stands from `bottom`, buried below the lowest ground
  * under it, up to `top`.
  */
@@ -138,7 +138,7 @@ export type BuildingKind =
   | 'post'
   | 'sign'
   | 'tent'
-  | 'caravan'
+  | 'camper'
   | 'firepit'
   | 'boat'
   | 'pylon'
@@ -165,11 +165,11 @@ export const WATER_KINDS: readonly BuildingKind[] = ['boat']
 
 /**
  * A rectangle painted on the ground: a farm's field of crop, hedged about, a
- * filling station's asphalt apron, or a car park with its bays marked out.
+ * gas station's asphalt apron, or a parking lot with its bays marked out.
  */
 export interface Field {
-  /** A crop, a paved lot, a car park with its bays marked, or a city square paved over. */
-  kind: 'crop' | 'asphalt' | 'carpark' | 'square'
+  /** A crop, a paved lot, a parking lot with its bays marked, or a city square paved over. */
+  kind: 'crop' | 'asphalt' | 'parkingLot' | 'square'
   x: number
   z: number
   yaw: number
@@ -219,22 +219,22 @@ export interface Ramp {
  * drive through.
  */
 /**
- * The sidewalk round one city block: a square ring, raised a kerb's height
- * above the street, from the carriageway's edge in under the buildings.
+ * The sidewalk around one city block: a square ring, raised a curb's height
+ * above the street, from the roadway's edge in under the buildings.
  */
 export interface Sidewalk {
-  /** The block's centre. */
+  /** The block's center. */
   x: number
   z: number
   yaw: number
-  /** Half the ring's outer side, from the block's centre to the kerb. */
+  /** Half the ring's outer side, from the block's center to the curb. */
   half: number
-  /** How wide the ring is, kerb to inner edge. */
+  /** How wide the ring is, curb to inner edge. */
   band: number
   /**
-   * Which of the ring's four sides are built, going round from the side at
+   * Which of the ring's four sides are built, going around from the side at
    * +v: a side with no street along it is left out, as is one that a road
-   * other than the block's own streets cuts across, or its kerb would be a
+   * other than the block's own streets cuts across, or its curb would be a
    * step in that road.
    */
   sides: [boolean, boolean, boolean, boolean]
@@ -282,7 +282,7 @@ export interface Rock {
   x: number
   z: number
   bottom: number
-  /** Across, in metres. */
+  /** Across, in meters. */
   size: number
   yaw: number
   /** A shade for whoever draws it, 0 to 1. */

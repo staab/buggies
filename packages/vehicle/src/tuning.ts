@@ -1,4 +1,4 @@
-// Every vehicle's numbers: its body, springs, tyres, engine, and how it
+// Every vehicle's numbers: its body, springs, tires, engine, and how it
 // behaves in the air and in a crash. Ten profiles, each measured off the
 // model the client draws it with, at the scale it is drawn.
 
@@ -69,7 +69,7 @@ export interface VehicleTuning {
   airPitchTorque: number
 
   airLevelTorque: number
-  /** Torque against pitch and roll rate in the air, per rad/s: the damping on the levelling. */
+  /** Torque against pitch and roll rate in the air, per rad/s: the damping on the leveling. */
   airLevelDamping: number
   airLevelEngageDelay: number
   /**
@@ -81,7 +81,7 @@ export interface VehicleTuning {
   impactTumbleTime: number
   /**
    * Level acceleration, in m/s², below which the car is only being driven:
-   * anything the tyres can do to it. Past it, the car is being knocked, and
+   * anything the tires can do to it. Past it, the car is being knocked, and
    * every bit of speed it gains or loses over that in a step is damage.
    */
   damageAcceleration: number
@@ -376,7 +376,7 @@ const RACE_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
 // for what it is, from a kart you sit an inch off the road in to a tank. Every
 // vehicle's measurements are those of the model the client draws it with, at
 // the scale it is drawn: the chassis box is the body,
-// the wheels are as big as its wheels and on its axles. The tyres stand a
+// the wheels are as big as its wheels and on its axles. The tires stand a
 // little wider than the wheels are drawn, though: these bodies are tall for
 // their width, and would go over in a bend otherwise.
 
@@ -461,7 +461,7 @@ const POLICE_TUNING: Readonly<VehicleTuning> = Object.freeze({
 } satisfies VehicleTuning)
 
 /**
- * A fire engine: seven tonnes on four driven wheels, with the engine to take
+ * A fire truck: seven tons on four driven wheels, with the engine to take
  * them up a mountain and the springs to keep all that height from going over.
  */
 const FIRETRUCK_TUNING: Readonly<VehicleTuning> = Object.freeze({
@@ -546,7 +546,7 @@ const FIRETRUCK_TUNING: Readonly<VehicleTuning> = Object.freeze({
 /**
  * A city runabout: tiny, light, front driven, and quick to turn but not to
  * go. So short a car has little to hold it straight once its tail steps out,
- * so it is kept planted instead: its weight low, its tyres wide-set for its
+ * so it is kept planted instead: its weight low, its tires wide-set for its
  * body, and their grip a little short of a sports car's, so that it slides
  * before it snaps.
  */
@@ -630,7 +630,7 @@ const SMALL_CAR_TUNING: Readonly<VehicleTuning> = Object.freeze({
 } satisfies VehicleTuning)
 
 /**
- * A tank: fourteen tonnes low on its tracks, slow, all but impossible to slide
+ * A tank: fourteen tons low on its tracks, slow, all but impossible to slide
  * or tip, and shrugging off knocks that would wreck anything else.
  */
 const TANK_TUNING: Readonly<VehicleTuning> = Object.freeze({
@@ -795,8 +795,8 @@ const AMBULANCE_TUNING: Readonly<VehicleTuning> = Object.freeze({
 } satisfies VehicleTuning)
 
 /**
- * A semi's tractor unit, running bobtail: the heaviest thing on the road bar
- * the tank, slow to steer and slower to stop, but with the pull to climb anything.
+ * A semi's tractor, running bobtail: the heaviest thing on the road except
+ * for the tank, slow to steer and slower to stop, but with the pull to climb anything.
  */
 const SEMI_TUNING: Readonly<VehicleTuning> = Object.freeze({
   chassisHalfWidth: 1.28,

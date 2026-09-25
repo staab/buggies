@@ -123,11 +123,11 @@ describe('game', () => {
 
     run(arena, FLAT_OUT, 4)
     expect(seat.vehicle.speed).toBeGreaterThan(5)
-    const travelled = Math.hypot(
+    const traveled = Math.hypot(
       seat.vehicle.frame.position.x - from.x,
       seat.vehicle.frame.position.z - from.z,
     )
-    expect(travelled).toBeGreaterThan(10)
+    expect(traveled).toBeGreaterThan(10)
 
     // The brake pedal becomes reverse once there is nothing left to stop, so
     // what it has to show is the stopping, not a standstill it never keeps.
@@ -151,7 +151,7 @@ describe('game', () => {
     expect(seat.epoch).not.toBe(epoch)
     expect(seat.vehicle.speed).toBe(0)
     const { position } = seat.vehicle.frame
-    // The body keeps single-precision coordinates, so a kilometre in is only good to a few tens of microns.
+    // The body keeps single-precision coordinates, so a kilometer in is only good to a few tens of microns.
     expect(position.x).toBeCloseTo(seat.spawn.position.x, 3)
     expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
   })
@@ -277,7 +277,7 @@ describe('game', () => {
   it('turns the way it is steered', () => {
     // A chassis faces its own -Z with up at +Y, which puts its right at +X;
     // turned by the spawn's yaw, that is the way steering right has to carry
-    // it. The old physics had this backwards and every figure that takes an
+    // it. The old physics had this backward and every figure that takes an
     // absolute value hid it. Measured along the road, from the spawn on it.
     const right = { x: Math.cos(SPAWN.yaw), z: -Math.sin(SPAWN.yaw) }
     const drift = (steer: number): number => {
@@ -373,8 +373,8 @@ describe('game', () => {
       const { x, y, z } = seat.vehicle.frame.position
       if (boreClearance(bores, x, z, y) >= 0) continue
       inside++
-      // Standing on the carriageway, not on the bed cut beneath it. The two
-      // are less than a metre apart, so anything looser than this cannot tell
+      // Standing on the roadway, not on the bed cut beneath it. The two
+      // are less than a meter apart, so anything looser than this cannot tell
       // a tunnel with a road in it from a tunnel without one.
       const floor = boreFloorAt(bores, x, z)
       if (floor !== null && y - floor > 0.5 && seat.vehicle.groundedCount === 4) onTheRoad++

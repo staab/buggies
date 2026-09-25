@@ -41,7 +41,7 @@ function inputAuthority(command: DriverCommand, tuning: VehicleTuning): number {
 /**
  * Where the car is going to land: how much harder to level for it, and
  * which way is up there. Falling toward ground within the lookahead, the
- * levelling strengthens as it nears, and aims at the ground's own normal so
+ * leveling strengthens as it nears, and aims at the ground's own normal so
  * the car lands square on a slope.
  */
 function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): number {
@@ -84,7 +84,7 @@ function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): 
  * rate, so it lands on its wheels. Yaw is left alone for the air controls.
  * Off a crash it is not: a car that has just been hit is let tumble.
  */
-/** How much harder than the ordinary levelling a car on wings is held level, and damped. */
+/** How much harder than the ordinary leveling a car on wings is held level, and damped. */
 const WINGS_LEVEL = 2.5
 
 /**

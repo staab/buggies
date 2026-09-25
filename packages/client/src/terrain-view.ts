@@ -49,7 +49,7 @@ interface ColorStop {
   color: THREE.Color
 }
 
-/** A ramp of colours: always at least the one to start from. */
+/** A ramp of colors: always at least the one to start from. */
 type Stops = [ColorStop, ...ColorStop[]]
 
 const LAND_STOPS: Stops = [
@@ -66,19 +66,19 @@ const SEABED_SHALLOW = new THREE.Color('#4a7f86')
 const CITY_TINT = new THREE.Color('#8c8f93')
 const SUBURB_TINT = new THREE.Color('#a3a271')
 const ROAD_GRADE_COLOR = new THREE.Color('#43464b')
-/** A kerb's lighter edge along a road, the white of its centre line, and the gravel of a park path. */
+/** A curb's lighter edge along a road, the white of its center line, and the gravel of a park path. */
 const KERB_COLOR = new THREE.Color('#8f9296')
 const MARKING_COLOR = new THREE.Color('#e6e6df')
 const GRAVEL_COLOR = new THREE.Color('#b9ad93')
 /**
- * The roads are marked with a dashed centre line and nothing else. The
- * ground is painted two texels to the metre, so the dashes are half a metre
+ * The roads are marked with a dashed center line and nothing else. The
+ * ground is painted two texels to the meter, so the dashes are half a meter
  * wide, a texel, or they would smear.
  */
 const DASH = { every: 6, length: 3, width: 0.5 } as const
-/** How far past the asphalt a road's lighter kerb shows. */
-const KERB_LINE = 0.75
-/** An interchange park's loop path: this many points round, this far out from the middle toward the ramps. */
+/** How far past the asphalt a road's lighter curb shows. */
+const CURB_LINE = 0.75
+/** An interchange park's loop path: this many points around, this far out from the middle toward the ramps. */
 const PARK_LOOP_POINTS = 16
 const PARK_LOOP_IN = 0.55
 const ROAD_BRIDGE_COLOR = new THREE.Color('#a8adb3')
@@ -92,7 +92,7 @@ const BLOCK_STOPS: Stops = [
   { t: 0.7, color: new THREE.Color('#8f979f') },
   { t: 1, color: new THREE.Color('#5d6f80') },
 ]
-/** Houses come in a few colours of render and brick, each a plain box under a pitched roof. */
+/** Houses come in a few colors of render and brick, each a plain box under a pitched roof. */
 const HOUSE_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#e8dcc0'),
   new THREE.Color('#d9c9a3'),
@@ -122,7 +122,7 @@ const THATCH_COLORS: [THREE.Color, ...THREE.Color[]] = [
 const COTTAGE_PITCH = 0.6
 const CHIMNEY = { width: 0.9, height: 1.8 } as const
 const BRICK = new THREE.Color('#8a4a3a')
-/** Villas are pale, flat-roofed, with a smaller second storey set on the first. */
+/** Villas are pale, flat-roofed, with a smaller second story set on the first. */
 const VILLA_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#f3efe6'),
   new THREE.Color('#e6d8c3'),
@@ -145,7 +145,7 @@ const CROP_STOPS: Stops = [
 ]
 const CROP_STRIPE = 4
 const CROP_STRIPE_SHADE = 0.86
-/** Barns are painted red, a shade or two of it, under a grey gambrel roof; silos are pale steel with a domed cap. */
+/** Barns are painted red, a shade or two of it, under a gray gambrel roof; silos are pale steel with a domed cap. */
 const BARN_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#a63a2c'),
   new THREE.Color('#b8402f'),
@@ -159,7 +159,7 @@ const TURBINE_COLOR = new THREE.Color('#f0f2f2')
 const BLADE_LENGTH = 18
 const BLADE_SPIN = 0.7
 const NACELLE = { length: 4.2, width: 1.7 } as const
-/** Standing stones are a pale weathered grey, a little different each, to stand out against the grass. */
+/** Standing stones are a pale weathered gray, a little different each, to stand out against the grass. */
 const STONE_COLOR = new THREE.Color('#bcbdb5')
 /**
  * A lighthouse is a white tower tapering to this share of its width at the
@@ -187,9 +187,9 @@ const CHURCH_COLOR = new THREE.Color('#d9d2c2')
 const SLATE = new THREE.Color('#4d4f55')
 const SPIRE_HEIGHT = 11
 const CHURCH_PITCH = 0.45
-/** A church's windows come one line to a wall, one every so many metres, tall and arched. */
+/** A church's windows come one line to a wall, one every so many meters, tall and arched. */
 const CHURCH_WINDOW_PITCH = 4.5
-/** Water towers are pale green-grey: a column, four legs, a spheroid tank this wide and tall at the top, and a ladder. */
+/** Water towers are pale green-gray: a column, four legs, a spheroid tank this wide and tall at the top, and a ladder. */
 const WATER_TOWER_COLOR = new THREE.Color('#b8c2b8')
 const TANK = { radius: 4, height: 5.5 } as const
 /** Filling stations: a white canopy with a red fascia over two pump islands, a glazed shop, and a red sign. */
@@ -199,16 +199,16 @@ const CANOPY_COLOR = new THREE.Color('#f4f4f0')
 const FASCIA = new THREE.Color('#d0392b')
 const PUMP_COLOR = new THREE.Color('#e8e8e4')
 const SHOP_GLASS = new THREE.Color('#9fc3d8')
-/** Camp sites: tents in bright colours, white caravans, a ring of stones round the fire with an ember in it. */
+/** Camp sites: tents in bright colors, white campers, a ring of stones around the fire with an ember in it. */
 const TENT_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#d9542b'),
   new THREE.Color('#2f7fbf'),
   new THREE.Color('#e0b429'),
   new THREE.Color('#3f9a5a'),
 ]
-const CARAVAN_COLOR = new THREE.Color('#f2f1ec')
-const CARAVAN_STRIPE = new THREE.Color('#4a7fb5')
-/** The boats moored off the shore: hulls in a few colours over a dark boot-top, a pale deck, a wheelhouse and a mast. */
+const CAMPER_COLOR = new THREE.Color('#f2f1ec')
+const CAMPER_STRIPE = new THREE.Color('#4a7fb5')
+/** The boats moored off the shore: hulls in a few colors over a dark boot-top, a pale deck, a wheelhouse and a mast. */
 const BOAT_COLORS: [THREE.Color, ...THREE.Color[]] = [
   new THREE.Color('#f4f2ec'),
   new THREE.Color('#2f4f7f'),
@@ -223,13 +223,13 @@ const CABIN_ROOF = new THREE.Color('#c9c4b8')
 const CABIN_GLASS = new THREE.Color('#3a4750')
 /** How far over the sea the boot-top's dark band shows. */
 const BOOT_TOP_OVER = 0.15
-/** A chair lift: grey pylons with a crossbar and sheaves, a cable strung over them, chairs hung from it and moving up and down, and a shed at each end. */
+/** A chair lift: gray pylons with a crossbar and sheaves, a cable strung over them, chairs hung from it and moving up and down, and a shed at each end. */
 const PYLON_COLOR = new THREE.Color('#8e9096')
 const CABLE_COLOR = new THREE.Color('#3a3c40')
 const CHAIR_COLOR = new THREE.Color('#d8452e')
 const STATION_COLOR = new THREE.Color('#b9b2a4')
 const LIFT = { crossbar: 6, sag: 1.2, chairEvery: 20, chairDrop: 3, speed: 2.5, cableOver: 0.4 } as const
-/** Rocks: grey through brown by tone, a boulder drawn lumpier than a scree stone. */
+/** Rocks: gray through brown by tone, a boulder drawn lumpier than a scree stone. */
 const ROCK_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#6e6a64') },
   { t: 0.5, color: new THREE.Color('#8a8078') },
@@ -249,8 +249,8 @@ const PLAQUE = new THREE.Color('#8c7a4e')
 const CLOCK = { cornice: 0.8, face: 3.2, rim: 0.25, ticks: 12, tickLength: 0.35, hour: 1.1, minute: 1.6, roof: 2.2, ticksPerHour: 60 * 60 * 60 } as const
 const CLOCK_FACE = new THREE.Color('#f2efe6')
 const CLOCK_DARK = new THREE.Color('#2b2b2e')
-/** A building site: blue hoardings round it, and a tower crane in yellow or red by tone, its top turning this fast in radians a second. */
-const HOARDING_COLOR = new THREE.Color('#3b5b86')
+/** A building site: blue fencing around it, and a tower crane in yellow or red by tone, its top turning this fast in radians a second. */
+const FENCE_COLOR = new THREE.Color('#3b5b86')
 const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), new THREE.Color('#c23b2b')]
 const CRANE_CAB = new THREE.Color('#d9dde3')
 const CONCRETE = new THREE.Color('#9a9a94')
@@ -271,22 +271,22 @@ const CROWN_STOPS: Stops = [
 const TRUNK_RADIUS = 0.35
 /** How far up a tree the crown starts, as a fraction of its height. */
 const CROWN_FROM = 0.25
-/** Storeys are this tall, and a block's windows this far apart along a face. */
-const STOREY = 3
+/** Stories are this tall, and a block's windows this far apart along a face. */
+const STORY = 3
 const WINDOW_PITCH = 3.5
-/** A house's windows are this far apart, one storey tall between them. */
+/** A house's windows are this far apart, one story tall between them. */
 const HOUSE_PITCH = 3
-/** Roof tiles repeat every this many metres. */
+/** Roof tiles repeat every this many meters. */
 const ROOF_TILE = 2
 
 /**
- * A repeating picture of a wall, as pixels: `tile` metres of it, drawn by
+ * A repeating picture of a wall, as pixels: `tile` meters of it, drawn by
  * `paint` with the pixel's place in the tile. Near white where the wall is
- * bare, so the building's own colour comes through it.
+ * bare, so the building's own color comes through it.
  */
 interface Facade {
   texture: THREE.DataTexture
-  /** How many metres across and up one repeat of the picture covers. */
+  /** How many meters across and up one repeat of the picture covers. */
   tile: THREE.Vector2
 }
 
@@ -325,15 +325,15 @@ function windowHash(column: number, row: number): number {
   return n - Math.floor(n)
 }
 
-/** Four bays of four storeys of a block's windows, on a bare wall. */
+/** Four bays of four stories of a block's windows, on a bare wall. */
 function blockFacade(): Facade {
   const bays = 4
-  const storeys = 4
-  return paintedFacade(128, [bays * WINDOW_PITCH, storeys * STOREY], (u, v, out) => {
+  const stories = 4
+  return paintedFacade(128, [bays * WINDOW_PITCH, stories * STORY], (u, v, out) => {
     const column = Math.floor(u * bays)
-    const row = Math.floor(v * storeys)
+    const row = Math.floor(v * stories)
     const du = u * bays - column
-    const dv = v * storeys - row
+    const dv = v * stories - row
     const inWindow = du > 0.22 && du < 0.78 && dv > 0.2 && dv < 0.72
     if (!inWindow) {
       out.setRGB(0.92, 0.92, 0.92)
@@ -346,10 +346,10 @@ function blockFacade(): Facade {
   })
 }
 
-/** Two windows with sills and frames per storey of a house, on a bare wall. */
+/** Two windows with sills and frames per story of a house, on a bare wall. */
 function houseFacade(): Facade {
   const bays = 2
-  return paintedFacade(64, [bays * HOUSE_PITCH, STOREY], (u, v, out) => {
+  return paintedFacade(64, [bays * HOUSE_PITCH, STORY], (u, v, out) => {
     const column = Math.floor(u * bays)
     const du = u * bays - column
     const inFrame = du > 0.25 && du < 0.75 && v > 0.3 && v < 0.8
@@ -390,10 +390,10 @@ function roofFacade(): Facade {
 }
 
 /**
- * A material that repeats its facade every `tile` metres over every face of
+ * A material that repeats its facade every `tile` meters over every face of
  * an instanced box, whatever the box's size. The box's size is read back
  * from its instance matrix, and a face's own span from its normal: the sides
- * run along the box and up it, the top across it. Storeys count down from
+ * run along the box and up it, the top across it. Stories count down from
  * the roof, so the row under the ground is the one cut short.
  */
 function facadeMaterial(facade: Facade, roughness: number): THREE.MeshStandardMaterial {
@@ -419,11 +419,11 @@ function facadeMaterial(facade: Facade, roughness: number): THREE.MeshStandardMa
 const TUNNEL_CUT_SUBDIVISIONS = 4
 
 /**
- * The ground is painted at this many texels per metre: fine enough that a
+ * The ground is painted at this many texels per meter: fine enough that a
  * street reads as a street, coarse enough that a whole island fits in one
  * texture.
  */
-const TEXELS_PER_METRE = 2
+const TEXELS_PER_METER = 2
 
 function sampleRamp(t: number, stops: Stops, out: THREE.Color): THREE.Color {
   let lo = stops[0]
@@ -458,8 +458,8 @@ function terrainColor(
 }
 
 /**
- * The land, coloured by height and district, with every surface road painted
- * onto it. One texture over the whole island: the ground's colour is sampled
+ * The land, colored by height and district, with every surface road painted
+ * onto it. One texture over the whole island: the ground's color is sampled
  * at each corner of the grid and blended between them, the way the mesh
  * blends its heights, and the roads are drawn on top with soft edges.
  */
@@ -474,7 +474,7 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     if (height > max) max = height
   }
 
-  // The colour at every grid corner, ready to display.
+  // The color at every grid corner, ready to display.
   const corner = new Float32Array(width * depth * 3)
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
@@ -492,23 +492,23 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     return [rgb.r * 255, rgb.g * 255, rgb.b * 255]
   }
   const asphalt = texelsOf(ROAD_GRADE_COLOR)
-  const kerb = texelsOf(KERB_COLOR)
+  const curb = texelsOf(KERB_COLOR)
   const marking = texelsOf(MARKING_COLOR)
   const gravel = texelsOf(GRAVEL_COLOR)
   const crops = map.fields.map((field) => cropOf(field))
 
-  const texels = Math.ceil(width * cellSize * TEXELS_PER_METRE)
+  const texels = Math.ceil(width * cellSize * TEXELS_PER_METER)
   const data = new Uint8Array(texels * texels * 4)
   // Which column of the field each texel column falls in, and how far across it, worked out once.
   const colOf = new Int32Array(texels)
   const acrossOf = new Float32Array(texels)
   for (let tx = 0; tx < texels; tx++) {
-    const gx = Math.min((tx + 0.5) / TEXELS_PER_METRE / cellSize, width - 1)
+    const gx = Math.min((tx + 0.5) / TEXELS_PER_METER / cellSize, width - 1)
     colOf[tx] = Math.min(Math.floor(gx), width - 2)
     acrossOf[tx] = gx - colOf[tx]!
   }
   for (let ty = 0; ty < texels; ty++) {
-    const z = (ty + 0.5) / TEXELS_PER_METRE
+    const z = (ty + 0.5) / TEXELS_PER_METER
     const gz = Math.min(z / cellSize, depth - 1)
     const row = Math.min(Math.floor(gz), depth - 2)
     const tz = gz - row
@@ -533,13 +533,13 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
   }
 
   // The fields are painted on over the land, and the roads over everything:
-  // the country roads and the city streets alike, each with a lighter kerb
+  // the country roads and the city streets alike, each with a lighter curb
   // along it, and the streets marked out besides.
   for (const [i, field] of map.fields.entries()) {
     const crop = crops[i]
     if (crop !== undefined && !paved(field)) paintField(data, texels, field, crop)
   }
-  // A gravel loop round the ground each interchange encloses, now that it
+  // A gravel loop around the ground each interchange encloses, now that it
   // is a park, laid before the roads so no path crosses one.
   for (const zone of interchangeZones(map.roads)) {
     const loop = parkLoop(zone)
@@ -560,16 +560,16 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
   // deck is drawn over it, and the lane comes out from under the deck's edge.
   const surface = map.roads.filter((road) => isSurfaceRoad(road))
   for (const road of surface) {
-    for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2 + KERB_LINE, kerb)
+    for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2 + CURB_LINE, curb)
   }
   for (const road of surface) {
     for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2, asphalt)
   }
   for (const road of surface) paintDashes(data, texels, road, marking)
-  // A paved lot covers whatever road runs into it: it is painted over the roads, its corners rounded, with a kerb round its edge.
+  // A paved lot covers whatever road runs into it: it is painted over the roads, its corners rounded, with a curb around its edge.
   for (const field of map.fields) {
     if (!paved(field)) continue
-    paintField(data, texels, { ...field, width: field.width + 2 * KERB_LINE, depth: field.depth + 2 * KERB_LINE }, { plain: kerb, striped: kerb })
+    paintField(data, texels, { ...field, width: field.width + 2 * CURB_LINE, depth: field.depth + 2 * CURB_LINE }, { plain: curb, striped: curb })
     paintField(data, texels, field, cropOf(field))
   }
 
@@ -587,20 +587,20 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
 
 /** Whether a field is paved: asphalt, laid over the ground and any road, rather than a crop grown on it. */
 function paved(field: Field): boolean {
-  return field.kind === 'asphalt' || field.kind === 'carpark' || field.kind === 'square'
+  return field.kind === 'asphalt' || field.kind === 'parkingLot' || field.kind === 'square'
 }
 
-/** How far round a paved lot's corners are. */
+/** How far a paved lot's corners are rounded. */
 const PAVED_CORNER = 4
 
-/** A field's crop: its colour and the shade of its stripes, as texel values. */
+/** A field's crop: its color and the shade of its stripes, as texel values. */
 interface Crop {
   plain: [number, number, number]
   striped: [number, number, number]
 }
 
 function cropOf(field: Field): Crop {
-  if (field.kind === 'asphalt' || field.kind === 'carpark' || field.kind === 'square') {
+  if (field.kind === 'asphalt' || field.kind === 'parkingLot' || field.kind === 'square') {
     const rgb = { r: 0, g: 0, b: 0 }
     ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
     const plain: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
@@ -613,19 +613,19 @@ function cropOf(field: Field): Crop {
   return { plain, striped: [plain[0] * CROP_STRIPE_SHADE, plain[1] * CROP_STRIPE_SHADE, plain[2] * CROP_STRIPE_SHADE] }
 }
 
-/** A field, as a rectangle of crop turned with the field, striped along its length; a car park is plain asphalt. */
+/** A field, as a rectangle of crop turned with the field, striped along its length; a parking lot is plain asphalt. */
 function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop): void {
   const cos = Math.cos(field.yaw)
   const sin = Math.sin(field.yaw)
   const reach = Math.hypot(field.width, field.depth) / 2
-  const from = Math.max(Math.floor((field.x - reach) * TEXELS_PER_METRE), 0)
-  const to = Math.min(Math.ceil((field.x + reach) * TEXELS_PER_METRE), texels - 1)
-  const top = Math.max(Math.floor((field.z - reach) * TEXELS_PER_METRE), 0)
-  const bottom = Math.min(Math.ceil((field.z + reach) * TEXELS_PER_METRE), texels - 1)
+  const from = Math.max(Math.floor((field.x - reach) * TEXELS_PER_METER), 0)
+  const to = Math.min(Math.ceil((field.x + reach) * TEXELS_PER_METER), texels - 1)
+  const top = Math.max(Math.floor((field.z - reach) * TEXELS_PER_METER), 0)
+  const bottom = Math.min(Math.ceil((field.z + reach) * TEXELS_PER_METER), texels - 1)
   for (let ty = top; ty <= bottom; ty++) {
-    const dz = (ty + 0.5) / TEXELS_PER_METRE - field.z
+    const dz = (ty + 0.5) / TEXELS_PER_METER - field.z
     for (let tx = from; tx <= to; tx++) {
-      const dx = (tx + 0.5) / TEXELS_PER_METRE - field.x
+      const dx = (tx + 0.5) / TEXELS_PER_METER - field.x
       // Into the field's own frame: u along its width, v along its depth.
       const u = dx * cos - dz * sin
       const v = dx * sin + dz * cos
@@ -652,14 +652,14 @@ function between(a: { x: number; z: number }, b: { x: number; z: number }, t: nu
 }
 
 /**
- * A road's dashed centre line, along its stretches at grade. The dashes are
+ * A road's dashed center line, along its stretches at grade. The dashes are
  * laid by the distance along the road, not the segment, since a road's
- * points come a few metres apart.
+ * points come a few meters apart.
  */
 function paintDashes(data: Uint8Array, texels: number, road: Road, marking: [number, number, number]): void {
   const count = road.points.length
   const segmentCount = road.closed ? count : count - 1
-  let travelled = 0
+  let traveled = 0
   for (let i = 0; i < segmentCount; i++) {
     const a = road.points[i]!
     const b = road.points[(i + 1) % count]!
@@ -667,19 +667,19 @@ function paintDashes(data: Uint8Array, texels: number, road: Road, marking: [num
     if (road.structure[i] === ROAD_GRADE && length > 0) {
       let from = 0
       while (from < length) {
-        const phase = (travelled + from) % DASH.every
+        const phase = (traveled + from) % DASH.every
         const lit = phase < DASH.length
         const to = Math.min(length, from + (lit ? DASH.length - phase : DASH.every - phase))
         if (lit) paintLine(data, texels, between(a, b, from / length), between(a, b, to / length), marking, DASH.width)
         from = to
       }
     }
-    travelled += length
+    traveled += length
   }
 }
 
 /**
- * A path round the inside of an interchange's park: from the middle of
+ * A path around the inside of an interchange's park: from the middle of
  * the zone, a point part way out toward its edge in each of a ring of
  * directions, so the loop follows the shape the ramps enclose.
  */
@@ -698,7 +698,7 @@ function parkLoop(zone: { x: number; z: number }[]): { x: number; z: number }[] 
     const angle = (k / PARK_LOOP_POINTS) * Math.PI * 2
     const dx = Math.cos(angle)
     const dz = Math.sin(angle)
-    // Out from the middle to the edge, a metre at a time.
+    // Out from the middle to the edge, a meter at a time.
     let reach = 0
     while (reach < 400 && insidePolygon(zone, cx + dx * (reach + 1), cz + dz * (reach + 1))) reach += 1
     loop.push({ x: cx + dx * reach * PARK_LOOP_IN, z: cz + dz * reach * PARK_LOOP_IN })
@@ -718,21 +718,21 @@ function paintLine(
   a: { x: number; z: number },
   b: { x: number; z: number },
   rgb: [number, number, number],
-  width = 1 / TEXELS_PER_METRE,
+  width = 1 / TEXELS_PER_METER,
 ): void {
   const length = Math.hypot(b.x - a.x, b.z - a.z)
-  const steps = Math.max(1, Math.ceil(length * TEXELS_PER_METRE * 2))
+  const steps = Math.max(1, Math.ceil(length * TEXELS_PER_METER * 2))
   const nx = length > 0 ? -(b.z - a.z) / length : 0
   const nz = length > 0 ? (b.x - a.x) / length : 0
-  const across = Math.max(1, Math.round(width * TEXELS_PER_METRE * 2))
+  const across = Math.max(1, Math.round(width * TEXELS_PER_METER * 2))
   for (let step = 0; step <= steps; step++) {
     const t = step / steps
     const x = a.x + (b.x - a.x) * t
     const z = a.z + (b.z - a.z) * t
     for (let k = 0; k < across; k++) {
       const n = ((k + 0.5) / across - 0.5) * width
-      const tx = Math.floor((x + nx * n) * TEXELS_PER_METRE)
-      const ty = Math.floor((z + nz * n) * TEXELS_PER_METRE)
+      const tx = Math.floor((x + nx * n) * TEXELS_PER_METER)
+      const ty = Math.floor((z + nz * n) * TEXELS_PER_METER)
       if (tx < 0 || ty < 0 || tx >= texels || ty >= texels) continue
       const at = (ty * texels + tx) * 4
       data[at] = rgb[0]
@@ -742,7 +742,7 @@ function paintLine(
   }
 }
 
-/** One stretch of carriageway, as a capsule with an edge a texel wide. */
+/** One stretch of roadway, as a capsule with an edge a texel wide. */
 function paintSegment(
   data: Uint8Array,
   texels: number,
@@ -754,20 +754,20 @@ function paintSegment(
   const vx = b.x - a.x
   const vz = b.z - a.z
   const lengthSq = vx * vx + vz * vz || 1
-  const reach = half + 1 / TEXELS_PER_METRE
-  const minX = Math.max(Math.floor((Math.min(a.x, b.x) - reach) * TEXELS_PER_METRE), 0)
-  const maxX = Math.min(Math.ceil((Math.max(a.x, b.x) + reach) * TEXELS_PER_METRE), texels - 1)
-  const minZ = Math.max(Math.floor((Math.min(a.z, b.z) - reach) * TEXELS_PER_METRE), 0)
-  const maxZ = Math.min(Math.ceil((Math.max(a.z, b.z) + reach) * TEXELS_PER_METRE), texels - 1)
-  const edge = 0.5 / TEXELS_PER_METRE
+  const reach = half + 1 / TEXELS_PER_METER
+  const minX = Math.max(Math.floor((Math.min(a.x, b.x) - reach) * TEXELS_PER_METER), 0)
+  const maxX = Math.min(Math.ceil((Math.max(a.x, b.x) + reach) * TEXELS_PER_METER), texels - 1)
+  const minZ = Math.max(Math.floor((Math.min(a.z, b.z) - reach) * TEXELS_PER_METER), 0)
+  const maxZ = Math.min(Math.ceil((Math.max(a.z, b.z) + reach) * TEXELS_PER_METER), texels - 1)
+  const edge = 0.5 / TEXELS_PER_METER
 
   for (let ty = minZ; ty <= maxZ; ty++) {
-    const z = (ty + 0.5) / TEXELS_PER_METRE
+    const z = (ty + 0.5) / TEXELS_PER_METER
     for (let tx = minX; tx <= maxX; tx++) {
-      const x = (tx + 0.5) / TEXELS_PER_METRE
+      const x = (tx + 0.5) / TEXELS_PER_METER
       const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
       const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
-      const coverage = Math.min(Math.max((half + edge - distance) * TEXELS_PER_METRE, 0), 1)
+      const coverage = Math.min(Math.max((half + edge - distance) * TEXELS_PER_METER, 0), 1)
       if (coverage <= 0) continue
       // Within the texture: the texel was held inside it above.
       const at = (ty * texels + tx) * 4
@@ -780,7 +780,7 @@ function paintSegment(
 }
 
 
-/** A stretch of a ramp's centreline. */
+/** A stretch of a ramp's centerline. */
 interface Lane {
   ax: number
   az: number
@@ -797,12 +797,12 @@ function rampLanes(roads: Road[]): Lane[] {
   const lanes: Lane[] = []
   for (const road of roads) {
     if (road.kind !== 'ramp') continue
-    let travelled = 0
-    for (let i = 0; i + 1 < road.points.length && travelled < RAMP_LANE_REACH; i++) {
+    let traveled = 0
+    for (let i = 0; i + 1 < road.points.length && traveled < RAMP_LANE_REACH; i++) {
       const a = road.points[i]!
       const b = road.points[i + 1]!
       lanes.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z })
-      travelled += Math.hypot(b.x - a.x, b.z - a.z)
+      traveled += Math.hypot(b.x - a.x, b.z - a.z)
     }
   }
   return lanes
@@ -941,7 +941,7 @@ function buildLakeGeometry(lakes: Lake[], size: number, cellSize: number): THREE
   return geometry
 }
 
-/** How far apart the points of a river's spline are drawn, in metres, and how much of a bend it rounds. */
+/** How far apart the points of a river's spline are drawn, in meters, and how much of a bend it rounds. */
 const RIVER_STEP = 1.5
 const RIVER_CURVE = 0.5
 
@@ -1020,7 +1020,7 @@ function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE
   const colors: number[] = []
   const half = road.width / 2
   const skirt = half + ROAD_SKIRT
-  const verge = half + TUNNEL_CLEARANCE
+  const shoulder = half + TUNNEL_CLEARANCE
   const lift = roadLift(road)
   const painted = isSurfaceRoad(road)
   const structureColor = (structure: number): THREE.Color =>
@@ -1035,7 +1035,7 @@ function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE
   const isTunnel = (segment: number): boolean => road.structure[segment] === ROAD_TUNNEL
 
   for (const [i, point] of points.entries()) {
-    // Round a loop the neighbours wrap; at the end of an open road they stop at the point.
+    // Around a loop the neighbors wrap; at the end of an open road they stop at the point.
     const prev = points[road.closed ? (i - 1 + count) % count : i - 1] ?? point
     const next = points[road.closed ? (i + 1) % count : i + 1] ?? point
     let dx = next.x - prev.x
@@ -1062,7 +1062,7 @@ function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE
     const rightGround = skirtFoot(field, point.x, point.z, -nx, -nz, half, y)
 
     // Six points across: the edges, the skirts down to the ground beside an
-    // embankment, and the verges out to the wall of a tunnel.
+    // embankment, and the shoulders out to the wall of a tunnel.
     positions.push(
       point.x + nx * half,
       y,
@@ -1076,15 +1076,15 @@ function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE
       point.x - nx * skirt,
       rightGround,
       point.z - nz * skirt,
-      point.x + nx * verge,
+      point.x + nx * shoulder,
       y,
-      point.z + nz * verge,
-      point.x - nx * verge,
+      point.z + nz * shoulder,
+      point.x - nx * shoulder,
       y,
-      point.z - nz * verge,
+      point.z - nz * shoulder,
     )
 
-    // A point's colour is its segment's, the last point taking the last segment's.
+    // A point's color is its segment's, the last point taking the last segment's.
     const color = structureColor(road.structure[Math.min(i, segmentCount - 1)]!)
     colors.push(color.r, color.g, color.b, color.r, color.g, color.b)
     const leftSkirt = pavedLeft ? color : ROAD_SKIRT_COLOR
@@ -1143,7 +1143,7 @@ function buildRailGeometry(map: TerrainMap): THREE.BufferGeometry | null {
 
 /** The tunnel shell, the same one the collider is built from. */
 /**
- * Strip lights along the crown of every tunnel, one every few metres: bright
+ * Strip lights along the crown of every tunnel, one every few meters: bright
  * panels that need no light of their own to be seen glowing in the dark.
  */
 function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
@@ -1207,7 +1207,7 @@ function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
 
 /**
  * A batch of the same shape at many places: one draw call for every building,
- * every roof, every trunk. `place` fills in where each goes and what colour it is.
+ * every roof, every trunk. `place` fills in where each goes and what color it is.
  */
 function instanced<T>(
   geometry: THREE.BufferGeometry,
@@ -1300,12 +1300,12 @@ const GAMBREL: [number, number][] = [
 
 /** The buildings, trees and shrubs of a map, as a few instanced meshes. */
 /**
- * A boat's hull in unit measure: a metre long along X, from the transom
- * at the stern to the stem at the bow, a metre in the beam along Z, its
+ * A boat's hull in unit measure: a meter long along X, from the transom
+ * at the stern to the stem at the bow, a meter in the beam along Z, its
  * keel at y = 0 and its gunwale at y = 1, rising a little toward the bow.
  * Lofted through a run of sections, with a V under it and the transom
  * flat, its faces left flat; the deck comes as a piece of its own, so it
- * can be another colour.
+ * can be another color.
  */
 function hullGeometry(): { skin: THREE.BufferGeometry; deck: THREE.BufferGeometry } {
   const sections = [
@@ -1317,7 +1317,7 @@ function hullGeometry(): { skin: THREE.BufferGeometry; deck: THREE.BufferGeometr
     { x: 0.5, w: 0.02 },
   ]
   const sheer = (x: number): number => 1 + 0.12 * Math.max(0, x + 0.1)
-  // Each section round from the keel: the keel, the chine and the gunwale on the left, then the gunwale and the chine on the right.
+  // Each section around from the keel: the keel, the chine and the gunwale on the left, then the gunwale and the chine on the right.
   const rings = sections.map((s) => [
     [s.x, 0, 0],
     [s.x, 0.4, -s.w * 0.72],
@@ -1375,7 +1375,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const slateRoof = new THREE.MeshStandardMaterial({ color: '#4d4f55', roughness: 0.9, metalness: 0 })
   const meshes: (THREE.Object3D | null)[] = []
 
-  // A box's faces come in the order +X, -X, +Y, -Y, +Z, -Z: walls all round, a roof on top.
+  // A box's faces come in the order +X, -X, +Y, -Y, +Z, -Z: walls all around, a roof on top.
   const walled = (wall: THREE.Material, top: THREE.Material): THREE.Material[] => [
     wall,
     wall,
@@ -1403,7 +1403,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const posts = ofKind('post')
   const signs = ofKind('sign')
   const tents = ofKind('tent')
-  const caravans = ofKind('caravan')
+  const campers = ofKind('camper')
   const firepits = ofKind('firepit')
   const boats = ofKind('boat')
   const stations = ofKind('station')
@@ -1429,11 +1429,11 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A villa: its ground floor the whole footprint, and a smaller storey set on top, both flat-roofed.
+  // A villa: its first floor the whole footprint, and a smaller story set on top, both flat-roofed.
   const villaAt = (villa: Building, matrix: THREE.Matrix4, upper: boolean): void => {
     const share = upper ? VILLA_UPPER : 1
-    const bottom = upper ? villa.top - STOREY : villa.bottom
-    const top = upper ? villa.top : villa.top - STOREY
+    const bottom = upper ? villa.top - STORY : villa.bottom
+    const top = upper ? villa.top : villa.top - STORY
     matrix.compose(
       new THREE.Vector3(villa.x, (top + bottom) / 2, villa.z),
       new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), villa.yaw),
@@ -1486,7 +1486,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A barn: a red box under a grey gambrel roof, its ridge along the barn. Stones: boxes, each its own grey.
+  // A barn: a red box under a gray gambrel roof, its ridge along the barn. Stones: boxes, each its own gray.
   const gambrel = prismGeometry(GAMBREL)
   const gable = prismGeometry(GABLE)
   meshes.push(
@@ -1578,7 +1578,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       }),
     ),
     instanced(lamp, plain, waterTowers, (watertower, matrix, color) => {
-      // The lamp is a half-metre sphere: scaled to the tank's radius across and its height up.
+      // The lamp is a half-meter sphere: scaled to the tank's radius across and its height up.
       matrix.makeScale(TANK.radius * 2, TANK.height, TANK.radius * 2)
       matrix.setPosition(watertower.x, tankMiddle(watertower), watertower.z)
       color.copy(WATER_TOWER_COLOR)
@@ -1591,7 +1591,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A filling station: the shop with a glazed front, the canopy on its posts with a red fascia,
+  // A gas station: the shop with a glazed front, the canopy on its posts with a red fascia,
   // two pump islands under it, and a sign on a pole by the road.
   const glass = new THREE.MeshStandardMaterial({ color: SHOP_GLASS, roughness: 0.2, metalness: 0.1 })
   const fasciaFace = new THREE.MeshStandardMaterial({ color: FASCIA, roughness: 0.7, metalness: 0.05 })
@@ -1635,7 +1635,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A camp: tents as ridged prisms in bright colours, white caravans with a stripe and wheels,
+  // A camp: tents as ridged prisms in bright colors, white campers with a stripe and wheels,
   // and the fire pit as a ring of stones with an ember glowing in it.
   const tentShape = new THREE.CylinderGeometry(1, 1, 1, 3, 1, false, Math.PI / 2)
   tentShape.rotateZ(Math.PI / 2)
@@ -1646,17 +1646,17 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       upright(tent, matrix, tent.width, (tent.top - tent.bottom - BURY_SHOWN) / 1.5, tent.depth / 1.732, tent.bottom + BURY_SHOWN)
       color.copy(pick(TENT_COLORS, tent.tone))
     }),
-    instanced(box, plain, caravans, (caravan, matrix, color) => {
-      upright(caravan, matrix, caravan.width, caravan.top - caravan.bottom - BURY_SHOWN - 0.5, caravan.depth, (caravan.top + caravan.bottom + BURY_SHOWN + 0.5) / 2)
-      color.copy(CARAVAN_COLOR)
+    instanced(box, plain, campers, (camper, matrix, color) => {
+      upright(camper, matrix, camper.width, camper.top - camper.bottom - BURY_SHOWN - 0.5, camper.depth, (camper.top + camper.bottom + BURY_SHOWN + 0.5) / 2)
+      color.copy(CAMPER_COLOR)
     }),
-    instanced(box, plain, caravans, (caravan, matrix, color) => {
-      upright(caravan, matrix, caravan.width + 0.04, 0.3, caravan.depth + 0.04, caravan.bottom + BURY_SHOWN + 1.3)
-      color.copy(CARAVAN_STRIPE)
+    instanced(box, plain, campers, (camper, matrix, color) => {
+      upright(camper, matrix, camper.width + 0.04, 0.3, camper.depth + 0.04, camper.bottom + BURY_SHOWN + 1.3)
+      color.copy(CAMPER_STRIPE)
     }),
     ...[-1, 1].map((side) =>
-      instanced(box, plain, caravans, (caravan, matrix, color) => {
-        upright(caravan, matrix, 0.7, 0.7, 0.3, caravan.bottom + BURY_SHOWN + 0.3, 0, side * (caravan.depth / 2 - 0.1))
+      instanced(box, plain, campers, (camper, matrix, color) => {
+        upright(camper, matrix, 0.7, 0.7, 0.3, camper.bottom + BURY_SHOWN + 0.3, 0, side * (camper.depth / 2 - 0.1))
         color.copy(IRONWORK)
       }),
     ),
@@ -1798,7 +1798,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   )
 
   // A lighthouse: a tapering white shaft with two red bands, a railed
-  // gallery round the top, a glazed lantern room with the lamp in it under
+  // gallery around the top, a glazed lantern room with the lamp in it under
   // a cap and finial, and a door at the foot. The shaft is as tall as the
   // building less what stands on it.
   const taper = new THREE.CylinderGeometry(LIGHTHOUSE_TAPER, 1, 1, 24)
@@ -1960,7 +1960,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A chair lift: the pylons as grey posts with a crossbar and a sheave at
+  // A chair lift: the pylons as gray posts with a crossbar and a sheave at
   // each end of it, the stations as sheds, the cable strung from crossbar
   // to crossbar with a little sag in each span, and the chairs hung from
   // it, riding up one side and down the other.
@@ -1995,7 +1995,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       const offset = new THREE.Vector3(0, 0, (side * LIFT.crossbar) / 2).applyQuaternion(turn)
       return new THREE.Vector3(post.x + offset.x, post.top + LIFT.cableOver, post.z + offset.z)
     }
-    /** The cable on one side, sagging between each pair of posts, as points a few metres apart. */
+    /** The cable on one side, sagging between each pair of posts, as points a few meters apart. */
     const cable = (side: number): THREE.Vector3[] => {
       const points: THREE.Vector3[] = []
       for (let i = 0; i + 1 < posts.length; i++) {
@@ -2014,7 +2014,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     for (const line of lines) {
       meshes.push(new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), new THREE.LineBasicMaterial({ color: CABLE_COLOR })))
     }
-    // The chairs: one every so many metres of the cable, going up on one side and down the other.
+    // The chairs: one every so many meters of the cable, going up on one side and down the other.
     const runs = lines.map((line) => {
       const along = [0]
       for (let i = 1; i < line.length; i++) along.push(along[i - 1]! + line[i]!.distanceTo(line[i - 1]!))
@@ -2056,7 +2056,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
 
   // Clock towers: the tower as the stone box it is, a cornice band near the
   // top, on each side a clock face (a white disc in a dark rim, twelve
-  // marks round it) just below the cornice, two hands turned from the
+  // marks around it) just below the cornice, two hands turned from the
   // game's tick as the frames go by, a pointed roof and a finial.
   const towers = ofKind('clocktower')
   const faceDisc = new THREE.CylinderGeometry(1, 1, 1, 24)
@@ -2064,7 +2064,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const faces = towers.flatMap((tower) => [0, 1, 2, 3].map((side) => ({ tower, side })))
   const marks = faces.flatMap((face) => Array.from({ length: CLOCK.ticks }, (_, k) => ({ ...face, k })))
   const faceAt = (tower: Building, side: number, matrix: THREE.Matrix4, sx: number, sy: number, sz: number, y: number, out: number, across = 0, up = 0): void => {
-    // Out from the tower's centre through the side's wall, turned to look out that way.
+    // Out from the tower's center through the side's wall, turned to look out that way.
     const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tower.yaw + (side * Math.PI) / 2)
     const offset = new THREE.Vector3(across, up, out).applyQuaternion(turn)
     matrix.compose(new THREE.Vector3(tower.x + offset.x, y + offset.y, tower.z + offset.z), turn, new THREE.Vector3(sx, sy, sz))
@@ -2091,7 +2091,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       const angle = (k / CLOCK.ticks) * Math.PI * 2
       const radius = CLOCK.face / 2 - CLOCK.tickLength / 2 - 0.1
       faceAt(tower, side, matrix, 0.1, CLOCK.tickLength, 0.06, faceHeight(tower), tower.width / 2 + 0.2, Math.sin(angle) * radius, Math.cos(angle) * radius)
-      // Each mark points at the centre.
+      // Each mark points at the center.
       const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -angle)
       const around = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tower.yaw + (side * Math.PI) / 2)
       const position = new THREE.Vector3()
@@ -2123,7 +2123,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       for (const [i, { tower, side }] of faces.entries()) {
         around.setFromAxisAngle(new THREE.Vector3(0, 1, 0), tower.yaw + (side * Math.PI) / 2)
         turn.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -angle)
-        // The hand pivots at the face's centre, so its box is offset half its length along itself.
+        // The hand pivots at the face's center, so its box is offset half its length along itself.
         const along = new THREE.Vector3(Math.sin(angle) * (hand.length / 2), Math.cos(angle) * (hand.length / 2), 0).applyQuaternion(around)
         const out = new THREE.Vector3(0, 0, tower.width / 2 + 0.3).applyQuaternion(around)
         position.set(tower.x + out.x + along.x, faceHeight(tower) + along.y, tower.z + out.z + along.z)
@@ -2234,8 +2234,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // Building sites: the hoardings as the slab they are, and a tower crane on
-  // each: a lattice mast of four columns braced every few metres, and on top
+  // Building sites: the fencing as the slab it is, and a tower crane on
+  // each: a lattice mast of four columns braced every few meters, and on top
   // of it the cab, the jib out one way, the counter-jib and its concrete
   // counterweight the other, and a hook hung on a cable from along the jib,
   // the whole top turning slowly as the frames go by.
@@ -2244,7 +2244,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   meshes.push(
     instanced(box, plain, sites, (site, matrix, color) => {
       boxAt(site, matrix)
-      color.copy(HOARDING_COLOR)
+      color.copy(FENCE_COLOR)
     }),
   )
   const columns = cranes.flatMap((crane) => [-1, 1].flatMap((along) => [-1, 1].map((across) => ({ crane, along, across }))))
@@ -2375,7 +2375,7 @@ function buildCar(): THREE.Group {
 }
 
 /**
- * A single car parked on the highway (or the first city, or the map centre) so
+ * A single car parked on the highway (or the first city, or the map center) so
  * the size of roads, cities and features can be judged at a glance. Given a
  * car to park, in the chassis frame (its front toward -Z, its wheels below
  * its origin), that one is parked, facing along the road.

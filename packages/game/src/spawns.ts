@@ -34,7 +34,7 @@ function spawnAt(spot: RoadSpot): VehicleSpawn {
 export function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): VehicleSpawn {
   const { road, index, point } = spot
   const count = road.points.length
-  // Wrapped round a loop or held at an end, so always one of the road's points.
+  // Wrapped around a loop or held at an end, so always one of the road's points.
   const at = (i: number): RoadPoint =>
     road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
   const ahead = at(index + FACING_REACH)
@@ -105,15 +105,15 @@ function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
 }
 
 /**
- * Points along a road from a starting index, one every `spacing` metres,
+ * Points along a road from a starting index, one every `spacing` meters,
  * walking in one direction until the road ends or leaves the ground. Road
- * points can be centimetres apart, so distance is measured, not counted.
+ * points can be centimeters apart, so distance is measured, not counted.
  */
 function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: number): RoadSpot[] {
   const { road } = from
   const segmentCount = road.closed ? road.points.length : road.points.length - 1
   const spots: RoadSpot[] = []
-  let travelled = 0
+  let traveled = 0
   let index = from.index
   let point = from.point
   while (spots.length < wanted) {
@@ -122,12 +122,12 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
     if (road.structure[Math.min(index, next)] !== ROAD_GRADE) break
     const ahead = road.points[next]
     if (ahead === undefined) break
-    travelled += hypot(ahead.x - point.x, ahead.z - point.z)
+    traveled += hypot(ahead.x - point.x, ahead.z - point.z)
     index = next
     point = ahead
-    if (travelled < spacing) continue
+    if (traveled < spacing) continue
     spots.push({ road, index, point })
-    travelled = 0
+    traveled = 0
   }
   return spots
 }

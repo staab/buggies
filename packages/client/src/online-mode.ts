@@ -156,7 +156,11 @@ export async function joinOnline(
       const players = client.playerCount
       const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       if (lost !== null) return { title, state: `disconnected: ${lost}` }
-      return car.presence.hudState(title, controls)
+      const { stats } = prediction
+      const sync =
+        `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
+        `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
+      return car.presence.hudState(title, controls, sync)
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

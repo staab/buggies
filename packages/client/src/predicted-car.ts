@@ -31,8 +31,8 @@ export class PredictedCar {
    */
   tick(update: PredictionUpdate, others?: MirrorCars): ReconcileOutcome {
     const outcome = this.prediction.reconcile(update.newestSnapshot)
-    if (outcome === 'replayed') this.presence.body.absorbCorrection()
-    if (outcome === 'resynced') this.presence.body.snapToBody()
+    // A correction is eased away, a fresh start after a stall too, unless it is too far to be anything but a jump.
+    if (outcome !== 'idle') this.presence.body.absorbCorrection()
     others?.reconciled(outcome)
     this.prediction.advance(update, this.send)
     this.presence.body.captureStep()

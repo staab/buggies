@@ -27,10 +27,10 @@ function plainCells(island: TerrainMap): number[] {
   const wet = new Uint8Array(width * depth)
   const reach = Math.ceil(15 / cellSize)
   const flood = (x: number, z: number, cells = reach): void => {
-    const centreCol = Math.round(x / cellSize)
-    const centreRow = Math.round(z / cellSize)
-    for (let row = centreRow - cells; row <= centreRow + cells; row++) {
-      for (let col = centreCol - cells; col <= centreCol + cells; col++) {
+    const centerCol = Math.round(x / cellSize)
+    const centerRow = Math.round(z / cellSize)
+    for (let row = centerRow - cells; row <= centerRow + cells; row++) {
+      for (let col = centerCol - cells; col <= centerCol + cells; col++) {
         if (row < 0 || row >= depth || col < 0 || col >= width) continue
         wet[row * width + col] = 1
       }
@@ -71,7 +71,7 @@ function plainCells(island: TerrainMap): number[] {
   return cells
 }
 
-/** Distance in plan from a point to the nearest stretch of a road's centreline. */
+/** Distance in plan from a point to the nearest stretch of a road's centerline. */
 function distanceToRoad(road: TerrainMap['roads'][number], x: number, z: number): number {
   let nearest = Infinity
   for (let i = 0; i + 1 < road.points.length; i++) {
@@ -126,7 +126,7 @@ describe('the ground under the roads', () => {
     expect(kinks[kinks.length - 1]!).toBeLessThan(0.08)
   })
 
-  it('makes each surface road the ground it runs on, right across the carriageway', () => {
+  it('makes each surface road the ground it runs on, right across the roadway', () => {
     const { heightfield } = map
     let samples = 0
     let across = 0
@@ -141,7 +141,7 @@ describe('the ground under the roads', () => {
         samples++
         expect(Math.abs(sampleHeight(heightfield, point.x, point.z) - point.y)).toBeLessThan(1e-3)
 
-        // Level from edge to edge, not just along the centreline.
+        // Level from edge to edge, not just along the centerline.
         const prev = road.points[i - 1]!
         const next = road.points[i + 1]!
         const dx = next.x - prev.x
@@ -169,7 +169,7 @@ describe('the ground under the roads', () => {
     for (const ramp of ramps) {
       const top = ramp.points[0]!
       const foot = ramp.points[ramp.points.length - 1]!
-      // The foot lands at the cross road's edge, half its width from the centreline.
+      // The foot lands at the cross road's edge, half its width from the centerline.
       const nearestCross = Math.min(...crossRoads.map((road) => distanceToRoad(road, foot.x, foot.z)))
       expect(nearestCross).toBeLessThan(crossRoads[0]!.width / 2 + 1)
       // Both ends are the ground, and the top is the highway's own surface.

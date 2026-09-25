@@ -18,7 +18,7 @@ import {
   ARTERIAL_MERGE_REACH,
   ARTERIAL_MIN_JUNCTION_ANGLE,
   ARTERIAL_MIN_RADIUS,
-  ARTERIAL_NEIGHBOURS,
+  ARTERIAL_NEIGHBORS,
   ARTERIAL_PRUNE_TURN,
   ARTERIAL_SEA_COST,
   ARTERIAL_SLOPE_COST,
@@ -324,7 +324,7 @@ function routeCells(
 }
 
 /**
- * Round every corner sharper than `maxTurn` to a fillet of about `minRadius`.
+ * Around every corner sharper than `maxTurn` to a fillet of about `minRadius`.
  * Each sharp vertex is replaced by a quadratic Bezier that is tangent to the
  * segments either side, so a switchback becomes a hairpin instead of a spike.
  * The fillet is trimmed inside the corner, so it never leaves the original
@@ -521,7 +521,7 @@ function buildArterialNodes(
 /**
  * An even mesh over the nodes, built only from Voronoi-adjacent anchors, so the
  * straight edges never cross (they are a Delaunay-like planar graph). Each node
- * links to its nearest neighbours first, then is lifted to at least two links so
+ * links to its nearest neighbors first, then is lifted to at least two links so
  * nothing dead-ends, then the remaining components are joined and spare links
  * close extra loops.
  */
@@ -554,7 +554,7 @@ function buildArterialEdges(nodes: ArterialNode[], adjacency: [number, number][]
 
   // Even local coverage.
   for (let i = 0; i < count; i++) {
-    for (const index of touching[i]!.slice(0, ARTERIAL_NEIGHBOURS)) add(index)
+    for (const index of touching[i]!.slice(0, ARTERIAL_NEIGHBORS)) add(index)
   }
   // No dead ends: every node reaches degree two.
   for (let i = 0; i < count; i++) {
@@ -615,15 +615,15 @@ function nearestUntried(nodes: ArterialNode[], index: number, tried: Set<number>
 
 /**
  * True when a would-be arterial runs into a road already built: it crosses one,
- * or its carriageway laps over one. Testing only for a crossing lets an arterial
+ * or its roadway laps over one. Testing only for a crossing lets an arterial
  * lie along a highway without ever cutting across it, which reads as the two
  * roads merged into one.
  *
  * Its own two ends are exempt within `mergeReach`, since an arterial starts and
- * finishes on a cross road and has to reach the carriageway to join it. The
+ * finishes on a cross road and has to reach the roadway to join it. The
  * highway itself is never exempt: an arterial reaches the highway network
  * through an interchange's cross road, so it has no business touching the
- * carriageway anywhere.
+ * roadway anywhere.
  */
 function clashesWithBuilt(points: RoadPoint[], roads: Road[], mergeReach: number): boolean {
   const head = points[0]!

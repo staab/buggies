@@ -61,13 +61,13 @@ const STEP_NAMES: Record<Step, string> = {
 const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
   raceCar: 'Fast and unforgiving. Spins out if you ask too much.',
   police: 'A sedan with some shove. Takes a knock.',
-  firetruck: 'Seven tonnes with the engine to climb anything. Slowly.',
+  firetruck: 'Seven tons with the engine to climb anything. Slowly.',
   pickup: 'Heavy and slow to turn. Slides rather than rolls.',
   sportsCar: 'The balanced one. Start here.',
   smallCar: 'Tiny and nimble. Not quick.',
   tank: 'Nothing moves it off its line, and nothing hurts it much.',
   ambulance: 'A tall van, loaded. Steady if you let it be.',
-  semi: 'The tractor unit, bobtail. Slow to turn, slower to stop.',
+  semi: 'The tractor, bobtail. Slow to turn, slower to stop.',
   goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
 }
 
@@ -255,12 +255,12 @@ export class Menu {
       model.target = '_blank'
       model.rel = 'noopener'
       model.textContent = `${credit.title} by ${credit.author}`
-      const licence = document.createElement('a')
-      licence.href = credit.licenceUrl
-      licence.target = '_blank'
-      licence.rel = 'noopener'
-      licence.textContent = credit.licence
-      credits.append(model, ' (', licence, ')')
+      const license = document.createElement('a')
+      license.href = credit.licenseUrl
+      license.target = '_blank'
+      license.rel = 'noopener'
+      license.textContent = credit.license
+      credits.append(model, ' (', license, ')')
     })
 
     panel.append(title, blurb, this.steps, modePage, mapPage, carPage, this.status, nav, credits)

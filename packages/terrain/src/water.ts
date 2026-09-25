@@ -12,8 +12,8 @@ export const DRY = Number.NEGATIVE_INFINITY
 /**
  * The water surface over every cell of the map — sea, lakes and the full drawn
  * width of every river — at the highest level drawn there. Rivers are stamped
- * over their rendered footprint rather than their centreline: a wide river
- * covers cells no sample sits on, and reading only the centreline makes those
+ * over their rendered footprint rather than their centerline: a wide river
+ * covers cells no sample sits on, and reading only the centerline makes those
  * cells look dry.
  */
 export function buildWaterLevels(map: TerrainMap): Float32Array {

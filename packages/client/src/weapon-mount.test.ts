@@ -12,7 +12,7 @@ function barrel(mount: WeaponMount, car: THREE.Group): THREE.Vector3 {
 
 describe('the weapon mount', () => {
   it('rests the gun the way the car faces, and swings it onto what it is trained on', () => {
-    // A car turned part way round, somewhere off the origin.
+    // A car turned part way around, somewhere off the origin.
     const car = new THREE.Group()
     car.position.set(10, 0, 5)
     car.rotation.y = 0.7
@@ -23,7 +23,7 @@ describe('the weapon mount', () => {
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(car.quaternion)
     expect(barrel(mount, car).dot(forward)).toBeCloseTo(1, 5)
 
-    // Trained on a point ahead and to one side, it comes round to it over a few frames.
+    // Trained on a point ahead and to one side, it comes around to it over a few frames.
     const target = { x: 30, y: 2, z: -20 }
     for (let i = 0; i < 60; i++) mount.aim(target, 1 / 60)
     const gunAt = mount.object.children.find((child) => child.visible)!.getWorldPosition(new THREE.Vector3())

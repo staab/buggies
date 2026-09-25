@@ -34,7 +34,7 @@ const { cos: cosine, hypot, sin: sine } = exact
  * Mountain roads: a winding climb from the nearest arterial up a
  * mountainside, as high as the mountain lets it, ending on a shoulder
  * gentle enough to park on. The road traverses the slope at its grade,
- * winding round the mountain as the contours take it, and where something
+ * winding around the mountain as the contours take it, and where something
  * bars the way (water, another road, its own lower turns) it turns back on
  * itself in a hairpin where one will fit: half a loop bulging on ahead and
  * coming back the other way a road's spacing further up the slope, drawn
@@ -192,7 +192,7 @@ function traceClimb(
       }
       if (!clean) continue
       const end = loop.at(-1)!
-      // How far above the road, climbing at its grade round the loop, the ground stands where the loop ends.
+      // How far above the road, climbing at its grade around the loop, the ground stands where the loop ends.
       const mismatch = ground(end.x, end.z) - (y + run * MAX_CLIMB_GRADE)
       if (Math.abs(mismatch) <= CLIMB_HAIRPIN.mismatch) return loop
       if (Math.abs(mismatch) <= CLIMB_HAIRPIN.misfit && (best === null || Math.abs(mismatch) < Math.abs(best.mismatch))) best = { loop, mismatch }
@@ -238,7 +238,7 @@ function traceClimb(
     }
     let next = { x: x + nx * CLIMB_STEP, z: z + nz * CLIMB_STEP }
     if (gentle && !open(next.x, next.z)) {
-      // Round whatever is in the way on the flat, turning as little as will do.
+      // Around whatever is in the way on the flat, turning as little as will do.
       for (const turn of CLIMB_TURNS) {
         const tx = nx * cosine(turn) - nz * sine(turn)
         const tz = nx * sine(turn) + nz * cosine(turn)
@@ -386,7 +386,7 @@ export function seatAboutLot(field: Heightfield, climb: Road): void {
 
 /**
  * Level the ground under a lot to its height, blended back to the ground
- * around it over `blend` metres out from its edges, but for the ground
+ * around it over `blend` meters out from its edges, but for the ground
  * under the road running in, which is left as the road has shaped it.
  */
 export function terrace(field: Heightfield, lot: Lot, blend: number, road: RoadPoint[]): void {

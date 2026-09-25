@@ -55,7 +55,7 @@ function crash(
   let liftedOff = false
   let drivenAfter = 0
   for (let tick = 0; tick < 60 * 25; tick++) {
-    // Flat out at the wall, and flat out afterwards: a wreck takes no driving.
+    // Flat out at the wall, and flat out afterward: a wreck takes no driving.
     const throttle = vehicle.wrecked || vehicle.speed < speed ? 1 : 0
     stepVehicle(world, vehicle, tuning, { ...NEUTRAL_INPUT, throttle }, FIXED_TIMESTEP)
     world.step()

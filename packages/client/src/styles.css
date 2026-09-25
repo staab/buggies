@@ -435,6 +435,13 @@ fieldset[disabled] {
 .keys a:hover {
   text-decoration: underline;
 }
+/* How the car is keeping up with the server, under the keys. */
+.sync {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
 kbd {
   padding: 1px 5px;
   border: 1px solid var(--edge);

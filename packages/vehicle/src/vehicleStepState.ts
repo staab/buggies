@@ -14,7 +14,7 @@ export interface VehicleStepState {
   lastLinearVelocity: Vec3
   wrecked: boolean
   wheelSuspensionLength: [number, number, number, number]
-  /** Which tyres hold the ground at rest, and where each took hold. */
+  /** Which tires hold the ground at rest, and where each took hold. */
   wheelHeld: [boolean, boolean, boolean, boolean]
   wheelHoldPoint: [Vec3, Vec3, Vec3, Vec3]
   invertedRestTime: number

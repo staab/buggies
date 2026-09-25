@@ -75,7 +75,7 @@ describe('createTerrainView', () => {
     }
   })
 
-  it('paves the deck skirt in the road colour where each ramp runs out from under the deck', () => {
+  it('paves the deck skirt in the road color where each ramp runs out from under the deck', () => {
     const map = generateTerrain(1)
     const view = createTerrainView(map)
     const highway = map.roads.find((road) => road.kind === 'highway')!
@@ -84,7 +84,7 @@ describe('createTerrainView', () => {
     const half = highway.width / 2
     const distanceToHighway = (x: number, z: number): number =>
       Math.min(...highway.points.map((point) => Math.hypot(point.x - x, point.z - z)))
-    // The highway's deck mesh: six coloured vertices per centreline point.
+    // The highway's deck mesh: six colored vertices per centerline point.
     const deck = view.children.find(
       (child): child is THREE.Mesh =>
         child instanceof THREE.Mesh &&

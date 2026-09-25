@@ -242,7 +242,7 @@ export function buildCityGrids(
  * network, and a cut that stopped short would strand everything behind it.
  *
  * This works on finished geometry rather than on the grid as it is laid out,
- * because junction alignment re-smooths arterials afterwards and can walk one
+ * because junction alignment re-smooths arterials afterward and can walk one
  * into a street that was clear when it was drawn.
  */
 export function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[] {
@@ -363,8 +363,8 @@ export function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[]
 }
 
 /**
- * True when two roads meet: their carriageways cross, or their centrelines come
- * within half a carriageway of each other.
+ * True when two roads meet: their roadways cross, or their centerlines come
+ * within half a roadway of each other.
  */
 function roadsMeet(a: Road, b: Road): boolean {
   const tolerance = (a.width + b.width) / 2
@@ -516,7 +516,7 @@ class Spans {
  * Whether a street run from `from` to `to` would smear along one of the
  * roads: anywhere along it, a span of one within touching distance that
  * runs shallower than square to it. The road it is run to is fine where
- * it is square, and so are that road's neighbouring spans while they stay
+ * it is square, and so are that road's neighboring spans while they stay
  * square; a bend that turns shallow beside the street is not.
  */
 function smearsAlong(spans: Spans, from: RoadPoint, to: RoadPoint): boolean {
@@ -602,7 +602,7 @@ export function connectStreetGrids(
       // The joint is not in the highway's keep-out, as a cross road is on
       // into its interchange, and nothing along the way smears.
       if (blocked(px, pz) || wetAt(px, pz) || smearsAlong(spans, end, to)) continue
-      // The way there, looked at every few metres: dry, out of the keep-out,
+      // The way there, looked at every few meters: dry, out of the keep-out,
       // and clear of every such road but the one it joins, up to the join.
       let clear = true
       for (let s = CONNECT_LOOK; s < length - 1 && clear; s += CONNECT_LOOK) {
@@ -665,9 +665,9 @@ export function connectStreetGrids(
 /**
  * Run each street's ends on to the arterial or cross road it is heading
  * into, where one lies within a step or so beyond the end: a street laid
- * to the edge of its city otherwise stops a few metres short of the road
+ * to the edge of its city otherwise stops a few meters short of the road
  * along that edge, meeting it on paper and not on the ground. The end is
- * carried to the road's centreline, at the road's own height, so the two
+ * carried to the road's centerline, at the road's own height, so the two
  * join in a flush tee. Nothing is done where the way there is in the
  * highway's keep-out, under water, too steep, or would smear along a road.
  */
@@ -677,7 +677,7 @@ export function joinStreetsToRoads(roads: Road[], blocked: (x: number, z: number
   const reach = STREET_STEP + STREET_ARTERIAL_TOUCH
   const spans = new Spans(targets)
 
-  /** Where a ray from `from` along `dx, dz` first crosses a road's centreline within reach, and the road's height there. */
+  /** Where a ray from `from` along `dx, dz` first crosses a road's centerline within reach, and the road's height there. */
   const hit = (from: RoadPoint, dx: number, dz: number): RoadPoint | null => {
     let best: RoadPoint | null = null
     let bestAlong = reach
@@ -709,7 +709,7 @@ export function joinStreetsToRoads(roads: Road[], blocked: (x: number, z: number
       if (joint === null || smearsAlong(spans, end, joint)) continue
       const run = hypot(joint.x - end.x, joint.z - end.z)
       if (Math.abs(joint.y - end.y) > run * MAX_ROAD_GRADE * 2) continue
-      // Every few metres of the way there is looked at, the joint itself
+      // Every few meters of the way there is looked at, the joint itself
       // included: a cross road runs on into its interchange, where no
       // street may go.
       let clear = !blocked(joint.x, joint.z)

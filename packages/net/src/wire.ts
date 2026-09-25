@@ -41,7 +41,7 @@ export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 18
-export const SNAPSHOT_VEHICLE_BYTES = 84
+export const SNAPSHOT_VEHICLE_BYTES = 86
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
@@ -98,10 +98,13 @@ export interface VehicleSnapshot {
   /** What it is carrying, and how long the machine gun has left. */
   weapon: Weapon
   ammoTicks: number
-  /** Its own action: how long it has left, how long before it may go again, and whether its lights are on. */
+  /** Its own action: how long it has left, how long before it may go again, whether its lights are on, and whether its own key was down on the tick. */
   actionTicks: number
   cooldownTicks: number
   lightsOn: boolean
+  abilityHeld: boolean
+  /** How many rockets it has fired, which numbers the next. */
+  rocketsFired: number
   /** How long it is stunned for, and slowed for, by this share of a full slow. */
   stunnedTicks: number
   slowedTicks: number
@@ -469,7 +472,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(Math.max(vehicle.stunnedTicks, 0), 0xffff))
     writer.u8(Math.min(Math.max(vehicle.slowedTicks, 0), 0xff))
     writer.u8(Math.round(Math.min(Math.max(vehicle.slowedBy, 0), 1) * 255))
-    writer.u8(vehicle.lightsOn ? 1 : 0)
+    writer.u8((vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0))
+    writer.u16(vehicle.rocketsFired & 0xffff)
     writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
@@ -507,7 +511,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
 }
 
 /**
- * The same snapshot with a different acknowledgement, without encoding the
+ * The same snapshot with a different acknowledgment, without encoding the
  * vehicles again: every player gets the same bodies and their own ack. It is
  * a copy, since a socket keeps hold of what it is given until it has gone out.
  */
@@ -562,7 +566,10 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const stunnedTicks = reader.u16()
     const slowedTicks = reader.u8()
     const slowedBy = reader.u8() / 255
-    const lightsOn = (reader.u8() & 1) === 1
+    const flags = reader.u8()
+    const lightsOn = (flags & 1) === 1
+    const abilityHeld = (flags & 2) === 2
+    const rocketsFired = reader.u16()
     vehicles.push({
       seat,
       epoch,
@@ -579,6 +586,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       actionTicks,
       cooldownTicks,
       lightsOn,
+      abilityHeld,
+      rocketsFired,
       stunnedTicks,
       slowedTicks,
       slowedBy,
