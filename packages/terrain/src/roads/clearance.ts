@@ -99,7 +99,7 @@ export function indexSegments(segments: ClaimedSegment[]): SegmentLookup {
   }
 }
 
-/** A rectangle on the ground, turned by `yaw` about its centre: `width` runs along its local X, `depth` along its local Z. */
+/** A rectangle on the ground, turned by `yaw` about its center: `width` runs along its local X, `depth` along its local Z. */
 export interface Footprint {
   x: number
   z: number
@@ -190,9 +190,9 @@ function segmentFootprintDistance(footprint: Footprint, segment: ClaimedSegment)
 
 /**
  * A test of whether a footprint keeps `margin` clear of every road: its
- * carriageway, and the embankment a built road carries down beside it. A
- * city street reaches `streetReach` from its centreline: its carriageway,
- * or, for the blocks laid out against the old kerb, only that far.
+ * roadway, and the embankment a built road carries down beside it. A
+ * city street reaches `streetReach` from its centerline: its roadway,
+ * or, for the blocks laid out against the old curb, only that far.
  */
 export function roadClearance(
   roads: Road[],

@@ -18,6 +18,8 @@ export interface HudState {
   weapon?: string
   /** Whether the name is still rolling past. */
   rolling?: boolean
+  /** How the car is keeping up with the server, in a line, for anyone wondering about a jump. */
+  sync?: string
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -35,7 +37,7 @@ const DIAL_STEP_KPH = 20
 export const DIAL_SWEEP = 120
 
 const DIAL_RADIUS = 44
-const DIAL_CENTRE = { x: 60, y: 56 }
+const DIAL_CENTER = { x: 60, y: 56 }
 const TICKS = 5
 
 /** How long the dial's arc is, for filling it part way. */
@@ -46,7 +48,7 @@ export function dialTop(maxSpeed: number): number {
   return Math.max(DIAL_STEP_KPH, Math.ceil((maxSpeed * TO_KPH) / DIAL_STEP_KPH) * DIAL_STEP_KPH)
 }
 
-/** How far round the dial a speed is, 0 to 1. */
+/** How far around the dial a speed is, 0 to 1. */
 export function dialFraction(speed: number, maxSpeed: number): number {
   return THREE.MathUtils.clamp((Math.abs(speed) * TO_KPH) / dialTop(maxSpeed), 0, 1)
 }
@@ -58,7 +60,7 @@ export function needleAngle(fraction: number): number {
 
 function dialPoint(angle: number, radius = DIAL_RADIUS): { x: number; y: number } {
   const radians = (angle * Math.PI) / 180
-  return { x: DIAL_CENTRE.x + radius * Math.sin(radians), y: DIAL_CENTRE.y - radius * Math.cos(radians) }
+  return { x: DIAL_CENTER.x + radius * Math.sin(radians), y: DIAL_CENTER.y - radius * Math.cos(radians) }
 }
 
 /** The dial's arc, from its start to its end, as an SVG path. */
@@ -72,7 +74,7 @@ const UNHURT = new THREE.Color('#8ba3b6')
 const WRECKED = new THREE.Color('#e04a3a')
 const mixed = new THREE.Color()
 
-/** The damage dial's colour: nothing much to look at until it starts turning red. */
+/** The damage dial's color: nothing much to look at until it starts turning red. */
 export function damageColor(damage: number): string {
   return mixed.lerpColors(UNHURT, WRECKED, THREE.MathUtils.clamp(damage, 0, 1)).getStyle()
 }
@@ -94,7 +96,7 @@ function div(className: string): HTMLDivElement {
   return element
 }
 
-/** A dial: an arc that fills round to a needle, with a reading under it. */
+/** A dial: an arc that fills around to a needle, with a reading under it. */
 interface Dial {
   element: SVGSVGElement
   needle: SVGLineElement
@@ -117,28 +119,28 @@ function buildDial(unit: string): Dial {
   const tip = dialPoint(0, DIAL_RADIUS - 10)
   const needle = svg('line', {
     class: 'needle',
-    x1: DIAL_CENTRE.x,
-    y1: DIAL_CENTRE.y,
+    x1: DIAL_CENTER.x,
+    y1: DIAL_CENTER.y,
     x2: tip.x,
     y2: tip.y,
-    transform: `rotate(${needleAngle(0)} ${DIAL_CENTRE.x} ${DIAL_CENTRE.y})`,
+    transform: `rotate(${needleAngle(0)} ${DIAL_CENTER.x} ${DIAL_CENTER.y})`,
   })
   element.append(needle)
-  element.append(svg('circle', { class: 'hub', cx: DIAL_CENTRE.x, cy: DIAL_CENTRE.y, r: 3 }))
-  const reading = svg('text', { class: 'reading', x: DIAL_CENTRE.x, y: 80 })
+  element.append(svg('circle', { class: 'hub', cx: DIAL_CENTER.x, cy: DIAL_CENTER.y, r: 3 }))
+  const reading = svg('text', { class: 'reading', x: DIAL_CENTER.x, y: 80 })
   reading.textContent = '0'
   element.append(reading)
-  const label = svg('text', { class: 'unit', x: DIAL_CENTRE.x, y: 90 })
+  const label = svg('text', { class: 'unit', x: DIAL_CENTER.x, y: 90 })
   label.textContent = unit
   element.append(label)
   return { element, needle, filled, reading, shownReading: '0' }
 }
 
-/** Turn a dial to a fraction of its sweep, with this under the needle, in this colour if not its own. */
-function turnDial(dial: Dial, fraction: number, reading: string, colour?: string): void {
-  dial.needle.setAttribute('transform', `rotate(${needleAngle(fraction).toFixed(1)} ${DIAL_CENTRE.x} ${DIAL_CENTRE.y})`)
+/** Turn a dial to a fraction of its sweep, with this under the needle, in this color if not its own. */
+function turnDial(dial: Dial, fraction: number, reading: string, color?: string): void {
+  dial.needle.setAttribute('transform', `rotate(${needleAngle(fraction).toFixed(1)} ${DIAL_CENTER.x} ${DIAL_CENTER.y})`)
   dial.filled.setAttribute('stroke-dasharray', `${(DIAL_LENGTH * fraction).toFixed(1)} ${DIAL_LENGTH}`)
-  if (colour !== undefined) dial.filled.style.stroke = colour
+  if (color !== undefined) dial.filled.style.stroke = color
   if (reading !== dial.shownReading) {
     dial.shownReading = reading
     dial.reading.textContent = reading
@@ -180,6 +182,7 @@ export class Hud {
   private readonly damage = buildDial('damage')
   private readonly drawer = div('drawer')
   private readonly controls = div('controls')
+  private readonly sync = div('sync')
   private readonly toggle = document.createElement('button')
   private expanded = false
   private shownTitle = ''
@@ -214,7 +217,7 @@ export class Hud {
     this.score.append(banana, this.scoreCount)
     this.weapon.append(this.weaponName)
     this.row.append(this.score, this.weapon)
-    this.drawer.append(this.controls)
+    this.drawer.append(this.controls, this.sync)
     this.toggle.type = 'button'
     this.toggle.className = 'toggle'
     this.toggle.append(caret())
@@ -265,6 +268,9 @@ export class Hud {
     this.toggle.hidden = !keyed
     if (!driving) return
     if (state.controls !== undefined) this.showControls(state.controls)
+    const sync = state.sync ?? ''
+    if (sync !== this.sync.textContent) this.sync.textContent = sync
+    this.sync.hidden = sync === ''
 
     turnDial(this.speedo, dialFraction(speed, maxSpeed), String(Math.round(Math.abs(speed) * TO_KPH)))
     const damage = THREE.MathUtils.clamp(wear, 0, 1)

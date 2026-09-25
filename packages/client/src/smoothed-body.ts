@@ -8,9 +8,9 @@ import { remainingFraction } from './damping.ts'
 /** How quickly a correction is folded away, per second. */
 const CORRECTION_DECAY_RATE = 16
 
-/** Corrections bigger than this are shown at once: hiding them would look worse. */
-const LARGEST_SMOOTHED_CORRECTION_METRES = 1.5
-const LARGEST_SMOOTHED_CORRECTION_RADIANS = 0.5
+/** Corrections bigger than this are shown at once: a car put back on the road, or across the map, is not slid there. */
+const LARGEST_SMOOTHED_CORRECTION_METERS = 6
+const LARGEST_SMOOTHED_CORRECTION_RADIANS = 1
 
 const NO_ROTATION = new THREE.Quaternion()
 const scratchTranslation = v3()
@@ -52,10 +52,11 @@ export class SmoothedBody {
     this.offset.add(this.captured).sub(this.corrected)
     this.offsetRotation.multiply(this.capturedRotation).multiply(this.undone)
     if (
-      this.offset.length() > LARGEST_SMOOTHED_CORRECTION_METRES ||
+      this.offset.length() > LARGEST_SMOOTHED_CORRECTION_METERS ||
       this.offsetRotation.angleTo(NO_ROTATION) > LARGEST_SMOOTHED_CORRECTION_RADIANS
     ) {
-      this.forgetCorrection()
+      this.snapToBody()
+      return
     }
     this.captureStep()
   }

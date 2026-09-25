@@ -27,11 +27,11 @@ describe('bananas as drawn', () => {
     expect(Math.abs(size.x - BANANA_LENGTH)).toBeLessThan(BANANA_LENGTH * 0.05)
     expect(size.y).toBeGreaterThan(BANANA_LENGTH * 0.3)
     expect(size.z).toBeLessThan(BANANA_LENGTH * 0.3)
-    const colour = geometry.getAttribute('color') as THREE.BufferAttribute
+    const color = geometry.getAttribute('color') as THREE.BufferAttribute
     // Yellow in the middle, brown at the ends.
-    const middle = Math.floor(colour.count / 2)
-    expect(colour.getX(middle)).toBeGreaterThan(0.8)
-    expect(colour.getX(0)).toBeLessThan(0.5)
+    const middle = Math.floor(color.count / 2)
+    expect(color.getX(middle)).toBeGreaterThan(0.8)
+    expect(color.getX(0)).toBeLessThan(0.5)
     geometry.dispose()
   })
 

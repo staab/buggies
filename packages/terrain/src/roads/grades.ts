@@ -44,10 +44,10 @@ export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: numb
 
 /**
  * Ease every crest and sag along a profile until the grade changes no
- * faster than `maxCurvature` per metre. Each sample is nudged toward the
- * line between its neighbours, half the way to the limit at a time, until
+ * faster than `maxCurvature` per meter. Each sample is nudged toward the
+ * line between its neighbors, half the way to the limit at a time, until
  * every bend is within it. An open road keeps its ends where they are, since
- * they meet other roads there; a closed one bends all the way round.
+ * they meet other roads there; a closed one bends all the way around.
  */
 export function limitVerticalCurvature(
   heights: Float32Array,

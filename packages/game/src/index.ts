@@ -129,6 +129,7 @@ export {
   OWN_LIFT,
   OWN_MISSILE_POWER,
   POLICE_SHOT_SHARE,
+  ROCKETS_COUNTED,
   ROCKET_DAMAGE,
   ROCKET_LIFE_TICKS,
   ROCKET_LOCK_RANGE,
@@ -264,6 +265,8 @@ export interface Seat {
   lightsOn: boolean
   /** Whether the car's own key was down last tick, so that a press is told from a hold. */
   abilityHeld: boolean
+  /** How many rockets it has fired, which numbers the next. */
+  rocketsFired: number
   /** How long it is stunned for, taking no driving, and slowed for, held back by this share of a full slow. */
   stunnedTicks: number
   slowedTicks: number
@@ -338,6 +341,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       cooldownTicks: 0,
       lightsOn: false,
       abilityHeld: false,
+      rocketsFired: 0,
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
@@ -461,7 +465,7 @@ function waterUnder(arena: Arena, seat: Seat): number {
 /**
  * Advance the arena by exactly one fixed step, driving every occupied seat
  * with whatever its driver asks for. `stepVehicle` only applies forces, so
- * the world is stepped once afterwards however many vehicles were driven
+ * the world is stepped once afterward however many vehicles were driven
  * into it.
  */
 export function advance(
@@ -475,7 +479,7 @@ export function advance(
     if (!seat.occupied) continue
     // A stunned car takes no driving.
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
-    // A car its engine or wings are driving along is not one the tyres hold
+    // A car its engine or wings are driving along is not one the tires hold
     // still, and one its wings are lifting is not one the road holds down.
     seat.vehicle.boosted = burning(seat, input)
     seat.vehicle.lifted = lifting(seat, input)

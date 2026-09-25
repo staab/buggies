@@ -271,7 +271,7 @@ describe('weapons', () => {
     for (let i = 0; i < 90; i++) advance(arena, () => drive)
     expect(a.vehicle.groundedCount).toBe(0)
     expect(Math.hypot(a.vehicle.frame.position.x - before.x, a.vehicle.frame.position.z - before.z)).toBeGreaterThan(3)
-    // Steered, it banks into a wide turn: the way it is going comes round gradually, its nose
+    // Steered, it banks into a wide turn: the way it is going comes around gradually, its nose
     // following, and it levels off again once the steering is let go.
     const heading = (v: { x: number; z: number }): number => Math.atan2(v.x, v.z)
     const was = heading(a.vehicle.frame.linearVelocity)
@@ -291,7 +291,7 @@ describe('weapons', () => {
     const speed = Math.hypot(going.x, going.z)
     // It faces the way it is going, through the turn.
     expect((forward.x * going.x + forward.z * going.z) / (Math.hypot(forward.x, forward.z) * speed)).toBeGreaterThan(0.98)
-    // The arc is a wide one: the chord it has flown round says so.
+    // The arc is a wide one: the chord it has flown around says so.
     const chord = Math.hypot(position.x - from.x, position.z - from.z)
     expect(chord / (2 * Math.sin(Math.abs(swung) / 2))).toBeGreaterThan(wingsTurnRadius(a.tuning) * 0.5)
     for (let i = 0; i < 60; i++) advance(arena, () => drive)
@@ -414,6 +414,23 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
+  it('numbers a rocket by whose it is and how many went before, not by the tick it went on', () => {
+    const arena = createArena(map)
+    const [a] = twoCars(arena, 'tank', 'sportsCar', 30)
+    press(arena, a)
+    const first = arena.rockets[0]!.id
+    expect(a.rocketsFired).toBe(1)
+    // Counted back, and fired again a good while later, it gets the same number; counted on, another.
+    for (let i = 0; i < OWN_ACTIONS.tank.cooldownTicks; i++) advance(arena)
+    a.rocketsFired = 0
+    press(arena, a)
+    expect(arena.rockets.at(-1)!.id).toBe(first)
+    for (let i = 0; i < OWN_ACTIONS.tank.cooldownTicks; i++) advance(arena)
+    press(arena, a)
+    expect(arena.rockets.at(-1)!.id).not.toBe(first)
+    arena.world.free()
+  })
+
   it('the go-kart hops from the ground, and not from the air', () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'goKart')
@@ -526,7 +543,7 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the semi honks on every press: a car within ten metres is stunned for a second, and one further off is not', () => {
+  it('the semi honks on every press: a car within ten meters is stunned for a second, and one further off is not', () => {
     const arena = createArena(map)
     const [a, near] = twoCars(arena, 'semi', 'sportsCar', HORN_RANGE - 2)
     const far = takeSeat(arena, 2, 'sportsCar')
@@ -551,7 +568,7 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the pickup drops a bomb behind it on every press, only so many out at once, the oldest going for the next', () => {
+  it('the pickup drops a bomb behind it on a press, not another for five seconds, and only so many out at once, the oldest going for the next', () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'pickup')
     for (let i = 0; i < 30; i++) advance(arena)
@@ -560,8 +577,16 @@ describe("the car's own key", () => {
     expect(bombs()).toHaveLength(1)
     expect(arena.loose[0]!.power).toBe(OWN_BOMB_POWER)
     expect(arena.loose[0]!.owner).toBe(a.id)
-    expect(a.cooldownTicks).toBe(0)
-    for (let i = 0; i < OWN_BOMBS_MOST + 1; i++) press(arena, a)
+    expect(a.cooldownTicks).toBeGreaterThan(0)
+    press(arena, a)
+    expect(bombs()).toHaveLength(1)
+    const wait = (): void => {
+      for (let i = 0; i < OWN_ACTIONS.pickup.cooldownTicks; i++) advance(arena)
+    }
+    for (let i = 0; i < OWN_BOMBS_MOST + 1; i++) {
+      wait()
+      press(arena, a)
+    }
     const out = bombs()
     expect(out).toHaveLength(OWN_BOMBS_MOST)
     expect(out[0]).toBe(2)
@@ -573,6 +598,7 @@ describe("the car's own key", () => {
     const [a, b] = twoCars(arena, 'pickup', 'sportsCar', 40)
     press(arena, a)
     const own = arena.loose.find((loose) => loose.kind === 'bomb')!
+    expect(own.power).toBe(OWN_BOMB_POWER)
     onto(b, own.position)
     for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
     expect(b.vehicle.damage).toBeCloseTo(OWN_BOMB_POWER, 5)
@@ -628,7 +654,7 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the shockwave stuns every car within thirty metres for five seconds', () => {
+  it('the shockwave stuns every car within thirty meters for five seconds', () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 20, 0)
     arm(a, 'shockwave')

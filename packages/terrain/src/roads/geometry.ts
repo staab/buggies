@@ -197,7 +197,7 @@ export function segmentsCross(
   return d1 * d2 < 0 && d3 * d4 < 0
 }
 
-/** Axis-aligned bounds of a road's centreline, grown by `margin`. */
+/** Axis-aligned bounds of a road's centerline, grown by `margin`. */
 export function roadBounds(road: Road, margin: number): { minX: number; maxX: number; minZ: number; maxZ: number } {
   let minX = Infinity
   let maxX = -Infinity

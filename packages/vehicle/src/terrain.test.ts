@@ -3,7 +3,7 @@ import {
   ROAD_GRADE,
   ROAD_TUNNEL,
   flatHeightfield,
-  KERB_HEIGHT,
+  CURB_HEIGHT,
   RAMP_FACETS,
   generateTerrain,
   rampFacets,
@@ -122,7 +122,7 @@ describe('terrain colliders', () => {
           total++
           const found = castDown(world, (a.x + b.x) / 2, (a.z + b.z) / 2, deck + 3)
           // Reading higher than its own deck is a junction: another
-          // carriageway crossing above this one, which is meant to be there.
+          // roadway crossing above this one, which is meant to be there.
           // Reading lower is a hole, and a hole is a vehicle in a ditch.
           if (found === null || found < deck - 0.1) below++
         }
@@ -241,12 +241,12 @@ describe('terrain colliders', () => {
       expect(sound).toBe(map.ramps.length)
     })
 
-    it('raises a kerb round every city block that the wheels find', () => {
+    it('raises a curb around every city block that the wheels find', () => {
       expect(map.sidewalks.length).toBeGreaterThan(0)
-      let kerbed = 0
+      let curbed = 0
       for (const walk of map.sidewalks) {
-        // The middle of one built side's slab, just in from the kerb, short
-        // of the buildings standing on the slab further in. Sides go round
+        // The middle of one built side's slab, just in from the curb, short
+        // of the buildings standing on the slab further in. Sides go around
         // from the one at +v.
         const side = walk.sides.findIndex((built) => built)
         const reach = walk.half - 0.3
@@ -261,11 +261,11 @@ describe('terrain colliders', () => {
         const x = walk.x + u * Math.cos(walk.yaw) - v * Math.sin(walk.yaw)
         const z = walk.z + u * Math.sin(walk.yaw) + v * Math.cos(walk.yaw)
         const ground = sampleHeight(map.heightfield, x, z)
-        // From just over the kerb, under any deck that crosses the city above it.
+        // From just over the curb, under any deck that crosses the city above it.
         const found = castDown(world, x, z, ground + 1)
-        if (found !== null && found > ground + KERB_HEIGHT - 0.05 && found < ground + KERB_HEIGHT + 0.6) kerbed++
+        if (found !== null && found > ground + CURB_HEIGHT - 0.05 && found < ground + CURB_HEIGHT + 0.6) curbed++
       }
-      expect(kerbed).toBe(map.sidewalks.length)
+      expect(curbed).toBe(map.sidewalks.length)
     })
 
     it('carries a bridge over the gap it spans', () => {

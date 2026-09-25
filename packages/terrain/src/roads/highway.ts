@@ -16,8 +16,8 @@ import { pullAllInland, pullInland, sampleTerrain } from './sampling.ts'
 const { atan2, cos, hypot, sin } = exact
 
 /**
- * The highway: one loop round the island's cities, shaped as a stadium or bowed
- * round the coast, and sampled into a smooth run of points.
+ * The highway: one loop around the island's cities, shaped as a stadium or bowed
+ * around the coast, and sampled into a smooth run of points.
  */
 
 /**

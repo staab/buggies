@@ -43,10 +43,10 @@ function longestGradeRun(road: Road): { start: number; length: number } {
 
 /** The index `distance` further along a road from `start`. */
 function advanceAlong(road: Road, start: number, distance: number): number {
-  let travelled = 0
+  let traveled = 0
   let at = start
-  while (at < road.points.length - 4 && travelled < distance) {
-    travelled += Math.hypot(
+  while (at < road.points.length - 4 && traveled < distance) {
+    traveled += Math.hypot(
       road.points[at + 1]!.x - road.points[at]!.x,
       road.points[at + 1]!.z - road.points[at]!.z,
     )
@@ -63,7 +63,7 @@ for (const seed of [3, 7, 21]) {
     .sort((a, b) => longestGradeRun(b).length - longestGradeRun(a).length)[0]!
   // Far enough into the run, in distance rather than points, that the vehicle
   // is not hanging off the end of the road mesh. Road points can be a few
-  // centimetres apart, so counting them is no guide to how far along it is.
+  // centimeters apart, so counting them is no guide to how far along it is.
   const from = advanceAlong(road, longestGradeRun(road).start, 12)
 
   for (const profile of VEHICLE_PROFILE_IDS) {

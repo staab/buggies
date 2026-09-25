@@ -14,15 +14,15 @@ export interface ModelCredit {
   title: string
   author: string
   url: string
-  licence: string
-  licenceUrl: string
+  license: string
+  licenseUrl: string
 }
 
 /** A vehicle's model: which file, how big a unit of it is, and what in it is a wheel. */
 export interface CarModelSpec {
   /** Where the file is, under the models directory. */
   file: string
-  /** Metres per unit of the model. */
+  /** Meters per unit of the model. */
   scale: number
   /** Nodes left out: a rider, a trailer. */
   hidden: readonly string[]
@@ -35,8 +35,8 @@ const KENNEY: ModelCredit = {
   title: 'Car Kit',
   author: 'Kenney',
   url: 'https://kenney.nl/assets/car-kit',
-  licence: 'CC0',
-  licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+  license: 'CC0',
+  licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
 }
 
 const KENNEY_WHEELS = /^wheel-/
@@ -65,23 +65,23 @@ export const CAR_MODELS: Readonly<Record<VehicleProfileId, CarModelSpec>> = Obje
       title: 'Tank',
       author: 'Quaternius',
       url: 'https://poly.pizza/m/Dc4k4CooN3',
-      licence: 'CC0',
-      licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+      license: 'CC0',
+      licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
     },
   },
   ambulance: { file: 'kenney/ambulance.glb', scale: 1.6, hidden: [], wheels: KENNEY_WHEELS, credit: KENNEY },
   semi: {
     file: 'jtoastie-cargo-truck.glb',
     scale: 1.55,
-    // The tractor unit alone: the trailer and its running gear stay behind.
+    // The tractor alone: the trailer and its running gear stay behind.
     hidden: ['Cargo', 'CargoHoldThing', 'CargoTires01', 'CargoTires02'],
     wheels: /Tires/,
     credit: {
       title: 'Cargo Truck',
       author: 'J-Toastie',
       url: 'https://poly.pizza/m/Fy3WI3uXNQ',
-      licence: 'CC BY 3.0',
-      licenceUrl: 'https://creativecommons.org/licenses/by/3.0/',
+      license: 'CC BY 3.0',
+      licenseUrl: 'https://creativecommons.org/licenses/by/3.0/',
     },
   },
   goKart: { file: 'kenney/kart-oobi.glb', scale: 1.3, hidden: ['character'], wheels: KENNEY_WHEELS, credit: KENNEY },
@@ -89,7 +89,7 @@ export const CAR_MODELS: Readonly<Record<VehicleProfileId, CarModelSpec>> = Obje
 
 /** One of a model's wheels, ready to be drawn where the simulation has it. */
 export interface WheelTemplate {
-  /** The wheel, centred on its hub, in the chassis frame's orientation and scale. */
+  /** The wheel, centered on its hub, in the chassis frame's orientation and scale. */
   group: THREE.Group
   /** Where its hub is across the chassis. */
   x: number
@@ -145,7 +145,7 @@ function nodesNamed(root: THREE.Object3D, matches: (name: string) => boolean): T
 
 /**
  * Two geometries from one, by which side of x = 0 each triangle is on: an
- * axle modelled as a single mesh becomes its left wheel and its right.
+ * axle modeled as a single mesh becomes its left wheel and its right.
  */
 function splitAcross(geometry: THREE.BufferGeometry): [left: THREE.BufferGeometry, right: THREE.BufferGeometry] {
   const source = geometry.index === null ? geometry : geometry.toNonIndexed()
@@ -153,8 +153,8 @@ function splitAcross(geometry: THREE.BufferGeometry): [left: THREE.BufferGeometr
   const left: number[] = []
   const right: number[] = []
   for (let vertex = 0; vertex < position.count; vertex += 3) {
-    const centre = position.getX(vertex) + position.getX(vertex + 1) + position.getX(vertex + 2)
-    ;(centre < 0 ? left : right).push(vertex, vertex + 1, vertex + 2)
+    const center = position.getX(vertex) + position.getX(vertex + 1) + position.getX(vertex + 2)
+    ;(center < 0 ? left : right).push(vertex, vertex + 1, vertex + 2)
   }
   const half = (vertices: number[]): THREE.BufferGeometry => {
     const built = new THREE.BufferGeometry()
@@ -188,7 +188,7 @@ function bakeWheelMeshes(node: THREE.Object3D, toChassis: THREE.Matrix4): THREE.
   return baked
 }
 
-/** A wheel from its baked meshes: the meshes centred on the hub, and where the hub was. */
+/** A wheel from its baked meshes: the meshes centered on the hub, and where the hub was. */
 function wheelFrom(meshes: THREE.Mesh[]): Omit<WheelTemplate, 'isFront' | 'isLeft'> {
   const box = new THREE.Box3()
   for (const mesh of meshes) {
@@ -196,21 +196,21 @@ function wheelFrom(meshes: THREE.Mesh[]): Omit<WheelTemplate, 'isFront' | 'isLef
     mesh.geometry.computeBoundingBox()
     box.union(mesh.geometry.boundingBox!)
   }
-  const centre = box.getCenter(new THREE.Vector3())
+  const center = box.getCenter(new THREE.Vector3())
   const group = new THREE.Group()
   for (const mesh of meshes) {
-    mesh.geometry.translate(-centre.x, -centre.y, -centre.z)
+    mesh.geometry.translate(-center.x, -center.y, -center.z)
     mesh.castShadow = true
     group.add(mesh)
   }
-  return { group, x: centre.x, z: centre.z, radius: (box.max.y - box.min.y) / 2 }
+  return { group, x: center.x, z: center.z, radius: (box.max.y - box.min.y) / 2 }
 }
 
 /**
  * Fit a loaded model to a vehicle. The body is put in the chassis frame:
  * front toward -Z, left toward -X, the origin where the chassis's is, and
  * the ground under its wheels as far down as the chassis rests above the
- * road. The wheels are taken off it, each centred on its hub, to be drawn
+ * road. The wheels are taken off it, each centered on its hub, to be drawn
  * where the simulation has them. The model is taken apart in place.
  */
 export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: VehicleTuning): CarModel {
@@ -222,16 +222,16 @@ export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: V
   )
   const body = meshBounds(scene, (mesh) => !within(mesh, wheelNodes))
   const ground = Math.min(body.min.y, meshBounds(scene, (mesh) => within(mesh, wheelNodes)).min.y)
-  const centre = body.getCenter(new THREE.Vector3())
+  const center = body.getCenter(new THREE.Vector3())
   const rideHeight = restingRideHeight(tuning, DEFAULT_WORLD_TUNING.gravity)
 
-  // Model to chassis frame: turned about, scaled, the body centred and the
+  // Model to chassis frame: turned about, scaled, the body centered and the
   // ground put where the road is under a chassis at rest.
   const { scale } = spec
   const toChassis = new THREE.Matrix4().set(
-    -scale, 0, 0, scale * centre.x,
+    -scale, 0, 0, scale * center.x,
     0, scale, 0, -scale * ground - rideHeight,
-    0, 0, -scale, scale * centre.z,
+    0, 0, -scale, scale * center.z,
     0, 0, 0, 1,
   )
 

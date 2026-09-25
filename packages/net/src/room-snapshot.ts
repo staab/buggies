@@ -95,6 +95,8 @@ function gatherVehicles(
       actionTicks: 0,
       cooldownTicks: 0,
       lightsOn: false,
+      abilityHeld: false,
+      rocketsFired: 0,
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
@@ -115,6 +117,8 @@ function gatherVehicles(
     vehicle.actionTicks = seat.actionTicks
     vehicle.cooldownTicks = seat.cooldownTicks
     vehicle.lightsOn = seat.lightsOn
+    vehicle.abilityHeld = seat.abilityHeld
+    vehicle.rocketsFired = seat.rocketsFired
     vehicle.stunnedTicks = seat.stunnedTicks
     vehicle.slowedTicks = seat.slowedTicks
     vehicle.slowedBy = seat.slowedBy

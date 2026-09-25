@@ -101,7 +101,7 @@ export function insidePolygon(polygon: Point[], x: number, z: number): boolean {
 }
 
 /**
- * Whether a footprint reaches into any interchange: by its centre, its
+ * Whether a footprint reaches into any interchange: by its center, its
  * corners and the middle of each side, which is enough for anything smaller
  * than an interchange.
  */

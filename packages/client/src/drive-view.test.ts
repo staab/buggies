@@ -129,7 +129,7 @@ describe('ChaseCamera', () => {
 
   it('stays under a tunnel roof, and comes back up once out of it', () => {
     const camera = new ChaseCamera(createCameraTuning())
-    // A bore three metres high, then open sky.
+    // A bore three meters high, then open sky.
     let roof = 3
     camera.setBoundsAt((_x, _z, out) => {
       out.floor = 0
@@ -152,7 +152,7 @@ describe('ChaseCamera under a deck', () => {
   it('drops to a low chase under a bridge, and rises again once out from under it', () => {
     const tuning = createCameraTuning()
     const camera = new ChaseCamera(tuning)
-    // A deck five metres up that appears over the car, then goes away.
+    // A deck five meters up that appears over the car, then goes away.
     let deck = Number.POSITIVE_INFINITY
     camera.setBoundsAt((_x, _z, out, above) => {
       out.floor = 0

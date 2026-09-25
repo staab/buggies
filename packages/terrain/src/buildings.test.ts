@@ -9,7 +9,7 @@ import { smoothstep } from './noise.ts'
 import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
-const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3, wall: 0.5, board: 2, site: 2.5, fountain: 1, statue: 2.4 }
+const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, camper: 2, post: 3, sign: 3, wall: 0.5, board: 2, site: 2.5, fountain: 1, statue: 2.4 }
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
 
@@ -26,7 +26,7 @@ function districtOf(island: TerrainMap, x: number, z: number): number {
   return island.districtOf[Math.floor(z / cellSize) * width + Math.floor(x / cellSize)]!
 }
 
-/** The corners of a footprint, its centre and the middle of each side. */
+/** The corners of a footprint, its center and the middle of each side. */
 function samples(building: Building): { x: number; z: number }[] {
   const cos = Math.cos(building.yaw)
   const sin = Math.sin(building.yaw)
@@ -49,7 +49,7 @@ function distanceToSegment(px: number, pz: number, ax: number, az: number, bx: n
   return Math.hypot(px - (ax + vx * t), pz - (az + vz * t))
 }
 
-/** The nearest any road's carriageway comes to a point, as a fraction of its half width: under 1 is on the road. */
+/** The nearest any road's roadway comes to a point, as a fraction of its half width: under 1 is on the road. */
 function roadCrowding(roads: Road[], x: number, z: number): number {
   let nearest = Infinity
   for (const road of roads) {
@@ -169,7 +169,7 @@ describe('buildings and trees', () => {
     expect(wildTrees.length).toBeGreaterThan(500)
     expect(wildShrubs.length).toBeGreaterThan(500)
 
-    // The foothills are planted: the ground round each mountain that has
+    // The foothills are planted: the ground around each mountain that has
     // begun to rise but is nowhere near the crest.
     const peak = Math.max(...map.mountains.map((mountain) => mountain.height))
     const foot = (standing: { x: number; z: number }): number =>
@@ -192,7 +192,7 @@ describe('buildings and trees', () => {
     }
   })
 
-  it('plant the parks between the city blocks and the gardens round the houses', () => {
+  it('plant the parks between the city blocks and the gardens around the houses', () => {
     const parks = map.trees.filter((tree) => districtAt(tree.x, tree.z) === DISTRICT_CITY)
     const gardens = map.trees.filter((tree) => districtAt(tree.x, tree.z) === DISTRICT_SUBURB)
     expect(parks.filter((tree) => tree.kind === 'tree').length).toBeGreaterThan(30)
@@ -255,7 +255,7 @@ describe('buildings and trees', () => {
     let viewpoints = 0
     for (const seed of [1, 2, 3, 4]) {
       const island = seed === 1 ? map : generateTerrain(seed)
-      const lots = island.fields.filter((field) => field.kind === 'carpark' && districtOf(island, field.x, field.z) === DISTRICT_COUNTRY)
+      const lots = island.fields.filter((field) => field.kind === 'parkingLot' && districtOf(island, field.x, field.z) === DISTRICT_COUNTRY)
       const walls = island.buildings.filter((building) => building.kind === 'wall')
       const boards = island.buildings.filter((building) => building.kind === 'board')
       expect(lots.length).toBeLessThanOrEqual(1)
@@ -443,7 +443,7 @@ describe('buildings and trees', () => {
     }
   })
 
-  it('farm the open country: hedged fields in rows on ground flat enough to plough, a barn and a silo off the end', () => {
+  it('farm the open country: hedged fields in rows on ground flat enough to plow, a barn and a silo off the end', () => {
     const fields = map.fields.filter((field) => field.kind === 'crop')
     expect(fields.length).toBeGreaterThanOrEqual(4)
     const roadPoints = map.roads.flatMap((road) => road.points)
@@ -525,7 +525,7 @@ describe('buildings and trees', () => {
     }
   })
 
-  it('run a filling station every so far along the suburb roads: shop, canopy on posts, and a sign on a paved lot', () => {
+  it('run a gas station every so far along the suburb roads: shop, canopy on posts, and a sign on a paved lot', () => {
     const canopies = map.buildings.filter((building) => building.kind === 'canopy')
     const shops = map.buildings.filter((building) => building.kind === 'shop')
     const posts = map.buildings.filter((building) => building.kind === 'post')
@@ -549,10 +549,10 @@ describe('buildings and trees', () => {
     }
   })
 
-  it('pitch camps in the country near a road: tents round a fire, caravans by, trees round the rim', () => {
+  it('pitch camps in the country near a road: tents around a fire, campers by, trees around the rim', () => {
     const firepits = map.buildings.filter((building) => building.kind === 'firepit')
     const tents = map.buildings.filter((building) => building.kind === 'tent')
-    const caravans = map.buildings.filter((building) => building.kind === 'caravan')
+    const campers = map.buildings.filter((building) => building.kind === 'camper')
     expect(firepits.length).toBeGreaterThanOrEqual(1)
     expect(firepits.length).toBeLessThanOrEqual(3)
     const main = map.roads.filter((road) => road.kind !== 'street')
@@ -563,7 +563,7 @@ describe('buildings and trees', () => {
       }
       const ring = tents.filter((tent) => Math.hypot(tent.x - fire.x, tent.z - fire.z) < 15)
       expect(ring.length).toBeGreaterThanOrEqual(4)
-      expect(caravans.some((caravan) => Math.hypot(caravan.x - fire.x, caravan.z - fire.z) < 20)).toBe(true)
+      expect(campers.some((camper) => Math.hypot(camper.x - fire.x, camper.z - fire.z) < 20)).toBe(true)
       const nearest = Math.min(...main.flatMap((road) => road.points.map((point) => Math.hypot(point.x - fire.x, point.z - fire.z))))
       expect(nearest).toBeGreaterThan(25)
       expect(nearest).toBeLessThan(65)
@@ -597,14 +597,14 @@ describe('buildings and trees', () => {
 
   it('ring the open ground with standing stones, each turned to face the altar in the middle', () => {
     const all = map.buildings.filter((building) => building.kind === 'stone')
-    // The altar lies in the middle; the rest stand round it.
+    // The altar lies in the middle; the rest stand around it.
     expect(all).toHaveLength(13)
     const altar = all.reduce((lowest, stone) => (stone.top - stone.bottom < lowest.top - lowest.bottom ? stone : lowest))
     const stones = all.filter((stone) => stone !== altar)
-    const centre = { x: altar.x, z: altar.z }
+    const center = { x: altar.x, z: altar.z }
     for (const stone of stones) {
-      const rx = stone.x - centre.x
-      const rz = stone.z - centre.z
+      const rx = stone.x - center.x
+      const rz = stone.z - center.z
       const radius = Math.hypot(rx, rz)
       expect(Math.abs(radius - 14)).toBeLessThan(1.5)
       expect(stone.top - stone.bottom).toBeGreaterThan(6)
@@ -613,7 +613,7 @@ describe('buildings and trees', () => {
       expect(Math.abs(across)).toBeLessThan(0.3)
       expect(districtAt(stone.x, stone.z)).toBe(DISTRICT_COUNTRY)
     }
-    // Some neighbours carry a lintel: laid between the two, resting on both, which stand the same height.
+    // Some neighbors carry a lintel: laid between the two, resting on both, which stand the same height.
     const lintels = map.buildings.filter((building) => building.kind === 'lintel')
     expect(lintels.length).toBeGreaterThan(0)
     expect(lintels.length).toBeLessThan(stones.length)
@@ -700,7 +700,7 @@ describe('ramps', () => {
     for (const ramp of map.ramps) {
       expect((ramp.top - ramp.bottom) / ramp.length).toBeCloseTo(0.25, 1)
       expect(Math.abs(sampleHeight(map.heightfield, ramp.x, ramp.z) - ramp.bottom)).toBeLessThan(0.01)
-      // Beside a road, off its carriageway but within a car's width of it,
+      // Beside a road, off its roadway but within a car's width of it,
       // and pointing along it.
       const middle = { x: ramp.x + (ramp.dx * ramp.length) / 2, z: ramp.z + (ramp.dz * ramp.length) / 2 }
       let nearest = Infinity
@@ -734,10 +734,10 @@ describe('sidewalks', () => {
   it('ring the built city blocks, a block wide less the street, each side along a street inside the city', () => {
     expect(map.sidewalks.length).toBeGreaterThan(20)
     const blocks = map.buildings.filter((building) => building.kind === 'block' || building.kind === 'site' || building.kind === 'clocktower')
-    const carparks = map.fields.filter((field) => field.kind === 'carpark' || field.kind === 'square')
+    const parkingLots = map.fields.filter((field) => field.kind === 'parkingLot' || field.kind === 'square')
     const streets = map.roads.filter((road) => road.kind === 'street')
     /**
-     * Whether a street's centreline passes within a lane of the point, as the
+     * Whether a street's centerline passes within a lane of the point, as the
      * generator asks of a side, with a hair over it: a street can end exactly
      * a lane short of the sample, and the point is worked out in a different
      * frame here than there.
@@ -758,7 +758,7 @@ describe('sidewalks', () => {
       expect(walk.band).toBeGreaterThan(1)
       // Something is built on the block it rings.
       const near = (thing: { x: number; z: number }): boolean => Math.hypot(thing.x - walk.x, thing.z - walk.z) < walk.half + 2
-      expect(blocks.some(near) || carparks.some(near)).toBe(true)
+      expect(blocks.some(near) || parkingLots.some(near)).toBe(true)
       // And each laid side lies in the city, with a street running the whole side long.
       const cos = Math.cos(walk.yaw)
       const sin = Math.sin(walk.yaw)
@@ -802,18 +802,18 @@ describe('sidewalks', () => {
       perCity.set(city.id, (perCity.get(city.id) ?? 0) + 1)
     }
     for (const count of perCity.values()) expect(count).toBe(1)
-    let verges = 0
+    let shoulders = 0
     for (const statue of statues) {
       expect(districtAt(statue.x, statue.z)).toBe(DISTRICT_CITY)
       expect(statue.width).toBe(2)
       expect(roadCrowding(map.roads, statue.x, statue.z)).toBeGreaterThan(1)
       const arterials = map.roads.filter((road) => road.kind === 'arterial')
-      if (roadCrowding(arterials, statue.x, statue.z) < 3) verges++
+      if (roadCrowding(arterials, statue.x, statue.z) < 3) shoulders++
     }
-    expect(verges).toBeGreaterThanOrEqual(1)
+    expect(shoulders).toBeGreaterThanOrEqual(1)
   })
 
-  it('raise one clock tower in each city, near its centre and above every block within 100 m', () => {
+  it('raise one clock tower in each city, near its center and above every block within 100 m', () => {
     const towers = map.buildings.filter((building) => building.kind === 'clocktower')
     expect(towers.length).toBeGreaterThanOrEqual(1)
     const perCity = new Map<number, number>()
@@ -843,7 +843,7 @@ describe('sidewalks', () => {
     for (const crane of cranes) {
       expect(districtAt(crane.x, crane.z)).toBe(DISTRICT_CITY)
       expect(crane.width).toBe(3)
-      // In the middle of its site, whose hoardings stand low over the ground.
+      // In the middle of its site, whose fencing stands low over the ground.
       const site = sites.find((candidate) => Math.hypot(candidate.x - crane.x, candidate.z - crane.z) < 1)
       expect(site).toBeDefined()
       expect(site!.top).toBeLessThan(sampleHeight(map.heightfield, site!.x, site!.z) + 8)
@@ -863,11 +863,11 @@ describe('sidewalks', () => {
     for (const count of perCity.values()) expect(count).toBeLessThanOrEqual(3)
   })
 
-  it('mark out car parks on some of the open lots, and plant street trees along the sidewalks', () => {
-    // A car park is in the city, but for a viewpoint's at the top of a mountain road.
-    const carparks = map.fields.filter((field) => field.kind === 'carpark' && districtAt(field.x, field.z) !== DISTRICT_COUNTRY)
-    expect(carparks.length).toBeGreaterThanOrEqual(1)
-    for (const lot of carparks) expect(districtAt(lot.x, lot.z)).toBe(DISTRICT_CITY)
+  it('mark out parking lots on some of the open lots, and plant street trees along the sidewalks', () => {
+    // A parking lot is in the city, but for a viewpoint's at the top of a mountain road.
+    const parkingLots = map.fields.filter((field) => field.kind === 'parkingLot' && districtAt(field.x, field.z) !== DISTRICT_COUNTRY)
+    expect(parkingLots.length).toBeGreaterThanOrEqual(1)
+    for (const lot of parkingLots) expect(districtAt(lot.x, lot.z)).toBe(DISTRICT_CITY)
     let onSidewalks = 0
     for (const tree of map.trees) {
       if (tree.kind !== 'tree' || districtAt(tree.x, tree.z) !== DISTRICT_CITY) continue

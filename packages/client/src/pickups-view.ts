@@ -2,7 +2,7 @@ import { LOOSE_MOST, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, pickupOut, type Loose
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
-/** Tip to tip, in metres: big enough to be seen from a chase camera. */
+/** Tip to tip, in meters: big enough to be seen from a chase camera. */
 export const BANANA_LENGTH = 3.9
 /** How fast a banana turns on the spot, in radians a second. */
 export const SPIN_RATE = 0.9
@@ -45,26 +45,26 @@ export function bananaGeometry(length = BANANA_LENGTH): THREE.BufferGeometry {
   const fullRadius = length * 0.13
   const geometry = new THREE.TubeGeometry(bend, along, fullRadius, around, false)
   const position = geometry.getAttribute('position') as THREE.BufferAttribute
-  const colours = new Float32Array(position.count * 3)
-  const centre = new THREE.Vector3()
+  const colors = new Float32Array(position.count * 3)
+  const center = new THREE.Vector3()
   const vertex = new THREE.Vector3()
-  const colour = new THREE.Color()
+  const color = new THREE.Color()
   // A tube's vertices come ring by ring: pinch each ring toward its point on
   // the bend by how near a tip it is.
   for (let i = 0; i < position.count; i++) {
     const ring = Math.floor(i / (around + 1))
     const t = ring / along
     const pinch = Math.max(Math.pow(Math.sin(Math.PI * t), 0.55), 0.12)
-    bend.getPointAt(t, centre)
-    vertex.fromBufferAttribute(position, i).sub(centre).multiplyScalar(pinch).add(centre)
+    bend.getPointAt(t, center)
+    vertex.fromBufferAttribute(position, i).sub(center).multiplyScalar(pinch).add(center)
     position.setXYZ(i, vertex.x, vertex.y, vertex.z)
     const nearTip = Math.max(0, 1 - Math.min(t, 1 - t) / 0.1)
-    colour.copy(SKIN).lerp(TIP, nearTip * nearTip)
-    colours[i * 3] = colour.r
-    colours[i * 3 + 1] = colour.g
-    colours[i * 3 + 2] = colour.b
+    color.copy(SKIN).lerp(TIP, nearTip * nearTip)
+    colors[i * 3] = color.r
+    colors[i * 3 + 1] = color.g
+    colors[i * 3 + 2] = color.b
   }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geometry.computeVertexNormals()
   return geometry
 }
@@ -84,13 +84,13 @@ const IRON = new THREE.Color('#202226')
 const FUSE = new THREE.Color('#8a7a5a')
 const EMBER = new THREE.Color('#ff9a3c')
 
-/** A bomb: a black ball with a short fuse and a glowing end, coloured by vertex. Built once and shared. */
+/** A bomb: a black ball with a short fuse and a glowing end, colored by vertex. Built once and shared. */
 export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
-  const paint = (geometry: THREE.BufferGeometry, colour: THREE.Color): THREE.BufferGeometry => {
+  const paint = (geometry: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry => {
     const count = geometry.getAttribute('position').count
-    const colours = new Float32Array(count * 3)
-    for (let i = 0; i < count; i++) colour.toArray(colours, i * 3)
-    geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3))
+    const colors = new Float32Array(count * 3)
+    for (let i = 0; i < count; i++) color.toArray(colors, i * 3)
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
     return geometry
   }
   const parts = [
@@ -100,18 +100,18 @@ export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
   ]
   const positions: number[] = []
   const normals: number[] = []
-  const colours: number[] = []
+  const colors: number[] = []
   const indices: number[] = []
   let vertices = 0
   for (const part of parts) {
     const position = part.getAttribute('position')
     const normal = part.getAttribute('normal')
-    const colour = part.getAttribute('color')
+    const color = part.getAttribute('color')
     const index = part.getIndex()
     for (let i = 0; i < position.count; i++) {
       positions.push(position.getX(i), position.getY(i), position.getZ(i))
       normals.push(normal.getX(i), normal.getY(i), normal.getZ(i))
-      colours.push(colour.getX(i), colour.getY(i), colour.getZ(i))
+      colors.push(color.getX(i), color.getY(i), color.getZ(i))
     }
     if (index !== null) for (let i = 0; i < index.count; i++) indices.push(index.getX(i) + vertices)
     vertices += position.count
@@ -120,7 +120,7 @@ export function bombGeometry(radius = BOMB_RADIUS): THREE.BufferGeometry {
   const merged = new THREE.BufferGeometry()
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   merged.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
-  merged.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3))
+  merged.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   merged.setIndex(indices)
   return merged
 }

@@ -12,9 +12,9 @@ export const DISTRICT_COUNTRY = 0
 export const DISTRICT_SUBURB = 1
 export const DISTRICT_CITY = 2
 
-/** Local slope is averaged over this many cells to judge a neighbourhood. */
+/** Local slope is averaged over this many cells to judge a neighborhood. */
 const RELIEF_RADIUS = 12
-/** Ground is level when both its own and its neighbourhood's grade are below this. */
+/** Ground is level when both its own and its neighborhood's grade are below this. */
 const MAX_GRADE = 0.12
 /**
  * A city may spread onto ground this steep, so it fills gently rolling land.
@@ -36,7 +36,7 @@ const MIN_LEVEL_FRACTION = 0.4
  * foot of a mountain is not away from significant elevation changes.
  */
 const REGION_RELIEF_WEIGHT = 4
-/** Cities keep at least this much space between their centres. */
+/** Cities keep at least this much space between their centers. */
 const MIN_CITY_SPACING = 380
 /** The triangle search only needs city cores not to overlap. */
 const MIN_TRIANGLE_SIDE = CITY_RADIUS.max * 2
@@ -51,8 +51,8 @@ const FILL_SPACING_FRACTION = 0.6
 const DISTRICT_SALT = 0x5d15
 
 /**
- * Greatest height change from a cell to its four neighbours, scaled to world
- * units. Each neighbour is read only once it is known to be within the field.
+ * Greatest height change from a cell to its four neighbors, scaled to world
+ * units. Each neighbor is read only once it is known to be within the field.
  */
 function neighbourSlope(field: Heightfield): Float32Array {
   const { width, depth, cellSize, heights } = field
@@ -122,7 +122,7 @@ interface Point {
   z: number
 }
 
-/** World-space centre of a cell. */
+/** World-space center of a cell. */
 function cellCenter(cell: number, width: number, cellSize: number): Point {
   return { x: ((cell % width) + 0.5) * cellSize, z: (((cell / width) | 0) + 0.5) * cellSize }
 }
@@ -229,7 +229,7 @@ export function generateDistricts(
   const candidates: number[] = []
   for (let cell = 0; cell < count; cell++) {
     if (heights[cell]! <= seaLevel + COAST_MARGIN) continue
-    // Gentle both locally and over the neighbourhood, so a city never straddles
+    // Gentle both locally and over the neighborhood, so a city never straddles
     // a single sharp step even when the surrounding terrain is otherwise even.
     if (slope[cell]! > MAX_GRADE || grade[cell]! > MAX_GRADE) continue
     if (water.has(cell)) continue

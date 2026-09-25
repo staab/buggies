@@ -61,7 +61,7 @@ function findSource(field: Heightfield, mountain: Mountain, seaLevel: number, us
 }
 
 /**
- * Follow the routed downhill neighbours from a spring to the sea. The water
+ * Follow the routed downhill neighbors from a spring to the sea. The water
  * surface is `routing.filled`, which is flat across lakes and non-increasing
  * downhill, so the river always descends. Width tracks how far the river has
  * dropped, keeping the headwaters thin at the top of the mountain.

@@ -36,13 +36,15 @@ const MAX_LEAD_TICKS = INPUT_TIMELINE_TICKS / 2
 
 /**
  * How many ticks early an input should arrive: enough that jitter does not
- * make it late, not so many that the car answers later than it need to.
+ * make it late, since an input that is late is held over and the car then
+ * does on the server what it did not do here, not so many that the car
+ * answers later than it need to.
  */
-const MIN_SLACK_TICKS = 1
-const MAX_SLACK_TICKS = 4
+const MIN_SLACK_TICKS = 2
+const MAX_SLACK_TICKS = 6
 
-/** Lead comes down slowly, so a good moment does not undo a bad second. */
-const LEAD_RELAX_INTERVAL_MS = 1000
+/** Lead comes down slowly, so a good moment does not undo a bad few seconds. */
+const LEAD_RELAX_INTERVAL_MS = 3000
 
 /**
  * The mirror steps once per local fixed step, whatever the server's clock is

@@ -13,7 +13,7 @@ export const PLAYER_BODY_COLOR = 0xd8452f
 export const REMOTE_BODY_COLOR = 0x3f6fb5
 export const BOT_BODY_COLOR = 0x3f8f5c
 
-/** One colour per seat, so everyone sees the same cars. */
+/** One color per seat, so everyone sees the same cars. */
 const SEAT_COLORS = [
   PLAYER_BODY_COLOR,
   REMOTE_BODY_COLOR,
@@ -29,7 +29,7 @@ export function seatColor(seat: number): number {
   return SEAT_COLORS[seat % SEAT_COLORS.length] ?? PLAYER_BODY_COLOR
 }
 
-/** A colour each, for when a vehicle has to be drawn as boxes. */
+/** A color each, for when a vehicle has to be drawn as boxes. */
 const PROFILE_COLORS: Record<VehicleProfileId, number> = {
   raceCar: 0xe8a33a,
   police: 0xf4f4f4,
@@ -85,11 +85,11 @@ export class CarView {
   private readonly materials: THREE.Material[] = []
   private readonly mountLocal: Vec3 = v3()
   /** Whether the wheels sit where the model has them or where the tuning does. */
-  private readonly modelled: boolean
+  private readonly modeled: boolean
 
   constructor(profile: VehicleProfileId, bodyColor: number, model: CarModel | null = carModelFor(profile)) {
     this.object = new THREE.Group()
-    this.modelled = model !== null
+    this.modeled = model !== null
 
     if (model !== null) {
       this.object.add(model.body.clone())
@@ -207,9 +207,9 @@ export class CarView {
   ): void {
     wheelMountLocal(this.mountLocal, corner, tuning)
     drawn.pivot.position.set(
-      this.modelled ? drawn.x : this.mountLocal.x,
+      this.modeled ? drawn.x : this.mountLocal.x,
       this.mountLocal.y - suspensionLength,
-      this.modelled ? drawn.z : this.mountLocal.z,
+      this.modeled ? drawn.z : this.mountLocal.z,
     )
   }
 

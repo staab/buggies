@@ -1,5 +1,5 @@
 /**
- * The roads of an island: a highway loop round its cities, arterials between
+ * The roads of an island: a highway loop around its cities, arterials between
  * them, streets through them, interchanges where the highway is crossed,
  * and every one of them settled onto the terrain. Each stage is its own
  * module under `roads/`; this is the order they run in, and the names the
@@ -84,7 +84,7 @@ export {
   ARTERIAL_BRIDGE_GRADE,
   SURFACE_SHOULDER,
   STREET_WIDTH,
-  STREET_KERB,
+  STREET_CURB,
   STREET_SPACING,
 } from './roads/constants.ts'
 export { isSurfaceRoad, roadLift, deckShouldered, skirtFoot } from './roads/beds.ts'
@@ -120,7 +120,7 @@ export function generateRoads(
   const { width, depth, cellSize } = field
   // Every cell the water is drawn over, at the highest level drawn there. A
   // sample's own cell is not enough: a road can cross a wide river far from any
-  // centreline cell and read the ground as dry, and a deck built to clear one
+  // centerline cell and read the ground as dry, and a deck built to clear one
   // sample can still finish under the sample beside it.
   const riverLevels = new Map<number, number>()
   for (const river of rivers) {
@@ -223,7 +223,7 @@ export function generateRoads(
   for (let pass = 0; pass < 20; pass++) {
     let raised = false
     for (const { index: c, cross } of crossings) {
-      const required = at(cross.heights, cross.centerIndex, 'cross road centre') + UNDERPASS_CLEARANCE
+      const required = at(cross.heights, cross.centerIndex, 'cross road center') + UNDERPASS_CLEARANCE
       for (let j = -bridgeSteps; j <= bridgeSteps; j++) {
         const k = (c + j + count) % count
         if (profile[k]! < required) {
@@ -261,8 +261,8 @@ export function generateRoads(
 
   const built = crossings.filter(({ index, cross }) => {
     if (kind[index] === KIND_TUNNEL) return false
-    if (profile[index]! - at(cross.heights, cross.centerIndex, 'cross road centre') < UNDERPASS_CLEARANCE - 0.5) return false
-    // A ramp lands ROAD_SURFACE below the cross road's centreline, on its ground.
+    if (profile[index]! - at(cross.heights, cross.centerIndex, 'cross road center') < UNDERPASS_CLEARANCE - 0.5) return false
+    // A ramp lands ROAD_SURFACE below the cross road's centerline, on its ground.
     const drop =
       profile[index]! +
       ROAD_SURFACE -
@@ -332,7 +332,7 @@ export function generateRoads(
     surfaceRoadCells(field, painted),
     (structure) => structure === ROAD_BRIDGE,
   )
-  // A climb's lot is levelled again once the roads have shaped the ground about it, and the road put on it.
+  // A climb's lot is leveled again once the roads have shaped the ground about it, and the road put on it.
   for (const climb of climbs) {
     if (climb.lot === undefined) continue
     terrace(field, climb.lot, CLIMB_LOT.blend, climb.points)
@@ -350,12 +350,12 @@ function wallHeldBy(roads: Road[]): (x: number, z: number) => boolean {
   const lanes: { ax: number; az: number; bx: number; bz: number }[] = []
   for (const road of roads) {
     if (road.kind !== 'ramp') continue
-    let travelled = 0
-    for (let i = 0; i + 1 < road.points.length && travelled < RAMP_LANE_REACH; i++) {
+    let traveled = 0
+    for (let i = 0; i + 1 < road.points.length && traveled < RAMP_LANE_REACH; i++) {
       const a = road.points[i]!
       const b = road.points[i + 1]!
       lanes.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z })
-      travelled += Math.hypot(b.x - a.x, b.z - a.z)
+      traveled += Math.hypot(b.x - a.x, b.z - a.z)
     }
   }
   const reach = RAMP_WIDTH / 2 + SURFACE_SHOULDER

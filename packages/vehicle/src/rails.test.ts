@@ -73,7 +73,7 @@ describe('guardrails', () => {
     world.free()
   })
 
-  it('let a car scrape round a bend in the rail, seam after seam, without catching', () => {
+  it('let a car scrape around a bend in the rail, seam after seam, without catching', () => {
     // A wide runway, and a rail that starts beside the car and bends into
     // its path a little at every point: every seam between the facets is
     // met by the chassis corner sliding along the rail, and each one is a
@@ -130,7 +130,7 @@ describe('guardrails', () => {
     expect(touched).toBe(true)
     expect(entrySpeed).toBeGreaterThan(20)
     // Turned by the rail, not stopped by it: the bend costs a little speed
-    // and nothing more, and the car is round it by the end.
+    // and nothing more, and the car is around it by the end.
     expect(slowest).toBeGreaterThan(entrySpeed * 0.7)
     expect(farthest).toBeLessThan(points[points.length - 1]!.z)
     world.free()

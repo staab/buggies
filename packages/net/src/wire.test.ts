@@ -57,6 +57,8 @@ const snapshot: SnapshotMessage = {
       actionTicks: 180,
       cooldownTicks: 600,
       lightsOn: true,
+      abilityHeld: false,
+      rocketsFired: 65535,
       stunnedTicks: 300,
       slowedTicks: 2,
       slowedBy: 0.5,
@@ -78,6 +80,8 @@ const snapshot: SnapshotMessage = {
       actionTicks: 0,
       cooldownTicks: 0,
       lightsOn: false,
+      abilityHeld: true,
+      rocketsFired: 7,
       stunnedTicks: 0,
       slowedTicks: 0,
       slowedBy: 0,
@@ -179,6 +183,8 @@ describe('wire', () => {
       expect(got.actionTicks).toBe(vehicle.actionTicks)
       expect(got.cooldownTicks).toBe(vehicle.cooldownTicks)
       expect(got.lightsOn).toBe(vehicle.lightsOn)
+      expect(got.abilityHeld).toBe(vehicle.abilityHeld)
+      expect(got.rocketsFired).toBe(vehicle.rocketsFired)
       expect(got.stunnedTicks).toBe(vehicle.stunnedTicks)
       expect(got.slowedTicks).toBe(vehicle.slowedTicks)
       expect(got.slowedBy).toBeCloseTo(vehicle.slowedBy, 2)
@@ -201,7 +207,7 @@ describe('wire', () => {
     }
   })
 
-  it('stamps each player their own acknowledgement onto one encoding', () => {
+  it('stamps each player their own acknowledgment onto one encoding', () => {
     const shared = encodeSnapshot({ ...snapshot, ackInputTick: -1 })
     expect(decodeSnapshot(shared)!.ackInputTick).toBe(UNACKNOWLEDGED_INPUT_TICK)
     expect(decodeSnapshot(withAck(shared, 42))!.ackInputTick).toBe(42)

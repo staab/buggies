@@ -170,7 +170,7 @@ export function alignJunctions(roads: Road[]): void {
       remaining.splice(bestA, 1)
     }
 
-    // Straightening a pair swings both ends round, which can bring one of them
+    // Straightening a pair swings both ends around, which can bring one of them
     // alongside a third road left at the node. A kink is better than two roads
     // leaving together, so a junction that would end up that way is left alone.
     let crowded = false

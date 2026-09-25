@@ -18,7 +18,7 @@ const { cos, hypot, sin } = exact
 
 /** How thick the shell around a bore is, buried in the hill it cuts through. */
 export const TUNNEL_WALL = 3
-/** How far the bore reaches past the road's edge, so the arch has headroom over the whole carriageway. */
+/** How far the bore reaches past the road's edge, so the arch has headroom over the whole roadway. */
 export const TUNNEL_CLEARANCE = 1.5
 /**
  * A bore is a horseshoe: walls rise straight from the road this far before
@@ -31,7 +31,7 @@ const ARCH_SEGMENTS = 12
 /** The shell's walls run this far below the road, to be buried rather than to end at it. */
 const SHELL_FOOTING = 1
 
-/** One straight piece of tunnel centreline, with the road height at each end. */
+/** One straight piece of tunnel centerline, with the road height at each end. */
 export interface BoreSegment {
   ax: number
   az: number
@@ -67,7 +67,7 @@ export function tunnelSegments(roads: Road[]): BoreSegment[] {
   return segments
 }
 
-/** The bore nearest a point: how far off its centreline, and its road height. */
+/** The bore nearest a point: how far off its centerline, and its road height. */
 function nearestBore(
   segments: BoreSegment[],
   x: number,
@@ -93,7 +93,7 @@ function nearestBore(
   return { distance: Math.sqrt(bestDistanceSq), floor, radius }
 }
 
-/** Height of the bore's roof over its floor, `distance` off the centreline. */
+/** Height of the bore's roof over its floor, `distance` off the centerline. */
 function archHeight(radius: number, distance: number): number {
   return TUNNEL_WALL_HEIGHT + Math.sqrt(Math.max(radius ** 2 - distance * distance, 0))
 }
@@ -219,7 +219,7 @@ export interface ShellMesh {
  * A solid horseshoe around the road for every tunnel run of a road: an inner
  * wall at the bore's edge and an outer wall `wall` further out, buried in the
  * hillside, footed below the road and capped at each portal. It follows the
- * centreline through the mountain, and is what gets drawn and what gets
+ * centerline through the mountain, and is what gets drawn and what gets
  * driven against. Every face is wound to look out of the shell, into the
  * bore or into the hill, so a collider can treat it as a solid.
  */
@@ -263,7 +263,7 @@ export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | nul
   const outerRadius = archRadius + wall
 
   /**
-   * The horseshoe, as offsets across and up from the road's centreline: a
+   * The horseshoe, as offsets across and up from the road's centerline: a
    * footing below the road, a wall, the arch, and the same down the far side.
    */
   const profile = (radius: number): { across: number; up: number }[] => {
@@ -298,7 +298,7 @@ export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | nul
           ]
 
     const base = positions.length / 3
-    // Every sample is one of the road's points, and its neighbours wrap round the loop.
+    // Every sample is one of the road's points, and its neighbors wrap around the loop.
     for (const index of samples) {
       const point = road.points[index]!
       const prev = road.points[(index - 1 + count) % count]!

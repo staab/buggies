@@ -36,10 +36,10 @@ describe('engines', () => {
   it('squeal only once a wheel on the ground has slid past the end of its grip', () => {
     const tuning = createVehicleTuning('sportsCar')
     const wheel = (grounded: boolean, slipSpeedLateral: number) => ({ grounded, slipSpeedLateral })
-    // Working the tyre up to and along its peak is not sliding.
+    // Working the tire up to and along its peak is not sliding.
     expect(skidAmount([wheel(true, tuning.lateralPeakSlip)], tuning)).toBe(0)
     expect(skidAmount([wheel(true, tuning.lateralPlateauEndSlip)], tuning)).toBe(0)
-    // Past it, the squeal comes up over the first half of the fall-off, either way round.
+    // Past it, the squeal comes up over the first half of the fall-off, either way around.
     const end = tuning.lateralPlateauEndSlip
     expect(skidAmount([wheel(true, -(end + tuning.lateralFalloffRange * 0.25))], tuning)).toBeCloseTo(0.5, 5)
     expect(skidAmount([wheel(true, end + tuning.lateralFalloffRange)], tuning)).toBe(1)

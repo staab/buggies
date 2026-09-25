@@ -116,9 +116,9 @@ describe('jumps', () => {
     }
     const tuning = createVehicleTuning('sportsCar')
     const knocked = fly(runway(kicker), tuning, 40, shove)
-    const levelled = fly(runway(kicker), { ...tuning, impactSpeedChange: Number.POSITIVE_INFINITY }, 40, shove)
+    const leveled = fly(runway(kicker), { ...tuning, impactSpeedChange: Number.POSITIVE_INFINITY }, 40, shove)
     expect(knocked.lowestUp).toBeLessThan(0)
-    expect(levelled.lowestUp).toBeGreaterThan(0.5)
-    expect(levelled.landedUp).toBeGreaterThan(0.85)
+    expect(leveled.lowestUp).toBeGreaterThan(0.5)
+    expect(leveled.landedUp).toBeGreaterThan(0.85)
   })
 })

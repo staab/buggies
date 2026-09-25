@@ -27,7 +27,7 @@ export const PICKUP_RESPAWN_TICKS = 480
 const ON_ROADS = 0.6
 
 /** How far in from a road's edge a pickup on it keeps. */
-const ROAD_VERGE = 1
+const ROAD_SHOULDER = 1
 
 /** How far in from the map's edge a pickup on land keeps. */
 const LAND_MARGIN = 40
@@ -68,7 +68,7 @@ function roadSpot(map: TerrainMap, rng: () => number, out: Vec3): Vec3 | null {
   const dz = next.z - prior.z
   const length = hypot(dx, dz) || 1
   // Across the road, anywhere but the very edge.
-  const across = (rng() * 2 - 1) * Math.max(road.width / 2 - ROAD_VERGE, 0)
+  const across = (rng() * 2 - 1) * Math.max(road.width / 2 - ROAD_SHOULDER, 0)
   out.x = point.x + (-dz / length) * across
   out.y = point.y + roadLift(road) + PICKUP_HEIGHT
   out.z = point.z + (dx / length) * across
@@ -144,7 +144,7 @@ export function reachesPickup(pickup: Pickup, point: Vec3): boolean {
 /** How many of a wreck's bananas spill out, at most; the rest are lost in the blast. */
 export const SPILL_MOST = 16
 
-/** How far from the wreck a spilled banana lands, in metres, at the nearest and the furthest. */
+/** How far from the wreck a spilled banana lands, in meters, at the nearest and the furthest. */
 export const SPILL_NEAR = 5
 export const SPILL_FAR = 16
 
@@ -164,7 +164,7 @@ export const LOOSE_KINDS: readonly LooseKind[] = ['banana', 'bomb']
 /** How close a chassis has to come to a bomb to set it off. */
 export const BOMB_REACH = 3.2
 
-/** Spilled bananas are numbered as they come, and the numbers come round after this many: far more than are ever out at once. */
+/** Spilled bananas are numbered as they come, and the numbers come around after this many: far more than are ever out at once. */
 export const LOOSE_IDS = 0x10000
 
 /**

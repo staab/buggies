@@ -37,7 +37,7 @@ const DEFAULTS = {
 /**
  * The island is grown at a reference scale, then enlarged. Terrain features —
  * mountains, rivers, cities — scale with it and keep their proportions; roads
- * and the car are built afterwards at full size, so they stay as they are.
+ * and the car are built afterward at full size, so they stay as they are.
  */
 export const WORLD_SCALE = 3
 
@@ -68,7 +68,7 @@ const CHANNEL_SLOPE = 0.5
 const RIVER_INSET = 0.35
 /** Upper bound on how far a channel may cut into a steep bank. */
 const CHANNEL_MAX_INCISION = 5
-/** Each river point is drawn toward the run of this many neighbours either side, to take the trace's staircase out of the course. */
+/** Each river point is drawn toward the run of this many neighbors either side, to take the trace's staircase out of the course. */
 const RIVER_SMOOTHING = 2
 /**
  * How far a lake's surface reaches past its own cells. A river meeting a lake is
@@ -186,7 +186,7 @@ function buildHeights(
       const roughness = ridged2D(x * roughFrequency, z * roughFrequency, seed + 2, 5)
       // A gentle central dome keeps water draining outward to the sea instead
       // of pooling into giant interior basins. It follows the plain distance
-      // from the centre, not the warped one the coast is cut by: warping it
+      // from the center, not the warped one the coast is cut by: warping it
       // too would fold the coast's bays and headlands into slopes inland.
       const dome = 1 - smoothstep(0, islandRadius * 0.85, hypot(x - center, z - center))
       const land = base * plainsAmplitude + domeHeight * dome
@@ -289,12 +289,12 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
   /** The surface of a lake covering this point, or standing within `reach` of it. */
   const lakeAt = (x: number, z: number, reach = 0): number | undefined => {
     const span = Math.ceil(reach / cellSize)
-    const centreCol = Math.min(Math.max(Math.floor(x / cellSize), 0), width - 1)
-    const centreRow = Math.min(Math.max(Math.floor(z / cellSize), 0), depth - 1)
+    const centerCol = Math.min(Math.max(Math.floor(x / cellSize), 0), width - 1)
+    const centerRow = Math.min(Math.max(Math.floor(z / cellSize), 0), depth - 1)
     let found: number | undefined
-    for (let row = centreRow - span; row <= centreRow + span; row++) {
+    for (let row = centerRow - span; row <= centerRow + span; row++) {
       if (row < 0 || row >= depth) continue
-      for (let col = centreCol - span; col <= centreCol + span; col++) {
+      for (let col = centerCol - span; col <= centerCol + span; col++) {
         if (col < 0 || col >= width) continue
         const level = lakeLevel.get(row * width + col)
         if (level === undefined) continue
@@ -318,8 +318,8 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
   /**
    * Take the staircase out of each course. The trace steps from cell to
    * cell, so the line it draws turns through right angles and diagonals
-   * every few metres; each point is drawn toward the run of its
-   * neighbours, the spring and the mouth held where they are, and the
+   * every few meters; each point is drawn toward the run of its
+   * neighbors, the spring and the mouth held where they are, and the
    * surface smoothed the same way, so the ribbon, and the channel cut for
    * it, wind rather than zigzag.
    */
@@ -385,7 +385,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
 
   /** Give two courses that run together the one surface. */
   const share = (): void => {
-    // Read from a snapshot, so levelling one river cannot drag another down
+    // Read from a snapshot, so leveling one river cannot drag another down
     // through it in the same pass.
     const before = rivers.map((river) => river.points.map((point) => point.y))
     for (const river of rivers) {
@@ -430,7 +430,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
    * Stamps overlap heavily along a course, so the two halves of the profile are
    * gathered before anything is cut: the deepest bed any stamp asks for, and the
    * highest bank. Letting each stamp cut on its own lets one point's bank ramp
-   * carve away the bank its neighbour needs, and the ribbon is left hanging over
+   * carve away the bank its neighbor needs, and the ribbon is left hanging over
    * the hole.
    */
   const carve = (): void => {
@@ -499,7 +499,7 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
     for (const [cell, level] of bankOf) if (!bedOf.has(cell)) cut(cell, level)
   }
 
-  // Stamps overlap along a course, so a bend's neighbours cut into banks the
+  // Stamps overlap along a course, so a bend's neighbors cut into banks the
   // first pass just shaped. Settle once more against the ground as it stands.
   for (let pass = 0; pass < 2; pass++) {
     seat()

@@ -75,7 +75,7 @@ describe('guardrails', () => {
 
   it('flare away from the road at each end', () => {
     const runs = railRuns(map.roads)
-    /** Distance in plan to the nearest stretch of a road's centreline. */
+    /** Distance in plan to the nearest stretch of a road's centerline. */
     const distanceTo = (road: Road, x: number, z: number): number => {
       const count = road.points.length
       const segmentCount = road.closed ? count : count - 1

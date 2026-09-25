@@ -23,7 +23,7 @@ import {
   ROAD_BRIDGE,
   ROAD_GRADE,
   roadClearance,
-  STREET_KERB,
+  STREET_CURB,
   STREET_SPACING,
   STREET_WIDTH,
   type Footprint,
@@ -53,7 +53,7 @@ const { atan2, cos: cosine, hypot, sin: sine } = exact
 const BUILDING_SALT = 0x6b1d
 
 /** Ground kept clear between a street's edge and the lots along it. */
-const PAVEMENT = 2
+const SIDEWALK = 2
 /** How far in from the street's edge the sidewalk reaches, under the fronts of the buildings. */
 const SIDEWALK_BAND = 2
 /**
@@ -68,24 +68,24 @@ const SIDEWALK_SAMPLE = 4
 const LOT_MIN = 9
 /** A building stands this far inside its lot at most, on each side. */
 const LOT_INSET = { min: 0.5, max: 3.5 } as const
-/** An open lot is this often a car park rather than a park. */
-const CARPARK_ODDS = 0.35
+/** An open lot is this often a parking lot rather than a park. */
+const PARKING_LOT_ODDS = 0.35
 /** Street trees along the sidewalks, this far apart, this big: the trunk on the sidewalk and the crown over the street. */
 const STREET_TREE_SPACING = 14
 const STREET_TREE_RADIUS = { min: 1.6, max: 2.2 } as const
 const STREET_TREE_HEIGHT = { min: 6, max: 8 } as const
-/** Trees along the verge of the main roads through a city, this far from the road, this far apart. */
+/** Trees along the shoulder of the main roads through a city, this far from the road, this far apart. */
 const CITY_VERGE_SETBACK = 5.5
-const CITY_VERGE_SPACING = 12
-/** How thickly the ground an interchange's ramps enclose is planted, per hundred square metres. */
+const CITY_SHOULDER_SPACING = 12
+/** How thickly the ground an interchange's ramps enclose is planted, per hundred square meters. */
 const INTERCHANGE_TREES = 0.6
 const INTERCHANGE_SHRUBS = 0.9
 /** Lots left as parks, one in this many. */
 const PARK_LOT_ODDS = 7
 /**
  * Props, the furniture a car can knock about, no more than this many to an
- * island: barrels stacked this many deep beside a filling station's shop,
- * crates this many along the strip outside a building site's hoardings,
+ * island: barrels stacked this many deep beside a gas station's shop,
+ * crates this many along the strip outside a building site's fencing,
  * a line of this many cones this far apart as roadworks every so far along
  * the suburb roads, and this many bales to a crop field.
  */
@@ -97,7 +97,7 @@ const ROADWORKS = { cones: 6, apart: 2.2, every: 450 } as const
 const FIELD_BALES = { min: 2, max: 4 } as const
 /**
  * Building sites: an open lot this near the heart of a city (as a share of
- * the way in from the core's edge) is this often hoarded round, this far
+ * the way in from the core's edge) is this often fenced around, this far
  * in from the lot's edge and this high, with a tower crane in the middle on
  * a base this wide, no more than this many to a city. The crane stands
  * this far above the tallest block within this reach of it, and never
@@ -108,29 +108,29 @@ const FIELD_BALES = { min: 2, max: 4 } as const
  * paved over, with a fountain in the middle, its basin this wide and this
  * high; one to a city. Statues stand on plinths this wide and this tall,
  * one in the middle of every park big enough to hold one this far in from
- * its edges, and one on the verge where an arterial comes into a city,
- * this far beyond the verge trees' line.
+ * its edges, and one on the shoulder where an arterial comes into a city,
+ * this far beyond the shoulder trees' line.
  */
 const SQUARE_CORE = 0.55
 const FOUNTAIN = { width: 8, height: 1 } as const
-const STATUE = { width: 2, height: 2.5, parkInset: 6, vergeOut: 1.5 } as const
+const STATUE = { width: 2, height: 2.5, parkInset: 6, shoulderOut: 1.5 } as const
 /**
  * The clock tower: one to a city, on the block lot nearest the city's
- * centre within this reach of it, which it takes over: this wide, this
+ * center within this reach of it, which it takes over: this wide, this
  * tall, and standing at least this far above every block within this.
  */
 const CLOCK_TOWER = { reach: 60, width: 10, height: 60, over: 10, lookout: 100 } as const
 const SITE_CORE = 0.45
 const SITE_ODDS = 0.35
 const SITES_MOST = 3
-const HOARDING_INSET = 1
-const HOARDING_HEIGHT = 2.5
+const FENCE_INSET = 1
+const FENCE_HEIGHT = 2.5
 const CRANE_BASE = 3
 const CRANE_OVER = 12
 const CRANE_REACH = 50
 const CRANE_HEIGHT_LEAST = 30
-/** Storeys are this tall, and every building is a whole number of them. */
-const STOREY = 3
+/** Stories are this tall, and every building is a whole number of them. */
+const STORY = 3
 /** A block's building is at least this tall, and this much taller again at random. */
 const BLOCK_HEIGHT = { min: 9, spread: 12 } as const
 /**
@@ -149,15 +149,15 @@ const HOUSE_RELIEF = 2.5
 /** Every building keeps this clear of any road. */
 const ROAD_MARGIN = 1.5
 /**
- * And this far off a tunnel's centreline: the shell round a bore is built
- * far thicker than it is drawn, to roof over the ground cut away round the
+ * And this far off a tunnel's centerline: the shell around a bore is built
+ * far thicker than it is drawn, to roof over the ground cut away around the
  * bore, and near a portal it stands out of the hillside, so nothing is
  * planted where it would be buried in it.
  */
 const TUNNEL_KEEP_OUT = 20
 /** And this clear of any other building. */
 const BUILDING_GAP = 1
-/** Buildings are bucketed on this grid to find neighbours, in world units. */
+/** Buildings are bucketed on this grid to find neighbors, in world units. */
 const BUCKET = 32
 
 /** Houses along a suburb's arterials: how far apart, how far from the road's edge, and how big. */
@@ -166,7 +166,7 @@ const HOUSE_SETBACK = { min: 5, max: 9 } as const
 const HOUSE_WIDTH = { min: 8, max: 12 } as const
 const HOUSE_DEPTH = { min: 7, max: 10 } as const
 const HOUSE_HEIGHT = { min: 3.5, max: 6.5 } as const
-/** A cottage is small and low under a steep roof; a villa is broad, and two storeys. */
+/** A cottage is small and low under a steep roof; a villa is broad, and two stories. */
 const COTTAGE_WIDTH = { min: 6, max: 8.5 } as const
 const COTTAGE_DEPTH = { min: 5, max: 7 } as const
 const COTTAGE_HEIGHT = { min: 3, max: 3.6 } as const
@@ -207,7 +207,7 @@ const HEDGE_SPACING = 3.5
 /** How far outside the crop the hedge stands: a shrub's width, so it does not sit in the field it hedges. */
 const HEDGE_OUT = 1.9
 const BARN = { width: 14, depth: 9, height: 6.5 } as const
-/** How far past the end of the row the barn stands: beyond the hedge, with room to walk round. */
+/** How far past the end of the row the barn stands: beyond the hedge, with room to walk around. */
 const BARN_OFF = 6
 const SILO = { radius: 2.4, height: 9 } as const
 const SILOS = { min: 1, max: 2 } as const
@@ -229,7 +229,7 @@ const TURBINE_GAP = 8
 
 /**
  * One ring of standing stones an island, on the highest open ground of
- * this many tries: this many stones round a ring this wide, each this big.
+ * this many tries: this many stones around a ring this wide, each this big.
  */
 const STONES_TRIES = 120
 const STONES = 12
@@ -299,7 +299,7 @@ const PYLON_RELIEF = 6
 const LIFT_STATION_RELIEF = 8
 
 /**
- * Viewpoint car parks: the lot a mountain road ends in, painted as a car
+ * Viewpoint parking lots: the lot a mountain road ends in, painted as a car
  * park, with a low wall along its valley side and an information board at
  * the far end of the wall from where the road comes in.
  */
@@ -348,7 +348,7 @@ const WATER_TOWER_TRIES = 24
 const WATER_TOWER_IN = 30
 
 /**
- * A filling station every so far along the suburb stretches of the main
+ * A gas station every so far along the suburb stretches of the main
  * roads: a lot this big against the road, paved, with the shop at the back,
  * a canopy on posts over the pumps this high, and a sign by the road.
  */
@@ -362,8 +362,8 @@ const SIGN = { width: 0.5, depth: 2, height: 7 } as const
 
 /**
  * Camp sites, this many at most: a clearing this wide in the country near
- * a road but off it, tents on a ring round a fire, caravans off to one side
- * and trees round the rim.
+ * a road but off it, tents on a ring around a fire, campers off to one side
+ * and trees around the rim.
  */
 const CAMPS_MOST = 3
 const CAMP_TRIES = 80
@@ -373,8 +373,8 @@ const CLEARING_RADIUS = 20
 const TENTS = 6
 const TENT_RING = 11
 const TENT = { width: 3, depth: 2.5, height: 1.8 } as const
-const CARAVANS = 2
-const CARAVAN = { width: 6, depth: 2.4, height: 2.6 } as const
+const CAMPERS = 2
+const CAMPER = { width: 6, depth: 2.4, height: 2.6 } as const
 const FIRE_PIT = { size: 1.6, height: 0.4 } as const
 const RIM_TREES = 24
 /** How far apart the ramps stand along a road, out of the cities. */
@@ -386,7 +386,7 @@ const RAMP_WIDTH = 5
 /** The shoulder past the lip is kept clear this far, for the car to come down on. */
 const RAMP_LANDING = 50
 /** The ramp's near edge stands this far out from the road's edge, on the shoulder. */
-const RAMP_VERGE = 0.7
+const RAMP_SHOULDER = 0.7
 /** The ground under a ramp may not rise or fall more than this from foot to lip. */
 const RAMP_RELIEF = 0.6
 
@@ -405,7 +405,7 @@ const CLEARING = 12
 /** Shrubs are this big. */
 const SHRUB_RADIUS = { min: 0.7, max: 1.6 } as const
 const SHRUB_HEIGHT = { min: 0.9, max: 2 } as const
-/** A park gets this many trees and this many shrubs for every hundred square metres, at most. */
+/** A park gets this many trees and this many shrubs for every hundred square meters, at most. */
 const PARK_TREES = 1.2
 const PARK_SHRUBS = 1.8
 /** How often a planting is tried before the park is called full. */
@@ -416,7 +416,7 @@ const GARDEN_TREES = { min: 0, max: 2 } as const
 
 /** The wilds are tried at spots this far apart, each nudged about at random. */
 const WILD_SPACING = 5
-/** Woods and clearings come from noise this coarse: features a few hundred metres across. */
+/** Woods and clearings come from noise this coarse: features a few hundred meters across. */
 const WOOD_FREQUENCY = 0.004
 /** Below this the noise is open ground, above it deep wood, and it thickens between. */
 const WOOD_EDGE = { open: 0.42, deep: 0.62 } as const
@@ -464,7 +464,7 @@ const ROCK_SALT = 0x2c9b
 
 /**
  * What has been placed so far, bucketed so a footprint is only ever tested
- * against its neighbours. Blocks never meet, but the houses along a road are
+ * against its neighbors. Blocks never meet, but the houses along a road are
  * placed one road at a time and two roads can run near enough for theirs to.
  */
 class Placed {
@@ -581,9 +581,9 @@ function wetTest(
   }
 }
 
-/** Whole storeys, never fewer than the least. */
-function storeys(height: number): number {
-  return Math.max(STOREY * Math.round(height / STOREY), BLOCK_HEIGHT.min)
+/** Whole stories, never fewer than the least. */
+function stories(height: number): number {
+  return Math.max(STORY * Math.round(height / STORY), BLOCK_HEIGHT.min)
 }
 
 /**
@@ -646,7 +646,7 @@ function planter(
 
 /**
  * Fill the blocks of every city. Blocks lie between the grid lines the streets
- * run on, a pavement in from each; each is cut into a few lots, and each lot
+ * run on, a sidewalk in from each; each is cut into a few lots, and each lot
  * gets a building, taller toward the heart of the city, unless a road runs
  * through it, the ground under it is water or too steep, or it is left open.
  */
@@ -722,13 +722,13 @@ function fillCities(
     if (col < 0 || col >= width || row < 0 || row >= field.depth) return false
     return districtOf[row * width + col] === DISTRICT_CITY
   }
-  // The lots are laid out from the streets' old kerb, which is all the
+  // The lots are laid out from the streets' old curb, which is all the
   // clearance asks of a street; a street that cuts through a block off the
   // grid, joining two grids or an arterial, is kept off by its whole
-  // carriageway as well, or a lot could straddle it.
+  // roadway as well, or a lot could straddle it.
   const offStreets = roadClearance(streets, STREET_WIDTH / 2)
   // The streets as straight lines, end to end, which is what they are: a
-  // point is on a street when it lies within the carriageway of one.
+  // point is on a street when it lies within the roadway of one.
   const lines = streets
     .filter((street) => street.points.length >= 2)
     .map((street) => {
@@ -749,12 +749,12 @@ function fillCities(
     const frame = cityFrame(field, districtOf, district)
     if (frame === null) continue
     const { cx, cz, cos, sin } = frame
-    // The lots are laid out from the old kerb, whatever the street's width
+    // The lots are laid out from the old curb, whatever the street's width
     // now: the sidewalk fills the difference, under the buildings' fronts.
-    const edge = STREET_KERB + PAVEMENT
+    const edge = STREET_CURB + SIDEWALK
     /**
      * Which sides of a block's sidewalk ring have only the block's own
-     * streets beside them, round from the side at +v. A kerb across an
+     * streets beside them, around from the side at +v. A curb across an
      * arterial or a ramp cutting through the block would be a step in that
      * road, so a side one crosses is left out.
      */
@@ -782,11 +782,11 @@ function fillCities(
       const sideClear = (du: number, dv: number, along: boolean): boolean => {
         const u = blockU + du
         const v = blockV + dv
-        // A side is laid only inside the city: a block cut off by the city's edge gets no kerb out into the grass.
+        // A side is laid only inside the city: a block cut off by the city's edge gets no curb out into the grass.
         if (!inCity(cx + u * cos - v * sin, cz + u * sin + v * cos)) return false
         // And only along a street that is there, the whole side long: the
-        // grid has gaps where a street was cut, and a kerb along one would
-        // be a kerb along nothing.
+        // grid has gaps where a street was cut, and a curb along one would
+        // be a curb along nothing.
         const street = STREET_SPACING / 2
         for (const t of [-(half - 1), 0, half - 1]) {
           const su = along ? u + t : Math.sign(du) * street
@@ -843,7 +843,7 @@ function fillCities(
                 depth: vTo - vFrom,
               }
               if (!inCity(lot.x, lot.z)) continue
-              // An open lot: a building site near the heart of the city, or a car park with its bays marked out, or a park.
+              // An open lot: a building site near the heart of the city, or a parking lot with its bays marked out, or a park.
               const heart = 1 - hypot(lot.x - district.cx, lot.z - district.cz) / district.radius
               const open = clear(lot, 0) && offStreets(lot, 0) && !placed.meets(lot, 0)
               const ground = open ? groundUnder(field, wet, lot) : null
@@ -861,22 +861,22 @@ function fillCities(
               }
               if (level && heart >= SITE_CORE && sites.length < SITES_MOST && rng() < SITE_ODDS) {
                 placed.add(lot)
-                const hoarding: Footprint = { ...lot, width: lot.width - 2 * HOARDING_INSET, depth: lot.depth - 2 * HOARDING_INSET }
-                buildings.push({ kind: 'site', ...hoarding, bottom: ground.low - BURY, top: ground.high + HOARDING_HEIGHT, tone: rng() })
-                sites.push(hoarding)
-                // Crates along the strip between the hoardings and the pavement.
+                const fence: Footprint = { ...lot, width: lot.width - 2 * FENCE_INSET, depth: lot.depth - 2 * FENCE_INSET }
+                buildings.push({ kind: 'site', ...fence, bottom: ground.low - BURY, top: ground.high + FENCE_HEIGHT, tone: rng() })
+                sites.push(fence)
+                // Crates along the strip between the fencing and the sidewalk.
                 const { ux, uz, vx, vz } = axesOf(lot.yaw)
                 for (let k = 0; k < SITE_CRATES; k++) {
                   const along = (k - (SITE_CRATES - 1) / 2) * 1.3
-                  const out = hoarding.depth / 2 + HOARDING_INSET / 2
+                  const out = fence.depth / 2 + FENCE_INSET / 2
                   props.push({ kind: 'crate', x: lot.x + ux * along + vx * out, z: lot.z + uz * along + vz * out, bottom: sampleHeight(field, lot.x + ux * along + vx * out, lot.z + uz * along + vz * out), yaw: lot.yaw })
                 }
                 built += 1
                 continue
               }
-              if (level && rng() < CARPARK_ODDS) {
+              if (level && rng() < PARKING_LOT_ODDS) {
                 placed.add(lot)
-                fields.push({ kind: 'carpark', ...lot, tone: 0 })
+                fields.push({ kind: 'parkingLot', ...lot, tone: 0 })
                 built += 1
                 continue
               }
@@ -898,7 +898,7 @@ function fillCities(
               0,
               1 - hypot(footprint.x - district.cx, footprint.z - district.cz) / district.radius,
             )
-            const height = storeys(
+            const height = stories(
               BLOCK_HEIGHT.min +
                 rng() * BLOCK_HEIGHT.spread +
                 core ** 1.5 * (TOWER_FLOOR + (1 - TOWER_FLOOR) * rng()) * TOWER_HEIGHT,
@@ -943,7 +943,7 @@ function fillCities(
         }
       }
     }
-    // The clock tower takes over the block nearest the city's centre, and
+    // The clock tower takes over the block nearest the city's center, and
     // stands above every block within its lookout.
     let nearest: Building | null = null
     for (const building of buildings) {
@@ -1034,7 +1034,7 @@ function frameAlong(road: Road, index: number, point: RoadPoint): { dx: number; 
  * suburbs, and trees with the occasional house through the country. Slots are
  * walked along each road at the spacing of what stands there, on both sides;
  * a slot that lands on another road, in water, on ground too steep, in a
- * city, or in the clearing round a country house stays empty.
+ * city, or in the clearing around a country house stays empty.
  */
 function lineArterials(
   rng: Rng,
@@ -1133,11 +1133,11 @@ function lineArterials(
 
   for (const road of roads) {
     if (road.kind !== 'arterial' && road.kind !== 'cross' && road.kind !== 'highway') continue
-    // A highway gets verge trees through the cities and nothing else beside it.
+    // A highway gets shoulder trees through the cities and nothing else beside it.
     const highway = road.kind === 'highway'
     const points = road.points
     for (const side of [1, -1]) {
-      let travelled = 0
+      let traveled = 0
       let nextSlot = 0
       let nextHouse = randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
       let previous: RoadPoint | undefined
@@ -1148,11 +1148,11 @@ function lineArterials(
         const behind = previous
         previous = point
         if (behind === undefined) continue
-        travelled += hypot(point.x - behind.x, point.z - behind.z)
-        if (travelled < nextSlot) continue
+        traveled += hypot(point.x - behind.x, point.z - behind.z)
+        if (traveled < nextSlot) continue
         // Nothing beside a bridge: there is a river or a valley there.
         if (road.structure[i - 1] === ROAD_BRIDGE || road.structure[Math.min(i, points.length - 2)] === ROAD_BRIDGE) {
-          nextSlot = travelled + TREE_SPACING.min
+          nextSlot = traveled + TREE_SPACING.min
           continue
         }
         const { dx, dz, nx, nz } = frameAlong(road, i, point)
@@ -1160,13 +1160,13 @@ function lineArterials(
         if (beside === DISTRICT_CITY && !inCity && road.kind === 'arterial') owed = true
         inCity = beside === DISTRICT_CITY
         if (beside === DISTRICT_CITY) {
-          // Through the city: trees along the verge, on the open ground beside
-          // the road, and a statue where an arterial comes in, on the verge
+          // Through the city: trees along the shoulder, on the open ground beside
+          // the road, and a statue where an arterial comes in, on the shoulder
           // just beyond the trees' line, at the first slot that is in the city.
           const out = road.width / 2 + CITY_VERGE_SETBACK
           const statue: Footprint = {
-            x: point.x + nx * side * (out + STATUE.vergeOut),
-            z: point.z + nz * side * (out + STATUE.vergeOut),
+            x: point.x + nx * side * (out + STATUE.shoulderOut),
+            z: point.z + nz * side * (out + STATUE.shoulderOut),
             yaw: -atan2(dz, dx),
             width: STATUE.width,
             depth: STATUE.width,
@@ -1174,23 +1174,23 @@ function lineArterials(
           if (owed && districtAt(statue.x, statue.z) === DISTRICT_CITY) {
             owed = false
             if (raiseStatue(statue)) {
-              nextSlot = travelled + CITY_VERGE_SPACING
+              nextSlot = traveled + CITY_SHOULDER_SPACING
               continue
             }
           }
           plant(point.x + nx * side * out, point.z + nz * side * out, 'tree', wet)
-          nextSlot = travelled + CITY_VERGE_SPACING
+          nextSlot = traveled + CITY_SHOULDER_SPACING
         } else if (highway) {
-          nextSlot = travelled + TREE_SPACING.max
+          nextSlot = traveled + TREE_SPACING.max
         } else if (beside === DISTRICT_SUBURB) {
           placeHouse(road, i, point, side, DISTRICT_SUBURB)
-          nextSlot = travelled + randomRange(rng, SUBURB_SPACING.min, SUBURB_SPACING.max)
+          nextSlot = traveled + randomRange(rng, SUBURB_SPACING.min, SUBURB_SPACING.max)
         } else if (beside === DISTRICT_COUNTRY) {
-          if (travelled >= nextHouse) {
+          if (traveled >= nextHouse) {
             const house = placeHouse(road, i, point, side, DISTRICT_COUNTRY)
             if (house !== null) clearings.push({ x: house.x, z: house.z })
-            nextHouse = travelled + randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
-            nextSlot = travelled + TREE_SPACING.max
+            nextHouse = traveled + randomRange(rng, COUNTRY_HOUSE_SPACING.min, COUNTRY_HOUSE_SPACING.max)
+            nextSlot = traveled + TREE_SPACING.max
           } else {
             if (randomInt(rng, 1, TREE_GAP_ODDS) !== 1) {
               placeTree(road, i, point, side, randomRange(rng, TREE_SETBACK.min, TREE_SETBACK.max))
@@ -1198,10 +1198,10 @@ function lineArterials(
             if (randomInt(rng, 1, 2) === 1) {
               placeTree(road, i, point, side, randomRange(rng, TREE_BACK_SETBACK.min, TREE_BACK_SETBACK.max))
             }
-            nextSlot = travelled + randomRange(rng, TREE_SPACING.min, TREE_SPACING.max)
+            nextSlot = traveled + randomRange(rng, TREE_SPACING.min, TREE_SPACING.max)
           }
         } else {
-          nextSlot = travelled + TREE_SPACING.max
+          nextSlot = traveled + TREE_SPACING.max
         }
         if (beside !== DISTRICT_CITY) owed = false
       }
@@ -1237,21 +1237,21 @@ function lineRamps(
   for (const road of roads) {
     if (road.kind !== 'arterial' && road.kind !== 'cross') continue
     const points = road.points
-    let travelled = 0
+    let traveled = 0
     let next = randomRange(rng, RAMP_SPACING.min / 2, RAMP_SPACING.max / 2)
     let previous: RoadPoint | undefined
     for (const [i, point] of points.entries()) {
       const behind = previous
       previous = point
       if (behind === undefined) continue
-      travelled += hypot(point.x - behind.x, point.z - behind.z)
-      if (travelled < next) continue
-      next = travelled + randomRange(rng, RAMP_SPACING.min, RAMP_SPACING.max)
+      traveled += hypot(point.x - behind.x, point.z - behind.z)
+      if (traveled < next) continue
+      next = traveled + randomRange(rng, RAMP_SPACING.min, RAMP_SPACING.max)
       if (road.structure[i - 1] !== ROAD_GRADE || road.structure[Math.min(i, points.length - 2)] !== ROAD_GRADE) continue
       const side = randomInt(rng, 1, 2) === 1 ? 1 : -1
       const along = randomInt(rng, 1, 2) === 1 ? 1 : -1
       const { dx, dz, nx, nz } = frameAlong(road, i, point)
-      const out = road.width / 2 + RAMP_VERGE + RAMP_WIDTH / 2
+      const out = road.width / 2 + RAMP_SHOULDER + RAMP_WIDTH / 2
       const middle = { x: point.x + nx * side * out, z: point.z + nz * side * out }
       if (districtAt(middle.x, middle.z) === DISTRICT_CITY) continue
       const foot = { x: middle.x - dx * along * (RAMP_LENGTH / 2), z: middle.z - dz * along * (RAMP_LENGTH / 2) }
@@ -1412,11 +1412,11 @@ export function generateBuildings(
   seed: number,
 ): { buildings: Building[]; trees: Tree[]; rocks: Rock[]; props: Prop[]; ramps: Ramp[]; sidewalks: Sidewalk[]; fields: Field[] } {
   const rng = createRng((seed ^ BUILDING_SALT) >>> 0)
-  // Buildings stand against the old kerb, on the sidewalk; what grows keeps
+  // Buildings stand against the old curb, on the sidewalk; what grows keeps
   // off the sidewalk as well as the street. Nothing is built at all on the
   // ground an interchange's ramps enclose.
   const zones = interchangeZones(roads)
-  const clearOfRoads = roadClearance(roads, STREET_KERB)
+  const clearOfRoads = roadClearance(roads, STREET_CURB)
   const clear = (footprint: Footprint, margin: number): boolean =>
     clearOfRoads(footprint, margin) && !meetsInterchange(zones, footprint)
   const clearOfStreets = roadClearance(roads, STREET_WIDTH / 2 + SIDEWALK_BAND)
@@ -1552,7 +1552,7 @@ function countrySpot(stands: Stands): { x: number; z: number } | null {
   return land[Math.floor(rng() * land.length)] ?? null
 }
 
-/** Whether a spot is on a mountain: within its triangle, or the skirt round it. */
+/** Whether a spot is on a mountain: within its triangle, or the skirt around it. */
 function onMountain(mountains: Mountain[], x: number, z: number): boolean {
   return mountains.some((mountain) => signedDistanceToTriangle(x, z, orientedTriangle(mountain)) >= -mountain.skirt)
 }
@@ -1580,8 +1580,8 @@ function tower(stands: Stands, kind: Building['kind'], footprint: Footprint, gro
 
 /**
  * Farms in the open country: a row of fields side by side, each hedged
- * round with shrubs, and off one end of the row a barn with a silo or two
- * beside it. A farm is at least two fields, on ground flat enough to plough.
+ * around with shrubs, and off one end of the row a barn with a silo or two
+ * beside it. A farm is at least two fields, on ground flat enough to plow.
  */
 function plantFarms(stands: Stands, fields: Field[], plant: Planter, mountains: Mountain[]): void {
   const { rng, placed } = stands
@@ -1645,7 +1645,7 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter, mountains: 
   }
 }
 
-/** A hedge round a footprint: shrubs a step apart along each side, just outside it. */
+/** A hedge around a footprint: shrubs a step apart along each side, just outside it. */
 function hedge(stands: Stands, footprint: Footprint, plant: Planter): void {
   const { ux, uz, vx, vz } = axesOf(footprint.yaw)
   const halfU = footprint.width / 2 + HEDGE_OUT
@@ -1869,13 +1869,13 @@ function raiseStations(stands: Stands, fields: Field[]): void {
   for (const road of mainRoads(stands.roads)) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    let travelled = randomRange(rng, 0, STATION_APART)
+    let traveled = randomRange(rng, 0, STATION_APART)
     let previous = road.points[0]
     for (const [index, point] of road.points.entries()) {
       if (index >= segmentCount || previous === undefined) break
-      travelled += hypot(point.x - previous.x, point.z - previous.z)
+      traveled += hypot(point.x - previous.x, point.z - previous.z)
       previous = point
-      if (travelled < STATION_APART || road.structure[index] !== ROAD_GRADE) continue
+      if (traveled < STATION_APART || road.structure[index] !== ROAD_GRADE) continue
       if (districtAt(stands, point.x, point.z) !== DISTRICT_SUBURB) continue
       if (stations.some((station) => hypot(station.x - point.x, station.z - point.z) < STATION_APART)) continue
       const { dx, dz, nx, nz } = frameAlong(road, index, point)
@@ -1917,7 +1917,7 @@ function raiseStations(stands: Stands, fields: Field[]): void {
           prop(stands, 'barrel', beside.x, beside.z, yaw)
         }
         stations.push({ x: lot.x, z: lot.z })
-        travelled = 0
+        traveled = 0
         break
       }
     }
@@ -1926,7 +1926,7 @@ function raiseStations(stands: Stands, fields: Field[]): void {
 
 /**
  * Roadworks along the suburb stretches of the main roads, every so far: a
- * line of cones down one edge of the carriageway, for a car to scatter.
+ * line of cones down one edge of the roadway, for a car to scatter.
  */
 function coneOffRoadworks(stands: Stands): void {
   const rng = stands.propRng
@@ -1934,13 +1934,13 @@ function coneOffRoadworks(stands: Stands): void {
     if (road.kind === 'highway') continue
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    let travelled = randomRange(rng, 0, ROADWORKS.every)
+    let traveled = randomRange(rng, 0, ROADWORKS.every)
     let previous = road.points[0]
     for (const [index, point] of road.points.entries()) {
       if (index >= segmentCount || previous === undefined) break
-      travelled += hypot(point.x - previous.x, point.z - previous.z)
+      traveled += hypot(point.x - previous.x, point.z - previous.z)
       previous = point
-      if (travelled < ROADWORKS.every || road.structure[index] !== ROAD_GRADE) continue
+      if (traveled < ROADWORKS.every || road.structure[index] !== ROAD_GRADE) continue
       if (districtAt(stands, point.x, point.z) !== DISTRICT_SUBURB) continue
       const { dx, dz, nx, nz } = frameAlong(road, index, point)
       const side = rng() < 0.5 ? 1 : -1
@@ -1949,15 +1949,15 @@ function coneOffRoadworks(stands: Stands): void {
         const along = k * ROADWORKS.apart
         prop(stands, 'cone', point.x + dx * along + nx * side * edge, point.z + dz * along + nz * side * edge, -atan2(dz, dx))
       }
-      travelled = 0
+      traveled = 0
     }
   }
 }
 
 /**
  * Camp sites in the country near a road: a clearing with a fire in the
- * middle, tents on a ring round it turned to face it, a couple of caravans
- * off to one side, and trees round the rim so it reads as cut out of the
+ * middle, tents on a ring around it turned to face it, a couple of campers
+ * off to one side, and trees around the rim so it reads as cut out of the
  * woods.
  */
 function pitchCamps(stands: Stands, plant: Planter): void {
@@ -1988,20 +1988,20 @@ function pitchCamps(stands: Stands, plant: Planter): void {
       if (ground.wet) continue
       buildings.push({ kind: 'tent', ...tent, bottom: ground.low - BURY, top: ground.high + TENT.height, tone: rng() })
     }
-    // The caravans parked side by side along the rim, nose to the fire.
+    // The campers parked side by side along the rim, nose to the fire.
     const parking = randomRange(rng, 0, Math.PI * 2)
-    for (let k = 0; k < CARAVANS; k++) {
+    for (let k = 0; k < CAMPERS; k++) {
       const angle = parking + k * 0.8
-      const caravan: Footprint = {
+      const camper: Footprint = {
         x: spot.x + cosine(angle) * (CLEARING_RADIUS - 5),
         z: spot.z + sine(angle) * (CLEARING_RADIUS - 5),
         yaw: -(angle + Math.PI / 2),
-        width: CARAVAN.width,
-        depth: CARAVAN.depth,
+        width: CAMPER.width,
+        depth: CAMPER.depth,
       }
-      const ground = groundUnder(field, wet, caravan)
+      const ground = groundUnder(field, wet, camper)
       if (ground.wet) continue
-      buildings.push({ kind: 'caravan', ...caravan, bottom: ground.low - BURY, top: ground.high + CARAVAN.height, tone: rng() })
+      buildings.push({ kind: 'camper', ...camper, bottom: ground.low - BURY, top: ground.high + CAMPER.height, tone: rng() })
     }
     for (let k = 0; k < RIM_TREES; k++) {
       const angle = (k * Math.PI * 2) / RIM_TREES
@@ -2049,7 +2049,7 @@ function raiseWindFarm(stands: Stands): void {
 
 /**
  * The island's ring of standing stones, on the highest open ground of a
- * few tries: the stones round the ring, each turned to face its middle.
+ * few tries: the stones around the ring, each turned to face its middle.
  */
 function raiseStones(stands: Stands): void {
   const { rng, field, placed, buildings } = stands
@@ -2071,8 +2071,8 @@ function raiseStones(stands: Stands): void {
   if (!under.wet) {
     buildings.push({ kind: 'stone', ...altar, bottom: under.low - BURY, top: under.high + ALTAR.height, tone: rng() })
   }
-  // Which pairs of neighbours carry a lintel, and how tall each stone is:
-  // the same as its neighbour where a lintel joins them.
+  // Which pairs of neighbors carry a lintel, and how tall each stone is:
+  // the same as its neighbor where a lintel joins them.
   const lintels = Array.from({ length: STONES }, () => rng() < LINTEL_ODDS)
   const heights = Array.from({ length: STONES }, () => randomRange(rng, STONE.height.min, STONE.height.max))
   for (let k = 0; k < STONES; k++) {
@@ -2115,7 +2115,7 @@ function raiseStones(stands: Stands): void {
     for (const stone of run) if (stone !== null) stone.top = top
     if (lintels.every(Boolean)) break
   }
-  // The lintels, laid from each stone across to its neighbour, resting on both.
+  // The lintels, laid from each stone across to its neighbor, resting on both.
   for (let k = 0; k < STONES; k++) {
     if (!lintels[k]) continue
     const a = standing[k]
@@ -2165,7 +2165,7 @@ function raiseLighthouses(stands: Stands): void {
   }
 }
 
-/** A spot on the shore with the sea about it: how much of the ground round it is sea, and which way the sea mostly lies. */
+/** A spot on the shore with the sea about it: how much of the ground around it is sea, and which way the sea mostly lies. */
 interface ShoreSpot {
   x: number
   z: number
@@ -2178,7 +2178,7 @@ interface ShoreSpot {
 /**
  * The shore, walked for the spots that stand just above the sea with
  * plenty of sea about them, the most seaward first and among equals in the
- * order they were walked in. The lighthouse, the harbour and the wrecks
+ * order they were walked in. The lighthouse, the harbor and the wrecks
  * all pick from these.
  */
 function shoreSpots(stands: Stands): ShoreSpot[] {
@@ -2212,7 +2212,7 @@ function shoreSpots(stands: Stands): ShoreSpot[] {
 }
 
 /**
- * A few boats moored off the shore, wherever the sea is a couple of metres
+ * A few boats moored off the shore, wherever the sea is a couple of meters
  * deep with the shore in sight but not close: the coast's sea cells are
  * walked for such water, and boats are set down on it at random, each
  * turned as it lies at anchor and none too near another.
@@ -2304,7 +2304,7 @@ function raiseLift(stands: Stands, peak: { x: number; z: number }, city: Distric
       else pylons.push({ footprint, ground })
     }
     if (!sound || pylons.length < PYLON.least) return false
-    // The cable's way between must cross no road: looked at every few metres.
+    // The cable's way between must cross no road: looked at every few meters.
     for (let along = 0; along <= length && sound; along += 8) {
       const probe: Footprint = { x: bottom.x - dx * along, z: bottom.z - dz * along, yaw, width: 4, depth: 4 }
       if (!stands.clear(probe, LIFT_ROAD_MARGIN)) sound = false
@@ -2340,7 +2340,7 @@ function raiseViewpoints(stands: Stands, fields: Field[]): void {
     if (districtAt(stands, lot.x, lot.z) !== DISTRICT_COUNTRY) continue
     if (groundUnder(field, wet, lot).wet || placed.meets(lot, FURNITURE_GAP)) continue
     placed.add(lot)
-    fields.push({ kind: 'carpark', ...lot, tone: 0 })
+    fields.push({ kind: 'parkingLot', ...lot, tone: 0 })
     // The wall along the valley side, which the lot's depth runs down toward.
     const { ux, uz, vx, vz } = axesOf(lot.yaw)
     const wall: Footprint = {

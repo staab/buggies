@@ -15,7 +15,7 @@ import type { Road, RoadPoint } from './types.ts'
 const { cos, hypot, sin } = exact
 
 /**
- * Top of the rail above the road's centreline, so a little less above its
+ * Top of the rail above the road's centerline, so a little less above its
  * surface: well over the floor of the tallest car, which otherwise rides up
  * onto the rail where it comes to straddle the rail line.
  */
@@ -60,7 +60,7 @@ interface Frame {
 function frameAt(road: Road, index: number): Frame {
   const { points } = road
   const count = points.length
-  // Both neighbours are within the road, wrapped round a loop or held at an end.
+  // Both neighbors are within the road, wrapped around a loop or held at an end.
   const prev = points[road.closed ? (index - 1 + count) % count : Math.max(index - 1, 0)]!
   const next = points[road.closed ? (index + 1) % count : Math.min(index + 1, count - 1)]!
   const dx = next.x - prev.x
@@ -171,7 +171,7 @@ export function railRuns(roads: Road[]): RailRun[] {
       }
       // A loop is walked from a break in its rail, so no run is cut in two
       // where the road's samples happen to begin, with a flare crossing a
-      // flare at the join. A loop railed all the way round is one ring.
+      // flare at the join. A loop railed all the way around is one ring.
       let first = 0
       if (road.closed) {
         while (first < segmentCount && railed(first, side)) first++

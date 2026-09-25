@@ -34,7 +34,7 @@ export {
   type VehicleProfileId,
   type VehicleTuning,
 } from './tuning.ts'
-export { lateralGripCurve, solveTyreForces } from './tyreModel.ts'
+export { lateralGripCurve, solveTireForces } from './tireModel.ts'
 export { DAMAGE_SMOKING, hurtVehicle, stepVehicle, wreckVehicle } from './vehicle.ts'
 export {
   WHEEL_CORNERS,

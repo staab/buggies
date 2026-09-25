@@ -167,7 +167,7 @@ describe('districts', () => {
     return cells
   }
 
-  /** Greatest height change to an orthogonal neighbour, in world units. */
+  /** Greatest height change to an orthogonal neighbor, in world units. */
   function slopeAt(field: Heightfield, cell: number): number {
     const { width, depth, cellSize, heights } = field
     const row = (cell / width) | 0
@@ -338,7 +338,7 @@ describe('roads', () => {
     return inside
   }
 
-  /** True when two carriageways cross or come within half a carriageway. */
+  /** True when two roadways cross or come within half a roadway. */
   function meets(a: Road, b: Road): boolean {
     const tolerance = (a.width + b.width) / 2
     const segmentCount = (road: Road): number =>
@@ -385,10 +385,10 @@ describe('roads', () => {
    * a crossing the ground is shared with another road: its grade is held to
    * the limit as built, but what is finally driven can ripple a little over it
    * and, at an interchange corner where a cross road, its ramps, two arterials
-   * and a street all meet within a few metres, a fair bit more over a metre or
+   * and a street all meet within a few meters, a fair bit more over a meter or
    * two. Where two roads cross at an angle on different grades the ground is a
    * blend of both, and each road inherits a little of the other's slope there.
-   * Grade is read over stretches of at least a metre, and what is over the
+   * Grade is read over stretches of at least a meter, and what is over the
    * limit is weighed by length.
    */
   function expectSurfaceGrades(roads: Road[], limitFor: (road: Road, segment: number) => number): void {
@@ -640,7 +640,7 @@ describe('roads', () => {
     const map = generateTerrain(1)
     const highway = map.roads.find((road) => road.closed)!
     const crossRoads = map.roads.filter((road) => !road.closed && road.kind === 'cross')
-    const centres = crossRoads.map((road) => road.points[Math.floor(road.points.length / 2)]!)
+    const centers = crossRoads.map((road) => road.points[Math.floor(road.points.length / 2)]!)
     const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     expect(arterials.length).toBeGreaterThan(0)
 
@@ -671,7 +671,7 @@ describe('roads', () => {
           if (!straddles(a.x, a.z, b.x, b.z, h.x, h.z, h2.x, h2.z)) continue
           const mx = (a.x + b.x + h.x + h2.x) / 4
           const mz = (a.z + b.z + h.z + h2.z) / 4
-          const near = Math.min(...centres.map((centre) => Math.hypot(centre.x - mx, centre.z - mz)))
+          const near = Math.min(...centers.map((center) => Math.hypot(center.x - mx, center.z - mz)))
           // It may only cross where a cross road already passes underneath.
           expect(near).toBeLessThan(180)
         }
@@ -878,7 +878,7 @@ describe('roads', () => {
         }
       }
       // Where a street does run shallowly beside an arterial it stops at the
-      // point their carriageways would start to overlap, and no nearer.
+      // point their roadways would start to overlap, and no nearer.
       expect(closest).toBeGreaterThanOrEqual(overlap - 1e-6)
     }
   }, 30_000)
@@ -995,7 +995,7 @@ describe('roads', () => {
 
   it('never lets an arterial run onto the highway', () => {
     // An arterial reaches the highway network through an interchange's cross
-    // road, so its carriageway has no business lapping the carriageway itself.
+    // road, so its roadway has no business lapping the roadway itself.
     for (const seed of [1, 4, 6]) {
       const map = generateTerrain(seed)
       const highway = map.roads.find((road) => road.closed && road.width === ROAD_WIDTH)!
@@ -1027,7 +1027,7 @@ describe('roads', () => {
 
   it('parts arterials at a junction wide enough to read as a fork', () => {
     // Two arterials leaving one node within a sliver of each other run side by
-    // side instead of parting, and their carriageways smear into one blob.
+    // side instead of parting, and their roadways smear into one blob.
     for (const seed of [1, 2, 5]) {
       const map = generateTerrain(seed)
       const arterials = map.roads.filter(
@@ -1149,7 +1149,7 @@ describe('roads', () => {
   }, 20_000)
 
   it('gives every city its own interchange and never a second', () => {
-    /** The interchange underpasses, each charged to the city centre nearest it. */
+    /** The interchange underpasses, each charged to the city center nearest it. */
     const perCity = (seed: number): number[] => {
       const map = generateTerrain(seed)
       const counts = map.districts.map(() => 0)
@@ -1285,7 +1285,7 @@ describe('roads', () => {
       }
     }
     // Surface roads are resampled a cell apart once built, so the turn between
-    // two samples is what a fillet turns over three metres; a road still
+    // two samples is what a fillet turns over three meters; a road still
     // turning harder than that after smoothing is pruned as a hairpin.
     expect(sharpest).toBeLessThan(40)
   }, 20_000)
@@ -1341,7 +1341,7 @@ describe('roads', () => {
         const tip = ramp.points[ramp.points.length - 1]!
         const offset = distanceToSegment(tip.x, tip.z, a, b)
         if (offset > CROSS_WIDTH) continue
-        // The tip touches the near edge, not the centreline of the cross road.
+        // The tip touches the near edge, not the centerline of the cross road.
         expect(offset).toBeGreaterThan(CROSS_WIDTH * 0.25)
         const before = ramp.points[ramp.points.length - 2]!
         const heading = Math.atan2(tip.z - before.z, tip.x - before.x)
@@ -1359,7 +1359,7 @@ describe('roads', () => {
 
 describe('findLakes', () => {
   it('fills a basin up to its spill level', () => {
-    // Sea on the border, a plateau at height 5, and a single pit at the centre.
+    // Sea on the border, a plateau at height 5, and a single pit at the center.
     const size = 9
     const field: Heightfield = flatHeightfield(size, size, 1, 5)
     for (let i = 0; i < size; i++) {

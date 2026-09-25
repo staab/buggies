@@ -34,10 +34,7 @@ export class MirrorCars {
   reconciled(outcome: ReconcileOutcome): void {
     this.syncSeats()
     if (outcome === 'idle') return
-    for (const entry of this.entries.values()) {
-      if (outcome === 'replayed') entry.presence.body.absorbCorrection()
-      else entry.presence.body.snapToBody()
-    }
+    for (const entry of this.entries.values()) entry.presence.body.absorbCorrection()
   }
 
   /** After the mirror has stepped. */

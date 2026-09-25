@@ -16,12 +16,30 @@ import { WeaponReveal } from './weapon-reveal.ts'
 
 /** A knock that takes this much of a car's life is heard at full volume. */
 const LOUD_KNOCK = 0.25
-/** The roof lights of an emergency vehicle: two lamps, this big, flashing in turn this many times a second, in these colours. */
+/**
+ * The roof lights of an emergency vehicle: two lamps, this big, flashing in
+ * turn this many times a second, in these colors, this far back from the
+ * middle of the car: over the roof of a car, and over the cab of a truck,
+ * whose body behind is taller. Each sits on the model's roof where it is.
+ */
 const ROOF_LIGHT = { width: 0.32, height: 0.14, depth: 0.24, apart: 0.36, flashes: 4 } as const
-const ROOF_LIGHT_COLORS: Readonly<Partial<Record<Seat['profile'], [number, number]>>> = {
-  police: [0xff2a2a, 0x2a6cff],
-  ambulance: [0xff2a2a, 0xffffff],
-  firetruck: [0xff2a2a, 0xffffff],
+const ROOF_LIGHTS: Readonly<Partial<Record<Seat['profile'], { colors: [number, number]; back: number }>>> = {
+  police: { colors: [0xff2a2a, 0x2a6cff], back: -0.1 },
+  ambulance: { colors: [0xff2a2a, 0xffffff], back: -1.3 },
+  firetruck: { colors: [0xff2a2a, 0xffffff], back: -1.9 },
+}
+const overhead = new THREE.Raycaster()
+const above = new THREE.Vector3()
+const down = new THREE.Vector3()
+
+/** How high the top of a car's model is at a point over it, in the car's own frame; the chassis top where nothing is drawn there. */
+function roofAt(car: THREE.Object3D, x: number, z: number, chassisTop: number): number {
+  car.updateMatrixWorld(true)
+  car.localToWorld(above.set(x, chassisTop + 10, z))
+  down.set(0, -1, 0).transformDirection(car.matrixWorld)
+  overhead.set(above, down)
+  const hit = overhead.intersectObject(car, true)[0]
+  return hit === undefined ? chassisTop : Math.max(car.worldToLocal(hit.point).y, chassisTop)
 }
 /** The boost's flame at the back of the car, this long. */
 const BOOST_FLAME = { radius: 0.18, length: 0.8 } as const
@@ -90,6 +108,23 @@ export class CarPresence {
     this.view = new CarView(seat.profile, color)
     this.view.syncDimensions(seat.tuning)
     this.object = this.view.object
+    // An emergency vehicle's roof lights, each on the model's roof where it
+    // sits, measured before anything else is hung on the car; off until its
+    // lights are on.
+    const lamps = ROOF_LIGHTS[seat.profile]
+    if (lamps !== undefined) {
+      const roofs = [-1, 1].map((side) => roofAt(this.object, side * ROOF_LIGHT.apart, lamps.back, seat.tuning.chassisHalfHeight))
+      for (const [k, color] of lamps.colors.entries()) {
+        const lamp = new THREE.Mesh(
+          new THREE.BoxGeometry(ROOF_LIGHT.width, ROOF_LIGHT.height, ROOF_LIGHT.depth),
+          new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5, roughness: 0.4 }),
+        )
+        lamp.position.set((k === 0 ? -1 : 1) * ROOF_LIGHT.apart, roofs[k]! + ROOF_LIGHT.height / 2, lamps.back)
+        lamp.visible = false
+        this.object.add(lamp)
+        this.roofLights.push(lamp)
+      }
+    }
     this.mount = new WeaponMount(seat.tuning.chassisHalfHeight + MOUNT_HEIGHT, hasBuiltInGun(seat.profile))
     this.object.add(this.mount.object)
     this.body = new SmoothedBody(seat.vehicle.body, this.object)
@@ -97,20 +132,6 @@ export class CarPresence {
     this.voice = heard?.engine(seat.profile) ?? null
     this.skid = heard?.skid() ?? null
     this.thrust = heard?.thrust() ?? null
-    // An emergency vehicle's roof lights, off until its lights are on, and its siren.
-    const lamps = ROOF_LIGHT_COLORS[seat.profile]
-    if (lamps !== undefined) {
-      for (const [k, color] of lamps.entries()) {
-        const lamp = new THREE.Mesh(
-          new THREE.BoxGeometry(ROOF_LIGHT.width, ROOF_LIGHT.height, ROOF_LIGHT.depth),
-          new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5, roughness: 0.4 }),
-        )
-        lamp.position.set((k === 0 ? -1 : 1) * ROOF_LIGHT.apart, seat.tuning.chassisHalfHeight + ROOF_LIGHT.height / 2, -0.1)
-        lamp.visible = false
-        this.object.add(lamp)
-        this.roofLights.push(lamp)
-      }
-    }
     this.heard = heard
     // The boost's flame, behind the car, out until it boosts.
     this.boostFlame = new THREE.Mesh(
@@ -233,8 +254,8 @@ export class CarPresence {
     target.wrecked = vehicle.wrecked
   }
 
-  /** What the HUD says of it. */
-  hudState(title: string, controls: readonly ControlHint[]): HudState {
+  /** What the HUD says of it, with a line on how it is keeping up with the server if there is one. */
+  hudState(title: string, controls: readonly ControlHint[], sync?: string): HudState {
     const { vehicle, tuning, score } = this.seat
     return {
       title,
@@ -245,6 +266,7 @@ export class CarPresence {
       score,
       weapon: this.weaponLabel,
       rolling: this.reveal.rolling,
+      ...(sync === undefined ? {} : { sync }),
     }
   }
 

@@ -22,8 +22,8 @@ interface Puff {
 }
 
 /**
- * Smoke pouring off damaged cars: grey puffs that rise, spread and thin out.
- * A pool of puffs is reused round and round, so nothing is made mid-race.
+ * Smoke pouring off damaged cars: gray puffs that rise, spread and thin out.
+ * A pool of puffs is reused around and around, so nothing is made mid-race.
  */
 export class Smoke {
   readonly object = new THREE.Group()

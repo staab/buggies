@@ -341,7 +341,7 @@ export class Shell implements MenuHost {
       // View distances ride the world scale so the framing stays the same.
       const worldSize = made.size * made.cellSize
       this.scene.fog = new THREE.Fog('#a9cbe6', worldSize * 0.65, worldSize * 2.34)
-      this.sun.centreOn({ x: worldSize / 2, y: 0, z: worldSize / 2 })
+      this.sun.centerOn({ x: worldSize / 2, y: 0, z: worldSize / 2 })
       return made
     })
     this.making = { seed, island }

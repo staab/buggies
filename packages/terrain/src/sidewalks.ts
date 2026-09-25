@@ -7,9 +7,9 @@ import type { Heightfield, Sidewalk } from './types.ts'
 const { cos: cosine, sin: sine } = exact
 
 /** How far a sidewalk stands above the street. */
-export const KERB_HEIGHT = 0.15
+export const CURB_HEIGHT = 0.15
 /** How far its faces run down into the ground, so no gap shows where the ground dips. */
-const KERB_FOOTING = 0.4
+const CURB_FOOTING = 0.4
 /** How far apart, along a side, the slab follows the ground. */
 const SIDEWALK_STEP = 1.5
 
@@ -19,8 +19,8 @@ export interface SidewalkMesh {
 }
 
 /**
- * Every sidewalk as one mesh, drawn and driven on: a slab top a kerb above
- * the ground, a kerb face at the street and a face at the inner edge. Each
+ * Every sidewalk as one mesh, drawn and driven on: a slab top a curb above
+ * the ground, a curb face at the street and a face at the inner edge. Each
  * side of a ring is one strip from corner to corner, so the four meet at the
  * corners without overlapping; a side the ring goes without is left out.
  */
@@ -52,7 +52,7 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
     })
     const outer = walk.half
     const inner = walk.half - walk.band
-    // The ring's corners in block coordinates, round in order.
+    // The ring's corners in block coordinates, around in order.
     const corners: [number, number][] = [
       [outer, outer],
       [-outer, outer],
@@ -66,7 +66,7 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
       const [u1, v1] = corners[(side + 1) % 4]!
       const scale = inner / outer
       const steps = Math.max(1, Math.ceil((2 * outer) / SIDEWALK_STEP))
-      // Each station's slab height is a kerb over the highest ground near it:
+      // Each station's slab height is a curb over the highest ground near it:
       // across the band and half a step either way along it, so the slab
       // never sinks into a rise between stations, and the stations share
       // their vertices so the slab runs smoothly rather than in steps.
@@ -87,12 +87,12 @@ export function sidewalkMesh(field: Heightfield, sidewalks: Sidewalk[]): Sidewal
             high = Math.max(high, sampleHeight(field, at.x, at.z))
           }
         }
-        const top = high + KERB_HEIGHT
+        const top = high + CURB_HEIGHT
         stations.push([
           push(o.x, top, o.z),
           push(i.x, top, i.z),
-          push(o.x, sampleHeight(field, o.x, o.z) - KERB_FOOTING, o.z),
-          push(i.x, sampleHeight(field, i.x, i.z) - KERB_FOOTING, i.z),
+          push(o.x, sampleHeight(field, o.x, o.z) - CURB_FOOTING, o.z),
+          push(i.x, sampleHeight(field, i.x, i.z) - CURB_FOOTING, i.z),
         ])
       }
       const mid = place(((u0 + u1) / 2) * (1 + scale) * 0.5, ((v0 + v1) / 2) * (1 + scale) * 0.5)

@@ -6,16 +6,16 @@ import type { VehicleTuning } from './tuning.ts'
 import type { Vehicle } from './vehicleBody.ts'
 import { WORLD_UP, type WorldTuning } from './world.ts'
 
-const MIN_CHASSIS_DRAUGHT = 1e-3
+const MIN_CHASSIS_DRAFT = 1e-3
 
 const chassisPosition: Vec3 = v3()
 
 export function submersionFraction(vehicle: Vehicle, tuning: VehicleTuning, waterLevel: number): number {
-  const draught = Math.max(tuning.chassisHalfHeight * 2, MIN_CHASSIS_DRAUGHT)
+  const draft = Math.max(tuning.chassisHalfHeight * 2, MIN_CHASSIS_DRAFT)
 
   vehicle.body.translation(chassisPosition)
 
-  return clamp((waterLevel - (chassisPosition.y - tuning.chassisHalfHeight)) / draught, 0, 1)
+  return clamp((waterLevel - (chassisPosition.y - tuning.chassisHalfHeight)) / draft, 0, 1)
 }
 
 export function applyWaterResponse(
