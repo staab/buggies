@@ -47,6 +47,21 @@ Each vehicle does something of its own on its own key, whatever it carries. Most
 - **Heavy pickup** drops a bomb with a quarter of the blast every five seconds, five out at once at most, the oldest going for the next.
 - **Police car, ambulance and fire truck** flash their lights on and off, slowing every car within thirty meters by a fifth while on. None of them is slowed by any siren or lights. The ambulance mends itself, a hundredth of its life every five seconds. The fire truck takes a tenth of a bomb's blast. The police car takes half the bite of a machine gun.
 
+## Docker
+
+The game server is published as an image at `ghcr.io/staab/buggies` by the workflow in `.github/workflows/docker.yml`: on every push to the default branch as `latest` and by commit, and on a release tag such as `v1.2.0` by version. It listens on port 8787 and honors `HOST`, `PORT` and `TRUST_PROXY` as above.
+
+```sh
+docker run --rm -p 8787:8787 ghcr.io/staab/buggies
+```
+
+The first publish may need the package's visibility set in its settings on GitHub. To build the image here instead:
+
+```sh
+podman build -t buggies-server .
+podman run --rm -p 8787:8787 buggies-server
+```
+
 ## Packages
 
 - `physics`: vectors, quaternions, a seeded RNG, the fixed timestep.

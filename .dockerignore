@@ -1,0 +1,15 @@
+.git
+.github
+.local
+issues
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+coverage
+*.png
+packages/client/public
+packages/client/src
+packages/client/index.html
+.env
+.env.*
