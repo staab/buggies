@@ -169,8 +169,8 @@ describe('terrain colliders', () => {
       for (const building of map.buildings) {
         const found = castDown(world, building.x, building.z, building.top + 5)
         if (found === null) continue
-        // A standing stone may carry a lintel, and a post a canopy, whose top is what is met above it.
-        const carried = (building.kind === 'stone' || building.kind === 'post') && found > building.top
+        // A standing stone may carry a lintel, a post a canopy and a site a crane, whose top is what is met above it.
+        const carried = (building.kind === 'stone' || building.kind === 'post' || building.kind === 'site') && found > building.top
         if (Math.abs(found - building.top) < 0.01 || carried) roofed++
       }
       expect(roofed).toBe(map.buildings.length)
