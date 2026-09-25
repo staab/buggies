@@ -17,6 +17,7 @@ import { flatHeightfield } from '@buggies/terrain'
 import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 
+import type { Sound } from './audio.ts'
 import { CarPresence } from './car-presence.ts'
 import { createChaseTarget } from './chase-camera.ts'
 import { Explosions } from './explosion.ts'
@@ -58,7 +59,65 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
   return { seat, free: () => world.free() }
 }
 
+/** A sound that only counts what it is asked to play. */
+function countingSound(): { sound: Sound; played: Record<string, number>; sirens: { on: boolean; power: boolean }[] } {
+  const played: Record<string, number> = {}
+  const sirens: { on: boolean; power: boolean }[] = []
+  const count = (name: string) => () => {
+    played[name] = (played[name] ?? 0) + 1
+  }
+  const voice = { set: () => undefined, stop: () => undefined }
+  const sound = {
+    engine: () => voice,
+    skid: () => voice,
+    thrust: () => voice,
+    siren: () => ({ set: (on: boolean, _distance: number, power = false) => sirens.push({ on, power }), stop: () => undefined }),
+    boom: count('boom'),
+    chime: count('chime'),
+    shot: count('shot'),
+    whoosh: count('whoosh'),
+    thud: count('thud'),
+    horn: count('horn'),
+    hop: count('hop'),
+    shockwave: count('shockwave'),
+  } as unknown as Sound
+  return { sound, played, sirens }
+}
+
 describe('a car on the screen', () => {
+  it('is heard blowing its horn, setting off a shockwave, and sounding the siren power while it is held', () => {
+    const { seat, free } = seatOnFlat()
+    const { sound, played, sirens } = countingSound()
+    const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound })
+    presence.render(0, FIXED_TIMESTEP)
+    // The semi's horn: heard once as its action starts, not every frame it goes on.
+    seat.profile = 'semi'
+    seat.actionTicks = 60
+    presence.render(0, FIXED_TIMESTEP)
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.horn).toBe(1)
+    seat.actionTicks = 0
+    seat.profile = DEFAULT_VEHICLE_PROFILE
+    // The shockwave: armed, then gone the moment it is fired, and heard then.
+    seat.weapon = 'shockwave'
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.shockwave).toBeUndefined()
+    seat.weapon = 'none'
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.shockwave).toBe(1)
+    // The siren power: sounds while the key is held with time left, as the power and not a vehicle's own.
+    seat.weapon = 'siren'
+    seat.ammoTicks = 300
+    seat.vehicle.command.fire = true
+    presence.render(0, FIXED_TIMESTEP)
+    expect(sirens.at(-1)).toEqual({ on: true, power: true })
+    seat.vehicle.command.fire = false
+    presence.render(0, FIXED_TIMESTEP)
+    expect(sirens.at(-1)).toEqual({ on: false, power: false })
+    presence.dispose()
+    free()
+  })
+
   it('names its own action when it carries nothing, with the time left of it or before it may go again', () => {
     const { seat, free } = seatOnFlat()
     const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })

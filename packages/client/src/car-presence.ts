@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, OWN_ACTIONS, WEAPON_LABELS, acting, burning, hasBuiltInGun, type Seat } from '@buggies/game'
+import { FIXED_TIMESTEP, MOUNT_HEIGHT, NO_TARGET, OWN_ACTIONS, WEAPON_LABELS, acting, burning, hasBuiltInGun, type Seat, type Weapon } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
@@ -70,7 +70,9 @@ export class CarPresence {
   private readonly thrust: ThrustVoice | null
   private readonly reveal = new WeaponReveal()
   private readonly mount: WeaponMount
-  private readonly siren: SirenVoice | null
+  private readonly heard: Sound | null
+  /** The siren, made the first time it is needed: an emergency vehicle's own, or the power any car may win. */
+  private siren: SirenVoice | null = null
   private readonly roofLights: THREE.Mesh[] = []
   private readonly boostFlame: THREE.Mesh
   private aimPoint: Vec3 | null = null
@@ -78,6 +80,7 @@ export class CarPresence {
   private lastDamage: number
   private lastScore: number
   private lastActionTicks: number
+  private lastWeapon: Weapon
   private lightTime = 0
 
   constructor(seat: Seat, color: number, effects: PresenceEffects, options: PresenceOptions = {}) {
@@ -108,7 +111,7 @@ export class CarPresence {
         this.roofLights.push(lamp)
       }
     }
-    this.siren = lamps !== undefined ? (heard?.siren() ?? null) : null
+    this.heard = heard
     // The boost's flame, behind the car, out until it boosts.
     this.boostFlame = new THREE.Mesh(
       new THREE.ConeGeometry(BOOST_FLAME.radius, BOOST_FLAME.length, 10),
@@ -122,6 +125,7 @@ export class CarPresence {
     this.lastDamage = seat.vehicle.damage
     this.lastScore = seat.score
     this.lastActionTicks = seat.actionTicks
+    this.lastWeapon = seat.weapon
   }
 
   get wrecked(): boolean {
@@ -199,12 +203,17 @@ export class CarPresence {
     for (const [k, lamp] of this.roofLights.entries()) {
       lamp.visible = lightsOn && Math.floor(this.lightTime * ROOF_LIGHT.flashes + k) % 2 === 0
     }
-    this.siren?.set(lightsOn, off)
-    // The horn and the hop are heard as they go.
+    // The siren power sounds while it is held; either way the siren is made the first time it is wanted.
+    const sirenPower = this.seat.weapon === 'siren' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
+    if ((lightsOn || sirenPower) && this.siren === null) this.siren = this.heard?.siren() ?? null
+    this.siren?.set(lightsOn || sirenPower, off, sirenPower)
+    // The horn and the hop are heard as they go, and the shockwave as it goes off: it is gone the moment it is fired.
     if (this.seat.weapon === 'none' && this.seat.actionTicks > 0 && this.lastActionTicks === 0 && !vehicle.wrecked) {
       if (own.kind === 'horn') sound?.horn(off)
       if (own.kind === 'hop') sound?.hop(off)
     }
+    if (this.lastWeapon === 'shockwave' && this.seat.weapon === 'none' && !vehicle.wrecked) sound?.shockwave(off)
+    this.lastWeapon = this.seat.weapon
     this.lastActionTicks = this.seat.actionTicks
     if (vehicle.wrecked && !this.wasWrecked) {
       explosions.burst(vehicle.frame.position)

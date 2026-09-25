@@ -302,8 +302,11 @@ function noiseBuffer(context: AudioContext): AudioBuffer {
 /** The three notes of a banana taken: a bright little rising chime. */
 const CHIME = [1318.5, 1661.2, 1975.5]
 
-/** A siren: a tone wailing up and down between these, this many times a second. */
-const SIREN = { low: 620, high: 960, wail: 0.9 } as const
+/**
+ * A siren: a tone wailing up and down between these, this many times a
+ * second and this loud; the siren won as a power wails faster and louder.
+ */
+const SIREN = { low: 620, high: 960, wail: 0.9, level: 0.18, powerWail: 1.7, powerLevel: 0.34 } as const
 
 /** An emergency vehicle's siren, silent until it is on. */
 export class SirenVoice {
@@ -338,10 +341,12 @@ export class SirenVoice {
     this.wail.start(now)
   }
 
-  /** Whether it is on, and how far off. */
-  set(on: boolean, distance = 0): void {
+  /** Whether it is on, how far off, and whether it is the power rather than an emergency vehicle's own. */
+  set(on: boolean, distance = 0, power = false): void {
     if (this.stopped) return
-    this.gain.gain.setTargetAtTime(on ? 0.18 * earshot(distance) : 0, this.context.currentTime, 0.05)
+    const now = this.context.currentTime
+    this.wail.frequency.setTargetAtTime(power ? SIREN.powerWail : SIREN.wail, now, 0.05)
+    this.gain.gain.setTargetAtTime(on ? (power ? SIREN.powerLevel : SIREN.level) * earshot(distance) : 0, now, 0.05)
   }
 
   stop(): void {
@@ -429,6 +434,45 @@ export class Sound {
       note.start(now)
       note.stop(now + 1.05)
     }
+  }
+
+  /**
+   * A shockwave going off, this far off: an air horn's two notes and a
+   * third below them, blown hard for a second and a half, with a thump
+   * under them, heard from further away than anything but a blast.
+   */
+  shockwave(distance = 0): void {
+    const loudness = 0.9 * earshot(distance * 0.5)
+    if (loudness <= 0.01) return
+    const { context } = this
+    const now = context.currentTime
+    for (const frequency of [98, 147, 196]) {
+      const note = context.createOscillator()
+      note.type = 'sawtooth'
+      note.frequency.setValueAtTime(frequency * 0.94, now)
+      note.frequency.exponentialRampToValueAtTime(frequency, now + 0.12)
+      const filter = context.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.value = 1100
+      const gain = context.createGain()
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(0.5 * loudness, now + 0.04)
+      gain.gain.setValueAtTime(0.5 * loudness, now + 1.2)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5)
+      note.connect(filter).connect(gain).connect(this.master)
+      note.start(now)
+      note.stop(now + 1.55)
+    }
+    const thump = context.createOscillator()
+    thump.type = 'sine'
+    thump.frequency.setValueAtTime(60, now)
+    thump.frequency.exponentialRampToValueAtTime(30, now + 0.5)
+    const thumpGain = context.createGain()
+    thumpGain.gain.setValueAtTime(0.8 * loudness, now)
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6)
+    thump.connect(thumpGain).connect(this.master)
+    thump.start(now)
+    thump.stop(now + 0.6)
   }
 
   /** A hop, this far off: a short springy note dropping away. */
