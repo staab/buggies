@@ -260,6 +260,8 @@ const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), ne
 const CRANE_CAB = new THREE.Color('#d9dde3')
 const CONCRETE = new THREE.Color('#9a9a94')
 const CRANE = { column: 0.25, brace: 0.12, level: 4, jib: 32, counterJib: 10, cab: 2.6, hookAlong: 0.7, hookDrop: 0.45, turn: 0.06 } as const
+/** A dam's downstream face leans out this much of its height, with this many buttresses up it, under a crest this thick. */
+const DAM_FACE = { lean: 0.35, buttresses: 4, crest: 0.8 } as const
 /** A viewpoint's low stone wall and the board on its posts. */
 const WALL_COLOR = new THREE.Color('#a9a59b')
 const BOARD_COLOR = new THREE.Color('#e4dcc6')
@@ -542,7 +544,7 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
   // along it, and the streets marked out besides.
   for (const [i, field] of map.fields.entries()) {
     const crop = crops[i]
-    if (crop !== undefined) paintField(data, texels, field, crop)
+    if (crop !== undefined && !paved(field)) paintField(data, texels, field, crop)
   }
   // A gravel loop round the ground each interchange encloses, now that it
   // is a park, laid before the roads so no path crosses one.
@@ -571,6 +573,12 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
     for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2, asphalt)
   }
   for (const road of surface) paintDashes(data, texels, road, marking)
+  // A paved lot covers whatever road runs into it: it is painted over the roads, its corners rounded, with a kerb round its edge.
+  for (const field of map.fields) {
+    if (!paved(field)) continue
+    paintField(data, texels, { ...field, width: field.width + 2 * KERB_LINE, depth: field.depth + 2 * KERB_LINE }, { plain: kerb, striped: kerb })
+    paintField(data, texels, field, cropOf(field))
+  }
 
   const texture = new THREE.DataTexture(data, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType)
   texture.colorSpace = THREE.SRGBColorSpace
@@ -583,6 +591,14 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
   texture.needsUpdate = true
   return texture
 }
+
+/** Whether a field is paved: asphalt, laid over the ground and any road, rather than a crop grown on it. */
+function paved(field: Field): boolean {
+  return field.kind === 'asphalt' || field.kind === 'carpark' || field.kind === 'square'
+}
+
+/** How far round a paved lot's corners are. */
+const PAVED_CORNER = 4
 
 /** A field's crop: its colour and the shade of its stripes, as texel values. */
 interface Crop {
@@ -621,6 +637,12 @@ function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop):
       const u = dx * cos - dz * sin
       const v = dx * sin + dz * cos
       if (Math.abs(u) > field.width / 2 || Math.abs(v) > field.depth / 2) continue
+      // A paved lot's corners are rounded off.
+      if (paved(field)) {
+        const cu = Math.abs(u) - (field.width / 2 - PAVED_CORNER)
+        const cv = Math.abs(v) - (field.depth / 2 - PAVED_CORNER)
+        if (cu > 0 && cv > 0 && Math.hypot(cu, cv) > PAVED_CORNER) continue
+      }
       const shade = Math.floor((u + field.width / 2) / CROP_STRIPE) % 2 === 0 ? crop.plain : crop.striped
       const at = (ty * texels + tx) * 4
       data[at] = Math.round(shade[0])
@@ -1918,13 +1940,43 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  // A dam: a concrete wall across the valley, a spillway stepped down its
-  // downstream face with a streak of white water on it, and a railing
-  // along each edge of the crest.
+  // A dam: a concrete wall across the valley holding a reservoir behind it,
+  // its downstream face sloping out to a wide foot with buttresses up it,
+  // a spillway down the middle with a streak of white water on it, a wider
+  // crest along the top and a railing along each edge of it.
+  const pitched = (dam: Building, matrix: THREE.Matrix4, sx: number, sy: number, sz: number, y: number, across: number, pitch: number): void => {
+    const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, dam.yaw, 0, 'YXZ'))
+    const offset = new THREE.Vector3(0, 0, across).applyAxisAngle(new THREE.Vector3(0, 1, 0), dam.yaw)
+    matrix.compose(new THREE.Vector3(dam.x + offset.x, y, dam.z + offset.z), turn, new THREE.Vector3(sx, sy, sz))
+  }
+  const buttresses = dams.flatMap((dam) => Array.from({ length: DAM_FACE.buttresses }, (_, k) => ({ dam, k })))
   meshes.push(
     instanced(box, plain, dams, (dam, matrix, color) => {
       boxAt(dam, matrix)
       color.copy(DAM_COLOR)
+    }),
+    // The sloping face: a slab leaning downstream from the crest to the foot.
+    instanced(box, plain, dams, (dam, matrix, color) => {
+      const rise = dam.top - dam.bottom
+      const lean = rise * DAM_FACE.lean
+      const length = Math.hypot(rise, lean)
+      pitched(dam, matrix, dam.width - 1, length, 0.6, (dam.top + dam.bottom) / 2, dam.depth / 2 + lean / 2, -Math.atan2(lean, rise))
+      color.copy(DAM_COLOR)
+    }),
+    instanced(box, plain, buttresses, ({ dam, k }, matrix, color) => {
+      const rise = dam.top - dam.bottom
+      const lean = rise * DAM_FACE.lean
+      const length = Math.hypot(rise, lean)
+      const along = (k - (DAM_FACE.buttresses - 1) / 2) * ((dam.width - 4) / (DAM_FACE.buttresses - 1))
+      const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.atan2(lean, rise), dam.yaw, 0, 'YXZ'))
+      const offset = new THREE.Vector3(along, 0, dam.depth / 2 + lean / 2 + 0.5).applyAxisAngle(new THREE.Vector3(0, 1, 0), dam.yaw)
+      matrix.compose(new THREE.Vector3(dam.x + offset.x, (dam.top + dam.bottom) / 2 - 0.6, dam.z + offset.z), turn, new THREE.Vector3(1.2, length - 1.2, 1.4))
+      color.copy(DAM_COLOR)
+    }),
+    // The crest, a little wider than the wall, lipped over each face.
+    instanced(box, plain, dams, (dam, matrix, color) => {
+      upright(dam, matrix, dam.width, DAM_FACE.crest, dam.depth + 1.2, dam.top - DAM_FACE.crest / 2)
+      color.copy(CHURCH_COLOR)
     }),
     instanced(box, plain, dams, (dam, matrix, color) => {
       const rise = (dam.top - dam.bottom) * 0.55
