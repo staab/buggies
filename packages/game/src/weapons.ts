@@ -97,13 +97,12 @@ export const WINGS_CLIMB_PUSH = 6
  * On wings the steering banks the car and swings its motion round rather
  * than turning its nose: the arc is this many times as wide as the car's
  * own tightest turn at speed, the car leans into it by this much of its up
- * (the tangent of the bank) at full steer, and its nose is kept on the way
- * it is going this firmly. Below this speed there is no motion to swing,
- * so the nose is turned gently instead, this much of the way the steering asks.
+ * (the tangent of the bank) at full steer, and its nose is put on the way
+ * it is going. Below this speed there is no motion to swing, so the nose
+ * is turned gently instead, this much of the way the steering asks.
  */
 export const WINGS_TURN_WIDEN = 5
 export const WINGS_LEAN = 0.55
-export const WINGS_FOLLOW = 1.2
 export const WINGS_TURN_MIN_SPEED = 3
 export const WINGS_HOVER_TURN = 0.35
 export const WINGS_THRUST = 9
@@ -347,9 +346,10 @@ export function wingsTurnRadius(tuning: VehicleTuning): number {
 /**
  * Turn a car on wings the way a plane turns: the steering leans it into
  * the turn, and the turn swings the way it is going round a wide arc,
- * the nose following the motion. The lean is left for the wings to hold,
- * and the swing is the pull a circle of the turn's radius asks for at the
- * car's speed. Too slow for any of that, the nose is turned gently instead.
+ * the nose put on the motion outright, so the car faces where it goes.
+ * The lean is left for the wings to hold, and the swing is the pull a
+ * circle of the turn's radius asks for at the car's speed. Too slow for
+ * any of that, the nose is turned gently instead.
  */
 function bank(seat: Gunner): void {
   const { vehicle, tuning } = seat
@@ -368,14 +368,21 @@ function bank(seat: Gunner): void {
   vset(aside, -velocity.z / speed, 0, velocity.x / speed)
   addForceAlong(body, aside, (tuning.mass * speed * speed * turn) / wingsTurnRadius(tuning))
   vset(lean, aside.x * WINGS_LEAN * turn, 0, aside.z * WINGS_LEAN * turn)
-  // The nose follows the way the car is going.
-  const { forward } = frame
+  // The nose is put on the way the car is going: the car is turned about
+  // the world's up by however far its nose is off the motion, its bank and
+  // pitch kept as they are, and whatever yaw it had is taken out of its spin.
+  const { forward, rotation } = frame
   const flat = hypot(forward.x, forward.z) || 1
   const error = atan2(
     (forward.x * velocity.z - forward.z * velocity.x) / (flat * speed),
     (forward.x * velocity.x + forward.z * velocity.z) / (flat * speed),
   )
-  addTorqueAbout(body, WORLD_UP, -error * tuning.airPitchTorque * WINGS_FOLLOW - yawRate * tuning.airLevelDamping)
+  // A turn about +Y takes the nose the other way from the error's sense, so it is turned back by it.
+  const s = sine(-error / 2)
+  const c = cosine(-error / 2)
+  const { x, y, z, w } = rotation
+  body.setRotation({ x: c * x + s * z, y: c * y + s * w, z: c * z - s * x, w: c * w - s * y }, true)
+  body.setAngvel({ x: spin.x, y: 0, z: spin.z }, true)
 }
 
 export function disarm(seat: Gunner): void {

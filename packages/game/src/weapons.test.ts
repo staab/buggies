@@ -275,7 +275,8 @@ describe('weapons', () => {
     expect(Math.abs(swung)).toBeLessThan(2.5)
     expect(leaned).toBeGreaterThan(0.15)
     const speed = Math.hypot(going.x, going.z)
-    expect((forward.x * going.x + forward.z * going.z) / (Math.hypot(forward.x, forward.z) * speed)).toBeGreaterThan(0.8)
+    // It faces the way it is going, through the turn.
+    expect((forward.x * going.x + forward.z * going.z) / (Math.hypot(forward.x, forward.z) * speed)).toBeGreaterThan(0.98)
     // The arc is a wide one: the chord it has flown round says so.
     const chord = Math.hypot(position.x - from.x, position.z - from.z)
     expect(chord / (2 * Math.sin(Math.abs(swung) / 2))).toBeGreaterThan(wingsTurnRadius(a.tuning) * 0.5)
