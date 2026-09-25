@@ -10,12 +10,14 @@ import * as exact from '@buggies/physics'
 
 import { at } from './at.ts'
 import { RIVER_BANK_LAP } from './rivers.ts'
-import type { District, Heightfield, Lake, River, Road, RoadPoint } from './types.ts'
+import type { District, Heightfield, Lake, Mountain, River, Road, RoadPoint } from './types.ts'
 import { buildArterials } from './roads/arterials.ts'
+import { buildClimbs, seatAboutLot, terrace } from './roads/climbs.ts'
 import { carveRoadBeds, isSurfaceRoad, settleSurfaceRoads, surfaceRoadCells } from './roads/beds.ts'
 import {
   ARTERIAL_SALT,
   BRIDGE_CLEARANCE,
+  CLIMB_LOT,
   CROSS_WIDTH,
   DECK_HEIGHT,
   KIND_BRIDGE,
@@ -68,6 +70,9 @@ export {
   MAX_RAMP_CURVATURE,
   MAX_RAMP_GRADE,
   RAMP_WIDTH,
+  CLIMB_END,
+  CLIMB_LOT,
+  CLIMB_WIDTH,
   CROSS_WIDTH,
   INTERCHANGE_SEARCH,
   RAMP_PLATEAU,
@@ -75,6 +80,7 @@ export {
   RAMP_ALONG,
   ARTERIAL_WIDTH,
   MAX_ARTERIAL_GRADE,
+  MAX_CLIMB_GRADE,
   ARTERIAL_BRIDGE_GRADE,
   SURFACE_SHOULDER,
   STREET_WIDTH,
@@ -105,6 +111,7 @@ export function generateRoads(
   lakes: Lake[],
   seed = 0,
   districtOf?: Uint8Array,
+  mountains: Mountain[] = [],
 ): Road[] {
   const samples = routeLoop(districts, field, seaLevel)
   const count = samples.length
@@ -302,6 +309,13 @@ export function generateRoads(
     Math.max(...trimmed.map((road) => road.id)) + 1,
   )
   const roads = pruneStrandedStreets([...trimmed, ...connectors])
+  // A climb leaves an arterial where the arterial will finally be drawn,
+  // so it is laid only once junction alignment has moved every road. Its
+  // lot is cut into the hillside before the roads are bedded, so the road
+  // is bedded onto it.
+  const climbs = buildClimbs(field, seaLevel, mountains, roads, surfaceAt, Math.max(...roads.map((road) => road.id)) + 1)
+  for (const climb of climbs) if (climb.lot !== undefined) terrace(field, climb.lot, CLIMB_LOT.blend, climb.points)
+  roads.push(...climbs)
   // The highway cuts its bed first, clear of any ground a surface road is;
   // the surface roads are then settled into the ground.
   const painted = roads.filter(isSurfaceRoad)
@@ -318,6 +332,12 @@ export function generateRoads(
     surfaceRoadCells(field, painted),
     (structure) => structure === ROAD_BRIDGE,
   )
+  // A climb's lot is levelled again once the roads have shaped the ground about it, and the road put on it.
+  for (const climb of climbs) {
+    if (climb.lot === undefined) continue
+    terrace(field, climb.lot, CLIMB_LOT.blend, climb.points)
+    seatAboutLot(field, climb)
+  }
   return roads
 }
 

@@ -76,7 +76,7 @@ export interface RoadPoint {
  * over the land: an embankment, a bridge, a tunnel. Everything else is the
  * land, shaped to it and painted on.
  */
-export type RoadKind = 'highway' | 'ramp' | 'cross' | 'arterial' | 'street'
+export type RoadKind = 'highway' | 'ramp' | 'cross' | 'arterial' | 'street' | 'climb'
 
 /**
  * A carriageway. Highways form closed loops through every city; interchanges
@@ -92,6 +92,18 @@ export interface Road {
   width: number
   points: RoadPoint[]
   structure: Uint8Array
+  /** The level lot a mountain road ends in, terraced into the hillside with the road, for the car park built on it. */
+  lot?: Lot
+}
+
+/** A level rectangle terraced into the ground at `y`, turned by `yaw` about its centre like a footprint. */
+export interface Lot {
+  x: number
+  y: number
+  z: number
+  yaw: number
+  width: number
+  depth: number
 }
 
 /**
@@ -132,6 +144,8 @@ export type BuildingKind =
   | 'dam'
   | 'pylon'
   | 'station'
+  | 'wall'
+  | 'board'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']

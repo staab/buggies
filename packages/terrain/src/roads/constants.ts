@@ -182,6 +182,85 @@ export const ARTERIAL_WIDTH = 10
 /** Arterials climb more than highways but must never feel very steep. */
 export const MAX_ARTERIAL_GRADE = 0.08
 
+/**
+ * A mountain road: a winding climb from an arterial up a mountainside,
+ * traversing the slope at this grade and held to the steeper one. Where the way is barred the road turns back in a
+ * hairpin: half an ellipse this far up the slope, carrying on along it
+ * as far as lets the road climb the difference at grade, from these
+ * choices, allowing the ground to stand this much above or below the
+ * road where the loop ends, and refusing any that would stand it further
+ * than this.
+ */
+export const CLIMBS_MOST = 1
+export const CLIMB_WIDTH = 8
+export const CLIMB_GRADE = 0.13
+export const MAX_CLIMB_GRADE = 0.15
+export const CLIMB_STEP = 6
+export const CLIMB_HAIRPIN = {
+  up: 20,
+  outs: [12, 16, 20, 25, 30, 36],
+  samples: 10,
+  mismatch: 3,
+  misfit: 6,
+} as const
+/**
+ * Where a climb ends: this far below the peak, or wherever it can go no
+ * further having risen at least this much, cut back to the highest point
+ * where the ground (read this far across) falls away at least this
+ * steeply, for the view, and no more than this, for the parking, and no
+ * other road is within this.
+ */
+export const CLIMB_END = { belowPeak: 25, rise: 50, steepLeast: 0.15, steep: 0.45, across: 15, roadKeep: 30 } as const
+/**
+ * The lot a climb ends in: the road runs this far into it along its width
+ * and this far in from its uphill edge, level from where it enters, and
+ * the ground is blended back to the lot's level this far out from its
+ * edges. Its valley side is whichever side of the road's end the ground,
+ * this far out, has fallen at least this far below the road: the view. No
+ * earlier turn of the road may lie within it, but for its last stretch,
+ * this long.
+ */
+export const CLIMB_LOT = { width: 30, depth: 20, roadAlong: 15, roadIn: 5, blend: 8, look: 30, drop: 3, approach: 30 } as const
+/** Ground no steeper than this many times the grade is climbed straight up rather than traversed, and ground steeper than this is a cliff no road goes on. */
+export const CLIMB_STRAIGHT = 1.4
+export const CLIMB_STEEPEST = 2.2
+/** How far across the ground its lie is read for the road's direction, so that the road pays no mind to bumps smaller than this. */
+export const CLIMB_LOOK = 12
+/** How much of the road's parting from the ground a leg makes up each step, never turning down the slope past this share of the step to do so. */
+export const CLIMB_STEER = 0.3
+export const CLIMB_DIP = 0
+/** The turns tried, in order, to get round something in the way on gentle ground. */
+export const CLIMB_TURNS = [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2] as const
+/** How far a climb keeps from its own earlier legs, all but the stretch this far behind it, and the last hairpin with the stretch this far into it until this far past it. */
+export const CLIMB_SELF_KEEP = { apart: 12, behind: 40, into: 12, after: 60 } as const
+/** The climb is given up past this length or this many hairpins. */
+export const CLIMB_MOST_LENGTH = 3000
+export const CLIMB_MOST_HAIRPINS = 20
+/**
+ * Where a climb may start: arterial points this near the peak and this far
+ * below it, trying this many, this far apart, and each metre the bank
+ * rises off the arterial counting as this many metres further off. The
+ * road is level with the arterial until this far out, pays other roads no
+ * mind until this far, and leaves the arterial at least this angle off it
+ * for this long.
+ */
+export const CLIMB_START = {
+  reach: 400,
+  below: 50,
+  tries: 4,
+  apart: 80,
+  level: 14,
+  clear: 100,
+  leave: 20,
+  cos: Math.cos((35 * Math.PI) / 180),
+  sin: Math.sin((35 * Math.PI) / 180),
+  bankCost: 20,
+} as const
+/** A stream is crossed straight over where its far bank is within this many steps. */
+export const CLIMB_FORD = { steps: 6 } as const
+/** How far a climb keeps from every other road once it has left the arterial it starts from. */
+export const CLIMB_ROAD_KEEP = 24
+
 /** Water steps may rise a little faster than the road, as a bridge approach does. */
 export const ARTERIAL_BRIDGE_GRADE = 0.16
 

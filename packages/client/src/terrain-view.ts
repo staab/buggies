@@ -233,6 +233,10 @@ const CABLE_COLOR = new THREE.Color('#3a3c40')
 const CHAIR_COLOR = new THREE.Color('#d8452e')
 const STATION_COLOR = new THREE.Color('#b9b2a4')
 const LIFT = { crossbar: 6, sag: 1.2, chairEvery: 20, chairDrop: 3, speed: 2.5, cableOver: 0.4 } as const
+/** A viewpoint's low stone wall and the board on its posts. */
+const WALL_COLOR = new THREE.Color('#a9a59b')
+const BOARD_COLOR = new THREE.Color('#e4dcc6')
+const BOARD_FRAME = new THREE.Color('#6b4f34')
 /** How far a building's bottom is buried below the ground, as the generator does it. */
 const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
@@ -1335,6 +1339,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const dams = ofKind('dam')
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
+  const walls = ofKind('wall')
+  const boards = ofKind('board')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -2004,6 +2010,24 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       meshes.push(chairs)
     }
   }
+
+  // A viewpoint: its low wall as a run of stone, and its board as a panel in a frame on two posts.
+  meshes.push(
+    instanced(box, plain, walls, (wall, matrix, color) => {
+      boxAt(wall, matrix)
+      color.copy(WALL_COLOR)
+    }),
+    ...[-1, 1].map((side) =>
+      instanced(box, plain, boards, (board, matrix, color) => {
+        upright(board, matrix, 0.12, board.top - board.bottom, 0.12, (board.top + board.bottom) / 2, side * (board.width / 2 - 0.2))
+        color.copy(BOARD_FRAME)
+      }),
+    ),
+    instanced(box, plain, boards, (board, matrix, color) => {
+      upright(board, matrix, board.width, 1.2, board.depth * 0.5, board.top - 0.7)
+      color.copy(BOARD_COLOR)
+    }),
+  )
 
   return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)
 }
