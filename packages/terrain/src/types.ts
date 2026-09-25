@@ -148,12 +148,14 @@ export type BuildingKind =
   | 'board'
   | 'site'
   | 'crane'
+  | 'fountain'
+  | 'statue'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
 
 /** The kinds that are round towers rather than boxes, as wide as they are deep. */
-export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower']
+export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower', 'fountain']
 
 /** Kinds that stand in the air on something else, a canopy on its posts or a lintel on its stones, rather than on the ground. */
 export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy']
@@ -166,7 +168,8 @@ export const WATER_KINDS: readonly BuildingKind[] = ['boat', 'dam']
  * filling station's asphalt apron, or a car park with its bays marked out.
  */
 export interface Field {
-  kind: 'crop' | 'asphalt' | 'carpark'
+  /** A crop, a paved lot, a car park with its bays marked, or a city square paved over. */
+  kind: 'crop' | 'asphalt' | 'carpark' | 'square'
   x: number
   z: number
   yaw: number

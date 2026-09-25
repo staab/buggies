@@ -9,7 +9,7 @@ import { smoothstep } from './noise.ts'
 import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './types.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
-const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3, wall: 0.5, board: 2, site: 2.5 }
+const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, caravan: 2, post: 3, sign: 3, wall: 0.5, board: 2, site: 2.5, fountain: 1, statue: 2.4 }
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Road, TerrainMap } from './types.ts'
 
@@ -764,6 +764,39 @@ describe('sidewalks', () => {
       }
     }
     expect(laidSides).toBeGreaterThan(40)
+  })
+
+  it('pave a square at the heart of each city with a fountain in the middle, and stand statues in the parks and where the arterials come in', () => {
+    const fountains = map.buildings.filter((building) => building.kind === 'fountain')
+    const statues = map.buildings.filter((building) => building.kind === 'statue')
+    expect(fountains.length).toBeGreaterThanOrEqual(1)
+    expect(statues.length).toBeGreaterThanOrEqual(3)
+    const perCity = new Map<number, number>()
+    for (const fountain of fountains) {
+      expect(districtAt(fountain.x, fountain.z)).toBe(DISTRICT_CITY)
+      expect(fountain.width).toBe(8)
+      expect(fountain.depth).toBe(8)
+      expect(fountain.top).toBeLessThan(sampleHeight(map.heightfield, fountain.x, fountain.z) + 3)
+      // In the middle of a paved square, at the heart of its city, and the only one there.
+      const square = map.fields.find((field) => field.kind === 'square' && Math.hypot(field.x - fountain.x, field.z - fountain.z) < 1)
+      expect(square).toBeDefined()
+      expect(Math.min(square!.width, square!.depth)).toBeGreaterThan(fountain.width)
+      const city = map.districts.reduce((best, district) =>
+        Math.hypot(district.cx - fountain.x, district.cz - fountain.z) < Math.hypot(best.cx - fountain.x, best.cz - fountain.z) ? district : best,
+      )
+      expect(Math.hypot(city.cx - fountain.x, city.cz - fountain.z)).toBeLessThan(city.radius * 0.5)
+      perCity.set(city.id, (perCity.get(city.id) ?? 0) + 1)
+    }
+    for (const count of perCity.values()) expect(count).toBe(1)
+    let verges = 0
+    for (const statue of statues) {
+      expect(districtAt(statue.x, statue.z)).toBe(DISTRICT_CITY)
+      expect(statue.width).toBe(2)
+      expect(roadCrowding(map.roads, statue.x, statue.z)).toBeGreaterThan(1)
+      const arterials = map.roads.filter((road) => road.kind === 'arterial')
+      if (roadCrowding(arterials, statue.x, statue.z) < 3) verges++
+    }
+    expect(verges).toBeGreaterThanOrEqual(1)
   })
 
   it('raise tower cranes on building sites in the heart of a city: each in the middle of a hoarded lot, standing above every block within 50 m', () => {

@@ -240,6 +240,12 @@ const ROCK_STOPS: Stops = [
   { t: 0.5, color: new THREE.Color('#8a8078') },
   { t: 1, color: new THREE.Color('#7d6a55') },
 ]
+/** A fountain: a stone basin with water in it, a tier and a column above, and a spray of mist rising this fast and this far. */
+const BASIN_WATER = new THREE.Color('#3a7fb0')
+const FOUNTAIN = { tier: 1.6, column: 0.35, columnHeight: 1.5, mist: 14, mistRise: 2.6, mistSpeed: 0.7, mistSpread: 1.2 } as const
+/** A statue: a dark bronze figure on a stone plinth with a plaque. */
+const BRONZE = new THREE.Color('#4b3d2a')
+const PLAQUE = new THREE.Color('#8c7a4e')
 /** A building site: blue hoardings round it, and a tower crane in yellow or red by tone, its top turning this fast in radians a second. */
 const HOARDING_COLOR = new THREE.Color('#3b5b86')
 const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), new THREE.Color('#c23b2b')]
@@ -577,7 +583,7 @@ interface Crop {
 }
 
 function cropOf(field: Field): Crop {
-  if (field.kind === 'asphalt' || field.kind === 'carpark') {
+  if (field.kind === 'asphalt' || field.kind === 'carpark' || field.kind === 'square') {
     const rgb = { r: 0, g: 0, b: 0 }
     ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
     const plain: [number, number, number] = [rgb.r * 255, rgb.g * 255, rgb.b * 255]
@@ -2023,6 +2029,95 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       meshes.push(chairs)
     }
   }
+
+  // Fountains: the basin as the stone drum it is, water in it as a disc,
+  // a smaller tier on a column above it, and a mist of drops rising from
+  // the tier and drifting outward, over and over as the frames go by.
+  const fountains = ofKind('fountain')
+  const disc = new THREE.CylinderGeometry(1, 1, 1, 24)
+  const basinWater = new THREE.MeshStandardMaterial({ color: BASIN_WATER, transparent: true, opacity: 0.8, roughness: 0.2, metalness: 0.05 })
+  meshes.push(
+    instanced(disc, plain, fountains, (fountain, matrix, color) => {
+      matrix.makeScale(fountain.width / 2, fountain.top - fountain.bottom, fountain.width / 2)
+      matrix.setPosition(fountain.x, (fountain.top + fountain.bottom) / 2, fountain.z)
+      color.copy(STONE_COLOR)
+    }),
+    instanced(disc, basinWater, fountains, (fountain, matrix, color) => {
+      matrix.makeScale(fountain.width / 2 - 0.4, 0.2, fountain.width / 2 - 0.4)
+      matrix.setPosition(fountain.x, fountain.top - 0.2, fountain.z)
+      color.copy(BASIN_WATER)
+    }),
+    instanced(disc, plain, fountains, (fountain, matrix, color) => {
+      matrix.makeScale(FOUNTAIN.column, FOUNTAIN.columnHeight, FOUNTAIN.column)
+      matrix.setPosition(fountain.x, fountain.top + FOUNTAIN.columnHeight / 2, fountain.z)
+      color.copy(STONE_COLOR)
+    }),
+    instanced(disc, plain, fountains, (fountain, matrix, color) => {
+      matrix.makeScale(FOUNTAIN.tier, 0.4, FOUNTAIN.tier)
+      matrix.setPosition(fountain.x, fountain.top + FOUNTAIN.columnHeight + 0.2, fountain.z)
+      color.copy(STONE_COLOR)
+    }),
+  )
+  const drops = fountains.flatMap((fountain) => Array.from({ length: FOUNTAIN.mist }, (_, k) => ({ fountain, k })))
+  const mist = instanced(new THREE.SphereGeometry(0.12, 6, 4), basinWater, drops, ({ fountain }, matrix, color) => {
+    matrix.setPosition(fountain.x, fountain.top + FOUNTAIN.columnHeight, fountain.z)
+    color.copy(BASIN_WATER)
+  })
+  if (mist !== null) {
+    const matrix = new THREE.Matrix4()
+    mist.onBeforeRender = () => {
+      const time = performance.now() / 1000
+      for (const [i, { fountain, k }] of drops.entries()) {
+        const phase = (time * FOUNTAIN.mistSpeed + k / FOUNTAIN.mist) % 1
+        const angle = (k / FOUNTAIN.mist) * Math.PI * 2
+        const out = phase * FOUNTAIN.mistSpread
+        const up = FOUNTAIN.columnHeight + 0.4 + phase * FOUNTAIN.mistRise * (1 - phase * 0.5)
+        matrix.makeTranslation(fountain.x + Math.cos(angle) * out, fountain.top + up, fountain.z + Math.sin(angle) * out)
+        mist.setMatrixAt(i, matrix)
+      }
+      mist.instanceMatrix.needsUpdate = true
+    }
+    meshes.push(mist)
+  }
+
+  // Statues: a stone plinth with a plaque on its front, and on it a bronze
+  // figure standing: two legs, a body, a head, and one arm raised.
+  const statues = ofKind('statue')
+  const head = new THREE.SphereGeometry(0.24, 8, 6)
+  const figure = (statue: Building, matrix: THREE.Matrix4, sx: number, sy: number, sz: number, y: number, along = 0, across = 0): void =>
+    upright(statue, matrix, sx, sy, sz, statue.top + y, along, across)
+  meshes.push(
+    instanced(box, plain, statues, (statue, matrix, color) => {
+      boxAt(statue, matrix)
+      color.copy(STONE_COLOR)
+    }),
+    instanced(box, plain, statues, (statue, matrix, color) => {
+      upright(statue, matrix, 0.8, 0.5, 0.06, statue.top - 0.8, 0, statue.depth / 2)
+      color.copy(PLAQUE)
+    }),
+    ...[-0.2, 0.2].map((leg) =>
+      instanced(box, plain, statues, (statue, matrix, color) => {
+        figure(statue, matrix, 0.3, 0.9, 0.3, 0.45, leg)
+        color.copy(BRONZE)
+      }),
+    ),
+    instanced(box, plain, statues, (statue, matrix, color) => {
+      figure(statue, matrix, 0.75, 0.9, 0.42, 1.35)
+      color.copy(BRONZE)
+    }),
+    instanced(box, plain, statues, (statue, matrix, color) => {
+      figure(statue, matrix, 0.2, 0.85, 0.2, 1.95, 0.55)
+      color.copy(BRONZE)
+    }),
+    instanced(box, plain, statues, (statue, matrix, color) => {
+      figure(statue, matrix, 0.2, 0.8, 0.2, 1.3, -0.5)
+      color.copy(BRONZE)
+    }),
+    instanced(head, plain, statues, (statue, matrix, color) => {
+      figure(statue, matrix, 1, 1, 1, 2.05)
+      color.copy(BRONZE)
+    }),
+  )
 
   // Building sites: the hoardings as the slab they are, and a tower crane on
   // each: a lattice mast of four columns braced every few metres, and on top
