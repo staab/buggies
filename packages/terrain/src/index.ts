@@ -108,4 +108,5 @@ export type {
   TerrainMap,
   TerrainOptions,
   Tree,
+  Rock,
 } from './types.ts'

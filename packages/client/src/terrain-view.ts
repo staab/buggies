@@ -39,6 +39,7 @@ import {
   type Road,
   type RoadPoint,
   type TerrainMap,
+  type Rock,
   type Tree,
 } from '@buggies/terrain'
 import * as THREE from 'three'
@@ -233,6 +234,12 @@ const CABLE_COLOR = new THREE.Color('#3a3c40')
 const CHAIR_COLOR = new THREE.Color('#d8452e')
 const STATION_COLOR = new THREE.Color('#b9b2a4')
 const LIFT = { crossbar: 6, sag: 1.2, chairEvery: 20, chairDrop: 3, speed: 2.5, cableOver: 0.4 } as const
+/** Rocks: grey through brown by tone, a boulder drawn lumpier than a scree stone. */
+const ROCK_STOPS: Stops = [
+  { t: 0, color: new THREE.Color('#6e6a64') },
+  { t: 0.5, color: new THREE.Color('#8a8078') },
+  { t: 1, color: new THREE.Color('#7d6a55') },
+]
 /** A viewpoint's low stone wall and the board on its posts. */
 const WALL_COLOR = new THREE.Color('#a9a59b')
 const BOARD_COLOR = new THREE.Color('#e4dcc6')
@@ -2011,6 +2018,23 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }
   }
 
+  // Rocks: a low-poly lump each, boulders stretched unevenly and turned, scree small and dense.
+  const lump = new THREE.IcosahedronGeometry(1, 0)
+  const boulders = map.rocks.filter((rock) => rock.kind === 'boulder')
+  const scree = map.rocks.filter((rock) => rock.kind === 'scree')
+  const rockPlace = (rock: Rock, matrix: THREE.Matrix4, color: THREE.Color): void => {
+    const half = rock.size / 2
+    matrix.makeRotationY(rock.yaw)
+    matrix.scale(new THREE.Vector3(half * (1 + rock.tone * 0.4), half, half * (1 - rock.tone * 0.3)))
+    matrix.setPosition(rock.x, rock.bottom + half, rock.z)
+    sampleRamp(rock.tone, ROCK_STOPS, color)
+  }
+  const boulderMesh = instanced(lump, plain, boulders, rockPlace)
+  if (boulderMesh !== null) boulderMesh.name = 'boulders'
+  const screeMesh = instanced(lump, plain, scree, rockPlace)
+  if (screeMesh !== null) screeMesh.name = 'scree'
+  meshes.push(boulderMesh, screeMesh)
+
   // A viewpoint: its low wall as a run of stone, and its board as a panel in a frame on two posts.
   meshes.push(
     instanced(box, plain, walls, (wall, matrix, color) => {
@@ -2201,14 +2225,15 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   }
 
   // Everything on the island takes the sun's shadows; everything but the
-  // ground itself, the water and the tunnel lights throws them. The ground
-  // is one mesh the size of the island, and drawing it into every shadow
-  // map would cost more than its own shadows are worth.
+  // ground itself, the scree, the water and the tunnel lights throws them.
+  // The ground is one mesh the size of the island, and drawing it into
+  // every shadow map would cost more than its own shadows are worth; the
+  // scree is hundreds of stones too small to throw one worth seeing.
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return
     if (node.name === 'lights' || node.material === waterMaterial) return
     node.receiveShadow = true
-    node.castShadow = node.name !== 'ground'
+    node.castShadow = node.name !== 'ground' && node.name !== 'scree'
   })
 
   return group

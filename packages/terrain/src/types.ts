@@ -267,6 +267,23 @@ export interface TerrainOptions {
 }
 
 /** Everything needed to render or simulate a map. Pure data, fully serializable. */
+/**
+ * A rock on the bare high ground: a boulder, which a car hits, or a stone
+ * of a scree field, which it rattles over. About as tall as it is wide,
+ * and standing a little way into the ground.
+ */
+export interface Rock {
+  kind: 'boulder' | 'scree'
+  x: number
+  z: number
+  bottom: number
+  /** Across, in metres. */
+  size: number
+  yaw: number
+  /** A shade for whoever draws it, 0 to 1. */
+  tone: number
+}
+
 export interface TerrainMap {
   seed: number
   size: number
@@ -282,6 +299,7 @@ export interface TerrainMap {
   roads: Road[]
   buildings: Building[]
   trees: Tree[]
+  rocks: Rock[]
   ramps: Ramp[]
   sidewalks: Sidewalk[]
   fields: Field[]
