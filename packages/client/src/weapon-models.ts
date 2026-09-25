@@ -39,6 +39,40 @@ export function buildEngine(): { model: THREE.Group; flame: THREE.Mesh } {
   return { model, flame }
 }
 
+/** A siren: a brass horn on a small base, its bell ahead. */
+export function buildHorn(): THREE.Group {
+  const group = new THREE.Group()
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.4), metal(STEEL))
+  group.add(base)
+  const bell = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.6, 14, 1, true), metal(BRASS, 0.3))
+  bell.rotation.x = Math.PI / 2
+  bell.position.set(0, 0.24, -0.35)
+  group.add(bell)
+  const throat = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 8), metal(BRASS, 0.3))
+  throat.rotation.x = Math.PI / 2
+  throat.position.set(0, 0.24, 0.1)
+  group.add(throat)
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh) node.castShadow = true
+  })
+  return group
+}
+
+/** A shockwave: a dark speaker box with a grille on its face, over the roof. */
+export function buildSpeaker(): THREE.Group {
+  const group = new THREE.Group()
+  const cabinet = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.5, 0.45), metal(STEEL, 0.7))
+  cabinet.position.y = 0.25
+  group.add(cabinet)
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 0.03), metal(BARREL, 0.9))
+  grille.position.set(0, 0.25, -0.24)
+  group.add(grille)
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh) node.castShadow = true
+  })
+  return group
+}
+
 /** Wings: a pair of pale, swept, slightly raised wings, either side of the roof. */
 export function buildWings(): THREE.Group {
   const group = new THREE.Group()

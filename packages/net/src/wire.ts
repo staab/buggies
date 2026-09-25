@@ -41,7 +41,7 @@ export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 17
-export const SNAPSHOT_VEHICLE_BYTES = 75
+export const SNAPSHOT_VEHICLE_BYTES = 84
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 29
 export const SNAPSHOT_REMOVED_BYTES = 2
@@ -97,6 +97,14 @@ export interface VehicleSnapshot {
   /** What it is carrying, and how long the machine gun has left. */
   weapon: Weapon
   ammoTicks: number
+  /** Its own action: how long it has left, how long before it may go again, and whether its lights are on. */
+  actionTicks: number
+  cooldownTicks: number
+  lightsOn: boolean
+  /** How long it is stunned for, and slowed for, by this share of a full slow. */
+  stunnedTicks: number
+  slowedTicks: number
+  slowedBy: number
   /** What the driver was asking for on the tick this was taken. */
   appliedInput: VehicleInput
 }
@@ -430,6 +438,12 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(vehicle.score, 0xffff))
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
     writer.u16(Math.min(Math.max(vehicle.ammoTicks, 0), 0xffff))
+    writer.u16(Math.min(Math.max(vehicle.actionTicks, 0), 0xffff))
+    writer.u16(Math.min(Math.max(vehicle.cooldownTicks, 0), 0xffff))
+    writer.u16(Math.min(Math.max(vehicle.stunnedTicks, 0), 0xffff))
+    writer.u8(Math.min(Math.max(vehicle.slowedTicks, 0), 0xff))
+    writer.u8(Math.round(Math.min(Math.max(vehicle.slowedBy, 0), 1) * 255))
+    writer.u8(vehicle.lightsOn ? 1 : 0)
     writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
@@ -505,6 +519,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const weapon = WEAPON_CODES[reader.u8()]
     if (weapon === undefined) return null
     const ammoTicks = reader.u16()
+    const actionTicks = reader.u16()
+    const cooldownTicks = reader.u16()
+    const stunnedTicks = reader.u16()
+    const slowedTicks = reader.u8()
+    const slowedBy = reader.u8() / 255
+    const lightsOn = (reader.u8() & 1) === 1
     vehicles.push({
       seat,
       epoch,
@@ -518,6 +538,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       score,
       weapon,
       ammoTicks,
+      actionTicks,
+      cooldownTicks,
+      lightsOn,
+      stunnedTicks,
+      slowedTicks,
+      slowedBy,
       appliedInput: reader.input(createVehicleInput()),
     })
   }

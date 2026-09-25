@@ -53,6 +53,12 @@ const snapshot: SnapshotMessage = {
       score: 60000,
       weapon: 'machineGun',
       ammoTicks: 1234,
+      actionTicks: 180,
+      cooldownTicks: 600,
+      lightsOn: true,
+      stunnedTicks: 300,
+      slowedTicks: 2,
+      slowedBy: 0.5,
       appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, fire: true },
     },
     {
@@ -68,6 +74,12 @@ const snapshot: SnapshotMessage = {
       score: 3,
       weapon: 'none',
       ammoTicks: 0,
+      actionTicks: 0,
+      cooldownTicks: 0,
+      lightsOn: false,
+      stunnedTicks: 0,
+      slowedTicks: 0,
+      slowedBy: 0,
       appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, fire: false },
     },
   ],
@@ -153,6 +165,12 @@ describe('wire', () => {
       expect(got.profile).toBe(vehicle.profile)
       expect(got.weapon).toBe(vehicle.weapon)
       expect(got.ammoTicks).toBe(vehicle.ammoTicks)
+      expect(got.actionTicks).toBe(vehicle.actionTicks)
+      expect(got.cooldownTicks).toBe(vehicle.cooldownTicks)
+      expect(got.lightsOn).toBe(vehicle.lightsOn)
+      expect(got.stunnedTicks).toBe(vehicle.stunnedTicks)
+      expect(got.slowedTicks).toBe(vehicle.slowedTicks)
+      expect(got.slowedBy).toBeCloseTo(vehicle.slowedBy, 2)
       expect(got.wrecked).toBe(vehicle.wrecked)
       expect(got.score).toBe(vehicle.score)
       expect(got.damage).toBeCloseTo(vehicle.damage, 2)

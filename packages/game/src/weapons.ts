@@ -25,10 +25,10 @@ import {
 import { PICKUP_HEIGHT, LOOSE_IDS, pickupSeed, type Loose } from './pickups.ts'
 
 /** What a car can be carrying over its roof: nothing, or something won with bananas. */
-export type Weapon = 'none' | 'rocket' | 'machineGun' | 'bomb' | 'engine' | 'wings'
+export type Weapon = 'none' | 'rocket' | 'machineGun' | 'bomb' | 'engine' | 'wings' | 'shockwave' | 'siren'
 
 /** What can be won, in the order the HUD rolls through them. */
-export const WEAPONS: readonly Weapon[] = ['rocket', 'machineGun', 'bomb', 'engine', 'wings']
+export const WEAPONS: readonly Weapon[] = ['rocket', 'machineGun', 'bomb', 'engine', 'wings', 'shockwave', 'siren']
 
 export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   none: '',
@@ -37,6 +37,8 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   bomb: 'Bomb',
   engine: 'Rocket engine',
   wings: 'Wings',
+  shockwave: 'Shockwave',
+  siren: 'Siren',
 }
 
 /** How far behind the middle of the car a bomb is dropped. */
@@ -91,6 +93,54 @@ export const WINGS_CLIMB_SPEED = 8
 export const WINGS_CLIMB_PUSH = 6
 export const WINGS_TURN = 1.6
 export const WINGS_THRUST = 9
+
+/**
+ * The siren sounds this long, held, and slows every other car within this
+ * of it by this much; the shockwave stuns every car within this for this
+ * long. A slowed car is held back this hard, in metres a second each
+ * second at a full slow, and stays slowed this long after the siren has
+ * passed it.
+ */
+export const SIREN_TICKS = 60 * 10
+export const SIREN_RANGE = 30
+export const SIREN_SLOW = 0.5
+export const SHOCKWAVE_RANGE = 30
+export const SHOCKWAVE_STUN_TICKS = 60 * 5
+export const SLOW_DRAG = 9
+export const SLOW_HOLD_TICKS = 2
+
+/** What a car does with the fire key when it carries nothing: its own action, by the vehicle. */
+export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'fly' | 'horn' | 'bomb'
+export interface OwnAction {
+  kind: OwnActionKind
+  label: string
+  /** How long it goes on for, in ticks: nothing for one that goes all at once, or comes on and off. */
+  activeTicks: number
+  /** How long before it may go again. */
+  cooldownTicks: number
+}
+export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
+  tank: { kind: 'missile', label: 'Missile', activeTicks: 0, cooldownTicks: 60 * 10 },
+  goKart: { kind: 'hop', label: 'Hop', activeTicks: 6, cooldownTicks: 0 },
+  raceCar: { kind: 'boost', label: 'Boost', activeTicks: 60 * 3, cooldownTicks: 60 * 10 },
+  police: { kind: 'lights', label: 'Lights', activeTicks: 0, cooldownTicks: 0 },
+  ambulance: { kind: 'lights', label: 'Lights', activeTicks: 0, cooldownTicks: 0 },
+  firetruck: { kind: 'lights', label: 'Lights', activeTicks: 0, cooldownTicks: 0 },
+  sportsCar: { kind: 'gun', label: 'Machine gun', activeTicks: 60 * 3, cooldownTicks: 60 * 10 },
+  smallCar: { kind: 'fly', label: 'Wings', activeTicks: 60 * 5, cooldownTicks: 60 * 30 },
+  semi: { kind: 'horn', label: 'Horn', activeTicks: 60, cooldownTicks: 60 * 10 },
+  pickup: { kind: 'bomb', label: 'Bomb', activeTicks: 0, cooldownTicks: 60 * 30 },
+}
+/** The actions that go on while the key is held. */
+const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'fly']
+/** The hop: this much speed straight up, from the ground. */
+export const HOP_SPEED = 4
+/** The race car's boost: this much of the rocket engine's push. */
+export const BOOST_PUSH = ENGINE_PUSH * 0.6
+/** The semi's horn stuns every car within this for this long; an emergency vehicle's lights slow every car within the siren's reach by this much. */
+export const HORN_RANGE = 10
+export const HORN_STUN_TICKS = 60
+export const EMERGENCY_SLOW = 0.2
 /**
  * How far a shot carries, and how far off dead ahead the gun swings to
  * pick out a car: it trains itself on the nearest one in that sweep, and
@@ -132,6 +182,16 @@ export interface Gunner {
   ammoTicks: number
   /** The seat the machine gun is trained on, or none. */
   aimTarget: number
+  /** The car's own action: how long it has left, how long before it may go again, and whether its lights are on. */
+  actionTicks: number
+  cooldownTicks: number
+  lightsOn: boolean
+  /** Whether the fire key was down last tick, so that a press is told from a hold. */
+  fireHeld: boolean
+  /** How long it is stunned for, taking no driving, and slowed for, held back by this share of a full slow. */
+  stunnedTicks: number
+  slowedTicks: number
+  slowedBy: number
 }
 
 /** A rocket in the air: from whom, after whom, and where it is going. */
@@ -190,9 +250,25 @@ export function ammoFor(weapon: Weapon): number {
       return ENGINE_BURN_TICKS
     case 'wings':
       return WINGS_FLIGHT_TICKS
+    case 'siren':
+      return SIREN_TICKS
     default:
       return 0
   }
+}
+
+/** What the car does with the fire key when it carries nothing. */
+export function ownAction(seat: Gunner): OwnAction {
+  return OWN_ACTIONS[seat.profile]
+}
+
+/**
+ * Whether the car's own lasting action is going: the boost, the wings or
+ * the gun, with time left and the key held. A wreck does nothing.
+ */
+export function acting(seat: Gunner, fire = seat.vehicle.command.fire): boolean {
+  if (seat.weapon !== 'none' || seat.actionTicks <= 0 || !fire || seat.vehicle.wrecked) return false
+  return LASTING.includes(ownAction(seat).kind)
 }
 
 /** Give a seat what it has won, with however long it lasts. */
@@ -207,8 +283,16 @@ export function arm(seat: Gunner, weapon: Weapon): void {
  * left of them. A wreck burns nothing.
  */
 export function burning(seat: Gunner, fire = seat.vehicle.command.fire): boolean {
-  if (seat.weapon !== 'engine' && seat.weapon !== 'wings') return false
-  return fire && seat.ammoTicks > 0 && !seat.vehicle.wrecked
+  if (seat.weapon === 'engine' || seat.weapon === 'wings') return fire && seat.ammoTicks > 0 && !seat.vehicle.wrecked
+  if (!acting(seat, fire)) return false
+  const { kind } = ownAction(seat)
+  return kind === 'boost' || kind === 'fly'
+}
+
+/** Whether the car is held up by wings: the ones it has won, or its own. */
+export function lifting(seat: Gunner, fire = seat.vehicle.command.fire): boolean {
+  if (seat.weapon === 'wings') return burning(seat, fire)
+  return acting(seat, fire) && ownAction(seat).kind === 'fly'
 }
 
 /**
@@ -221,9 +305,10 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
   if (!burning(seat)) return
   const { vehicle, tuning } = seat
   const { body, frame, command } = vehicle
-  if (seat.weapon === 'engine') {
+  const boosting = seat.weapon === 'none' && ownAction(seat).kind === 'boost'
+  if (seat.weapon === 'engine' || boosting) {
     const headroom = clamp(1 - vehicle.speed / (tuning.maxSpeed * ENGINE_TOP_SPEED), 0, 1)
-    addForceAlong(body, frame.forward, tuning.mass * ENGINE_PUSH * headroom)
+    addForceAlong(body, frame.forward, tuning.mass * (boosting ? BOOST_PUSH : ENGINE_PUSH) * headroom)
     return
   }
   const climb = clamp(1 - frame.linearVelocity.y / WINGS_CLIMB_SPEED, 0, 1)
@@ -237,6 +322,39 @@ export function disarm(seat: Gunner): void {
   seat.weapon = 'none'
   seat.ammoTicks = 0
   seat.aimTarget = NO_TARGET
+}
+
+/** Put a seat's own action, and whatever has been done to it, back to nothing. */
+export function restAction(seat: Gunner): void {
+  seat.actionTicks = 0
+  seat.cooldownTicks = 0
+  seat.lightsOn = false
+  seat.fireHeld = false
+  seat.stunnedTicks = 0
+  seat.slowedTicks = 0
+  seat.slowedBy = 0
+}
+
+/** Whether a car is stunned: it takes no driving. */
+export function stunned(seat: Gunner): boolean {
+  return seat.stunnedTicks > 0
+}
+
+/**
+ * What has been done to a car by others, for the step: a stun wears off,
+ * and a slow holds the car back, dragging against the way it is going,
+ * until it wears off too.
+ */
+export function hinder(seat: Gunner): void {
+  if (seat.stunnedTicks > 0) seat.stunnedTicks -= 1
+  if (seat.slowedTicks <= 0) return
+  const { vehicle, tuning } = seat
+  if (vehicle.speed > 0.1) {
+    vnormalize(heading, vehicle.frame.linearVelocity)
+    addForceAlong(vehicle.body, heading, -tuning.mass * SLOW_DRAG * seat.slowedBy)
+  }
+  seat.slowedTicks -= 1
+  if (seat.slowedTicks === 0) seat.slowedBy = 0
 }
 
 /** Where a car's weapon rides: over the middle of its roof. */
@@ -321,8 +439,32 @@ function shoot(arena: Battlefield, seat: Gunner): void {
   arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? target.id : NO_TARGET })
 }
 
+/** Every other car within reach of a seat, in play, given to a hand. */
+function reach(arena: Battlefield, seat: Gunner, range: number, hit: (other: Gunner) => void): void {
+  for (const other of arena.seats) {
+    if (other === seat || !other.occupied || other.vehicle.wrecked) continue
+    vsub(toward, other.vehicle.frame.position, seat.vehicle.frame.position)
+    if (vlength(toward) <= range) hit(other)
+  }
+}
+
+/** Stun a car for this long, or longer if it already is. */
+const stun =
+  (ticks: number) =>
+  (other: Gunner): void => {
+    other.stunnedTicks = Math.max(other.stunnedTicks, ticks)
+  }
+
+/** Slow a car by this share for the moment, or more if it already is. */
+const slow =
+  (share: number) =>
+  (other: Gunner): void => {
+    other.slowedTicks = SLOW_HOLD_TICKS
+    other.slowedBy = Math.max(other.slowedBy, share)
+  }
+
 /** A rocket goes: from over the roof, straight ahead, after whoever is there to go after. */
-function launch(arena: Battlefield, seat: Gunner): void {
+function launchRocket(arena: Battlefield, seat: Gunner): void {
   muzzlePoint(muzzle, seat)
   arena.rockets.push({
     id: rocketId(arena.tick, seat.id),
@@ -332,7 +474,6 @@ function launch(arena: Battlefield, seat: Gunner): void {
     velocity: vscale(v3(), seat.vehicle.frame.forward, ROCKET_SPEED),
     bornTick: arena.tick,
   })
-  disarm(seat)
 }
 
 /**
@@ -342,7 +483,7 @@ function launch(arena: Battlefield, seat: Gunner): void {
  * has landed, which gives the car that dropped it a moment to get clear;
  * after that it goes off on anyone, that car too.
  */
-function drop(arena: Battlefield, seat: Gunner): void {
+function dropBomb(arena: Battlefield, seat: Gunner): void {
   const { position, forward } = seat.vehicle.frame
   const x = position.x - forward.x * BOMB_DROP_BACK
   const z = position.z - forward.z * BOMB_DROP_BACK
@@ -355,40 +496,124 @@ function drop(arena: Battlefield, seat: Gunner): void {
     bornTick: arena.tick,
   })
   arena.looseNext = (arena.looseNext + 1) % LOOSE_IDS
-  disarm(seat)
 }
 
 /**
- * Fire whatever the button is held on. A rocket goes the moment it is
- * asked for, and a bomb is dropped the moment it is; the machine gun,
- * trained on the nearest car ahead whether or not it is firing, fires as
- * long as the button is held and the ammunition lasts, a shot every few
- * ticks, and is gone when it runs dry. A wreck holds nothing.
+ * The car's own action, carrying nothing: what its vehicle does with the
+ * fire key. A press starts it, if it is not cooling down: the missile, the
+ * bomb and the horn go at once, the hop only from the ground, the lights
+ * come on or go off, and the boost, the wings and the gun go on as long as
+ * the key is held and their time lasts, the gun trained on the car ahead
+ * meanwhile. The horn stuns the cars near it, and the lights, while on,
+ * slow them.
+ */
+function act(arena: Battlefield, seat: Gunner, pressed: boolean): void {
+  const own = ownAction(seat)
+  const { fire } = seat.vehicle.command
+  const ready = pressed && seat.cooldownTicks === 0
+  switch (own.kind) {
+    case 'missile':
+      if (!ready) return
+      launchRocket(arena, seat)
+      seat.cooldownTicks = own.cooldownTicks
+      return
+    case 'bomb':
+      if (!ready) return
+      dropBomb(arena, seat)
+      seat.cooldownTicks = own.cooldownTicks
+      return
+    case 'hop':
+      if (seat.actionTicks > 0) seat.actionTicks -= 1
+      if (!pressed || seat.vehicle.groundedCount === 0) return
+      seat.vehicle.body.applyImpulse(vscale(heading, seat.vehicle.frame.up, seat.tuning.mass * HOP_SPEED), true)
+      seat.actionTicks = own.activeTicks
+      return
+    case 'horn':
+      if (seat.actionTicks > 0) seat.actionTicks -= 1
+      if (!ready) return
+      reach(arena, seat, HORN_RANGE, stun(HORN_STUN_TICKS))
+      seat.actionTicks = own.activeTicks
+      seat.cooldownTicks = own.cooldownTicks
+      return
+    case 'lights':
+      if (pressed) seat.lightsOn = !seat.lightsOn
+      if (seat.lightsOn) reach(arena, seat, SIREN_RANGE, slow(EMERGENCY_SLOW))
+      return
+    default: {
+      if (ready && seat.actionTicks === 0) {
+        seat.actionTicks = own.activeTicks
+        seat.cooldownTicks = own.cooldownTicks
+      }
+      if (own.kind === 'gun') {
+        muzzlePoint(muzzle, seat)
+        seat.aimTarget = seat.actionTicks > 0 ? pickOut(arena, seat, muzzle, MACHINE_GUN_RANGE, MACHINE_GUN_SWEEP_COS) : NO_TARGET
+      }
+      if (seat.actionTicks === 0) return
+      if (!fire) {
+        seat.actionTicks = 0
+        seat.aimTarget = NO_TARGET
+        return
+      }
+      if (own.kind === 'gun' && seat.actionTicks % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat)
+      seat.actionTicks -= 1
+      if (seat.actionTicks === 0) seat.aimTarget = NO_TARGET
+    }
+  }
+}
+
+/**
+ * Fire whatever the button is held on, or the car's own action when it
+ * holds nothing. A rocket goes the moment it is asked for, a bomb is
+ * dropped the moment it is, and the shockwave goes off at once, stunning
+ * every car near; the machine gun, trained on the nearest car ahead whether
+ * or not it is firing, fires as long as the button is held and the
+ * ammunition lasts, a shot every few ticks, and is gone when it runs dry;
+ * the siren sounds as long as it is held, slowing every car near, until it
+ * runs out. A cooldown runs down meanwhile. A wreck holds nothing.
  */
 export function fireWeapons(arena: Battlefield): void {
   arena.shots.length = 0
   for (const seat of arena.seats) {
-    if (!seat.occupied || seat.weapon === 'none') continue
+    if (!seat.occupied) continue
+    const { fire } = seat.vehicle.command
+    const pressed = fire && !seat.fireHeld
+    seat.fireHeld = fire
+    if (seat.cooldownTicks > 0) seat.cooldownTicks -= 1
     if (seat.vehicle.wrecked) {
       disarm(seat)
+      seat.actionTicks = 0
+      seat.lightsOn = false
+      continue
+    }
+    if (seat.weapon === 'none') {
+      act(arena, seat, pressed)
       continue
     }
     if (seat.weapon === 'machineGun') {
       muzzlePoint(muzzle, seat)
       seat.aimTarget = pickOut(arena, seat, muzzle, MACHINE_GUN_RANGE, MACHINE_GUN_SWEEP_COS)
     }
-    if (!seat.vehicle.command.fire) continue
+    if (!fire) continue
     if (seat.weapon === 'rocket') {
-      launch(arena, seat)
+      launchRocket(arena, seat)
+      disarm(seat)
       continue
     }
     if (seat.weapon === 'bomb') {
-      drop(arena, seat)
+      dropBomb(arena, seat)
+      disarm(seat)
+      continue
+    }
+    if (seat.weapon === 'shockwave') {
+      reach(arena, seat, SHOCKWAVE_RANGE, stun(SHOCKWAVE_STUN_TICKS))
+      disarm(seat)
       continue
     }
     // The rest last as long as the button is held: the gun firing, the
-    // engine burning, the wings holding the car up, until they run out.
+    // engine burning, the wings holding the car up, the siren sounding,
+    // until they run out.
     if (seat.weapon === 'machineGun' && seat.ammoTicks % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat)
+    if (seat.weapon === 'siren') reach(arena, seat, SIREN_RANGE, slow(SIREN_SLOW))
     seat.ammoTicks -= 1
     if (seat.ammoTicks <= 0) disarm(seat)
   }

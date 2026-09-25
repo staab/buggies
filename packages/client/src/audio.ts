@@ -302,6 +302,59 @@ function noiseBuffer(context: AudioContext): AudioBuffer {
 /** The three notes of a banana taken: a bright little rising chime. */
 const CHIME = [1318.5, 1661.2, 1975.5]
 
+/** A siren: a tone wailing up and down between these, this many times a second. */
+const SIREN = { low: 620, high: 960, wail: 0.9 } as const
+
+/** An emergency vehicle's siren, silent until it is on. */
+export class SirenVoice {
+  private readonly tone: OscillatorNode
+  private readonly wail: OscillatorNode
+  private readonly gain: GainNode
+  private stopped = false
+
+  constructor(
+    private readonly context: AudioContext,
+    output: AudioNode,
+  ) {
+    const now = context.currentTime
+    this.gain = context.createGain()
+    this.gain.gain.value = 0
+    this.gain.connect(output)
+    this.tone = context.createOscillator()
+    this.tone.type = 'sawtooth'
+    this.tone.frequency.value = (SIREN.low + SIREN.high) / 2
+    const soften = context.createBiquadFilter()
+    soften.type = 'lowpass'
+    soften.frequency.value = 2400
+    this.tone.connect(soften).connect(this.gain)
+    // The wail: the tone swept up and down about its middle.
+    this.wail = context.createOscillator()
+    this.wail.type = 'triangle'
+    this.wail.frequency.value = SIREN.wail
+    const sweep = context.createGain()
+    sweep.gain.value = (SIREN.high - SIREN.low) / 2
+    this.wail.connect(sweep).connect(this.tone.frequency)
+    this.tone.start(now)
+    this.wail.start(now)
+  }
+
+  /** Whether it is on, and how far off. */
+  set(on: boolean, distance = 0): void {
+    if (this.stopped) return
+    this.gain.gain.setTargetAtTime(on ? 0.18 * earshot(distance) : 0, this.context.currentTime, 0.05)
+  }
+
+  stop(): void {
+    if (this.stopped) return
+    this.stopped = true
+    const now = this.context.currentTime
+    this.gain.gain.setTargetAtTime(0, now, 0.05)
+    this.tone.stop(now + 0.3)
+    this.wail.stop(now + 0.3)
+    setTimeout(() => this.gain.disconnect(), 400)
+  }
+}
+
 /**
  * The sound of the game. It has to be unlocked by something the player does
  * before a browser will let it be heard, so the first key or click does that.
@@ -347,6 +400,53 @@ export class Sound {
   /** A rocket engine, silent until lit. */
   thrust(): ThrustVoice {
     return new ThrustVoice(this.context, this.noise, this.master)
+  }
+
+  /** A siren, silent until it is on. */
+  siren(): SirenVoice {
+    return new SirenVoice(this.context, this.master)
+  }
+
+  /** An air horn, this far off: two low notes together, blown for a second. */
+  horn(distance = 0): void {
+    const loudness = 0.5 * earshot(distance)
+    if (loudness <= 0.01) return
+    const { context } = this
+    const now = context.currentTime
+    for (const frequency of [196, 247]) {
+      const note = context.createOscillator()
+      note.type = 'sawtooth'
+      note.frequency.value = frequency
+      const filter = context.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.value = 900
+      const gain = context.createGain()
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(loudness, now + 0.05)
+      gain.gain.setValueAtTime(loudness, now + 0.85)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0)
+      note.connect(filter).connect(gain).connect(this.master)
+      note.start(now)
+      note.stop(now + 1.05)
+    }
+  }
+
+  /** A hop, this far off: a short springy note dropping away. */
+  hop(distance = 0): void {
+    const loudness = 0.4 * earshot(distance)
+    if (loudness <= 0.01) return
+    const { context } = this
+    const now = context.currentTime
+    const note = context.createOscillator()
+    note.type = 'sine'
+    note.frequency.setValueAtTime(320, now)
+    note.frequency.exponentialRampToValueAtTime(140, now + 0.18)
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(loudness, now)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2)
+    note.connect(gain).connect(this.master)
+    note.start(now)
+    note.stop(now + 0.22)
   }
 
   /** Something blowing up, this far off: a bang, a rumble, and a thump underneath. */
