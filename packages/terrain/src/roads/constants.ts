@@ -118,6 +118,9 @@ export const RAMP_TURN_RADIUS = 40
  */
 export const RAMP_UNDER_DECK = 0.05
 
+/** How far along a ramp its lane may still lie under or against the deck it leaves. */
+export const RAMP_LANE_REACH = 45
+
 /**
  * Half-length of the cross road either side of the underpass: past the
  * ramps' landings, out to where the arterials take over. Held where it was

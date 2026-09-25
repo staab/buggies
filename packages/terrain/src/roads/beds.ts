@@ -56,6 +56,7 @@ export function carveRoadBeds(
   roads: Road[],
   keep: Uint8Array,
   carved: (structure: number) => boolean = (structure) => structure !== ROAD_TUNNEL,
+  wallHeld: (x: number, z: number) => boolean = () => false,
 ): void {
   const { width, depth, cellSize, heights } = field
   // Within one road only the nearest stretch cuts a cell: where a deck
@@ -111,7 +112,11 @@ export function carveRoadBeds(
           if (nearest[cell] === Infinity) touched.push(cell)
           nearest[cell] = distance
           const bed = a.y + (b.y - a.y) * t
-          cut[cell] = bed - clearanceAt(x, z) + Math.max(0, distance - flat) * CUT_SLOPE
+          // The cut's wall rises again beyond the flat, except where it is
+          // held back: beside a ramp's lane running out from under the
+          // deck, a wall would stand proud of the deck the lane leaves.
+          const wall = wallHeld(x, z) ? 0 : Math.max(0, distance - flat) * CUT_SLOPE
+          cut[cell] = bed - clearanceAt(x, z) + wall
         }
       }
     }
@@ -250,7 +255,7 @@ export function surfaceRoadCells(field: Heightfield, roads: Road[]): Uint8Array 
  * Cells in `keepOff` are never touched: the ground under a built road stays
  * as it was cut.
  */
-function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array): void {
+function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array, built: Road[]): void {
   const { width, depth, cellSize, heights } = field
   const original = Float32Array.from(heights)
   const roadWeightSum = new Float32Array(width * depth)
@@ -268,6 +273,7 @@ function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array): 
     const half = road.width / 2
     const flat = half + cellSize
     const reach = flat + SURFACE_SHOULDER
+    const mouth = mouthOf(road, built)
 
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
@@ -286,6 +292,10 @@ function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array): 
         for (let col = minCol; col <= maxCol; col++) {
           const x = col * cellSize
           const z = row * cellSize
+          // Behind a ramp's mouth only its first stretch has any say, and
+          // its bed there carries the mouth's grade on behind it.
+          const behind = mouth === null ? 0 : pastMouth(mouth, x, z)
+          if (behind < 0 && i > 0) continue
           const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
           const distance = hypot(x - (a.x + vx * t), z - (a.z + vz * t))
           if (distance > reach) continue
@@ -293,7 +303,7 @@ function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array): 
           if (distance >= nearest[cell]!) continue
           if (nearest[cell] === Infinity) touched.push(cell)
           nearest[cell] = distance
-          nearestBed[cell] = a.y + (b.y - a.y) * t
+          nearestBed[cell] = behind < 0 && mouth !== null ? a.y + mouth.grade * behind : a.y + (b.y - a.y) * t
         }
       }
     }
@@ -320,6 +330,58 @@ function stampRoadBeds(field: Heightfield, roads: Road[], keepOff: Uint8Array): 
     const bed = bedSum[cell]! / roadWeightSum[cell]!
     heights[cell] = original[cell]! + (bed - original[cell]!) * weight
   }
+}
+
+/** A ramp's mouth: where it starts, the way it leaves, and the grade it leaves at. */
+interface Mouth {
+  x: number
+  z: number
+  ux: number
+  uz: number
+  /** The rise per metre over the ramp's first stretch, which is the deck's own grade there. */
+  grade: number
+}
+
+/**
+ * A ramp's mouth, or `null` for any other road. The mouth lies under the
+ * highway's deck, so the ground behind it is shaped by the ramp's first
+ * stretch alone, carrying the deck's own grade on: a level cap there, or
+ * the shoulder of the ramp further along, would stand out of a deck
+ * falling away behind the mouth. The grade is the deck's, read off the
+ * highway at the point nearest the mouth, since the ramp's own first
+ * stretch is eased over the crest where its descent begins and does not
+ * climb as the deck does.
+ */
+function mouthOf(road: Road, built: Road[]): Mouth | null {
+  if (road.kind !== 'ramp' || road.points.length < 2) return null
+  const first = road.points[0]!
+  const second = road.points[1]!
+  const length = hypot(second.x - first.x, second.z - first.z) || 1
+  const ux = (second.x - first.x) / length
+  const uz = (second.z - first.z) / length
+  let grade = 0
+  let best = Infinity
+  for (const deck of built) {
+    if (deck.kind !== 'highway') continue
+    const count = deck.points.length
+    for (let i = 0; i < count; i++) {
+      const point = deck.points[i]!
+      const distance = hypot(point.x - first.x, point.z - first.z)
+      if (distance >= best) continue
+      best = distance
+      const prev = deck.points[deck.closed ? (i - 1 + count) % count : Math.max(i - 1, 0)]!
+      const next = deck.points[deck.closed ? (i + 1) % count : Math.min(i + 1, count - 1)]!
+      const run = hypot(next.x - prev.x, next.z - prev.z) || 1
+      // The deck's rise per metre, taken along the way the ramp leaves.
+      grade = ((next.y - prev.y) / run) * (((next.x - prev.x) * ux + (next.z - prev.z) * uz) / run)
+    }
+  }
+  return { x: first.x, z: first.z, ux, uz, grade }
+}
+
+/** How far behind a ramp's mouth a point lies along the way the ramp leaves it, negative behind. */
+function pastMouth(mouth: Mouth, x: number, z: number): number {
+  return (x - mouth.x) * mouth.ux + (z - mouth.z) * mouth.uz
 }
 
 /**
@@ -484,6 +546,33 @@ function seatSurfaceRoads(field: Heightfield, roads: Road[]): void {
   }
 }
 
+/** Where across a deck's skirt the ground is read, as fractions of the skirt's width out from the deck's edge. */
+const SKIRT_FOOT_SAMPLES = [0.25, 0.5, 0.75, 1] as const
+
+/**
+ * Where a deck's skirt meets the ground on one side: the highest the ground
+ * stands anywhere across the skirt's width, and never above the deck. A
+ * ramp's lane running out from under the deck is a ridge of ground level
+ * with the deck, and a skirt run down to the ground at its foot alone
+ * would cut through that ridge wherever the lane's edge lay within it.
+ */
+export function skirtFoot(
+  field: Heightfield,
+  x: number,
+  z: number,
+  nx: number,
+  nz: number,
+  half: number,
+  deck: number,
+): number {
+  let foot = -Infinity
+  for (const across of SKIRT_FOOT_SAMPLES) {
+    const reach = half + ROAD_SKIRT * across
+    foot = Math.max(foot, sampleTerrain(field, x + nx * reach, z + nz * reach))
+  }
+  return Math.min(foot, deck)
+}
+
 /**
  * Whether a built road's segment carries its shoulders down to the ground
  * beside it. An at-grade run always does. A bridge does only where the
@@ -524,14 +613,14 @@ export function settleSurfaceRoads(field: Heightfield, roads: Road[], built: Roa
   const carriageways = surfaceRoadCells(field, roads)
   for (let cell = 0; cell < keepOff.length; cell++) if (carriageways[cell]) keepOff[cell] = 0
   for (let pass = 0; pass < SETTLE_PASSES; pass++) {
-    stampRoadBeds(field, roads, keepOff)
+    stampRoadBeds(field, roads, keepOff, built)
     seatSurfaceRoads(field, roads)
     for (const road of roads) {
       holdBridgeDecks(road)
       limitSurfaceRoadGrade(road)
     }
   }
-  stampRoadBeds(field, roads, keepOff)
+  stampRoadBeds(field, roads, keepOff, built)
   seatSurfaceRoads(field, roads)
   for (const road of roads) holdBridgeDecks(road)
 }
