@@ -246,6 +246,14 @@ const FOUNTAIN = { tier: 1.6, column: 0.35, columnHeight: 1.5, mist: 14, mistRis
 /** A statue: a dark bronze figure on a stone plinth with a plaque. */
 const BRONZE = new THREE.Color('#4b3d2a')
 const PLAQUE = new THREE.Color('#8c7a4e')
+/**
+ * A clock tower: a stone tower with a cornice band, a clock face on each
+ * side below it and a pointed roof, whose hands keep the game's time at
+ * this many ticks to the hour, an hour of the game's time a real hour.
+ */
+const CLOCK = { cornice: 0.8, face: 3.2, rim: 0.25, ticks: 12, tickLength: 0.35, hour: 1.1, minute: 1.6, roof: 2.2, ticksPerHour: 60 * 60 * 60 } as const
+const CLOCK_FACE = new THREE.Color('#f2efe6')
+const CLOCK_DARK = new THREE.Color('#2b2b2e')
 /** A building site: blue hoardings round it, and a tower crane in yellow or red by tone, its top turning this fast in radians a second. */
 const HOARDING_COLOR = new THREE.Color('#3b5b86')
 const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), new THREE.Color('#c23b2b')]
@@ -2029,6 +2037,97 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       meshes.push(chairs)
     }
   }
+
+  // Clock towers: the tower as the stone box it is, a cornice band near the
+  // top, on each side a clock face (a white disc in a dark rim, twelve
+  // marks round it) just below the cornice, two hands turned from the
+  // game's tick as the frames go by, a pointed roof and a finial.
+  const towers = ofKind('clocktower')
+  const faceDisc = new THREE.CylinderGeometry(1, 1, 1, 24)
+  faceDisc.rotateX(Math.PI / 2)
+  const faces = towers.flatMap((tower) => [0, 1, 2, 3].map((side) => ({ tower, side })))
+  const marks = faces.flatMap((face) => Array.from({ length: CLOCK.ticks }, (_, k) => ({ ...face, k })))
+  const faceAt = (tower: Building, side: number, matrix: THREE.Matrix4, sx: number, sy: number, sz: number, y: number, out: number, across = 0, up = 0): void => {
+    // Out from the tower's centre through the side's wall, turned to look out that way.
+    const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tower.yaw + (side * Math.PI) / 2)
+    const offset = new THREE.Vector3(across, up, out).applyQuaternion(turn)
+    matrix.compose(new THREE.Vector3(tower.x + offset.x, y + offset.y, tower.z + offset.z), turn, new THREE.Vector3(sx, sy, sz))
+  }
+  const faceHeight = (tower: Building): number => tower.top - CLOCK.cornice - CLOCK.face / 2 - 0.6
+  meshes.push(
+    instanced(box, plain, towers, (tower, matrix, color) => {
+      boxAt(tower, matrix)
+      color.copy(STONE_COLOR)
+    }),
+    instanced(box, plain, towers, (tower, matrix, color) => {
+      upright(tower, matrix, tower.width + 0.6, CLOCK.cornice, tower.depth + 0.6, tower.top - CLOCK.cornice / 2)
+      color.copy(CHURCH_COLOR)
+    }),
+    instanced(faceDisc, plain, faces, ({ tower, side }, matrix, color) => {
+      faceAt(tower, side, matrix, CLOCK.face / 2 + CLOCK.rim, CLOCK.face / 2 + CLOCK.rim, 0.12, faceHeight(tower), tower.width / 2 + 0.06)
+      color.copy(CLOCK_DARK)
+    }),
+    instanced(faceDisc, plain, faces, ({ tower, side }, matrix, color) => {
+      faceAt(tower, side, matrix, CLOCK.face / 2, CLOCK.face / 2, 0.12, faceHeight(tower), tower.width / 2 + 0.12)
+      color.copy(CLOCK_FACE)
+    }),
+    instanced(box, plain, marks, ({ tower, side, k }, matrix, color) => {
+      const angle = (k / CLOCK.ticks) * Math.PI * 2
+      const radius = CLOCK.face / 2 - CLOCK.tickLength / 2 - 0.1
+      faceAt(tower, side, matrix, 0.1, CLOCK.tickLength, 0.06, faceHeight(tower), tower.width / 2 + 0.2, Math.sin(angle) * radius, Math.cos(angle) * radius)
+      // Each mark points at the centre.
+      const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -angle)
+      const around = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tower.yaw + (side * Math.PI) / 2)
+      const position = new THREE.Vector3()
+      const scale = new THREE.Vector3()
+      matrix.decompose(position, new THREE.Quaternion(), scale)
+      matrix.compose(position, around.multiply(turn), scale)
+      color.copy(CLOCK_DARK)
+    }),
+  )
+  const hands = [
+    { length: CLOCK.hour, thick: 0.16, per: CLOCK.ticksPerHour * 12 },
+    { length: CLOCK.minute, thick: 0.1, per: CLOCK.ticksPerHour },
+  ]
+  for (const hand of hands) {
+    const mesh = instanced(box, plain, faces, (_, matrix, color) => {
+      matrix.identity()
+      color.copy(CLOCK_DARK)
+    })
+    if (mesh === null) continue
+    const position = new THREE.Vector3()
+    const scale = new THREE.Vector3(hand.thick, hand.length, 0.06)
+    const around = new THREE.Quaternion()
+    const turn = new THREE.Quaternion()
+    const matrix = new THREE.Matrix4()
+    mesh.onBeforeRender = () => {
+      // The game's tick from the island's group, or the frames if there is no game on.
+      const tick = (mesh.parent?.userData.tick as number | null | undefined) ?? (performance.now() / 1000) * 60
+      const angle = ((tick % hand.per) / hand.per) * Math.PI * 2
+      for (const [i, { tower, side }] of faces.entries()) {
+        around.setFromAxisAngle(new THREE.Vector3(0, 1, 0), tower.yaw + (side * Math.PI) / 2)
+        turn.setFromAxisAngle(new THREE.Vector3(0, 0, 1), -angle)
+        // The hand pivots at the face's centre, so its box is offset half its length along itself.
+        const along = new THREE.Vector3(Math.sin(angle) * (hand.length / 2), Math.cos(angle) * (hand.length / 2), 0).applyQuaternion(around)
+        const out = new THREE.Vector3(0, 0, tower.width / 2 + 0.3).applyQuaternion(around)
+        position.set(tower.x + out.x + along.x, faceHeight(tower) + along.y, tower.z + out.z + along.z)
+        mesh.setMatrixAt(i, matrix.compose(position, around.clone().multiply(turn), scale))
+      }
+      mesh.instanceMatrix.needsUpdate = true
+    }
+    meshes.push(mesh)
+  }
+  meshes.push(
+    instanced(roof, roofing, towers, (tower, matrix, color) => {
+      roofAt(tower, matrix, CLOCK.roof)
+      color.copy(pick(ROOF_COLORS, tower.tone))
+    }),
+    instanced(box, plain, towers, (tower, matrix, color) => {
+      const rise = tower.width * CLOCK.roof
+      upright(tower, matrix, 0.4, 2.4, 0.4, tower.top + rise + 1.2)
+      color.copy(CLOCK_DARK)
+    }),
+  )
 
   // Fountains: the basin as the stone drum it is, water in it as a disc,
   // a smaller tier on a column above it, and a mist of drops rising from
