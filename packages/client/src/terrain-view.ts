@@ -769,15 +769,15 @@ function paintSegment(
     for (let tx = minX; tx <= maxX; tx++) {
       const x = (tx + 0.5) / TEXELS_PER_METER
       const t = Math.min(Math.max(((x - a.x) * vx + (z - a.z) * vz) / lengthSq, 0), 1)
-      const distance = Math.hypot(x - (a.x + vx * t), z - (a.z + vz * t))
-      const coverage = Math.min(Math.max((half + edge - distance) * TEXELS_PER_METER, 0), 1)
+      const dx = x - (a.x + vx * t)
+      const dz = z - (a.z + vz * t)
+      const coverage = Math.min(Math.max((half + edge - Math.sqrt(dx * dx + dz * dz)) * TEXELS_PER_METER, 0), 1)
       if (coverage <= 0) continue
       // Within the texture: the texel was held inside it above.
       const at = (ty * texels + tx) * 4
-      for (const [channel, level] of rgb.entries()) {
-        const was = data[at + channel]!
-        data[at + channel] = Math.round(was + (level - was) * coverage)
-      }
+      data[at] = Math.round(data[at]! + (rgb[0] - data[at]!) * coverage)
+      data[at + 1] = Math.round(data[at + 1]! + (rgb[1] - data[at + 1]!) * coverage)
+      data[at + 2] = Math.round(data[at + 2]! + (rgb[2] - data[at + 2]!) * coverage)
     }
   }
 }

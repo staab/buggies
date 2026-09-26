@@ -6,6 +6,14 @@ import type { Vec2 } from './geometry.ts'
 const { hypot } = exact
 
 /**
+ * How far past its limit a rise may be left, in meters. The heights are held
+ * in single precision, where halving the last few hundredths of a millimeter
+ * of a rise can round back to where it was: asked for less, the relaxation
+ * never settles, and runs to its cap.
+ */
+const GRADE_TOLERANCE = 1e-3
+
+/**
  * Keeping a road drivable: grade and curvature limits applied along a run of
  * points.
  */
@@ -14,15 +22,18 @@ const { hypot } = exact
  * Relax a height profile until no segment exceeds `maxGrade`, while staying as
  * close to the target as possible. Peaks are cut and dips filled symmetrically,
  * which is what carves a gradual line through a mountain instead of climbing
- * straight over it.
+ * straight over it. Where `floor` is given, no sample is let below it: of a
+ * pair too steep with one end already down on its floor, the other end takes
+ * the whole of the difference.
  */
-export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: number): void {
+export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: number, floor?: Float32Array): void {
   const count = heights.length
   const maxDelta = new Float32Array(count)
   for (let i = 0; i < count; i++) {
     const next = (i + 1) % count
     maxDelta[i] = maxGrade * hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z)
   }
+  if (floor !== undefined) for (let i = 0; i < count; i++) heights[i] = Math.max(heights[i]!, floor[i]!)
 
   const cap = count * 50 + 50
   for (let iteration = 0; iteration < cap; iteration++) {
@@ -31,11 +42,15 @@ export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: numb
       const next = (i + 1) % count
       const diff = heights[next]! - heights[i]!
       const excess = Math.abs(diff) - maxDelta[i]!
-      if (excess <= 1e-6) continue
+      if (excess <= GRADE_TOLERANCE) continue
 
-      const direction = diff > 0 ? 1 : -1
-      heights[i] = heights[i]! + (direction * excess) / 2
-      heights[next] = heights[next]! - (direction * excess) / 2
+      // The higher end comes down and the lower goes up, half each, unless the higher is held up by its floor.
+      const high = diff > 0 ? next : i
+      const low = diff > 0 ? i : next
+      const lowest = floor === undefined ? -Infinity : floor[high]!
+      const drop = Math.min(excess / 2, heights[high]! - lowest)
+      heights[high] = heights[high]! - drop
+      heights[low] = heights[low]! + (excess - drop)
       moved = true
     }
     if (!moved) break

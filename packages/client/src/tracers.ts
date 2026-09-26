@@ -35,6 +35,8 @@ export class Tracers {
   private readonly sound: Sound | null
   private readonly ear: Ear
   private readonly live: Tracer[] = []
+  /** Beams gone out, kept to be lit again: a laser lights one every tick it burns. */
+  private readonly spare: { line: THREE.Mesh; material: THREE.MeshBasicMaterial }[] = []
   private lastTick = -1
 
   constructor(sound: Sound | null, ear: Ear) {
@@ -73,8 +75,10 @@ export class Tracers {
     const along = new THREE.Vector3(shot.to.x, shot.to.y, shot.to.z).sub(from)
     const length = along.length()
     if (length < 1e-3) return
-    const material = new THREE.MeshBasicMaterial({ color: BEAM, transparent: true, opacity: 0.85, depthWrite: false })
-    const rod = new THREE.Mesh(ROD, material)
+    const reused = this.spare.pop()
+    const material = reused?.material ?? new THREE.MeshBasicMaterial({ color: BEAM, transparent: true, depthWrite: false })
+    material.opacity = 0.85
+    const rod = reused?.line ?? new THREE.Mesh(ROD, material)
     rod.position.copy(from)
     rod.quaternion.setFromUnitVectors(UP, along.normalize())
     rod.scale.set(BEAM_RADIUS, length, BEAM_RADIUS)
@@ -98,13 +102,19 @@ export class Tracers {
 
   private remove(tracer: Tracer): void {
     this.object.remove(tracer.line)
-    // A beam's rod is shared; a tracer's line is its own.
+    // A beam is kept to be lit again; a tracer's line and its material are its own.
+    if (tracer.line instanceof THREE.Mesh && tracer.material instanceof THREE.MeshBasicMaterial) {
+      this.spare.push({ line: tracer.line, material: tracer.material })
+      return
+    }
     if (tracer.line instanceof THREE.Line) tracer.line.geometry.dispose()
     tracer.material.dispose()
   }
 
   dispose(): void {
     for (const tracer of this.live) this.remove(tracer)
+    for (const beam of this.spare) beam.material.dispose()
+    this.spare.length = 0
     this.live.length = 0
     this.object.removeFromParent()
     this.object.clear()

@@ -204,8 +204,10 @@ export function generateRoads(
   // What the deck comes to before any crossing has had a say. Sites are judged
   // against this rather than against the raw aim above, which ignores the grade
   // limit and so says nothing about how high the highway really stands.
+  // However the grade limit cuts the line down, a deck over water stays above it.
+  const floor = Float32Array.from(surface, (level, i) => (wet[i] ? level + DECK_OVER_WATER : -Infinity))
   const deck = Float32Array.from(profile)
-  limitGrade(deck, samples, MAX_ROAD_GRADE)
+  limitGrade(deck, samples, MAX_ROAD_GRADE, floor)
   // Where that deck would run underground: a tunnel, which no interchange can touch.
   const buried = Uint8Array.from(ground, (height, i) => (height - deck[i]! > TUNNEL_DEPTH ? 1 : 0))
   const crossings = interchangeCenters(
@@ -237,12 +239,12 @@ export function generateRoads(
       }
     }
     if (!raised) break
-    limitGrade(profile, samples, MAX_ROAD_GRADE)
+    limitGrade(profile, samples, MAX_ROAD_GRADE, floor)
     // Easing the hump over a crossing lowers its peak, so the deck is raised
     // again until a hump gentle enough to drive still clears the road below.
     limitVerticalCurvature(profile, samples, MAX_ROAD_CURVATURE, true)
   }
-  limitGrade(profile, samples, MAX_ROAD_GRADE)
+  limitGrade(profile, samples, MAX_ROAD_GRADE, floor)
   limitVerticalCurvature(profile, samples, MAX_ROAD_CURVATURE, true)
 
   // A sample that stayed near its water is a bridge deck; one the grade limit
@@ -356,6 +358,12 @@ export function generateRoads(
   return roads
 }
 
+/** The least a deck over water stands above it, however the grade limit cuts the line down. */
+const DECK_OVER_WATER = 1
+
+/** How wide a cell of the grid ramp lanes are looked up in is. */
+const LANE_CELL = 16
+
 /**
  * Where the highway's cut must not rise into a wall again: beside each
  * ramp's lane as it runs out from under the deck, out to the lane's
@@ -374,8 +382,25 @@ function wallHeldBy(roads: Road[]): (x: number, z: number) => boolean {
     }
   }
   const reach = RAMP_WIDTH / 2 + SURFACE_SHOULDER
+  // Filed by the cells of a coarse grid they pass within reach of, so a
+  // point is only tried against the lanes near it.
+  const cells = new Map<number, typeof lanes>()
+  const key = (col: number, row: number): number => col * 65536 + row
+  for (const lane of lanes) {
+    const fromCol = Math.floor((Math.min(lane.ax, lane.bx) - reach) / LANE_CELL)
+    const toCol = Math.floor((Math.max(lane.ax, lane.bx) + reach) / LANE_CELL)
+    const fromRow = Math.floor((Math.min(lane.az, lane.bz) - reach) / LANE_CELL)
+    const toRow = Math.floor((Math.max(lane.az, lane.bz) + reach) / LANE_CELL)
+    for (let col = fromCol; col <= toCol; col++) {
+      for (let row = fromRow; row <= toRow; row++) {
+        const filed = cells.get(key(col, row))
+        if (filed) filed.push(lane)
+        else cells.set(key(col, row), [lane])
+      }
+    }
+  }
   return (x, z) => {
-    for (const lane of lanes) {
+    for (const lane of cells.get(key(Math.floor(x / LANE_CELL), Math.floor(z / LANE_CELL))) ?? []) {
       const vx = lane.bx - lane.ax
       const vz = lane.bz - lane.az
       const t = Math.min(Math.max(((x - lane.ax) * vx + (z - lane.az) * vz) / (vx * vx + vz * vz || 1), 0), 1)

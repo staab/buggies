@@ -73,9 +73,28 @@ function smoothRoad(points: RoadPoint[], passes: number): void {
 }
 
 /** True when `road` properly crosses any other road. */
+/** The rectangle a road's points lie in. */
+function boundsOf(road: Road): { minX: number; minZ: number; maxX: number; maxZ: number } {
+  let minX = Infinity
+  let minZ = Infinity
+  let maxX = -Infinity
+  let maxZ = -Infinity
+  for (const point of road.points) {
+    minX = Math.min(minX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxX = Math.max(maxX, point.x)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  return { minX, minZ, maxX, maxZ }
+}
+
 function crossesAny(road: Road, roads: Road[]): boolean {
+  const box = boundsOf(road)
   for (const other of roads) {
     if (other === road || other.kind === 'street') continue
+    // Two roads whose bounds do not meet cannot cross.
+    const near = boundsOf(other)
+    if (near.maxX < box.minX || near.minX > box.maxX || near.maxZ < box.minZ || near.minZ > box.maxZ) continue
     for (let i = 0; i + 1 < road.points.length; i++) {
       const a = road.points[i]!
       const b = road.points[i + 1]!
