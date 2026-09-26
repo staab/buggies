@@ -48,13 +48,14 @@ export const GOAL_BYTES = 12
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
-export const SNAPSHOT_HEADER_BYTES = 18
+export const SNAPSHOT_HEADER_BYTES = 19
 export const SNAPSHOT_VEHICLE_BYTES = 116
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
+export const SNAPSHOT_ROBOT_BYTES = 14
 
 /** What a goal is, by the byte that says so: none first. */
 const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
@@ -139,6 +140,18 @@ export interface VehicleSnapshot {
   appliedInput: VehicleInput
 }
 
+/** A robot on its rounds, as the server has it: where it is follows from its road and how far along. */
+export interface RobotSnapshot {
+  id: number
+  road: number
+  along: number
+  direction: number
+  legs: number
+  target: number
+  beamTicks: number
+  cooldownTicks: number
+}
+
 /** A rocket in the air, as the server has it. */
 export interface RocketSnapshot {
   id: number
@@ -203,6 +216,8 @@ export interface SnapshotMessage {
   rockets: RocketSnapshot[]
   /** The props on the move since the snapshot before; every prop when full. */
   props: PropSnapshot[]
+  /** Every robot, every snapshot: there are only ever a few. */
+  robots: RobotSnapshot[]
 }
 
 /** Something loose on the map, a banana or a bomb, as the server has it. */
@@ -500,7 +515,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
       message.loose.length * SNAPSHOT_SPILLED_BYTES +
       message.removed.length * SNAPSHOT_REMOVED_BYTES +
       message.rockets.length * SNAPSHOT_ROCKET_BYTES +
-      message.props.length * SNAPSHOT_PROP_BYTES,
+      message.props.length * SNAPSHOT_PROP_BYTES +
+      message.robots.length * SNAPSHOT_ROBOT_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
@@ -513,6 +529,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.removed.length)
   writer.u8(message.rockets.length)
   writer.u8(message.props.length)
+  writer.u8(message.robots.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -578,7 +595,17 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.quat(prop.rotation)
     writer.vec3(prop.linearVelocity)
     writer.vec3(prop.angularVelocity)
+  }  for (const robot of message.robots) {
+    writer.u8(robot.id)
+    writer.u16(robot.road)
+    writer.f32(robot.along)
+    writer.u8(robot.direction > 0 ? 1 : 0)
+    writer.u16(robot.legs & 0xffff)
+    writer.u8(robot.target === NO_TARGET ? NOBODY_BYTE : robot.target)
+    writer.u8(Math.min(Math.max(robot.beamTicks, 0), 0xff))
+    writer.u16(Math.min(Math.max(robot.cooldownTicks, 0), 0xffff))
   }
+
   return writer.bytes
 }
 
@@ -607,6 +634,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const removedCount = reader.u8()
   const rocketCount = reader.u8()
   const propCount = reader.u8()
+  const robotCount = reader.u8()
   const expected =
     SNAPSHOT_HEADER_BYTES +
     count * SNAPSHOT_VEHICLE_BYTES +
@@ -614,7 +642,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     looseCount * SNAPSHOT_SPILLED_BYTES +
     removedCount * SNAPSHOT_REMOVED_BYTES +
     rocketCount * SNAPSHOT_ROCKET_BYTES +
-    propCount * SNAPSHOT_PROP_BYTES
+    propCount * SNAPSHOT_PROP_BYTES +
+    robotCount * SNAPSHOT_ROBOT_BYTES
   if (payload.length !== expected) return null
 
   const vehicles: VehicleSnapshot[] = []
@@ -740,6 +769,25 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       angularVelocity: reader.vec3(),
     })
   }
+  const robots: RobotSnapshot[] = []
+  for (let i = 0; i < robotCount; i++) {
+    const id = reader.u8()
+    const road = reader.u16()
+    const along = reader.f32()
+    const direction = reader.u8() === 1 ? 1 : -1
+    const legs = reader.u16()
+    const target = reader.u8()
+    robots.push({
+      id,
+      road,
+      along,
+      direction,
+      legs,
+      target: target === NOBODY_BYTE ? NO_TARGET : target,
+      beamTicks: reader.u8(),
+      cooldownTicks: reader.u16(),
+    })
+  }
   return {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
@@ -751,5 +799,6 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     removed,
     rockets,
     props,
+    robots,
   }
 }

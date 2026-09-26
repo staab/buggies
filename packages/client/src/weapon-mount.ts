@@ -9,6 +9,7 @@ import {
   buildEngine,
   buildGrapple,
   buildGun,
+  buildLaser,
   buildHorn,
   buildMagnet,
   buildMines,
@@ -22,7 +23,7 @@ import {
 } from './weapon-models.ts'
 
 /** What a car with a gun of its own fires from that gun, and so does not carry over its roof. */
-const FROM_THE_GUN: readonly Weapon[] = ['rocket', 'machineGun', 'tripleRocket']
+const FROM_THE_GUN: readonly Weapon[] = ['rocket', 'machineGun', 'tripleRocket', 'laser']
 
 /** How the mount bobs and sways as it hovers. */
 const BOB = 0.08
@@ -46,6 +47,7 @@ export class WeaponMount {
   readonly object = new THREE.Group()
 
   private readonly gun = buildGun()
+  private readonly laser = buildLaser()
   private readonly engine = buildEngine()
   private readonly horn = buildHorn()
   /** A model for everything that can be carried, one each. */
@@ -65,6 +67,7 @@ export class WeaponMount {
     plow: buildPlow(),
     grapple: buildGrapple(),
     mines: buildMines(),
+    laser: this.laser,
   }
   private readonly height: number
   /** Whether the car has a gun of its own: the rocket and the gun are not mounted over its roof. */
@@ -85,6 +88,7 @@ export class WeaponMount {
       this.object.add(model)
     }
     this.gun.quaternion.copy(AHEAD)
+    this.laser.quaternion.copy(AHEAD)
   }
 
   /** Where the gun points: at this, or dead ahead for nothing. */
@@ -107,6 +111,8 @@ export class WeaponMount {
       this.desired.copy(mountTurn.invert()).multiply(sight.quaternion)
     }
     this.gun.quaternion.slerp(this.desired, 1 - Math.exp(-dt * AIM_RATE))
+    // The laser is trained as the gun is: they sit in the same place, and only one is ever shown.
+    this.laser.quaternion.copy(this.gun.quaternion)
   }
 
   get shown(): Weapon {

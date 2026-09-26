@@ -6,11 +6,14 @@ import {
   createVehicleStepState,
   leaveSeat,
   readVehicleStepState,
+  placeRobot,
+  seatRobotBody,
   setPickup,
   takeSeat,
   writeVehicleStepState,
   type Arena,
   type Pickup,
+  type Robot,
   type Rocket,
   type Loose,
   type Seat,
@@ -195,6 +198,11 @@ export class LocalPrediction {
   /** Bananas spilled from wrecks, as the mirror has them. */
   get loose(): readonly Loose[] {
     return this.mirror.loose
+  }
+
+  /** The robots, as the mirror has them: the server's word, run ahead. */
+  get robots(): readonly Robot[] {
+    return this.mirror.robots
   }
 
   /** Rockets in the air, as the mirror has them: the server's word, run ahead. */
@@ -388,6 +396,20 @@ export class LocalPrediction {
       prop.body.setRotation(moved.rotation, true)
       prop.body.setLinvel(moved.linearVelocity, true)
       prop.body.setAngvel(moved.angularVelocity, true)
+    }
+    // The robots are where the server has them, their bodies put straight there.
+    for (const known of snapshot.robots) {
+      const robot = this.mirror.robots[known.id]
+      if (robot === undefined) continue
+      robot.road = known.road
+      robot.along = known.along
+      robot.direction = known.direction
+      robot.legs = known.legs
+      robot.target = known.target
+      robot.beamTicks = known.beamTicks
+      robot.cooldownTicks = known.cooldownTicks
+      placeRobot(this.mirror.map, robot)
+      seatRobotBody(robot, true)
     }
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,

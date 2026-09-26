@@ -82,3 +82,19 @@ export function addProp(world: RAPIER.World, prop: Prop): RAPIER.RigidBody {
   world.createCollider(desc.setDensity(0).setMass(shape.mass).setFriction(shape.friction).setRestitution(shape.restitution), body)
   return body
 }
+
+/**
+ * A box the game moves itself, tick by tick, which the cars run into but
+ * which nothing pushes: a robot on its rounds. It starts where it is put.
+ */
+export function addMover(
+  world: RAPIER.World,
+  halfWidth: number,
+  halfHeight: number,
+  halfDepth: number,
+  at: { x: number; y: number; z: number },
+): RAPIER.RigidBody {
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(at.x, at.y, at.z))
+  world.createCollider(RAPIER.ColliderDesc.cuboid(halfWidth, halfHeight, halfDepth).setFriction(0.6), body)
+  return body
+}

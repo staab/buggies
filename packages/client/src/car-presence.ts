@@ -81,7 +81,7 @@ const PLOW_OUT = 0.35
 
 /** Where a seat's gun is trained: the middle of the car it has picked out, if any. */
 export function aimPointOf(seat: Seat, seats: readonly Seat[]): Vec3 | null {
-  if (seat.weapon !== 'machineGun' || seat.aimTarget === NO_TARGET) return null
+  if ((seat.weapon !== 'machineGun' && seat.weapon !== 'laser') || seat.aimTarget === NO_TARGET) return null
   return seats[seat.aimTarget]?.vehicle.frame.position ?? null
 }
 

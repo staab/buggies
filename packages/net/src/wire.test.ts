@@ -10,6 +10,7 @@ import {
   INPUT_BYTES,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_PROP_BYTES,
+  SNAPSHOT_ROBOT_BYTES,
   SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_REMOVED_BYTES,
   SNAPSHOT_ROCKET_BYTES,
@@ -137,6 +138,10 @@ const snapshot: SnapshotMessage = {
       angularVelocity: { x: 0.1, y: 0.2, z: 0.3 },
     },
   ],
+  robots: [
+    { id: 0, road: 412, along: 187.5, direction: -1, legs: 9, target: 3, beamTicks: 42, cooldownTicks: 0 },
+    { id: 1, road: 7, along: 0.25, direction: 1, legs: 0, target: -1, beamTicks: 0, cooldownTicks: 180 },
+  ],
 }
 
 describe('wire', () => {
@@ -182,6 +187,7 @@ describe('wire', () => {
     expect(payload.length).toBe(
       SNAPSHOT_HEADER_BYTES +
         snapshot.props.length * SNAPSHOT_PROP_BYTES +
+        snapshot.robots.length * SNAPSHOT_ROBOT_BYTES +
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
         snapshot.loose.length * SNAPSHOT_SPILLED_BYTES +
@@ -203,9 +209,10 @@ describe('wire', () => {
         expect(got.velocity[axis]).toBeCloseTo(rocket.velocity[axis], 4)
       }
     }
-    // With nothing changed, a snapshot is its vehicles alone.
+    expect(decoded.robots).toEqual(snapshot.robots)
+    // With nothing changed, a snapshot is its vehicles and robots alone.
     const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [] }
-    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
+    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES)
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
       const got = decoded.loose[i]!
