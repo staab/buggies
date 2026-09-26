@@ -1,13 +1,13 @@
 import { createRng, v3, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { DRY, roadLift, sampleHeight, waterLevelAt, type TerrainMap } from '@buggies/terrain'
+import { DRY, roadLift, sampleHeight, waterLevelAt, type Road, type TerrainMap } from '@buggies/terrain'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
 const { cos, hypot, sin } = exact
 
 /** How many bananas are out on a map at once. */
-export const BANANA_SLOTS = 64
+export const BANANA_SLOTS = 160
 export const PICKUP_SLOTS = BANANA_SLOTS
 
 /** How far above the ground a pickup floats, to be seen from a car. */
@@ -54,42 +54,107 @@ export function pickupSeed(mapSeed: number, slot: number, generation: number): n
   return (Math.imul(mapSeed, 0x9e3779b1) ^ Math.imul(slot + 1, 0x85ebca6b) ^ Math.imul(generation + 1, 0xc2b2ae35)) >>> 0
 }
 
-/** A spot on one of the map's roads, chosen by the rng; none if the road it chose has no points. */
-function roadSpot(map: TerrainMap, rng: () => number, out: Vec3): Vec3 | null {
-  const road = map.roads[Math.floor(rng() * map.roads.length)]
-  if (road === undefined) return null
-  const count = road.points.length
-  const at = Math.floor(rng() * count)
-  const point = road.points[at]
-  if (point === undefined) return null
-  const next = road.points[road.closed ? (at + 1) % count : Math.min(at + 1, count - 1)] ?? point
-  const prior = road.points[road.closed ? (at - 1 + count) % count : Math.max(at - 1, 0)] ?? point
-  const dx = next.x - prior.x
-  const dz = next.z - prior.z
-  const length = hypot(dx, dz) || 1
+/** One straight piece of a road, from a point to the next, and how far along all the map's roads it starts. */
+interface Stretch {
+  road: Road
+  from: number
+  start: number
+}
+
+/** A map's roads end to end, for picking a spot on them by distance rather than by road. */
+interface RoadLengths {
+  stretches: Stretch[]
+  total: number
+}
+
+const roadLengths = new WeakMap<TerrainMap, RoadLengths>()
+
+function lengthsOf(map: TerrainMap): RoadLengths {
+  const known = roadLengths.get(map)
+  if (known !== undefined) return known
+  const stretches: Stretch[] = []
+  let total = 0
+  for (const road of map.roads) {
+    const count = road.points.length
+    const pieces = road.closed ? count : count - 1
+    for (let from = 0; from < pieces; from++) {
+      const a = road.points[from]!
+      const b = road.points[(from + 1) % count]!
+      const length = hypot(b.x - a.x, b.z - a.z)
+      if (length <= 0) continue
+      stretches.push({ road, from, start: total })
+      total += length
+    }
+  }
+  const lengths = { stretches, total }
+  roadLengths.set(map, lengths)
+  return lengths
+}
+
+/**
+ * A spot on the map's roads, somewhere in one share of their length: every stretch of road gets its bananas, a city's short streets
+ * no more than a long highway; none if the map has no road to speak of.
+ */
+function roadSpot(map: TerrainMap, rng: () => number, share: number, out: Vec3): Vec3 | null {
+  const { stretches, total } = lengthsOf(map)
+  if (stretches.length === 0) return null
+  const along = ((share + rng()) / PICKUP_SLOTS) * total
+  let low = 0
+  let high = stretches.length - 1
+  while (low < high) {
+    const middle = (low + high + 1) >> 1
+    if (stretches[middle]!.start <= along) low = middle
+    else high = middle - 1
+  }
+  const { road, from, start } = stretches[low]!
+  const a = road.points[from]!
+  const b = road.points[(from + 1) % road.points.length]!
+  const dx = b.x - a.x
+  const dz = b.z - a.z
+  const length = hypot(dx, dz)
+  const t = Math.min(Math.max((along - start) / length, 0), 1)
   // Across the road, anywhere but the very edge.
   const across = (rng() * 2 - 1) * Math.max(road.width / 2 - ROAD_SHOULDER, 0)
-  out.x = point.x + (-dz / length) * across
-  out.y = point.y + roadLift(road) + PICKUP_HEIGHT
-  out.z = point.z + (dx / length) * across
+  out.x = a.x + dx * t + (-dz / length) * across
+  out.y = a.y + (b.y - a.y) * t + roadLift(road) + PICKUP_HEIGHT
+  out.z = a.z + dz * t + (dx / length) * across
   return out
 }
 
 /**
+ * How many shares a slot moves on by with each pickup it has: coprime with
+ * the number of slots, so that at any one generation every slot has a share
+ * of its own, and each pickup is well away from the last.
+ */
+const SHARE_STEP = 67
+
+/** How many cells a side the land is cut into, one a slot, so that bananas off the road are spread over all of it. */
+const LAND_GRID = Math.ceil(Math.sqrt(PICKUP_SLOTS))
+
+/**
  * Where a slot's pickup of a given generation is: on a road for the most
- * part, and otherwise anywhere on dry land, floating above the ground.
+ * part, and otherwise on dry land in its share's patch of the map, or
+ * failing that anywhere dry, floating above the ground.
  */
 export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, generation: number, out: Vec3 = v3()): Vec3 {
   const rng = createRng(pickupSeed(map.seed, slot, generation))
+  const share = (slot + generation * SHARE_STEP) % PICKUP_SLOTS
   const onRoad = map.roads.length > 0 && rng() < ON_ROADS
   if (onRoad) {
-    const spot = roadSpot(map, rng, out)
+    const spot = roadSpot(map, rng, share, out)
     if (spot !== null) return spot
   }
   const extent = map.size * map.cellSize
+  const span = extent - 2 * LAND_MARGIN
+  const cell = span / LAND_GRID
+  const patch = share % (LAND_GRID * LAND_GRID)
+  const left = LAND_MARGIN + (patch % LAND_GRID) * cell
+  const top = LAND_MARGIN + Math.floor(patch / LAND_GRID) * cell
   for (let attempt = 0; attempt < LAND_TRIES; attempt++) {
-    const x = LAND_MARGIN + rng() * (extent - 2 * LAND_MARGIN)
-    const z = LAND_MARGIN + rng() * (extent - 2 * LAND_MARGIN)
+    // Half the tries in its own patch; if that is lake or sea, anywhere.
+    const own = attempt < LAND_TRIES / 2
+    const x = own ? left + rng() * cell : LAND_MARGIN + rng() * span
+    const z = own ? top + rng() * cell : LAND_MARGIN + rng() * span
     if (waterLevelAt(map.heightfield, water, x, z) !== DRY) continue
     out.x = x
     out.y = sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT
@@ -97,7 +162,7 @@ export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, g
     return out
   }
   if (map.roads.length > 0) {
-    const spot = roadSpot(map, rng, out)
+    const spot = roadSpot(map, rng, share, out)
     if (spot !== null) return spot
   }
   out.x = extent / 2

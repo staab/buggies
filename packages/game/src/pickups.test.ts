@@ -1,4 +1,4 @@
-import { DRY, generateTerrain, sampleHeight, waterLevelAt, type TerrainMap } from '@buggies/terrain'
+import { DRY, boreClearance, generateTerrain, sampleHeight, tunnelSegments, waterLevelAt, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -38,6 +38,7 @@ describe('pickups', () => {
     const arena = createArena(map)
     expect(arena.pickups).toHaveLength(PICKUP_SLOTS)
     const extent = map.size * map.cellSize
+    const bores = tunnelSegments(map.roads)
     let onRoads = 0
     let moved = 0
     for (const [slot, pickup] of arena.pickups.entries()) {
@@ -46,9 +47,9 @@ describe('pickups', () => {
       expect(x).toBeLessThan(extent)
       expect(z).toBeGreaterThan(0)
       expect(z).toBeLessThan(extent)
-      // Floating over the ground, or over a road that may be above it.
+      // Floating over the ground, or over a road that may be above it or in a tunnel under it.
       const ground = sampleHeight(map.heightfield, x, z)
-      expect(y).toBeGreaterThanOrEqual(ground + PICKUP_HEIGHT - 0.5)
+      if (boreClearance(bores, x, z, y) >= 0) expect(y).toBeGreaterThanOrEqual(ground + PICKUP_HEIGHT - 0.5)
       const water = waterLevelAt(map.heightfield, arena.water, x, z)
       if (water !== DRY) expect(y).toBeGreaterThan(water + 1)
       if (Math.abs(y - ground - PICKUP_HEIGHT) > 0.5) onRoads++

@@ -101,7 +101,7 @@ const shell = new Shell(
     scene,
     container,
     // One HUD a viewport: the left, or only, and the right of a split screen.
-    huds: [new Hud(element('hud')), new Hud(element('hud-right'))],
+    huds: [new Hud(element('hud'), element('radar')), new Hud(element('hud-right'), element('radar-right'))],
     sound,
     sun,
     islands: new TerrainSource(),

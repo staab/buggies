@@ -5,6 +5,7 @@ import {
   VEHICLE_PROFILE_LABELS,
   createArena,
   takeSeat,
+  type Seat,
   type VehicleProfileId,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
@@ -23,6 +24,7 @@ import { Keyboard } from './input.ts'
 import type { DriverKeys } from './keys.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import { PredictedCar } from './predicted-car.ts'
+import type { RadarBlip, RadarState } from './radar.ts'
 import { SUN_DISTANCE } from './sun.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -31,6 +33,17 @@ import { WebSocketClientTransport } from './ws-transport.ts'
  * background for a minute should resume, not fast-forward a minute of driving.
  */
 const MAX_CATCH_UP = 0.25
+
+/** The mini-map from a seat: where it is and faces, and every other occupied seat. */
+function radarOf(own: Seat, seats: readonly Seat[]): RadarState {
+  const others: RadarBlip[] = []
+  for (const seat of seats) {
+    if (seat.id === own.id || !seat.occupied) continue
+    const { x, z } = seat.vehicle.frame.position
+    others.push({ x, z, color: seatColor(seat.id) })
+  }
+  return { position: own.vehicle.frame.position, forward: own.vehicle.frame.forward, others }
+}
 
 /** Someone to put on the server: in what, and on which keys. */
 export interface OnlinePlayer {
@@ -161,7 +174,7 @@ export async function joinOnline(
       const sync =
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
-      return car.presence.hudState(title, controls, sync)
+      return { ...car.presence.hudState(title, controls, sync), radar: radarOf(prediction.ownSeat, prediction.seats) }
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
