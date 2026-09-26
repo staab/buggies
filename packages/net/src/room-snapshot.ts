@@ -90,6 +90,10 @@ function gatherVehicles(
       damage: 0,
       wrecked: false,
       score: 0,
+      collected: 0,
+      kills: 0,
+      goal: null,
+      goalsWon: 0,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -119,6 +123,10 @@ function gatherVehicles(
     vehicle.damage = seat.vehicle.damage
     vehicle.wrecked = seat.vehicle.wrecked
     vehicle.score = seat.score
+    vehicle.collected = seat.collected
+    vehicle.kills = seat.kills
+    vehicle.goal = seat.goal
+    vehicle.goalsWon = seat.goalsWon
     vehicle.weapon = seat.weapon
     vehicle.wins = seat.wins
     vehicle.ammoTicks = seat.ammoTicks

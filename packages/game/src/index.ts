@@ -31,6 +31,7 @@ import {
 } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
+import type { Goal } from './goals.ts'
 import { findSpawns, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
 const { atan2, hypot } = exact
@@ -79,6 +80,21 @@ export {
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
+export {
+  GOAL_KINDS,
+  GOAL_LABELS,
+  GOAL_PRIZE,
+  GOAL_REACH,
+  GOAL_TARGET_MOST,
+  awardGoals,
+  goalMet,
+  goalProgress,
+  setGoal,
+  validGoal,
+  type Goal,
+  type GoalKind,
+  type GoalRequest,
+} from './goals.ts'
 export {
   BANANA_REACH,
   BANANA_SLOTS,
@@ -308,8 +324,15 @@ export interface Seat {
   submersion: number
   /** Consecutive steps spent sunk or off the map. */
   lostTicks: number
-  /** Bananas taken since sitting down. */
+  /** Bananas held: taken since sitting down, less those spent on weapons or spilled from a wreck, and any won with a goal. */
   score: number
+  /** Bananas taken since sitting down, all told. */
+  collected: number
+  /** Cars its weapons have wrecked since sitting down. */
+  kills: number
+  /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
+  goal: Goal | null
+  goalsWon: number
   /** What it is carrying over its roof, won with bananas, and how long the machine gun has left. */
   weapon: Weapon
   /** How many weapons it has won, counted around past 255: a new one is told from the last even when it is the same. */
@@ -400,6 +423,10 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       submersion: 0,
       lostTicks: 0,
       score: 0,
+      collected: 0,
+      kills: 0,
+      goal: null,
+      goalsWon: 0,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -512,7 +539,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   if (seat === undefined) throw new RangeError(`no seat ${id}`)
   reshape(arena, seat, profile)
   seat.occupied = true
-  seat.score = 0
+  clearTally(seat)
   disarm(seat)
   restAction(seat)
   seat.vehicle.body.setEnabled(true)
@@ -525,7 +552,7 @@ export function leaveSeat(arena: Arena, id: number): void {
   const seat = arena.seats[id]
   if (seat === undefined || !seat.occupied) return
   seat.occupied = false
-  seat.score = 0
+  clearTally(seat)
   disarm(seat)
   restAction(seat)
   seat.vehicle.body.setEnabled(false)
@@ -625,9 +652,19 @@ function trimLoose(arena: Arena): void {
   }
 }
 
-/** A banana taken: one more to spend. */
+/** A banana taken: one more to spend, and one more collected. */
 function score(seat: Seat): void {
   seat.score += 1
+  seat.collected += 1
+}
+
+/** A seat sat down in, or left, starts again: no bananas, no wrecks and no goal. */
+function clearTally(seat: Seat): void {
+  seat.score = 0
+  seat.collected = 0
+  seat.kills = 0
+  seat.goal = null
+  seat.goalsWon = 0
 }
 
 /**
@@ -709,7 +746,7 @@ function collectPickups(arena: Arena): void {
         continue
       }
       if (loose.kind === 'banana') score(seat)
-      else harm(seat, BOMB_DAMAGE * loose.power * bombShare(seat.profile))
+      else harm(seat, BOMB_DAMAGE * loose.power * bombShare(seat.profile), arena.seats[loose.owner])
       arena.loose.splice(i, 1)
       break
     }

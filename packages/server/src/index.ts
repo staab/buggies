@@ -37,6 +37,8 @@ const server = new GameServer(
     onRejected: (connection, reason) => log(`rejected connection=${connection}: ${reason}`),
     onRespawned: (seat, why) => log(`respawned seat=${seat.id} (${why})`),
     onChangedVehicle: (seat) => log(`changed vehicle seat=${seat.id} ${seat.profile}`),
+    onGoalSet: (seat) => log(`goal seat=${seat.id} ${seat.goal === null ? 'none' : `${seat.goal.kind} ${seat.goal.target}`}`),
+    onGoalReached: (seat) => log(`goal reached seat=${seat.id}`),
     onRoomOpened: (seed) => log(`room opened seed=${seed}`),
     onRoomClosed: (seed) => log(`room closed seed=${seed}`),
   },

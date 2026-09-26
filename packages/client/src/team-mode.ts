@@ -77,6 +77,16 @@ export async function createTeamMode(
         if (profile !== undefined) view.changeVehicle(profile)
       })
     },
+    map: first.map,
+    position() {
+      return first.focus
+    },
+    goal() {
+      return first.goal()
+    },
+    setGoal(goal) {
+      for (const view of views) view.setGoal(goal)
+    },
     dispose() {
       for (const view of views) view.dispose()
     },

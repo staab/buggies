@@ -416,6 +416,8 @@ export type WeaponKeys = Pick<VehicleInput, 'fire' | 'ability'>
 export interface Gunner {
   readonly id: number
   readonly occupied: boolean
+  /** How many cars its weapons have wrecked since it sat down. */
+  kills: number
   readonly vehicle: Vehicle
   readonly tuning: VehicleTuning
   readonly profile: VehicleProfileId
@@ -702,9 +704,15 @@ export function shielded(seat: Gunner): boolean {
   return seat.shieldTicks > 0
 }
 
-/** Take this much of a car's life with a weapon, unless its shield is up. */
-export function harm(seat: Gunner, damage: number): void {
-  if (!shielded(seat)) hurtVehicle(seat.vehicle, seat.tuning, damage)
+/**
+ * Take this much of a car's life with a weapon, unless its shield is up. A
+ * hit that wrecks it is a kill to whoever fired, if that is someone else.
+ */
+export function harm(seat: Gunner, damage: number, by?: Gunner): void {
+  if (shielded(seat)) return
+  const whole = !seat.vehicle.wrecked
+  hurtVehicle(seat.vehicle, seat.tuning, damage)
+  if (whole && seat.vehicle.wrecked && by !== undefined && by.id !== seat.id && by.occupied) by.kills += 1
 }
 
 /** How much of their grip a car's tires have: a share of it while they slip on oil. */
@@ -852,7 +860,7 @@ function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean): v
   const clear = sightLine(arena.map, muzzle, target.vehicle.frame.position)
   vsub(toward, target.vehicle.frame.position, muzzle)
   vaddScaled(to, muzzle, toward, clear)
-  if (clear === 1) harm(target, MACHINE_GUN_DAMAGE * power * shotShare(target.profile))
+  if (clear === 1) harm(target, MACHINE_GUN_DAMAGE * power * shotShare(target.profile), seat)
   arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? target.id : NO_TARGET })
 }
 
@@ -1260,7 +1268,7 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
         if (other.id === rocket.owner || !other.occupied || other.vehicle.wrecked) continue
         vsub(toward, other.vehicle.frame.position, rocket.position)
         if (vlength(toward) > ROCKET_REACH) continue
-        harm(other, ROCKET_DAMAGE * rocket.power)
+        harm(other, ROCKET_DAMAGE * rocket.power, seats[rocket.owner])
         spent = true
         break
       }

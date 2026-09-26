@@ -10,6 +10,7 @@ import './styles.css'
 
 import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
+import { GoalMenu } from './goal-menu.ts'
 import { Hud } from './hud.ts'
 import { Menu, type Choice, type Mode } from './menu.ts'
 import { Shell } from './shell.ts'
@@ -112,6 +113,21 @@ const shell = new Shell(
   readChoice(),
 )
 
+// A trophy beside the speaker, while a game is on, opens a panel for setting a goal to play for.
+const goals = new GoalMenu(element('goals'), {
+  map: () => shell.played?.map ?? null,
+  position: () => shell.played?.position?.() ?? null,
+  goal: () => shell.played?.goal?.() ?? null,
+  setGoal: (goal) => shell.played?.setGoal?.(goal),
+})
+shell.overlay = goals
+const goalButton = element('goal') as HTMLButtonElement
+goalButton.addEventListener('click', () => {
+  goals.toggle()
+  // The keys drive the game, not the button, once it has been clicked.
+  goalButton.blur()
+})
+
 // The physics engine is a wasm module, so it has to be ready before anything
 // can be driven. It loads in well under a frame, and getting it out of the way
 // up front beats a loading state in the middle of a session. The vehicles'
@@ -122,7 +138,10 @@ await Promise.all([initPhysics(), loadCarModels()])
 shell.welcome()
 
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') shell.toggleMenu()
+  if (event.key !== 'Escape') return
+  // Escape shuts the goal panel first, if it is open, and only then opens the menu.
+  if (goals.open) goals.hide()
+  else shell.toggleMenu()
 })
 
 window.addEventListener('resize', () => shell.resize())
@@ -134,6 +153,10 @@ function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.1)
   last = now
   shell.frame(dt)
+  // The trophy is there while a game is being played and the menu is down.
+  const goalable = shell.played?.setGoal !== undefined && !shell.menu.open
+  goalButton.hidden = !goalable
+  if (!goalable && goals.open) goals.hide()
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

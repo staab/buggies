@@ -29,6 +29,8 @@ import {
   encodeRoomsRequest,
   encodeSnapshot,
   encodeWelcome,
+  decodeGoal,
+  encodeGoal,
   isRespawn,
   isRoomsRequest,
   withAck,
@@ -52,6 +54,10 @@ const snapshot: SnapshotMessage = {
       damage: 1,
       wrecked: true,
       score: 60000,
+      collected: 1234,
+      kills: 7,
+      goal: { kind: 'location', target: 0, from: 0, x: 1500.5, z: 2400.25 },
+      goalsWon: 3,
       weapon: 'machineGun',
       wins: 255,
       ammoTicks: 1234,
@@ -82,6 +88,10 @@ const snapshot: SnapshotMessage = {
       damage: 0.4,
       wrecked: false,
       score: 3,
+      collected: 3,
+      kills: 0,
+      goal: { kind: 'kills', target: 5, from: 2, x: 0, z: 0 },
+      goalsWon: 0,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -149,6 +159,22 @@ describe('wire', () => {
     const out = { steer: 9, throttle: 9, brake: 9, handbrake: false, fire: true, ability: false }
     expect(decodeInput(payload, out)).toBe(77)
     expect(out).toEqual(input)
+  })
+
+  it('round-trips a goal, a count or a spot, and the clearing of one', () => {
+    expect(decodeGoal(encodeGoal({ kind: 'score', target: 20, x: 0, z: 0 }))).toEqual({ kind: 'score', target: 20, x: 0, z: 0 })
+    expect(decodeGoal(encodeGoal({ kind: 'location', target: 0, x: 1500.5, z: 2400.25 }))).toEqual({
+      kind: 'location',
+      target: 0,
+      x: 1500.5,
+      z: 2400.25,
+    })
+    expect(decodeGoal(encodeGoal(null))).toBeNull()
+    // Not a goal at all: the wrong length, or a kind that is none of them.
+    expect(decodeGoal(encodeRespawn())).toBeUndefined()
+    const bad = encodeGoal(null)
+    bad[1] = 99
+    expect(decodeGoal(bad)).toBeUndefined()
   })
 
   it('round-trips a snapshot, every vehicle and field', () => {
