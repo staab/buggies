@@ -161,6 +161,9 @@ const BLADE_SPIN = 0.7
 const NACELLE = { length: 4.2, width: 1.7 } as const
 /** Standing stones are a pale weathered gray, a little different each, to stand out against the grass. */
 const STONE_COLOR = new THREE.Color('#bcbdb5')
+/** The pyramid is sandstone, from a warm shade at its foot to a paler one at the top. */
+const PYRAMID_FOOT = new THREE.Color('#b8925e')
+const PYRAMID_TOP = new THREE.Color('#e2cc9c')
 /**
  * A lighthouse is a white tower tapering to this share of its width at the
  * top, with two red bands, a railed gallery, a glazed lantern room with the
@@ -1394,6 +1397,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const silos = ofKind('silo')
   const turbines = ofKind('turbine')
   const stones = [...ofKind('stone'), ...ofKind('lintel')]
+  const pyramid = ofKind('pyramid')
   const lighthouses = ofKind('lighthouse')
   const churches = ofKind('church')
   const steeples = ofKind('steeple')
@@ -1501,6 +1505,11 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     instanced(box, plain, stones, (stone, matrix, color) => {
       boxAt(stone, matrix)
       color.copy(STONE_COLOR).multiplyScalar(0.85 + stone.tone * 0.3)
+    }),
+    // The pyramid: a box a tier, the tone saying how far up it is.
+    instanced(box, plain, pyramid, (tier, matrix, color) => {
+      boxAt(tier, matrix)
+      color.copy(PYRAMID_FOOT).lerp(PYRAMID_TOP, tier.tone)
     }),
   )
 

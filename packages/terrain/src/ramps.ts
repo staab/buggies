@@ -14,20 +14,22 @@ function arcRadius(ramp: Ramp): number {
 
 /** Height of a ramp's top above its foot, `along` meters from the foot. */
 export function rampRise(ramp: Ramp, along: number): number {
-  const radius = arcRadius(ramp)
   const reach = Math.min(Math.max(along, 0), ramp.length)
+  if (ramp.straight) return ((ramp.top - ramp.bottom) * reach) / ramp.length
+  const radius = arcRadius(ramp)
   return radius - Math.sqrt(Math.max(radius * radius - reach * reach, 0))
 }
 
 /**
  * The corners of a ramp's facets, foot to lip: each is one straight piece of
- * the arc across the ramp's width, and the solid under each is convex, which
- * a collider can be made of directly.
+ * the arc across the ramp's width, or the one piece of a straight ramp, and
+ * the solid under each is convex, which a collider can be made of directly.
  */
 export function rampFacets(ramp: Ramp): { along: number; height: number }[] {
   const facets: { along: number; height: number }[] = []
-  for (let i = 0; i <= RAMP_FACETS; i++) {
-    const along = (ramp.length * i) / RAMP_FACETS
+  const count = ramp.straight ? 1 : RAMP_FACETS
+  for (let i = 0; i <= count; i++) {
+    const along = (ramp.length * i) / count
     facets.push({ along, height: ramp.bottom + rampRise(ramp, along) })
   }
   return facets

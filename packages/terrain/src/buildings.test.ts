@@ -11,7 +11,7 @@ import { HOUSE_KINDS, RAISED_KINDS, WATER_KINDS, type BuildingKind } from './typ
 /** How little some kinds rise above the ground and still stand on it. */
 const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, camper: 2, post: 3, sign: 3, wall: 0.5, board: 2, site: 2.5, fountain: 1, statue: 2.4 }
 import { sampleHeight } from './heightfield.ts'
-import type { Building, Road, TerrainMap } from './types.ts'
+import type { Building, Ramp, Road, TerrainMap } from './types.ts'
 
 let map: TerrainMap
 
@@ -63,6 +63,12 @@ function roadCrowding(roads: Road[], x: number, z: number): number {
     }
   }
   return nearest
+}
+
+/** Whether a ramp is one of the pyramid's: its lip within reach of the pyramid's middle. */
+function onPyramid(island: TerrainMap, ramp: Ramp): boolean {
+  const lip = { x: ramp.x + ramp.dx * ramp.length, z: ramp.z + ramp.dz * ramp.length }
+  return island.buildings.some((building) => building.kind === 'pyramid' && Math.hypot(building.x - lip.x, building.z - lip.z) < 40)
 }
 
 /** Whether two footprints overlap in plan, by the separating axis test. */
@@ -699,6 +705,8 @@ describe('ramps', () => {
   it('stand on the road shoulders, running along the road, at a grade to fly off', () => {
     expect(map.ramps.length).toBeGreaterThan(10)
     for (const ramp of map.ramps) {
+      // The pyramid's ramps are its own, and run up its sides instead.
+      if (onPyramid(map, ramp)) continue
       expect((ramp.top - ramp.bottom) / ramp.length).toBeCloseTo(0.25, 1)
       expect(Math.abs(sampleHeight(map.heightfield, ramp.x, ramp.z) - ramp.bottom)).toBeLessThan(0.01)
       // Beside a road, off its roadway but within a car's width of it,
@@ -724,6 +732,50 @@ describe('ramps', () => {
       expect(alongRoad).toBeGreaterThan(0.95)
       expect(roadCrowding(map.roads, ramp.x, ramp.z)).toBeGreaterThan(1)
     }
+  })
+})
+
+describe('the pyramid', () => {
+  beforeAll(() => {
+    map ??= generateTerrain(6)
+  }, 60_000)
+
+  it('steps up in tiers, with a tunnel through its foot one way and a straight ramp up to the top from either side the other', () => {
+    const tiers = map.buildings.filter((building) => building.kind === 'pyramid')
+    // The first tier either side of the tunnel and the lintel over it, then three more.
+    expect(tiers).toHaveLength(6)
+    const [wingA, wingB, lintel, ...upper] = tiers
+    const level = sampleHeight(map.heightfield, lintel!.x, lintel!.z)
+    // The ground is leveled right through the tunnel, and a semi goes under the lintel.
+    for (const along of [-0.45, 0, 0.45]) {
+      const x = lintel!.x + Math.cos(lintel!.yaw) * lintel!.width * along
+      const z = lintel!.z - Math.sin(lintel!.yaw) * lintel!.width * along
+      expect(Math.abs(sampleHeight(map.heightfield, x, z) - level)).toBeLessThan(0.05)
+    }
+    expect(lintel!.bottom - level).toBeGreaterThanOrEqual(5.5)
+    expect(wingA!.top).toBeCloseTo(lintel!.top, 5)
+    expect(wingB!.top).toBeCloseTo(lintel!.top, 5)
+    // Each tier stands on the one below, narrower, and higher.
+    let below = lintel!
+    for (const tier of upper) {
+      expect(tier.bottom).toBeCloseTo(below.top, 5)
+      expect(tier.top).toBeGreaterThan(tier.bottom)
+      expect(tier.width).toBeLessThan(below === lintel ? lintel.width : below.width)
+      below = tier
+    }
+    // A straight ramp up each of the other two sides, from the ground to the edge of the top, facing each other.
+    const ramps = map.ramps.filter((ramp) => onPyramid(map, ramp))
+    expect(ramps).toHaveLength(2)
+    for (const ramp of ramps) {
+      expect(ramp.straight).toBe(true)
+      expect(ramp.bottom).toBeCloseTo(level, 1)
+      expect(ramp.top).toBeCloseTo(upper.at(-1)!.top, 5)
+      const lip = { x: ramp.x + ramp.dx * ramp.length, z: ramp.z + ramp.dz * ramp.length }
+      expect(Math.hypot(lip.x - lintel!.x, lip.z - lintel!.z)).toBeCloseTo(upper.at(-1)!.width / 2, 1)
+      // Steep, but a car can drive up it.
+      expect((ramp.top - ramp.bottom) / ramp.length).toBeLessThan(0.45)
+    }
+    expect(ramps[0]!.dx * ramps[1]!.dx + ramps[0]!.dz * ramps[1]!.dz).toBeCloseTo(-1, 5)
   })
 })
 

@@ -4,7 +4,6 @@ import {
   ROAD_TUNNEL,
   flatHeightfield,
   CURB_HEIGHT,
-  RAMP_FACETS,
   deckSpans,
   generateTerrain,
   lowestDeckOver,
@@ -178,8 +177,8 @@ describe('terrain colliders', () => {
       for (const building of map.buildings) {
         const found = castDown(world, building.x, building.z, building.top + 5)
         if (found === null) continue
-        // A standing stone may carry a lintel, a post a canopy and a site a crane, whose top is what is met above it.
-        const carried = (building.kind === 'stone' || building.kind === 'post' || building.kind === 'site') && found > building.top
+        // A standing stone may carry a lintel, a post a canopy, a site a crane and a pyramid's tier the one above, whose top is what is met above it.
+        const carried = (building.kind === 'stone' || building.kind === 'post' || building.kind === 'site' || building.kind === 'pyramid') && found > building.top
         if (Math.abs(found - building.top) < 0.01 || carried) roofed++
       }
       expect(roofed).toBe(map.buildings.length)
@@ -203,7 +202,8 @@ describe('terrain colliders', () => {
       // drawn ground's bilinear reading but never up at the shrub's top.
       let open = 0
       for (const shrub of shrubs) {
-        const found = castDown(world, shrub.x, shrub.z, shrub.bottom + shrub.height + 5)
+        // A little off its middle: a ray straight down a seam of the heightfield's grid can slip through it.
+        const found = castDown(world, shrub.x + 0.03, shrub.z + 0.03, shrub.bottom + shrub.height + 5)
         if (found !== null && found < shrub.bottom + shrub.height - 0.1) open++
       }
       expect(open).toBe(shrubs.length)
@@ -250,7 +250,7 @@ describe('terrain colliders', () => {
           const found = castDown(world, ramp.x + ramp.dx * along, ramp.z + ramp.dz * along, ramp.top + 5)
           if (found !== null && Math.abs(found - (ramp.bottom + rampRise(ramp, along))) < 0.08) facetsFound++
         }
-        if (facetsFound === RAMP_FACETS + 1) sound++
+        if (facetsFound === rampFacets(ramp).length) sound++
       }
       expect(sound).toBe(map.ramps.length)
     })
