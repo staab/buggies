@@ -40,7 +40,6 @@ export type Weapon =
   | 'wings'
   | 'shockwave'
   | 'siren'
-  | 'repair'
   | 'oil'
   | 'shield'
   | 'magnet'
@@ -59,7 +58,6 @@ export const WEAPONS: readonly Weapon[] = [
   'wings',
   'shockwave',
   'siren',
-  'repair',
   'oil',
   'shield',
   'magnet',
@@ -79,7 +77,6 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   wings: 'Wings',
   shockwave: 'Shockwave',
   siren: 'Siren',
-  repair: 'Repair',
   oil: 'Oil slick',
   shield: 'Shield',
   magnet: 'Magnet',
@@ -1187,7 +1184,7 @@ function act(arena: Battlefield, seat: Gunner, pressed: boolean): void {
  * Fire whatever the fire key is held on, and do the car's own with its own
  * key. Most weapons go all at once and are spent: a rocket or three, a
  * bomb, a mine field or an oil slick dropped, the shockwave stunning every
- * car near, the repair kit mending the car, and the shield, the magnet and
+ * car near, and the shield, the magnet and
  * the ram plow set going for a while, and the grappling hook shot at the
  * car ahead, or at nothing. The machine gun, trained on the nearest car
  * ahead whether or not it is firing, fires as long as the key is held and
@@ -1248,9 +1245,6 @@ function useAtOnce(arena: Battlefield, seat: Gunner): boolean {
       break
     case 'shockwave':
       reach(arena, seat, SHOCKWAVE_RANGE, stun(SHOCKWAVE_STUN_TICKS))
-      break
-    case 'repair':
-      seat.vehicle.damage = 0
       break
     case 'shield':
       seat.shieldTicks = SHIELD_TICKS
