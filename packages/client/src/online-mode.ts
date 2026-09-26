@@ -47,8 +47,9 @@ const BEACON_RADIUS = 3
 /** How long a goal reached is told of, in seconds. */
 const GOAL_WON_SECONDS = 5
 
-/** The color the robots are marked in on the mini-map. */
+/** The colors the robots, and the cars nobody drives, are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
+const NPC_COLOR = 0x9aa0a6
 
 /** The mini-map from a seat: where it is and faces, every other occupied seat, the robots, and the spot it is playing for. */
 function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[]): RadarState {
@@ -56,7 +57,7 @@ function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[]): R
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
     const { x, z } = seat.vehicle.frame.position
-    others.push({ x, z, color: seatColor(seat.id) })
+    others.push({ x, z, color: seat.npc ? NPC_COLOR : seatColor(seat.id) })
   }
   for (const robot of robots) others.push({ x: robot.position.x, z: robot.position.z, color: ROBOT_COLOR })
   if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })

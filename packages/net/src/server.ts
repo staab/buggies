@@ -1,4 +1,5 @@
 import {
+  NPC_CARS,
   advance,
   awardGoals,
   changeVehicle,
@@ -7,7 +8,9 @@ import {
   freeSeat,
   leaveSeat,
   respawnLost,
+  npcInput,
   respawnNearby,
+  seatNpc,
   setGoal,
   validGoal,
   type Arena,
@@ -141,12 +144,18 @@ export class GameServer implements TransportHandlers {
   private readonly players = new Map<number, Player>()
   private readonly handshaking = new Map<number, Handshake>()
   private readonly scratchInput: VehicleInput = createVehicleInput()
+  /** What a car nobody drives asks for, a seat at a time: each is used before the next is asked. */
+  private readonly npcCommand: VehicleInput = createVehicleInput()
   /** The server's own clock, for handshakes, which belong to no room yet. */
   private clock = 0
 
-  constructor(arenaFor: (seed: number) => Arena, events: Partial<GameServerEvents> = {}) {
+  /** How many cars nobody drives each island has, while seats are free for them. */
+  private readonly npcs: number
+
+  constructor(arenaFor: (seed: number) => Arena, events: Partial<GameServerEvents> = {}, npcs = NPC_CARS) {
     this.arenaFor = arenaFor
     this.events = events
+    this.npcs = npcs
   }
 
   get tick(): number {
@@ -203,7 +212,9 @@ export class GameServer implements TransportHandlers {
     this.clock += 1
     for (const room of this.rooms.values()) {
       const tick = room.arena.tick
-      advance(room.arena, (seat) => this.playerIn(room, seat)?.timeline.consume(tick) ?? this.scratchInput)
+      advance(room.arena, (seat) =>
+        seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? this.scratchInput),
+      )
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
       for (const seat of awardGoals(room.arena.seats)) this.events.onGoalReached?.(seat)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
@@ -293,6 +304,7 @@ export class GameServer implements TransportHandlers {
     const { room } = player
     room.players.delete(connection.id)
     leaveSeat(room.arena, player.seat.id)
+    this.topUpNpcs(room.arena)
     this.events.onLeft?.(player.seat, connection.id, room.seed)
     // The last one out closes the room: an empty island is not worth stepping.
     if (room.players.size === 0) {
@@ -334,8 +346,19 @@ export class GameServer implements TransportHandlers {
       lastSnapshotBytes: 0,
     }
     this.rooms.set(seed, room)
+    this.topUpNpcs(room.arena)
     this.events.onRoomOpened?.(seed)
     return room
+  }
+
+  /** Seat cars nobody drives in the last seats, until there are as many as an island has, or no seat is left. */
+  private topUpNpcs(arena: Arena): void {
+    let count = arena.seats.filter((seat) => seat.npc).length
+    for (let id = arena.seats.length - 1; id >= 0 && count < this.npcs; id--) {
+      if (arena.seats[id]!.occupied) continue
+      if (seatNpc(arena, id) === null) return
+      count++
+    }
   }
 
   private completeHandshake(connection: TransportConnection, payload: Uint8Array): void {
@@ -361,7 +384,13 @@ export class GameServer implements TransportHandlers {
     }
     const room = this.openRoom(hello.seed)
     const { arena } = room
-    const free = freeSeat(arena)
+    // A car nobody drives gives up its seat to someone who will.
+    let free = freeSeat(arena)
+    const npc = arena.seats.find((seat) => seat.npc)
+    if (free === undefined && npc !== undefined) {
+      leaveSeat(arena, npc.id)
+      free = npc
+    }
     if (free === undefined) {
       this.reject(connection, REJECT_SERVER_FULL)
       if (room.players.size === 0) this.closeRoom(room)

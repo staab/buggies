@@ -26,6 +26,8 @@ import {
   type VehicleTuning,
 } from '@buggies/vehicle'
 
+import { NPC_FRAGILITY } from './npcs.ts'
+
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { PICKUP_HEIGHT, LOOSE_IDS, pickupSeed, type Loose, type LooseKind } from './pickups.ts'
@@ -441,6 +443,8 @@ export type WeaponKeys = Pick<VehicleInput, 'fire' | 'ability'>
 export interface Gunner {
   readonly id: number
   readonly occupied: boolean
+  /** A car nobody drives, which weapons hurt all the more. */
+  readonly npc: boolean
   /** How many cars its weapons have wrecked since it sat down. */
   kills: number
   readonly vehicle: Vehicle
@@ -749,7 +753,7 @@ export function shielded(seat: Gunner): boolean {
 export function harm(seat: Gunner, damage: number, by?: Gunner): void {
   if (shielded(seat)) return
   const whole = !seat.vehicle.wrecked
-  hurtVehicle(seat.vehicle, seat.tuning, damage)
+  hurtVehicle(seat.vehicle, seat.tuning, damage * (seat.npc ? NPC_FRAGILITY : 1))
   if (whole && seat.vehicle.wrecked && by !== undefined && by.id !== seat.id && by.occupied) by.kills += 1
 }
 

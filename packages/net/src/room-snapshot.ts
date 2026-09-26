@@ -104,6 +104,7 @@ function gatherVehicles(
       cooldownTicks: 0,
       lightsOn: false,
       abilityHeld: false,
+      npc: false,
       rocketsFired: 0,
       stunnedTicks: 0,
       slowedTicks: 0,
@@ -126,6 +127,7 @@ function gatherVehicles(
     vehicle.damage = seat.vehicle.damage
     vehicle.wrecked = seat.vehicle.wrecked
     vehicle.score = seat.score
+    vehicle.npc = seat.npc
     vehicle.collected = seat.collected
     vehicle.kills = seat.kills
     vehicle.goal = seat.goal

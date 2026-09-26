@@ -4,6 +4,8 @@ import {
   NEUTRAL_INPUT,
   BANANAS_PER_WEAPON,
   GOAL_PRIZE,
+  MAX_PLAYERS,
+  NPC_CARS,
   DURABILITY,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
@@ -150,6 +152,8 @@ class Session {
         onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
         onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
       },
+      // No cars nobody drives, to get in the way of what is being looked at.
+      0,
     )
   }
 
@@ -551,6 +555,27 @@ describe('a session', () => {
     expect(a.client.closed).not.toBeNull()
     session.dispose()
   })
+
+  it('fills the seats nobody takes with cars nobody drives, and gives one up to a newcomer when the island is full', async () => {
+    const island = generateTerrain(11, { size: 513 })
+    for (const npcs of [NPC_CARS, MAX_PLAYERS]) {
+      const server = new GameServer(() => createArena(island), {}, npcs)
+      const client = new NetClient(direct(server), () => 0)
+      const welcome = await client.connect('sportsCar', island.seed)
+      const { arena } = server.roomFor(island.seed)!
+      const seat = arena.seats[welcome.seat]!
+      expect(seat.npc).toBe(false)
+      // As many as asked for, less the one given up when that was every seat.
+      expect(arena.seats.filter((other) => other.npc)).toHaveLength(Math.min(npcs, MAX_PLAYERS - 1))
+      expect(arena.seats.every((other) => other.occupied)).toBe(npcs === MAX_PLAYERS)
+      for (let i = 0; i < 60; i++) server.advance()
+      // They drive themselves, and the player count is of people.
+      expect(server.playerCount).toBe(1)
+      expect(arena.seats.filter((other) => other.npc).some((other) => other.vehicle.speed > 1)).toBe(true)
+      client.close('done')
+      server.dispose()
+    }
+  }, 60_000)
 
   it('swaps a player into another vehicle where they are, keeping the seat and its bananas', async () => {
     const session = new Session()
