@@ -1,6 +1,9 @@
 import { ROBOT_EYES, ROBOT_SIZE, type Robot } from '@buggies/game'
 import * as THREE from 'three'
 
+import type { PresenceEffects } from './car-presence.ts'
+import { distanceFrom, type Ear } from './ear.ts'
+
 /** Where the robots are: an arena, or a mirror of one. */
 export interface RobotSource {
   readonly robots: readonly Robot[]
@@ -51,27 +54,48 @@ export function buildRobot(): { model: THREE.Group; eyes: THREE.MeshStandardMate
 interface Shown {
   model: THREE.Group
   eyes: THREE.MeshStandardMaterial
+  /** How many times it had been brought down when last drawn. */
+  deaths: number
 }
+
+/** How badly a machine has to be hurt before it smokes, and how hard it smokes when all but down. */
+export const MACHINE_SMOKING = 0.5
+const STILL = { x: 0, y: 0, z: 0 }
 
 /** The robots, each drawn where the simulation has it, its eyes blazing while it burns a car. */
 export class RobotsView {
   readonly object = new THREE.Group()
 
   private readonly source: RobotSource
+  private readonly effects: PresenceEffects | null
+  private readonly ear: Ear | null
   private readonly shown = new Map<number, Shown>()
 
-  constructor(source: RobotSource) {
+  constructor(source: RobotSource, effects: PresenceEffects | null = null, ear: Ear | null = null) {
     this.source = source
-    this.update()
+    this.effects = effects
+    this.ear = ear
+    this.update(0)
   }
 
-  update(): void {
+  /** A frame on: a robot brought down since blows up where it was, and one badly hurt smokes. */
+  update(dt: number): void {
     for (const robot of this.source.robots) {
       let view = this.shown.get(robot.id)
       if (view === undefined) {
-        view = buildRobot()
+        view = { ...buildRobot(), deaths: robot.deaths }
         this.shown.set(robot.id, view)
         this.object.add(view.model)
+      }
+      if (robot.deaths !== view.deaths) {
+        view.deaths = robot.deaths
+        const where = { x: view.model.position.x, y: view.model.position.y + ROBOT_SIZE.halfHeight, z: view.model.position.z }
+        this.effects?.explosions.burst(where)
+        if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
+      }
+      if (robot.damage > MACHINE_SMOKING) {
+        const head = { x: robot.position.x, y: robot.position.y + ROBOT_EYES, z: robot.position.z }
+        this.effects?.smoke.trail(head, STILL, (robot.damage - MACHINE_SMOKING) * 2, dt)
       }
       view.model.position.set(robot.position.x, robot.position.y, robot.position.z)
       view.model.rotation.set(0, robot.heading, 0)

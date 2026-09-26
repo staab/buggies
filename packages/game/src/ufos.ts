@@ -55,6 +55,9 @@ export interface Ufo {
   /** How many waypoints it has reached, which picks the next, and how many cars it has taken, which picks where the next is set down. */
   legs: number
   abductions: number
+  /** How much of what brings it down it has taken, 0 to 1, and how many times it has been brought down, which picks where it comes back. */
+  damage: number
+  deaths: number
 }
 
 /** What a saucer needs of a car: where it is, whether it can be taken, and the car itself for the beam to pull. */
@@ -101,6 +104,8 @@ export function createUfos(map: TerrainMap): Ufo[] {
       cooldownTicks: UFO_FIRST_TICKS,
       legs: 0,
       abductions: 0,
+      damage: 0,
+      deaths: 0,
     }
     const start = waypoint(map, { ...ufo, legs: -1 }, { x: 0, z: 0 })
     ufo.position.x = start.x
@@ -225,5 +230,20 @@ export function dropPoint(map: TerrainMap, ufo: Ufo): { x: number; z: number } {
 /** Done with a car it took: back to cruising, to wait a good while before it takes another. */
 export function released(ufo: Ufo): void {
   ufo.abductions += 1
+  giveUp(ufo, UFO_COOLDOWN_TICKS)
+}
+
+/**
+ * A saucer brought down comes back whole high over somewhere else on the
+ * island, picked by how many times it has been brought down, letting go
+ * of whatever car it had and waiting a good while before it takes another.
+ */
+export function rebuildUfo(map: TerrainMap, ufo: Ufo): void {
+  ufo.deaths += 1
+  ufo.damage = 0
+  const at = waypoint(map, { ...ufo, legs: 50000 + ufo.deaths * 13 }, { x: 0, z: 0 })
+  ufo.position.x = at.x
+  ufo.position.z = at.z
+  ufo.position.y = groundAt(map, at.x, at.z) + UFO_CRUISE
   giveUp(ufo, UFO_COOLDOWN_TICKS)
 }

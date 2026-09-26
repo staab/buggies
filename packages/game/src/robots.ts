@@ -36,6 +36,9 @@ const ROBOT_SALT = 0x0b07
  */
 export interface Robot extends Patrol {
   readonly id: number
+  /** How much of what brings it down it has taken, 0 to 1, and how many times it has been brought down, which picks where it comes back. */
+  damage: number
+  deaths: number
   /** The seat its eyes are on, while its beam is lit, or none. */
   target: number
   beamTicks: number
@@ -79,6 +82,8 @@ export function createRobots(map: TerrainMap, world: RAPIER.World): Robot[] {
     const robot: Robot = {
       id,
       ...patrol,
+      damage: 0,
+      deaths: 0,
       target: -1,
       beamTicks: 0,
       cooldownTicks: 0,
@@ -105,4 +110,20 @@ export function robotEyes(out: Vec3, robot: Robot): Vec3 {
   out.y = robot.position.y + ROBOT_EYES
   out.z = robot.position.z
   return out
+}
+
+/**
+ * A robot brought down comes back whole somewhere else on the arterials,
+ * picked by how many times it has been brought down, its eyes charging.
+ */
+export function rebuildRobot(map: TerrainMap, robot: Robot): void {
+  robot.deaths += 1
+  robot.damage = 0
+  const patrol = startPatrol(robotSeed(map, robot.id) + robot.deaths * 977)(map)
+  if (patrol !== null) Object.assign(robot, patrol)
+  robot.target = -1
+  robot.beamTicks = 0
+  robot.cooldownTicks = ROBOT_COOLDOWN_TICKS
+  placeRobot(map, robot)
+  seatRobotBody(robot, true)
 }

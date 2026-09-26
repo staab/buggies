@@ -96,16 +96,11 @@ export function buildDuneBuggy(tuning: VehicleTuning): THREE.Group {
   return group
 }
 
-/** How strongly the thrusters glow at the ground, and how much of their beam shows. */
-const THRUSTER_GLOW = 0.55
-const THRUSTER_BEAM = 0.18
-
 /**
  * A rocket ship: a white fuselage with a red nose cone, a glass canopy on
  * top, swept red fins at the tail and a stub wing either side out to the
- * chassis's width. It has no wheels: it rides at its height on four
- * thrusters, drawn as a faint beam down to a glow on the ground, which is
- * what it is fitted to the road by.
+ * chassis's width. It has no wheels, and nothing is drawn under it: it
+ * rides at its height on thrusters that are not seen.
  */
 export function buildRocketShip(tuning: VehicleTuning): THREE.Group {
   const group = new THREE.Group()
@@ -117,8 +112,6 @@ export function buildRocketShip(tuning: VehicleTuning): THREE.Group {
   const trim = material('#d0342c', { metalness: 0.3, roughness: 0.45 })
   const glass = material('#7fd8ff', { metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.75 })
   const nozzle = material('#3a3d42', { metalness: 0.7, roughness: 0.3 })
-  const glow = new THREE.MeshBasicMaterial({ color: '#7fe7ff', transparent: true, opacity: THRUSTER_GLOW, depthWrite: false })
-  const beam = new THREE.MeshBasicMaterial({ color: '#7fe7ff', transparent: true, opacity: THRUSTER_BEAM, depthWrite: false })
 
   const middle = hover + radius
   const nose = l * 0.55
@@ -142,20 +135,12 @@ export function buildRocketShip(tuning: VehicleTuning): THREE.Group {
   const fin = box([0.08, radius * 1.4, l * 0.45], [0, middle + radius * 1.1, -l * 0.7], trim)
   group.add(fin)
 
-  // The thrusters: a glow on the ground under each corner, and a faint beam up to the hull.
-  for (const [x, z] of [
-    [tuning.halfTrackWidth, -tuning.frontAxleZ],
-    [-tuning.halfTrackWidth, -tuning.frontAxleZ],
-    [tuning.halfTrackWidth, -tuning.rearAxleZ],
-    [-tuning.halfTrackWidth, -tuning.rearAxleZ],
-  ] as const) {
-    const pad = new THREE.Mesh(new THREE.CircleGeometry(0.35, 16).rotateX(-Math.PI / 2), glow)
-    pad.position.set(x * 0.6, 0.02, z)
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.3, middle - radius * 0.5, 12, 1, true), beam)
-    shaft.position.set(x * 0.6, (middle - radius * 0.5) / 2, z)
-    pad.castShadow = false
-    shaft.castShadow = false
-    group.add(pad, shaft)
-  }
+  // Where the ground is under it, as it hovers: nothing to be seen, only
+  // what the model is fitted to the road by, so it floats at its height.
+  const ground = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.01, 0.1), nozzle)
+  ground.position.set(0, 0.005, 0)
+  ground.visible = false
+  ground.castShadow = false
+  group.add(ground)
   return group
 }

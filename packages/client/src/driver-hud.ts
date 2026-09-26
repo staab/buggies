@@ -31,8 +31,8 @@ const DECK_HEADROOM = 1.5
 const DECK_UNDERSIDE = 0.4
 
 /**
- * What the chase camera must stay between: the ground, or inside a tunnel
- * the road and the arch over it, or under a bridge the deck overhead. Read
+ * What the chase camera must stay between: the ground, or for a car inside
+ * a tunnel the road and the arch over it, or under a bridge the deck overhead. Read
  * from the map rather than the physics world so the camera never has to ask
  * the simulation anything.
  */
@@ -40,8 +40,9 @@ export function cameraBounds(map: TerrainMap): CameraBoundsAt {
   const bores = tunnelSegments(map.roads)
   const decks = deckSpans(map.roads)
   return (x, z, out, above) => {
+    // Only a car down in the bore is in the tunnel: one over it, flying or falling, is out in the open.
     const floor = boreFloorAt(bores, x, z)
-    if (floor === null) {
+    if (floor === null || boreClearance(bores, x, z, above) >= 0) {
       out.floor = sampleHeight(map.heightfield, x, z)
       out.ceiling = Number.POSITIVE_INFINITY
     } else {

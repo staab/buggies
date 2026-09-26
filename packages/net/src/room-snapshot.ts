@@ -247,7 +247,18 @@ function gatherRockets(arena: Arena, out: RoomSnapshots): RocketSnapshot[] {
 function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
   const { robots } = out
   arena.robots.forEach((robot, index) => {
-    const entry = (robots[index] ??= { id: 0, road: 0, along: 0, direction: 1, legs: 0, target: NO_TARGET, beamTicks: 0, cooldownTicks: 0 })
+    const entry = (robots[index] ??= {
+      id: 0,
+      road: 0,
+      along: 0,
+      direction: 1,
+      legs: 0,
+      target: NO_TARGET,
+      beamTicks: 0,
+      cooldownTicks: 0,
+      damage: 0,
+      deaths: 0,
+    })
     entry.id = robot.id
     entry.road = robot.road
     entry.along = robot.along
@@ -256,6 +267,8 @@ function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
     entry.target = robot.target
     entry.beamTicks = robot.beamTicks
     entry.cooldownTicks = robot.cooldownTicks
+    entry.damage = robot.damage
+    entry.deaths = robot.deaths
   })
   robots.length = arena.robots.length
   return robots
@@ -274,6 +287,8 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
       cooldownTicks: 0,
       legs: 0,
       abductions: 0,
+      damage: 0,
+      deaths: 0,
     })
     entry.id = ufo.id
     vcopy(entry.position, ufo.position)
@@ -283,6 +298,8 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
     entry.cooldownTicks = ufo.cooldownTicks
     entry.legs = ufo.legs
     entry.abductions = ufo.abductions
+    entry.damage = ufo.damage
+    entry.deaths = ufo.deaths
   })
   ufos.length = arena.ufos.length
   return ufos

@@ -32,7 +32,7 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import type { Goal } from './goals.ts'
-import { carried, createUfos, dropPoint, flyUfo, released, type Ufo } from './ufos.ts'
+import { carried, createUfos, dropPoint, flyUfo, rebuildUfo, released, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
 import {
   ROBOT_COOLDOWN_TICKS,
@@ -40,6 +40,7 @@ import {
   ROBOT_RANGE,
   ROBOT_BEAM_TICKS,
   createRobots,
+  rebuildRobot,
   robotEyes,
   seatRobotBody,
   walkRobot,
@@ -287,6 +288,11 @@ export {
   weaponsFor,
   winged,
   wingsTurnRadius,
+  aimPoint,
+  MACHINE_TOUGHNESS,
+  ROBOT_TARGET,
+  UFO_TARGET,
+  type Machine,
   NATIVE_POWER_UPS,
   type Battlefield,
   type Gunner,
@@ -678,6 +684,9 @@ export function advance(
   fireRobots(arena)
   armFromBananas(arena)
   flyRockets(arena, dt)
+  // A machine the weapons have brought down comes back whole elsewhere.
+  for (const robot of arena.robots) if (robot.damage >= 1) rebuildRobot(arena.map, robot)
+  for (const ufo of arena.ufos) if (ufo.damage >= 1) rebuildUfo(arena.map, ufo)
   trimLoose(arena)
 }
 
@@ -821,7 +830,7 @@ export function npcInput(arena: Arena, seat: Seat, out: VehicleInput): VehicleIn
  */
 function armFromBananas(arena: Arena): void {
   for (const seat of arena.seats) {
-    if (!seat.occupied || seat.vehicle.wrecked || seat.weapon !== 'none' || seat.score < BANANAS_PER_WEAPON) continue
+    if (!seat.occupied || seat.vehicle.wrecked || seat.npc || seat.weapon !== 'none' || seat.score < BANANAS_PER_WEAPON) continue
     seat.score -= BANANAS_PER_WEAPON
     arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score, seat.profile))
   }
@@ -862,7 +871,8 @@ function collectPickups(arena: Arena): void {
     if (!pickupOut(pickup, arena.tick)) continue
     const health = pickupKind(slot) === 'health'
     for (const seat of arena.seats) {
-      if (!seat.occupied || seat.vehicle.wrecked) continue
+      // A car nobody drives takes nothing: it has no use for bananas or weapons.
+      if (!seat.occupied || seat.vehicle.wrecked || seat.npc) continue
       if (health && seat.vehicle.damage <= 0) continue
       if (!reachesPickup(pickup, seat.vehicle.frame.position, health ? 0 : magnetOf(seat))) continue
       if (health) seat.vehicle.damage = Math.max(seat.vehicle.damage - HEALTH_MEND, 0)
@@ -887,6 +897,7 @@ function collectPickups(arena: Arena): void {
     if (!looseOut(loose, arena.tick)) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position, magnetOf(seat))) continue
+      if (loose.kind === 'banana' && seat.npc) continue
       if (loose.kind === 'oil') {
         seat.slipTicks = Math.max(seat.slipTicks, Math.round(OIL_SLIP_TICKS * loose.power))
         continue

@@ -142,8 +142,8 @@ const snapshot: SnapshotMessage = {
     },
   ],
   robots: [
-    { id: 0, road: 412, along: 187.5, direction: -1, legs: 9, target: 3, beamTicks: 42, cooldownTicks: 0 },
-    { id: 1, road: 7, along: 0.25, direction: 1, legs: 0, target: -1, beamTicks: 0, cooldownTicks: 180 },
+    { id: 0, road: 412, along: 187.5, direction: -1, legs: 9, target: 3, beamTicks: 42, cooldownTicks: 0, damage: 0, deaths: 3 },
+    { id: 1, road: 7, along: 0.25, direction: 1, legs: 0, target: -1, beamTicks: 0, cooldownTicks: 180, damage: 1, deaths: 0 },
   ],
   ufos: [
     {
@@ -155,6 +155,8 @@ const snapshot: SnapshotMessage = {
       cooldownTicks: 0,
       legs: 13,
       abductions: 2,
+      damage: 0,
+      deaths: 1,
     },
   ],
 }

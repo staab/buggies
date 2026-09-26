@@ -209,7 +209,7 @@ export async function joinOnline(
         owed -= FIXED_TIMESTEP
       }
       others.render(owed / FIXED_TIMESTEP, dt)
-      car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction.seats))
+      car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction))
       car.presence.hookAt(hookPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       arena.update(dt)

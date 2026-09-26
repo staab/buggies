@@ -50,8 +50,8 @@ export class ArenaView {
     this.rockets = new RocketsView(source, this.effects, ear)
     this.tracers = new Tracers(sound, ear)
     this.props = new PropsView(source)
-    this.robots = new RobotsView(source)
-    this.ufos = new UfosView(source, map)
+    this.robots = new RobotsView(source, this.effects, ear)
+    this.ufos = new UfosView(source, map, this.effects, ear)
     this.object.add(
       this.explosions.object,
       this.smoke.object,
@@ -71,7 +71,7 @@ export class ArenaView {
     this.tracers.update(dt)
     this.rockets.update(dt)
     this.props.update()
-    this.robots.update()
+    this.robots.update(dt)
     this.ufos.update(dt)
     this.smoke.update(dt)
     this.explosions.update(dt)

@@ -15,6 +15,7 @@ import {
 } from '@buggies/physics'
 import { sampleHeight, type TerrainMap } from '@buggies/terrain'
 import {
+  DURABILITY,
   WORLD_UP,
   addForceAlong,
   addTorqueAbout,
@@ -483,7 +484,7 @@ export interface Gunner {
 export interface Rocket {
   readonly id: number
   readonly owner: number
-  /** The seat it is after, or none. */
+  /** The seat or machine it is after, or none. */
   target: number
   readonly position: Vec3
   readonly velocity: Vec3
@@ -502,10 +503,80 @@ export interface Shot {
   readonly kind: 'bullet' | 'laser'
 }
 
+/**
+ * A machine that can be shot at besides the cars: a robot or a saucer.
+ * Where it is, and how much of what brings it down it has taken, 0 to 1:
+ * it is a good deal tougher than any car.
+ */
+export interface Machine {
+  readonly id: number
+  readonly position: Vec3
+  damage: number
+}
+
+/** A target number from here up is a robot, the robot's number on from it; from here up, a saucer. Below, a seat. */
+export const ROBOT_TARGET = 200
+export const UFO_TARGET = 240
+/** How many times tougher than a car's hull a robot or a saucer is. */
+export const MACHINE_TOUGHNESS = 10
+/** How high over a robot's feet it is aimed at, and how near a rocket has to come to a machine to go off on it. */
+const ROBOT_MIDDLE = 3
+const MACHINE_REACH = 5
+
+/** Where a target is to be aimed at, into `out`: a car in play, a robot's middle or a saucer; `null` for nothing there to aim at. */
+export function aimPoint(arena: Pick<Battlefield, 'seats' | 'robots' | 'ufos'>, target: number, out: Vec3): Vec3 | null {
+  if (target === NO_TARGET) return null
+  if (target >= UFO_TARGET) {
+    const ufo = arena.ufos[target - UFO_TARGET]
+    return ufo === undefined ? null : vcopy(out, ufo.position)
+  }
+  if (target >= ROBOT_TARGET) {
+    const robot = arena.robots[target - ROBOT_TARGET]
+    if (robot === undefined) return null
+    vcopy(out, robot.position)
+    out.y += ROBOT_MIDDLE
+    return out
+  }
+  const seat = arena.seats[target]
+  if (seat === undefined || !seat.occupied || seat.vehicle.wrecked) return null
+  return vcopy(out, seat.vehicle.frame.position)
+}
+
+/** Take this much of a target with a weapon: of a car, as `harm` does; of a machine, as much less as it is tougher. */
+function strike(arena: Battlefield, target: number, damage: number, by?: Gunner): void {
+  if (target >= UFO_TARGET) {
+    const ufo = arena.ufos[target - UFO_TARGET]
+    if (ufo !== undefined) ufo.damage = Math.min(ufo.damage + damage / MACHINE_TOUGHNESS / DURABILITY, 1)
+    return
+  }
+  if (target >= ROBOT_TARGET) {
+    const robot = arena.robots[target - ROBOT_TARGET]
+    if (robot !== undefined) robot.damage = Math.min(robot.damage + damage / MACHINE_TOUGHNESS / DURABILITY, 1)
+    return
+  }
+  const seat = arena.seats[target]
+  if (seat !== undefined) harm(seat, damage, by)
+}
+
+/** Every machine, by its target number, and where to aim at it. */
+function machinesOf(arena: Battlefield, visit: (target: number, at: Vec3) => void): void {
+  for (const robot of arena.robots) {
+    if (aimPoint(arena, ROBOT_TARGET + robot.id, machineAt) !== null) visit(ROBOT_TARGET + robot.id, machineAt)
+  }
+  for (const ufo of arena.ufos) {
+    if (aimPoint(arena, UFO_TARGET + ufo.id, machineAt) !== null) visit(UFO_TARGET + ufo.id, machineAt)
+  }
+}
+const machineAt = v3()
+const aimed = v3()
+
 /** What of an arena the weapons need. */
 export interface Battlefield {
   readonly map: TerrainMap
   readonly seats: readonly Gunner[]
+  /** The machines that can be shot at besides the cars: the robots and the saucers. */
+  readonly robots: readonly Machine[]
+  readonly ufos: readonly Machine[]
   readonly rockets: Rocket[]
   /** What lies loose on the map: bombs are dropped among the bananas. */
   readonly loose: Loose[]
@@ -851,15 +922,16 @@ function pickOut(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sw
   const { forward } = seat.vehicle.frame
   let target = NO_TARGET
   let nearest = range
-  for (const other of arena.seats) {
-    if (!inPlay(seat, other)) continue
-    vsub(toward, other.vehicle.frame.position, from)
+  const consider = (id: number, at: Vec3): void => {
+    vsub(toward, at, from)
     const distance = vlength(toward)
-    if (distance === 0 || distance > nearest) continue
-    if (vdot(toward, forward) / distance < sweepCos) continue
-    target = other.id
+    if (distance === 0 || distance > nearest) return
+    if (vdot(toward, forward) / distance < sweepCos) return
+    target = id
     nearest = distance
   }
+  for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.vehicle.frame.position)
+  machinesOf(arena, consider)
   return target
 }
 
@@ -894,19 +966,20 @@ function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean, ki
   muzzlePoint(muzzle, seat, own)
   const from = vcopy(v3(), muzzle)
   const to = v3()
-  const target = seat.aimTarget === NO_TARGET ? undefined : arena.seats[seat.aimTarget]
-  if (target === undefined) {
+  const at = aimPoint(arena, seat.aimTarget, aimed)
+  if (at === null) {
     vaddScaled(to, muzzle, seat.vehicle.frame.forward, kind === 'laser' ? LASER_RANGE : MACHINE_GUN_RANGE)
     arena.shots.push({ owner: seat.id, from, to, hit: NO_TARGET, kind })
     return
   }
-  const clear = sightLine(arena.map, muzzle, target.vehicle.frame.position)
-  vsub(toward, target.vehicle.frame.position, muzzle)
+  const clear = sightLine(arena.map, muzzle, at)
+  vsub(toward, at, muzzle)
   vaddScaled(to, muzzle, toward, clear)
   // A police car's armor turns bullets, not light.
-  const damage = kind === 'laser' ? LASER_DAMAGE : MACHINE_GUN_DAMAGE * shotShare(target.profile)
-  if (clear === 1) harm(target, damage * power, seat)
-  arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? target.id : NO_TARGET, kind })
+  const car = seat.aimTarget < ROBOT_TARGET ? arena.seats[seat.aimTarget] : undefined
+  const damage = kind === 'laser' ? LASER_DAMAGE : MACHINE_GUN_DAMAGE * (car === undefined ? 1 : shotShare(car.profile))
+  if (clear === 1) strike(arena, seat.aimTarget, damage * power, seat)
+  arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? seat.aimTarget : NO_TARGET, kind })
 }
 
 /** Every other car within reach of a seat, middle to middle, in play, given to a hand. */
@@ -961,13 +1034,14 @@ function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: bool
 function pickAll(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sweepCos: number): number[] {
   const { forward } = seat.vehicle.frame
   const found: { id: number; distance: number }[] = []
-  for (const other of arena.seats) {
-    if (!inPlay(seat, other)) continue
-    vsub(toward, other.vehicle.frame.position, from)
+  const consider = (id: number, at: Vec3): void => {
+    vsub(toward, at, from)
     const distance = vlength(toward)
-    if (distance === 0 || distance > range || vdot(toward, forward) / distance < sweepCos) continue
-    found.push({ id: other.id, distance })
+    if (distance === 0 || distance > range || vdot(toward, forward) / distance < sweepCos) return
+    found.push({ id, distance })
   }
+  for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.vehicle.frame.position)
+  machinesOf(arena, consider)
   return found.sort((a, b) => a.distance - b.distance || a.id - b.id).map((one) => one.id)
 }
 
@@ -1285,10 +1359,10 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
   for (let i = rockets.length - 1; i >= 0; i--) {
     const rocket = rockets[i]
     if (rocket === undefined) continue
-    const target = rocket.target === NO_TARGET ? undefined : seats[rocket.target]
-    if (target !== undefined && target.occupied && !target.vehicle.wrecked) {
+    const at = aimPoint(arena, rocket.target, aimed)
+    if (at !== null) {
       // Turn toward the middle of it, a little high, so it is the body that is met and not the wheels.
-      vsub(desired, target.vehicle.frame.position, rocket.position)
+      vsub(desired, at, rocket.position)
       desired.y += 0.5
       vnormalize(desired, desired)
       vnormalize(heading, rocket.velocity)
@@ -1319,6 +1393,16 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
         harm(other, ROCKET_DAMAGE * rocket.power, seats[rocket.owner])
         spent = true
         break
+      }
+      // A machine is met by any rocket that comes near it, after it or not.
+      if (!spent) {
+        machinesOf(arena, (target, point) => {
+          if (spent) return
+          vsub(toward, point, rocket.position)
+          if (vlength(toward) > MACHINE_REACH) return
+          strike(arena, target, ROCKET_DAMAGE * rocket.power)
+          spent = true
+        })
       }
     }
     if (spent) rockets.splice(i, 1)
