@@ -44,27 +44,62 @@ describe('createTerrainView', () => {
     }
   })
 
+  it('textures only the tiles with something painted on them, and draws the rest in the land colors alone', () => {
+    const map = generateTerrain(1, { size: 385 })
+    const view = createTerrainView(map)
+    const pieces: THREE.Mesh[] = []
+    view.getObjectByName('ground')!.traverse((node) => {
+      if (node instanceof THREE.Mesh) pieces.push(node)
+    })
+    const textured = pieces.filter((piece) => (piece.material as THREE.MeshStandardMaterial).map !== null)
+    const plain = pieces.filter((piece) => (piece.material as THREE.MeshStandardMaterial).vertexColors)
+    // The roads are painted on tiles of their own; the open land and the sea are not.
+    expect(textured.length).toBeGreaterThan(0)
+    expect(plain).toHaveLength(1)
+    expect(plain[0]!.geometry.getAttribute('color').count).toBe(plain[0]!.geometry.getAttribute('position').count)
+    let texels = 0
+    for (const piece of textured) {
+      const { image } = (piece.material as THREE.MeshStandardMaterial).map!
+      texels += image.width * image.height
+    }
+    // A good deal less than one texture over the whole island at the same detail.
+    expect(texels).toBeLessThan((map.size * map.cellSize * 2) ** 2)
+    // Every road at grade is on a textured tile.
+    const boxes = textured.map((piece) => {
+      piece.geometry.computeBoundingBox()
+      return piece.geometry.boundingBox!
+    })
+    for (const road of map.roads) {
+      if (road.kind === 'highway') continue
+      for (const point of road.points) {
+        expect(boxes.some((box) => point.x >= box.min.x - 0.5 && point.x <= box.max.x + 0.5 && point.z >= box.min.z - 0.5 && point.z <= box.max.z + 0.5)).toBe(true)
+      }
+    }
+  })
+
   it('carves a tunnel bore and draws a solid shell through it', () => {
     const map = generateTerrain(1, { size: 257 })
     const view = createTerrainView(map)
 
-    const terrain = view.children.find(
-      (child) =>
-        child instanceof THREE.Mesh && (child.material as THREE.MeshStandardMaterial).map !== null,
-    ) as THREE.Mesh | undefined
+    const ground = view.getObjectByName('ground')
+    const pieces: THREE.Mesh[] = []
+    ground?.traverse((node) => {
+      if (node instanceof THREE.Mesh) pieces.push(node)
+    })
     const tunnel = view.children.find(
       (child) =>
         child instanceof THREE.Mesh &&
         (child.material as THREE.MeshStandardMaterial).flatShading,
     ) as THREE.Mesh | undefined
 
-    expect(terrain).toBeDefined()
+    expect(pieces.length).toBeGreaterThan(0)
     expect(tunnel).toBeDefined()
 
     // Boundary facets were split to fit the cut, so the carved landscape has
     // more vertices than the raw grid even though faces were removed.
     const gridVertices = map.size * map.size
-    expect(terrain!.geometry.getAttribute('position').count).toBeGreaterThan(gridVertices)
+    const vertices = pieces.reduce((sum, piece) => sum + piece.geometry.getAttribute('position').count, 0)
+    expect(vertices).toBeGreaterThan(gridVertices)
 
     const position = tunnel!.geometry.getAttribute('position') as THREE.BufferAttribute
     expect(position.count).toBeGreaterThan(0)

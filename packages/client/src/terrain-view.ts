@@ -466,30 +466,65 @@ function terrainColor(
  * at each corner of the grid and blended between them, the way the mesh
  * blends its heights, and the roads are drawn on top with soft edges.
  */
-function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
-  const { width, depth, cellSize, heights } = map.heightfield
-  const { seaLevel, districtOf } = map
+/** A square of the island's texels to paint on: its texels, where it starts in the texel grid of the whole island, and how many a side. */
+interface Canvas {
+  data: Uint8Array
+  x0: number
+  z0: number
+  size: number
+}
 
+/** One thing painted on the ground, the rectangle of the island it may touch, in meters, and how to paint it onto a canvas. */
+interface Paint {
+  minX: number
+  minZ: number
+  maxX: number
+  maxZ: number
+  paint(canvas: Canvas): void
+}
+
+/** The land's color at every grid corner: as texel values in sRGB, to paint a canvas with, and linear, for a vertex to carry. */
+interface GroundColors {
+  srgb: Float32Array
+  linear: Float32Array
+}
+
+function groundColors(map: TerrainMap): GroundColors {
+  const { width, depth, heights } = map.heightfield
+  const { seaLevel, districtOf } = map
   let min = Infinity
   let max = -Infinity
   for (const height of heights) {
     if (height < min) min = height
     if (height > max) max = height
   }
-
-  // The color at every grid corner, ready to display.
-  const corner = new Float32Array(width * depth * 3)
+  const srgb = new Float32Array(width * depth * 3)
+  const linear = new Float32Array(width * depth * 3)
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
   // The heights and districts cover the field, a value a cell.
   for (let cell = 0; cell < width * depth; cell++) {
     terrainColor(heights[cell]!, min, max, seaLevel, districtOf[cell]!, color)
     color.getRGB(rgb, THREE.SRGBColorSpace)
-    corner[cell * 3] = rgb.r
-    corner[cell * 3 + 1] = rgb.g
-    corner[cell * 3 + 2] = rgb.b
+    srgb[cell * 3] = rgb.r
+    srgb[cell * 3 + 1] = rgb.g
+    srgb[cell * 3 + 2] = rgb.b
+    linear[cell * 3] = color.r
+    linear[cell * 3 + 1] = color.g
+    linear[cell * 3 + 2] = color.b
   }
+  return { srgb, linear }
+}
 
+/**
+ * Everything painted on the ground, in the order it goes on: the fields
+ * over the land, a gravel loop around each interchange's park, then the
+ * roads over everything, the country roads and the city streets alike,
+ * each with a lighter curb along it and its center line dashed, and the
+ * paved lots last, over any road that runs into them.
+ */
+function groundPaints(map: TerrainMap): Paint[] {
+  const rgb = { r: 0, g: 0, b: 0 }
   const texelsOf = (color: THREE.Color): [number, number, number] => {
     color.getRGB(rgb, THREE.SRGBColorSpace)
     return [rgb.r * 255, rgb.g * 255, rgb.b * 255]
@@ -498,55 +533,35 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
   const curb = texelsOf(KERB_COLOR)
   const marking = texelsOf(MARKING_COLOR)
   const gravel = texelsOf(GRAVEL_COLOR)
-  const crops = map.fields.map((field) => cropOf(field))
-
-  const texels = Math.ceil(width * cellSize * TEXELS_PER_METER)
-  const data = new Uint8Array(texels * texels * 4)
-  // Which column of the field each texel column falls in, and how far across it, worked out once.
-  const colOf = new Int32Array(texels)
-  const acrossOf = new Float32Array(texels)
-  for (let tx = 0; tx < texels; tx++) {
-    const gx = Math.min((tx + 0.5) / TEXELS_PER_METER / cellSize, width - 1)
-    colOf[tx] = Math.min(Math.floor(gx), width - 2)
-    acrossOf[tx] = gx - colOf[tx]!
-  }
-  for (let ty = 0; ty < texels; ty++) {
-    const z = (ty + 0.5) / TEXELS_PER_METER
-    const gz = Math.min(z / cellSize, depth - 1)
-    const row = Math.min(Math.floor(gz), depth - 2)
-    const tz = gz - row
-    const rowAt = row * width * 3
-    let at = ty * texels * 4
-    for (let tx = 0; tx < texels; tx++, at += 4) {
-      const txf = acrossOf[tx]!
-      // The four corners of a cell within the field: the row and column were held one short of its edge.
-      const a = rowAt + colOf[tx]! * 3
-      const b = a + 3
-      const c = a + width * 3
-      const d = c + 3
-      const wa = (1 - txf) * (1 - tz)
-      const wb = txf * (1 - tz)
-      const wc = (1 - txf) * tz
-      const wd = txf * tz
-      data[at] = Math.round((corner[a]! * wa + corner[b]! * wb + corner[c]! * wc + corner[d]! * wd) * 255)
-      data[at + 1] = Math.round((corner[a + 1]! * wa + corner[b + 1]! * wb + corner[c + 1]! * wc + corner[d + 1]! * wd) * 255)
-      data[at + 2] = Math.round((corner[a + 2]! * wa + corner[b + 2]! * wb + corner[c + 2]! * wc + corner[d + 2]! * wd) * 255)
-      data[at + 3] = 255
+  const paints: Paint[] = []
+  const around = (points: readonly { x: number; z: number }[], reach: number, paint: (canvas: Canvas) => void): void => {
+    let minX = Infinity
+    let minZ = Infinity
+    let maxX = -Infinity
+    let maxZ = -Infinity
+    for (const point of points) {
+      minX = Math.min(minX, point.x)
+      minZ = Math.min(minZ, point.z)
+      maxX = Math.max(maxX, point.x)
+      maxZ = Math.max(maxZ, point.z)
     }
+    paints.push({ minX: minX - reach, minZ: minZ - reach, maxX: maxX + reach, maxZ: maxZ + reach, paint })
   }
+  const fieldReach = (field: Field): number => Math.hypot(field.width, field.depth) / 2
 
-  // The fields are painted on over the land, and the roads over everything:
-  // the country roads and the city streets alike, each with a lighter curb
-  // along it, and the streets marked out besides.
-  for (const [i, field] of map.fields.entries()) {
-    const crop = crops[i]
-    if (crop !== undefined && !paved(field)) paintField(data, texels, field, crop)
+  for (const field of map.fields) {
+    const crop = cropOf(field)
+    if (crop !== undefined && !paved(field)) around([field], fieldReach(field), (canvas) => paintField(canvas, field, crop))
   }
   // A gravel loop around the ground each interchange encloses, now that it
   // is a park, laid before the roads so no path crosses one.
   for (const zone of interchangeZones(map.roads)) {
     const loop = parkLoop(zone)
-    for (let i = 0; i < loop.length; i++) paintSegment(data, texels, loop[i]!, loop[(i + 1) % loop.length]!, 1.2, gravel)
+    for (let i = 0; i < loop.length; i++) {
+      const a = loop[i]!
+      const b = loop[(i + 1) % loop.length]!
+      around([a, b], 2, (canvas) => paintSegment(canvas, a, b, 1.2, gravel))
+    }
   }
   const gradeSegments = (road: Road): [RoadPoint, RoadPoint][] => {
     const count = road.points.length
@@ -563,20 +578,59 @@ function buildGroundTexture(map: TerrainMap): THREE.DataTexture {
   // deck is drawn over it, and the lane comes out from under the deck's edge.
   const surface = map.roads.filter((road) => isSurfaceRoad(road))
   for (const road of surface) {
-    for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2 + CURB_LINE, curb)
+    const half = road.width / 2 + CURB_LINE
+    for (const [a, b] of gradeSegments(road)) around([a, b], half + 1, (canvas) => paintSegment(canvas, a, b, half, curb))
   }
   for (const road of surface) {
-    for (const [a, b] of gradeSegments(road)) paintSegment(data, texels, a, b, road.width / 2, asphalt)
+    const half = road.width / 2
+    for (const [a, b] of gradeSegments(road)) around([a, b], half + 1, (canvas) => paintSegment(canvas, a, b, half, asphalt))
   }
-  for (const road of surface) paintDashes(data, texels, road, marking)
+  for (const road of surface) around(road.points, DASH.width + 1, (canvas) => paintDashes(canvas, road, marking))
   // A paved lot covers whatever road runs into it: it is painted over the roads, its corners rounded, with a curb around its edge.
   for (const field of map.fields) {
     if (!paved(field)) continue
-    paintField(data, texels, { ...field, width: field.width + 2 * CURB_LINE, depth: field.depth + 2 * CURB_LINE }, { plain: curb, striped: curb })
-    paintField(data, texels, field, cropOf(field))
+    const edged = { ...field, width: field.width + 2 * CURB_LINE, depth: field.depth + 2 * CURB_LINE }
+    around([field], fieldReach(edged), (canvas) => {
+      paintField(canvas, edged, { plain: curb, striped: curb })
+      paintField(canvas, field, cropOf(field))
+    })
   }
+  return paints
+}
 
-  const texture = new THREE.DataTexture(data, texels, texels, THREE.RGBAFormat, THREE.UnsignedByteType)
+/** Fill a canvas with the land's color, blended between the grid corners. */
+function fillCanvas(canvas: Canvas, field: Heightfield, srgb: Float32Array): void {
+  const { width, depth, cellSize } = field
+  const { data, x0, z0, size } = canvas
+  for (let row = 0; row < size; row++) {
+    const gz = Math.min(Math.max((z0 + row + 0.5) / TEXELS_PER_METER / cellSize, 0), depth - 1)
+    const fieldRow = Math.min(Math.floor(gz), depth - 2)
+    const tz = gz - fieldRow
+    for (let col = 0; col < size; col++) {
+      const gx = Math.min(Math.max((x0 + col + 0.5) / TEXELS_PER_METER / cellSize, 0), width - 1)
+      const fieldCol = Math.min(Math.floor(gx), width - 2)
+      const tx = gx - fieldCol
+      // The four corners of a cell within the field: the row and column were held one short of its edge.
+      const a = (fieldRow * width + fieldCol) * 3
+      const b = a + 3
+      const c = a + width * 3
+      const d = c + 3
+      const wa = (1 - tx) * (1 - tz)
+      const wb = tx * (1 - tz)
+      const wc = (1 - tx) * tz
+      const wd = tx * tz
+      const at = (row * size + col) * 4
+      data[at] = Math.round((srgb[a]! * wa + srgb[b]! * wb + srgb[c]! * wc + srgb[d]! * wd) * 255)
+      data[at + 1] = Math.round((srgb[a + 1]! * wa + srgb[b + 1]! * wb + srgb[c + 1]! * wc + srgb[d + 1]! * wd) * 255)
+      data[at + 2] = Math.round((srgb[a + 2]! * wa + srgb[b + 2]! * wb + srgb[c + 2]! * wc + srgb[d + 2]! * wd) * 255)
+      data[at + 3] = 255
+    }
+  }
+}
+
+/** A canvas as a texture, for the ground of one tile. */
+function canvasTexture(canvas: Canvas): THREE.DataTexture {
+  const texture = new THREE.DataTexture(canvas.data, canvas.size, canvas.size, THREE.RGBAFormat, THREE.UnsignedByteType)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = THREE.ClampToEdgeWrapping
   texture.wrapT = THREE.ClampToEdgeWrapping
@@ -617,14 +671,15 @@ function cropOf(field: Field): Crop {
 }
 
 /** A field, as a rectangle of crop turned with the field, striped along its length; a parking lot is plain asphalt. */
-function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop): void {
+function paintField(canvas: Canvas, field: Field, crop: Crop): void {
+  const { data, x0, z0, size } = canvas
   const cos = Math.cos(field.yaw)
   const sin = Math.sin(field.yaw)
   const reach = Math.hypot(field.width, field.depth) / 2
-  const from = Math.max(Math.floor((field.x - reach) * TEXELS_PER_METER), 0)
-  const to = Math.min(Math.ceil((field.x + reach) * TEXELS_PER_METER), texels - 1)
-  const top = Math.max(Math.floor((field.z - reach) * TEXELS_PER_METER), 0)
-  const bottom = Math.min(Math.ceil((field.z + reach) * TEXELS_PER_METER), texels - 1)
+  const from = Math.max(Math.floor((field.x - reach) * TEXELS_PER_METER), x0)
+  const to = Math.min(Math.ceil((field.x + reach) * TEXELS_PER_METER), x0 + size - 1)
+  const top = Math.max(Math.floor((field.z - reach) * TEXELS_PER_METER), z0)
+  const bottom = Math.min(Math.ceil((field.z + reach) * TEXELS_PER_METER), z0 + size - 1)
   for (let ty = top; ty <= bottom; ty++) {
     const dz = (ty + 0.5) / TEXELS_PER_METER - field.z
     for (let tx = from; tx <= to; tx++) {
@@ -640,7 +695,7 @@ function paintField(data: Uint8Array, texels: number, field: Field, crop: Crop):
         if (cu > 0 && cv > 0 && Math.hypot(cu, cv) > PAVED_CORNER) continue
       }
       const shade = Math.floor((u + field.width / 2) / CROP_STRIPE) % 2 === 0 ? crop.plain : crop.striped
-      const at = (ty * texels + tx) * 4
+      const at = ((ty - z0) * size + (tx - x0)) * 4
       data[at] = Math.round(shade[0])
       data[at + 1] = Math.round(shade[1])
       data[at + 2] = Math.round(shade[2])
@@ -659,7 +714,7 @@ function between(a: { x: number; z: number }, b: { x: number; z: number }, t: nu
  * laid by the distance along the road, not the segment, since a road's
  * points come a few meters apart.
  */
-function paintDashes(data: Uint8Array, texels: number, road: Road, marking: [number, number, number]): void {
+function paintDashes(canvas: Canvas, road: Road, marking: [number, number, number]): void {
   const count = road.points.length
   const segmentCount = road.closed ? count : count - 1
   let traveled = 0
@@ -673,7 +728,7 @@ function paintDashes(data: Uint8Array, texels: number, road: Road, marking: [num
         const phase = (traveled + from) % DASH.every
         const lit = phase < DASH.length
         const to = Math.min(length, from + (lit ? DASH.length - phase : DASH.every - phase))
-        if (lit) paintLine(data, texels, between(a, b, from / length), between(a, b, to / length), marking, DASH.width)
+        if (lit) paintLine(canvas, between(a, b, from / length), between(a, b, to / length), marking, DASH.width)
         from = to
       }
     }
@@ -716,8 +771,7 @@ function parkLoop(zone: { x: number; z: number }[]): { x: number; z: number }[] 
  * a texel boundary still lands on one.
  */
 function paintLine(
-  data: Uint8Array,
-  texels: number,
+  canvas: Canvas,
   a: { x: number; z: number },
   b: { x: number; z: number },
   rgb: [number, number, number],
@@ -736,8 +790,9 @@ function paintLine(
       const n = ((k + 0.5) / across - 0.5) * width
       const tx = Math.floor((x + nx * n) * TEXELS_PER_METER)
       const ty = Math.floor((z + nz * n) * TEXELS_PER_METER)
-      if (tx < 0 || ty < 0 || tx >= texels || ty >= texels) continue
-      const at = (ty * texels + tx) * 4
+      const { data, x0, z0, size } = canvas
+      if (tx < x0 || ty < z0 || tx >= x0 + size || ty >= z0 + size) continue
+      const at = ((ty - z0) * size + (tx - x0)) * 4
       data[at] = rgb[0]
       data[at + 1] = rgb[1]
       data[at + 2] = rgb[2]
@@ -747,8 +802,7 @@ function paintLine(
 
 /** One stretch of roadway, as a capsule with an edge a texel wide. */
 function paintSegment(
-  data: Uint8Array,
-  texels: number,
+  canvas: Canvas,
   a: { x: number; z: number },
   b: { x: number; z: number },
   half: number,
@@ -758,10 +812,11 @@ function paintSegment(
   const vz = b.z - a.z
   const lengthSq = vx * vx + vz * vz || 1
   const reach = half + 1 / TEXELS_PER_METER
-  const minX = Math.max(Math.floor((Math.min(a.x, b.x) - reach) * TEXELS_PER_METER), 0)
-  const maxX = Math.min(Math.ceil((Math.max(a.x, b.x) + reach) * TEXELS_PER_METER), texels - 1)
-  const minZ = Math.max(Math.floor((Math.min(a.z, b.z) - reach) * TEXELS_PER_METER), 0)
-  const maxZ = Math.min(Math.ceil((Math.max(a.z, b.z) + reach) * TEXELS_PER_METER), texels - 1)
+  const { data, x0, z0, size } = canvas
+  const minX = Math.max(Math.floor((Math.min(a.x, b.x) - reach) * TEXELS_PER_METER), x0)
+  const maxX = Math.min(Math.ceil((Math.max(a.x, b.x) + reach) * TEXELS_PER_METER), x0 + size - 1)
+  const minZ = Math.max(Math.floor((Math.min(a.z, b.z) - reach) * TEXELS_PER_METER), z0)
+  const maxZ = Math.min(Math.ceil((Math.max(a.z, b.z) + reach) * TEXELS_PER_METER), z0 + size - 1)
   const edge = 0.5 / TEXELS_PER_METER
 
   for (let ty = minZ; ty <= maxZ; ty++) {
@@ -773,8 +828,8 @@ function paintSegment(
       const dz = z - (a.z + vz * t)
       const coverage = Math.min(Math.max((half + edge - Math.sqrt(dx * dx + dz * dz)) * TEXELS_PER_METER, 0), 1)
       if (coverage <= 0) continue
-      // Within the texture: the texel was held inside it above.
-      const at = (ty * texels + tx) * 4
+      // Within the canvas: the texel was held inside it above.
+      const at = ((ty - z0) * size + (tx - x0)) * 4
       data[at] = Math.round(data[at]! + (rgb[0] - data[at]!) * coverage)
       data[at + 1] = Math.round(data[at + 1]! + (rgb[1] - data[at + 1]!) * coverage)
       data[at + 2] = Math.round(data[at + 2]! + (rgb[2] - data[at + 2]!) * coverage)
@@ -823,36 +878,73 @@ function onRampLane(lanes: Lane[], x: number, z: number): boolean {
   return false
 }
 
-function buildTerrainMesh(
+/** How wide a tile of the ground is, in meters: a tile with nothing painted on it is drawn in the land's colors alone, with no texture. */
+const GROUND_TILE = 192
+
+/** How one piece of the ground is shaded: by a texture over this canvas, or by the land's colors at its corners. */
+type GroundShade = { canvas: Canvas } | { colors: Float32Array }
+
+/**
+ * The ground over a block of the field's cells, as one mesh. A cell the
+ * tunnel bore takes whole is left out, and one it runs through is split
+ * into a finer grid so the cut hugs the bore's wall. Each vertex carries
+ * where it is on the piece's canvas, or the land's color where it is.
+ */
+function groundPiece(
   field: Heightfield,
-  texture: THREE.DataTexture,
   hole: Uint8Array,
   segments: BoreSegment[],
   margin: number,
-): THREE.Mesh {
-  const { width, depth, cellSize, heights } = field
-  const worldSize = width * cellSize
+  cells: { fromCol: number; toCol: number; fromRow: number; toRow: number },
+  takes: (col: number, row: number) => boolean,
+  shade: GroundShade,
+): THREE.BufferGeometry | null {
+  const { width, cellSize, heights } = field
   const positions: number[] = []
-  const uvs: number[] = []
+  const shading: number[] = []
+  const colors = 'colors' in shade ? shade.colors : null
+  const canvas = 'canvas' in shade ? shade.canvas : null
 
   const vertex = (x: number, height: number, z: number): number => {
     positions.push(x, height, z)
-    uvs.push(x / worldSize, z / worldSize)
+    if (canvas !== null) {
+      shading.push((x * TEXELS_PER_METER - canvas.x0) / canvas.size, (z * TEXELS_PER_METER - canvas.z0) / canvas.size)
+    } else if (colors !== null) {
+      // The land's color here, blended between the corners of the cell it is in.
+      const gx = Math.min(x / cellSize, width - 1)
+      const gz = Math.min(z / cellSize, field.depth - 1)
+      const col = Math.min(Math.floor(gx), width - 2)
+      const row = Math.min(Math.floor(gz), field.depth - 2)
+      const tx = gx - col
+      const tz = gz - row
+      const a = (row * width + col) * 3
+      for (let channel = 0; channel < 3; channel++) {
+        shading.push(
+          colors[a + channel]! * (1 - tx) * (1 - tz) +
+            colors[a + 3 + channel]! * tx * (1 - tz) +
+            colors[a + width * 3 + channel]! * (1 - tx) * tz +
+            colors[a + width * 3 + 3 + channel]! * tx * tz,
+        )
+      }
+    }
     return positions.length / 3 - 1
   }
 
-  // The heights cover the field, one a cell, read by row and column within it.
-  for (let row = 0; row < depth; row++) {
-    for (let col = 0; col < width; col++) {
-      vertex(col * cellSize, heights[row * width + col]!, row * cellSize)
-    }
+  // The grid's corners each made once, when a cell first needs them.
+  const span = cells.toCol - cells.fromCol + 1
+  const made = new Int32Array(span * (cells.toRow - cells.fromRow + 1)).fill(-1)
+  const corner = (col: number, row: number): number => {
+    const at = (row - cells.fromRow) * span + (col - cells.fromCol)
+    if (made[at] === -1) made[at] = vertex(col * cellSize, heights[row * width + col]!, row * cellSize)
+    return made[at]!
   }
 
   const indices: number[] = []
   const steps = TUNNEL_CUT_SUBDIVISIONS
-  for (let row = 0; row < depth - 1; row++) {
-    for (let col = 0; col < width - 1; col++) {
-      // The cell's four corners, all within the field: the loops stop a cell short of its edges.
+  for (let row = cells.fromRow; row < cells.toRow; row++) {
+    for (let col = cells.fromCol; col < cells.toCol; col++) {
+      if (!takes(col, row)) continue
+      // The cell's four corners, all within the field: the block stops a cell short of its edges.
       const topLeft = row * width + col
       const topRight = topLeft + 1
       const bottomLeft = topLeft + width
@@ -862,7 +954,11 @@ function buildTerrainMesh(
 
       if (inside === 4) continue
       if (inside === 0) {
-        indices.push(topLeft, bottomLeft, topRight, topRight, bottomLeft, bottomRight)
+        const a = corner(col, row)
+        const b = corner(col + 1, row)
+        const c = corner(col, row + 1)
+        const d = corner(col + 1, row + 1)
+        indices.push(a, c, b, b, c, d)
         continue
       }
 
@@ -903,17 +999,96 @@ function buildTerrainMesh(
       }
     }
   }
+  if (indices.length === 0) return null
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setAttribute(canvas !== null ? 'uv' : 'color', new THREE.Float32BufferAttribute(shading, canvas !== null ? 2 : 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
+  return geometry
+}
 
-  const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.95, metalness: 0 })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.name = 'ground'
-  return mesh
+/**
+ * The ground, cut into tiles. The land's own colors change no faster than
+ * the grid does, so they are carried by the grid's corners; only what is
+ * painted on the ground, the roads, the fields and the paths, needs a
+ * texture fine enough to read. So only a tile with something painted on it
+ * has a texture, at full detail, and is drawn as a mesh of its own; every
+ * other tile is drawn together, in the land's colors alone. Along the edge
+ * between the two, both blend the same two corners the same way, so there
+ * is no seam; each tile's texture reaches a texel into its neighbors, so a
+ * road runs on from one tile into the next without a break.
+ */
+function buildGround(map: TerrainMap, hole: Uint8Array, segments: BoreSegment[], margin: number): THREE.Group {
+  const field = map.heightfield
+  const { width, depth, cellSize } = field
+  const worldSize = width * cellSize
+  const group = new THREE.Group()
+  group.name = 'ground'
+  const colors = groundColors(map)
+  const paints = groundPaints(map)
+
+  // A tile is a whole number of cells, as near the size asked for as that comes.
+  const tileCells = Math.max(1, Math.round(GROUND_TILE / cellSize))
+  const tileMeters = tileCells * cellSize
+  const tiles = Math.ceil(worldSize / tileMeters)
+  const tileTexels = Math.round(tileMeters * TEXELS_PER_METER)
+  // What is painted on each tile, in the order it goes on.
+  const painted: Paint[][] = Array.from({ length: tiles * tiles }, () => [])
+  const border = 1 / TEXELS_PER_METER
+  for (const paint of paints) {
+    const fromCol = Math.max(Math.floor((paint.minX - border) / tileMeters), 0)
+    const toCol = Math.min(Math.floor((paint.maxX + border) / tileMeters), tiles - 1)
+    const fromRow = Math.max(Math.floor((paint.minZ - border) / tileMeters), 0)
+    const toRow = Math.min(Math.floor((paint.maxZ + border) / tileMeters), tiles - 1)
+    for (let row = fromRow; row <= toRow; row++) {
+      for (let col = fromCol; col <= toCol; col++) painted[row * tiles + col]!.push(paint)
+    }
+  }
+  const tileOf = (col: number, row: number): number =>
+    Math.min(Math.floor(row / tileCells), tiles - 1) * tiles + Math.min(Math.floor(col / tileCells), tiles - 1)
+
+  const textured = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 })
+  for (let row = 0; row < tiles; row++) {
+    for (let col = 0; col < tiles; col++) {
+      const tile = row * tiles + col
+      if (painted[tile]!.length === 0) continue
+      const size = tileTexels + 2
+      const canvas: Canvas = { data: new Uint8Array(size * size * 4), x0: col * tileTexels - 1, z0: row * tileTexels - 1, size }
+      fillCanvas(canvas, field, colors.srgb)
+      for (const paint of painted[tile]!) paint.paint(canvas)
+      const cells = {
+        fromCol: Math.min(col * tileCells, width - 1),
+        toCol: Math.min((col + 1) * tileCells, width - 1),
+        fromRow: Math.min(row * tileCells, depth - 1),
+        toRow: Math.min((row + 1) * tileCells, depth - 1),
+      }
+      const geometry = groundPiece(field, hole, segments, margin, cells, () => true, { canvas })
+      if (geometry === null) continue
+      const material = textured.clone()
+      material.map = canvasTexture(canvas)
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.name = 'ground'
+      group.add(mesh)
+    }
+  }
+  textured.dispose()
+  const plain = groundPiece(
+    field,
+    hole,
+    segments,
+    margin,
+    { fromCol: 0, toCol: width - 1, fromRow: 0, toRow: depth - 1 },
+    (col, row) => painted[tileOf(col, row)]!.length === 0,
+    { colors: colors.linear },
+  )
+  if (plain !== null) {
+    const mesh = new THREE.Mesh(plain, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }))
+    mesh.name = 'ground'
+    group.add(mesh)
+  }
+  return group
 }
 
 function quadIndices(base: number): number[] {
@@ -2432,7 +2607,7 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   const hole = buildTunnelHoles(map.heightfield, segments)
   const lanes = rampLanes(map.roads)
   group.add(
-    buildTerrainMesh(map.heightfield, buildGroundTexture(map), hole, segments, map.cellSize * 0.5),
+    buildGround(map, hole, segments, map.cellSize * 0.5),
   )
 
   const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
