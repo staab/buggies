@@ -152,40 +152,66 @@ export function footprintsOverlap(a: Footprint, b: Footprint, gap = 0): boolean 
   return true
 }
 
-/** Distance from a point to the nearest point of a footprint, zero inside it. */
-function footprintDistance(footprint: Footprint, px: number, pz: number): number {
-  const cos = cosine(footprint.yaw)
-  const sin = sine(footprint.yaw)
-  const dx = px - footprint.x
-  const dz = pz - footprint.z
-  const u = dx * cos - dz * sin
-  const v = dx * sin + dz * cos
-  const outU = Math.max(Math.abs(u) - footprint.width / 2, 0)
-  const outV = Math.max(Math.abs(v) - footprint.depth / 2, 0)
-  return hypot(outU, outV)
+/** Distance from a point to a box of these half sizes about the origin, zero inside it. */
+function boxDistance(halfU: number, halfV: number, u: number, v: number): number {
+  return hypot(Math.max(Math.abs(u) - halfU, 0), Math.max(Math.abs(v) - halfV, 0))
+}
+
+/** Distance from a point to the segment from one point to another. */
+function pointSegmentDistance(pu: number, pv: number, au: number, av: number, bu: number, bv: number): number {
+  const du = bu - au
+  const dv = bv - av
+  const t = Math.min(Math.max(((pu - au) * du + (pv - av) * dv) / (du * du + dv * dv || 1), 0), 1)
+  return hypot(pu - au - du * t, pv - av - dv * t)
+}
+
+/** Where a segment enters and leaves one slab of a box, narrowing the span of it inside every slab so far; `false` if none is left. */
+function clipSlab(span: { enter: number; leave: number }, from: number, delta: number, half: number): boolean {
+  if (Math.abs(delta) < 1e-12) return Math.abs(from) <= half
+  const a = (-half - from) / delta
+  const b = (half - from) / delta
+  span.enter = Math.max(span.enter, Math.min(a, b))
+  span.leave = Math.min(span.leave, Math.max(a, b))
+  return span.enter <= span.leave
+}
+
+const slab = { enter: 0, leave: 1 }
+
+/** Whether the segment from one point to another passes through a box of these half sizes about the origin: the slab test. */
+function crossesBox(halfU: number, halfV: number, au: number, av: number, bu: number, bv: number): boolean {
+  slab.enter = 0
+  slab.leave = 1
+  return clipSlab(slab, au, bu - au, halfU) && clipSlab(slab, av, bv - av, halfV)
 }
 
 /**
- * The distance from a segment to a footprint. The distance to a convex shape
- * is convex along a line, so the closest point of the segment is found by
- * ternary search.
+ * The distance from a segment to a footprint, exactly. In the footprint's
+ * own frame it is a box about the origin, and the nearest two points of a
+ * segment and a box are an end of the one and a side or corner of the
+ * other, unless the segment passes through the box.
  */
 function segmentFootprintDistance(footprint: Footprint, segment: ClaimedSegment): number {
-  const at = (t: number): number =>
-    footprintDistance(
-      footprint,
-      segment.ax + (segment.bx - segment.ax) * t,
-      segment.az + (segment.bz - segment.az) * t,
-    )
-  let lo = 0
-  let hi = 1
-  for (let step = 0; step < 24; step++) {
-    const a = lo + (hi - lo) / 3
-    const b = hi - (hi - lo) / 3
-    if (at(a) < at(b)) hi = b
-    else lo = a
-  }
-  return Math.min(at(lo), at(hi), at(0), at(1))
+  const cos = cosine(footprint.yaw)
+  const sin = sine(footprint.yaw)
+  const ax = segment.ax - footprint.x
+  const az = segment.az - footprint.z
+  const bx = segment.bx - footprint.x
+  const bz = segment.bz - footprint.z
+  const au = ax * cos - az * sin
+  const av = ax * sin + az * cos
+  const bu = bx * cos - bz * sin
+  const bv = bx * sin + bz * cos
+  const halfU = footprint.width / 2
+  const halfV = footprint.depth / 2
+  if (crossesBox(halfU, halfV, au, av, bu, bv)) return 0
+  return Math.min(
+    boxDistance(halfU, halfV, au, av),
+    boxDistance(halfU, halfV, bu, bv),
+    pointSegmentDistance(-halfU, -halfV, au, av, bu, bv),
+    pointSegmentDistance(-halfU, halfV, au, av, bu, bv),
+    pointSegmentDistance(halfU, -halfV, au, av, bu, bv),
+    pointSegmentDistance(halfU, halfV, au, av, bu, bv),
+  )
 }
 
 /**

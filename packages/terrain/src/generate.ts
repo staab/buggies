@@ -199,6 +199,11 @@ interface MountainShape {
   inradius: number
   skirt: number
   height: number
+  /** The rectangle its skirt reaches no further than. */
+  minX: number
+  minZ: number
+  maxX: number
+  maxZ: number
 }
 
 /** The height over which two islands' domes blend into one where they overlap. */
@@ -265,12 +270,17 @@ function buildHeights(
       const mask = (1 - sea) * inside
 
       const base = fbm2D(x * baseFrequency, z * baseFrequency, seed + 1, 2)
-      const roughness = ridged2D(x * roughFrequency, z * roughFrequency, seed + 2, 5)
       const land = base * plainsAmplitude + dome
 
+      // Only a mountain whose skirt reaches this far counts, and only then is
+      // the roughness it is shaped with worth working out.
       let mountain = 0
+      let roughness = -1
       for (const shape of shapes) {
+        if (x < shape.minX || x > shape.maxX || z < shape.minZ || z > shape.maxZ) continue
         const signed = signedDistanceToTriangle(x, z, shape.triangle)
+        if (signed <= -shape.skirt) continue
+        if (roughness < 0) roughness = ridged2D(x * roughFrequency, z * roughFrequency, seed + 2, 5)
         // Full height in the triangle core, decaying over the skirt outside.
         const factor = smoothstep(-shape.skirt, shape.inradius, signed)
         const contribution = shape.height * factor * (0.6 + 0.4 * roughness)
@@ -712,11 +722,17 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const cityCount = options.cityCount ?? randomInt(rng, CITY_COUNT.min, CITY_COUNT.max)
   const shapes: MountainShape[] = mountains.map((mountain) => {
     const triangle = orientedTriangle(mountain)
+    const xs = [mountain.ax, mountain.bx, mountain.cx]
+    const zs = [mountain.az, mountain.bz, mountain.cz]
     return {
       triangle,
       inradius: Math.max(triangleInradius(triangle), 1e-3),
       skirt: mountain.skirt,
       height: mountain.height,
+      minX: Math.min(...xs) - mountain.skirt,
+      minZ: Math.min(...zs) - mountain.skirt,
+      maxX: Math.max(...xs) + mountain.skirt,
+      maxZ: Math.max(...zs) + mountain.skirt,
     }
   })
 
