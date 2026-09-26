@@ -11,6 +11,7 @@ import {
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_PROP_BYTES,
   SNAPSHOT_ROBOT_BYTES,
+  SNAPSHOT_UFO_BYTES,
   SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_REMOVED_BYTES,
   SNAPSHOT_ROCKET_BYTES,
@@ -144,6 +145,18 @@ const snapshot: SnapshotMessage = {
     { id: 0, road: 412, along: 187.5, direction: -1, legs: 9, target: 3, beamTicks: 42, cooldownTicks: 0 },
     { id: 1, road: 7, along: 0.25, direction: 1, legs: 0, target: -1, beamTicks: 0, cooldownTicks: 180 },
   ],
+  ufos: [
+    {
+      id: 0,
+      position: { x: 1200.5, y: 88.25, z: 640.75 },
+      state: 'lift',
+      target: 2,
+      stateTicks: 90,
+      cooldownTicks: 0,
+      legs: 13,
+      abductions: 2,
+    },
+  ],
 }
 
 describe('wire', () => {
@@ -190,6 +203,7 @@ describe('wire', () => {
       SNAPSHOT_HEADER_BYTES +
         snapshot.props.length * SNAPSHOT_PROP_BYTES +
         snapshot.robots.length * SNAPSHOT_ROBOT_BYTES +
+        snapshot.ufos.length * SNAPSHOT_UFO_BYTES +
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
         snapshot.loose.length * SNAPSHOT_SPILLED_BYTES +
@@ -212,9 +226,10 @@ describe('wire', () => {
       }
     }
     expect(decoded.robots).toEqual(snapshot.robots)
-    // With nothing changed, a snapshot is its vehicles and robots alone.
+    expect(decoded.ufos).toEqual(snapshot.ufos)
+    // With nothing changed, a snapshot is its vehicles, robots and saucers alone.
     const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [] }
-    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES)
+    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES + SNAPSHOT_UFO_BYTES)
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
       const got = decoded.loose[i]!

@@ -1,5 +1,6 @@
 import {
   NPC_CARS,
+  abduct,
   advance,
   awardGoals,
   changeVehicle,
@@ -79,6 +80,8 @@ export interface GameServerEvents {
   /** A player has set a goal, or cleared theirs, and has reached one. */
   onGoalSet?(seat: Seat): void
   onGoalReached?(seat: Seat): void
+  /** A saucer has taken a car away and set it down somewhere else. */
+  onAbducted?(seat: Seat): void
   /** A room has been made for a seed nobody was on, or closed behind the last to leave it. */
   onRoomOpened(seed: number): void
   onRoomClosed(seed: number): void
@@ -216,6 +219,7 @@ export class GameServer implements TransportHandlers {
         seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? this.scratchInput),
       )
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
+      for (const seat of abduct(room.arena)) this.events.onAbducted?.(seat)
       for (const seat of awardGoals(room.arena.seats)) this.events.onGoalReached?.(seat)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }

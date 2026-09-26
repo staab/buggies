@@ -1,7 +1,7 @@
 import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
-import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, VehicleSnapshot } from './wire.ts'
+import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, UfoSnapshot, VehicleSnapshot } from './wire.ts'
 
 /**
  * What a room's snapshots are gathered into, kept from one to the next so
@@ -15,6 +15,7 @@ export interface RoomSnapshots {
   readonly removed: number[]
   readonly rockets: RocketSnapshot[]
   readonly robots: RobotSnapshot[]
+  readonly ufos: UfoSnapshot[]
   readonly props: PropSnapshot[]
   /** Each slot's generation as last told, and which loose things were out. */
   readonly toldGenerations: number[]
@@ -30,6 +31,7 @@ export function createRoomSnapshots(): RoomSnapshots {
     removed: [],
     rockets: [],
     robots: [],
+    ufos: [],
     props: [],
     toldGenerations: [],
     toldLoose: new Set(),
@@ -63,6 +65,7 @@ export function gatherSnapshot(
     rockets: gatherRockets(arena, out),
     props: gatherProps(arena, out, whole),
     robots: gatherRobots(arena, out),
+    ufos: gatherUfos(arena, out),
   }
 }
 
@@ -256,4 +259,31 @@ function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
   })
   robots.length = arena.robots.length
   return robots
+}
+
+/** Every saucer, where it is and what it is about. */
+function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
+  const { ufos } = out
+  arena.ufos.forEach((ufo, index) => {
+    const entry = (ufos[index] ??= {
+      id: 0,
+      position: v3(),
+      state: 'roam',
+      target: NO_TARGET,
+      stateTicks: 0,
+      cooldownTicks: 0,
+      legs: 0,
+      abductions: 0,
+    })
+    entry.id = ufo.id
+    vcopy(entry.position, ufo.position)
+    entry.state = ufo.state
+    entry.target = ufo.target
+    entry.stateTicks = ufo.stateTicks
+    entry.cooldownTicks = ufo.cooldownTicks
+    entry.legs = ufo.legs
+    entry.abductions = ufo.abductions
+  })
+  ufos.length = arena.ufos.length
+  return ufos
 }

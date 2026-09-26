@@ -1,4 +1,5 @@
 import type { Shot } from '@buggies/game'
+import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -11,16 +12,17 @@ import { RobotsView, type RobotSource } from './robots-view.ts'
 import { RocketsView, type RocketSource } from './rockets-view.ts'
 import { Smoke } from './smoke.ts'
 import { Tracers } from './tracers.ts'
+import { UfosView, type UfoSource } from './ufos-view.ts'
 
 /** Where everything on the island besides the cars is read from: an arena, or a mirror of one. */
-export interface ArenaSource extends PickupSource, RocketSource, PropSource, RobotSource {
+export interface ArenaSource extends PickupSource, RocketSource, PropSource, RobotSource, UfoSource {
   readonly shots: readonly Shot[]
 }
 
 /**
  * Everything on the island besides the cars, as one thing on the screen:
  * the explosions and smoke every car feeds, the bananas and bombs, the
- * rockets in the air, the robots and the tracers of the guns and lasers. It is what a view adds
+ * rockets in the air, the robots, the saucers and the tracers of the guns and lasers. It is what a view adds
  * to the scene around its cars, updated and let go of as one.
  */
 export class ArenaView {
@@ -36,8 +38,9 @@ export class ArenaView {
   private readonly tracers: Tracers
   private readonly props: PropsView
   private readonly robots: RobotsView
+  private readonly ufos: UfosView
 
-  constructor(source: ArenaSource, sound: Sound | null, ear: Ear) {
+  constructor(source: ArenaSource, sound: Sound | null, ear: Ear, map: TerrainMap | null = null) {
     this.source = source
     this.effects = { explosions: this.explosions, smoke: this.smoke, sound }
     this.pickups = new PickupField(source, (at) => {
@@ -48,6 +51,7 @@ export class ArenaView {
     this.tracers = new Tracers(sound, ear)
     this.props = new PropsView(source)
     this.robots = new RobotsView(source)
+    this.ufos = new UfosView(source, map)
     this.object.add(
       this.explosions.object,
       this.smoke.object,
@@ -56,6 +60,7 @@ export class ArenaView {
       this.tracers.object,
       this.props.object,
       this.robots.object,
+      this.ufos.object,
     )
   }
 
@@ -67,6 +72,7 @@ export class ArenaView {
     this.rockets.update(dt)
     this.props.update()
     this.robots.update()
+    this.ufos.update(dt)
     this.smoke.update(dt)
     this.explosions.update(dt)
   }
@@ -75,6 +81,7 @@ export class ArenaView {
     this.tracers.dispose()
     this.props.dispose()
     this.robots.dispose()
+    this.ufos.dispose()
     this.rockets.dispose()
     this.pickups.dispose()
     this.explosions.dispose()

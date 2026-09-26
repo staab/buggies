@@ -32,6 +32,7 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import type { Goal } from './goals.ts'
+import { carried, createUfos, dropPoint, flyUfo, released, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
 import {
   ROBOT_COOLDOWN_TICKS,
@@ -92,6 +93,18 @@ export {
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
+export {
+  UFOS,
+  UFO_BEAM_REACH,
+  UFO_COOLDOWN_TICKS,
+  UFO_CRUISE,
+  UFO_HOVER,
+  UFO_HUNT_RANGE,
+  UFO_LIFT_TICKS,
+  UFO_STATES,
+  type Ufo,
+  type UfoState,
+} from './ufos.ts'
 export { NPC_CARS, NPC_FRAGILITY, NPC_PROFILES, NPC_SPEED, type Driver } from './npcs.ts'
 export {
   ROBOTS,
@@ -431,6 +444,8 @@ export interface Arena {
   readonly shots: Shot[]
   /** The robots on their rounds. Their places are replaced by the server's word. */
   readonly robots: readonly Robot[]
+  /** The flying saucers. Replaced by the server's word, too. */
+  readonly ufos: readonly Ufo[]
   /** The props, numbered as the map lists them, each a body the physics steps. */
   readonly props: readonly ArenaProp[]
   tick: number
@@ -505,6 +520,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     rockets: [],
     shots: [],
     robots: createRobots(map, world),
+    ufos: createUfos(map),
     tick: 0,
   }
 }
@@ -632,7 +648,8 @@ export function advance(
     // A car its engine or wings are driving along, or a grappling line
     // reeling in, is not one the tires hold still, and one its wings are lifting is not one the road holds down.
     seat.vehicle.boosted = burning(seat, input) || hooked(arena, seat)
-    seat.vehicle.lifted = lifting(seat, input)
+    // A car in a saucer's beam is lifted off the road the same way.
+    seat.vehicle.lifted = lifting(seat, input) || arena.ufos.some((ufo) => ufo.state === 'lift' && ufo.target === seat.id)
     // One carrying wings is held level and steered by them in the air, lifted or not.
     seat.vehicle.winged = winged(seat)
     seat.vehicle.grip = gripOf(seat)
@@ -650,6 +667,8 @@ export function advance(
     walkRobot(arena.map, robot, dt)
     seatRobotBody(robot, false)
   }
+  // The saucers fly on, and pull on whatever car they have in their beams.
+  for (const ufo of arena.ufos) flyUfo(arena.map, ufo, arena.seats, gravity, dt)
   arena.world.step()
   arena.tick += 1
   restoreProps(arena)
@@ -907,6 +926,30 @@ export function isLost(arena: Arena, seat: Seat): boolean {
     x > worldSize ||
     z > worldSize
   )
+}
+
+/**
+ * Set down every car a saucer has had up its beam long enough, somewhere
+ * else entirely: on the road nearest where the saucer drops it. Kept apart
+ * from `advance`, like a respawn, as the owner's call. Returns the seats
+ * set down.
+ */
+export function abduct(arena: Arena): Seat[] {
+  const taken: Seat[] = []
+  for (const ufo of arena.ufos) {
+    if (!carried(ufo)) continue
+    const seat = arena.seats[ufo.target]
+    if (seat !== undefined && seat.occupied) {
+      const drop = dropPoint(arena.map, ufo)
+      const spot = nearestRoadSpotTo(arena.map, drop.x, drop.z)
+      if (spot !== null) {
+        respawn(seat, spawnFacing(spot, seat.vehicle.frame.forward))
+        taken.push(seat)
+      }
+    }
+    released(ufo)
+  }
+  return taken
 }
 
 /**

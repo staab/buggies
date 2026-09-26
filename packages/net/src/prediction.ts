@@ -14,6 +14,7 @@ import {
   type Arena,
   type Pickup,
   type Robot,
+  type Ufo,
   type Rocket,
   type Loose,
   type Seat,
@@ -203,6 +204,11 @@ export class LocalPrediction {
   /** The robots, as the mirror has them: the server's word, run ahead. */
   get robots(): readonly Robot[] {
     return this.mirror.robots
+  }
+
+  /** The flying saucers, as the mirror has them: the server's word, run ahead. */
+  get ufos(): readonly Ufo[] {
+    return this.mirror.ufos
   }
 
   /** Rockets in the air, as the mirror has them: the server's word, run ahead. */
@@ -411,6 +417,17 @@ export class LocalPrediction {
       robot.cooldownTicks = known.cooldownTicks
       placeRobot(this.mirror.map, robot)
       seatRobotBody(robot, true)
+    }
+    for (const known of snapshot.ufos) {
+      const ufo = this.mirror.ufos[known.id]
+      if (ufo === undefined) continue
+      vcopy(ufo.position, known.position)
+      ufo.state = known.state
+      ufo.target = known.target
+      ufo.stateTicks = known.stateTicks
+      ufo.cooldownTicks = known.cooldownTicks
+      ufo.legs = known.legs
+      ufo.abductions = known.abductions
     }
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,
