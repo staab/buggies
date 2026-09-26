@@ -828,21 +828,6 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the repair kit mends the car whole at once, and is spent', () => {
-    const arena = createArena(map)
-    const a = takeSeat(arena, 0, 'sportsCar')
-    for (let i = 0; i < 30; i++) advance(arena)
-    a.vehicle.damage = 0.7
-    arm(a, 'repair')
-    expect(ammoFor('repair')).toBe(0)
-    advance(arena)
-    expect(a.vehicle.damage).toBe(0.7)
-    fire(arena, a, 1)
-    expect(a.vehicle.damage).toBe(0)
-    expect(a.weapon).toBe('none')
-    arena.world.free()
-  })
-
   it('the siren slows the cars near it by half while it sounds, and runs out', () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 20, 0)

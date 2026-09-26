@@ -57,7 +57,6 @@ The fire key uses whatever the car carries.
 - **Wings** lift the car into the air while the key is held, for ten seconds in total. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. A car carrying wings steers this way whenever it is airborne, whether or not the key is held.
 - **Shockwave** stuns every other car within 30 meters for five seconds.
 - **Siren** slows every other car within 30 meters by half while the key is held, for five seconds in total.
-- **Repair** fully repairs the car immediately. It appears as a red cross on a white disc.
 - **Oil slick** drops a pool of oil behind the car that lasts a minute. Any car that drives into it, including the one that dropped it once it has landed, keeps a fifth of its grip while in it and for five seconds after.
 - **Shield** protects the car for ten seconds from weapon damage, stuns and slows, and from being shoved by a ram plow or dragged by a grappling hook.
 - **Magnet** collects every banana within 50 meters for 30 seconds.

@@ -45,7 +45,7 @@ describe('the weapon mount', () => {
     expect(mount.object.children.some((child) => child.visible)).toBe(false)
     mount.show('bomb')
     expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
-    mount.show('repair')
+    mount.show('shield')
     expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
     mount.dispose()
   })
