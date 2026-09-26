@@ -22,9 +22,10 @@ The client connects to a server on the same host it was loaded from. To use anot
 | Fire the power-up | `F` | `X` | `.` |
 | Active ability | `D` | `Shift` | `M` |
 | Respawn on the road | `R` | `Q` | `Enter` |
+| Map of the island | `Tab` | `Tab` | `Tab` |
 | Menu | `Esc` | `Esc` | `Esc` |
 
-In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
+The map shows the whole island live, with every car, the traffic, the robots, the saucer and the spot a goal is set for; the button beside the trophy opens it too. In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
 
 ## Bananas
 
