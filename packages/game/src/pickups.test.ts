@@ -87,6 +87,7 @@ describe('pickups', () => {
     const before = { ...arena.pickups[3]!.position }
     for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
+    expect(seat.collected).toBe(1)
     expect(seat.vehicle.wrecked).toBe(false)
     const banana = arena.pickups[3]!
     expect(banana.generation).toBe(1)

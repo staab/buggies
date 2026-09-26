@@ -1,9 +1,13 @@
 import {
+  GOAL_KINDS,
   NO_TARGET,
   LOOSE_KINDS,
   VEHICLE_PROFILE_IDS,
   WEAPONS,
   createVehicleInput,
+  type Goal,
+  type GoalKind,
+  type GoalRequest,
   type LooseKind,
   type VehicleInput,
   type VehicleProfileId,
@@ -13,6 +17,7 @@ import type { Quat, Vec3 } from '@buggies/physics'
 
 import {
   CLIENT_CHANGE_VEHICLE,
+  CLIENT_GOAL,
   CLIENT_HELLO,
   CLIENT_INPUT,
   CLIENT_RESPAWN,
@@ -39,16 +44,20 @@ export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
 export const CHANGE_VEHICLE_BYTES = 2
+export const GOAL_BYTES = 12
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
 export const SNAPSHOT_HEADER_BYTES = 18
-export const SNAPSHOT_VEHICLE_BYTES = 98
+export const SNAPSHOT_VEHICLE_BYTES = 116
 export const SNAPSHOT_PICKUP_BYTES = 5
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
+
+/** What a goal is, by the byte that says so: none first. */
+const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
 
 /** What a vehicle can carry, by the byte that says so: nothing first. */
 const WEAPON_CODES: readonly Weapon[] = ['none', ...WEAPONS]
@@ -95,8 +104,14 @@ export interface VehicleSnapshot {
   damage: number
   /** Blown up, and waiting to be put back. */
   wrecked: boolean
-  /** Bananas taken since sitting down. */
+  /** Bananas held. */
   score: number
+  /** Bananas taken since sitting down, all told, and cars its weapons have wrecked. */
+  collected: number
+  kills: number
+  /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
+  goal: Goal | null
+  goalsWon: number
   /** What it is carrying, and how long the machine gun has left. */
   weapon: Weapon
   /** How many weapons it has won, counted around past 255. */
@@ -424,6 +439,29 @@ export function decodeChangeVehicle(payload: Uint8Array): VehicleProfileId | nul
   return VEHICLE_PROFILE_IDS[payload[1]!] ?? null
 }
 
+export function encodeGoal(goal: GoalRequest | null): Uint8Array {
+  const writer = new Writer(GOAL_BYTES)
+  writer.u8(CLIENT_GOAL)
+  writer.u8(goal === null ? 0 : GOAL_CODES.indexOf(goal.kind))
+  writer.u16(goal === null ? 0 : Math.min(Math.max(goal.target, 0), 0xffff))
+  writer.f32(goal?.x ?? 0)
+  writer.f32(goal?.z ?? 0)
+  return writer.bytes
+}
+
+/** The goal a message asks for, `null` for none, or `undefined` if it is not a goal message at all. */
+export function decodeGoal(payload: Uint8Array): GoalRequest | null | undefined {
+  if (payload.length !== GOAL_BYTES || messageTypeOf(payload) !== CLIENT_GOAL) return undefined
+  const reader = new Reader(payload)
+  reader.u8()
+  const kind = GOAL_CODES[reader.u8()]
+  const target = reader.u16()
+  const x = reader.f32()
+  const z = reader.f32()
+  if (kind === undefined) return undefined
+  return kind === 'none' ? null : { kind, target, x, z }
+}
+
 export function encodeRoomsRequest(): Uint8Array {
   return Uint8Array.of(CLIENT_ROOMS)
 }
@@ -486,6 +524,14 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(Math.round(Math.min(Math.max(vehicle.damage, 0), 1) * 255))
     writer.u8(vehicle.wrecked ? 1 : 0)
     writer.u16(Math.min(vehicle.score, 0xffff))
+    writer.u16(Math.min(vehicle.collected, 0xffff))
+    writer.u16(Math.min(vehicle.kills, 0xffff))
+    writer.u8(vehicle.goal === null ? 0 : GOAL_CODES.indexOf(vehicle.goal.kind))
+    writer.u16(Math.min(vehicle.goal?.target ?? 0, 0xffff))
+    writer.u16(Math.min(Math.max(vehicle.goal?.from ?? 0, 0), 0xffff))
+    writer.f32(vehicle.goal?.x ?? 0)
+    writer.f32(vehicle.goal?.z ?? 0)
+    writer.u8(vehicle.goalsWon & 0xff)
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
     writer.u8(vehicle.wins & 0xff)
     writer.u16(Math.min(Math.max(vehicle.ammoTicks, 0), 0xffff))
@@ -584,6 +630,15 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const damage = reader.u8() / 255
     const wrecked = reader.u8() === 1
     const score = reader.u16()
+    const collected = reader.u16()
+    const kills = reader.u16()
+    const goalKind = GOAL_CODES[reader.u8()]
+    const target = reader.u16()
+    const from = reader.u16()
+    const x = reader.f32()
+    const z = reader.f32()
+    const goalsWon = reader.u8()
+    if (goalKind === undefined) return null
     const weapon = WEAPON_CODES[reader.u8()]
     if (weapon === undefined) return null
     const wins = reader.u8()
@@ -614,6 +669,10 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       damage,
       wrecked,
       score,
+      collected,
+      kills,
+      goal: goalKind === 'none' ? null : { kind: goalKind, target, from, x, z },
+      goalsWon,
       weapon,
       wins,
       ammoTicks,

@@ -200,7 +200,7 @@ describe('weapons', () => {
     arena.world.free()
   })
 
-  it('a rocket goes after the car ahead, even off to one side, and blows it up', () => {
+  it('a rocket goes after the car ahead, even off to one side, and blows it up, a kill to whoever fired it', () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 40, 10)
     arm(a, 'rocket')
@@ -217,6 +217,8 @@ describe('weapons', () => {
     expect(flew).toBeLessThan(ROCKET_LIFE_TICKS)
     expect(b.vehicle.wrecked).toBe(true)
     expect(a.vehicle.damage).toBe(0)
+    expect(a.kills).toBe(1)
+    expect(b.kills).toBe(0)
     arena.world.free()
   })
 

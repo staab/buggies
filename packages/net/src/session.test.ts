@@ -3,6 +3,7 @@ import {
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
   BANANAS_PER_WEAPON,
+  GOAL_PRIZE,
   DURABILITY,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
@@ -144,6 +145,8 @@ class Session {
         onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
         onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
         onChangedVehicle: (seat) => this.events.push(`changed ${seat.id} ${seat.profile}`),
+        onGoalSet: (seat) => this.events.push(`goal ${seat.id} ${seat.goal === null ? 'none' : `${seat.goal.kind} ${seat.goal.target}`}`),
+        onGoalReached: (seat) => this.events.push(`reached ${seat.id}`),
         onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
         onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
       },
@@ -510,6 +513,42 @@ describe('a session', () => {
     expect(offRoad(session.arena.map, session.serverPositionOf(a))).toBeLessThan(1)
     expect(a.prediction.stats.hardResyncs).toBe(resyncs + 1)
     expect(distance(session.predictedPositionOf(a), session.serverPositionOf(a))).toBeLessThan(1)
+    session.dispose()
+  })
+
+  it('sets a goal for a player, pays it once reached, and tells their prediction of both', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    session.run(0.5)
+    const seat = session.arena.seats[a.client.welcome!.seat]!
+    a.client.setGoal({ kind: 'score', target: 2, x: 0, z: 0 })
+    session.run(0.5)
+    expect(session.events).toContain('goal 0 score 2')
+    expect(seat.goal).toEqual({ kind: 'score', target: 2, x: 0, z: 0, from: 0 })
+    expect(a.prediction.ownSeat.goal).toEqual(seat.goal)
+
+    // Two bananas more, and the prize is paid: once, and the goal is done with.
+    // Carrying something already, the car keeps the prize rather than spending it.
+    arm(seat, 'rocket')
+    const held = seat.score
+    seat.collected += 2
+    session.run(0.5)
+    expect(session.events).toContain('reached 0')
+    expect(seat.score).toBe(held + GOAL_PRIZE)
+    expect(seat.goal).toBeNull()
+    expect(a.prediction.ownSeat.goalsWon).toBe(1)
+    expect(a.prediction.ownSeat.goal).toBeNull()
+
+    // A spot on the map, where the car is, is reached as soon as it is set.
+    const { x, z } = seat.vehicle.frame.position
+    a.client.setGoal({ kind: 'location', target: 0, x, z })
+    session.run(0.5)
+    expect(seat.goalsWon).toBe(2)
+
+    // A goal that cannot be played for is refused, and the player with it.
+    a.client.setGoal({ kind: 'kills', target: 0, x: 0, z: 0 })
+    session.run(0.5)
+    expect(a.client.closed).not.toBeNull()
     session.dispose()
   })
 

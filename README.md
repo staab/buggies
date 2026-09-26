@@ -28,9 +28,19 @@ In **2 players** mode, two people share one keyboard on a split screen, and each
 
 ## Bananas
 
-Bananas float around every island, turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has five bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills up to sixteen of its bananas around the wreck for anyone to collect. An island holds at most 256 loose items, and past that the oldest disappear.
+Bananas float around every island, turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has three bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills up to sixteen of its bananas around the wreck for anyone to collect. An island holds at most 256 loose items, and past that the oldest disappear.
 
 Thirty-two health packs, red crosses on white discs, are scattered the same way. A damaged car that drives through one has half its damage mended, and another pack appears somewhere else a little later. A car with no damage passes through and leaves the pack for someone else, and a magnet does not pull health packs.
+
+## Goals
+
+The game is free play, but the trophy beside the speaker, in the top corner while a game is on, opens a panel for setting a goal to play for. A goal is one of three kinds:
+
+- **Score** asks for a number of bananas collected from when the goal is set. Bananas spent on power-ups still count.
+- **Kills** asks for a number of cars wrecked by the player's own weapons from when the goal is set: any hit that finishes a car, whether from a power-up or the vehicle's own ability.
+- **Location** asks the player to drive to a spot picked on a map of the island. A gold beacon stands over it, and it shows on the mini-map. Coming within 20 m of it counts.
+
+The HUD shows how the goal is going. Reaching it wins 100 bananas and returns to free play. In two-player mode the goal is set for both players, and each is paid for reaching it. Escape closes the panel.
 
 ## Power-ups
 

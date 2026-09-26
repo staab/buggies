@@ -1,16 +1,20 @@
 import {
   FIXED_TIMESTEP,
+  GOAL_PRIZE,
   NEUTRAL_INPUT,
   OWN_ACTIONS,
   VEHICLE_PROFILE_LABELS,
   createArena,
+  goalProgress,
   takeSeat,
+  type Goal,
+  type GoalRequest,
   type Seat,
   type VehicleProfileId,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import type { TerrainMap } from '@buggies/terrain'
+import { sampleHeight, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
@@ -34,7 +38,15 @@ import { WebSocketClientTransport } from './ws-transport.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-/** The mini-map from a seat: where it is and faces, and every other occupied seat. */
+/** The color a spot played for is marked in, on the mini-map and over the island. */
+const GOAL_COLOR = 0xffd24a
+/** How tall the beacon over a spot played for stands, and how wide. */
+const BEACON_HEIGHT = 160
+const BEACON_RADIUS = 3
+/** How long a goal reached is told of, in seconds. */
+const GOAL_WON_SECONDS = 5
+
+/** The mini-map from a seat: where it is and faces, every other occupied seat, and the spot it is playing for. */
 function radarOf(own: Seat, seats: readonly Seat[]): RadarState {
   const others: RadarBlip[] = []
   for (const seat of seats) {
@@ -42,7 +54,26 @@ function radarOf(own: Seat, seats: readonly Seat[]): RadarState {
     const { x, z } = seat.vehicle.frame.position
     others.push({ x, z, color: seatColor(seat.id) })
   }
+  if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })
   return { position: own.vehicle.frame.position, forward: own.vehicle.frame.forward, others }
+}
+
+/** How a goal is coming along, in a line. */
+function goalLine(seat: Seat, goal: Goal): string {
+  const progress = goalProgress(seat, goal)
+  if (goal.kind === 'location') return `Goal: ${Math.round(progress)} m to the spot`
+  const done = Math.min(Math.max(progress, 0), goal.target)
+  return `Goal: ${done} / ${goal.target} ${goal.kind === 'score' ? 'bananas' : 'wrecks'}`
+}
+
+/** A column of light standing over a spot, to be seen from anywhere on the island. */
+function buildBeacon(): THREE.Mesh {
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(BEACON_RADIUS, BEACON_RADIUS, BEACON_HEIGHT, 16, 1, true).translate(0, BEACON_HEIGHT / 2, 0),
+    new THREE.MeshBasicMaterial({ color: GOAL_COLOR, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
+  )
+  beacon.visible = false
+  return beacon
 }
 
 /** Someone to put on the server: in what, and on which keys. */
@@ -66,6 +97,12 @@ export interface OnlineView {
   hud(): HudState
   /** Swap into another vehicle where the car is, keeping the seat and its bananas. */
   changeVehicle(profile: VehicleProfileId): void
+  /** The island being played. */
+  readonly map: TerrainMap
+  /** The goal being played for, as the server last said, if any. */
+  goal(): Goal | null
+  /** Play for this goal, or for none. */
+  setGoal(goal: GoalRequest | null): void
   dispose(): void
 }
 
@@ -127,6 +164,11 @@ export async function joinOnline(
 
   let owed = 0
   let chaseSnapped = false
+  // A goal reached: how many the server has counted, and how much longer that is told of.
+  let goalsWon = prediction.ownSeat.goalsWon
+  let wonFor = 0
+  const beacon = buildBeacon()
+  root.add(beacon)
 
   return {
     root,
@@ -159,6 +201,17 @@ export async function joinOnline(
       car.presence.hookAt(hookPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       arena.update(dt)
+      const own = prediction.ownSeat
+      if (own.goalsWon !== goalsWon) {
+        goalsWon = own.goalsWon
+        wonFor = GOAL_WON_SECONDS
+        sound.chime()
+      }
+      wonFor = Math.max(wonFor - dt, 0)
+      beacon.visible = own.goal?.kind === 'location'
+      if (own.goal?.kind === 'location') {
+        beacon.position.set(own.goal.x, sampleHeight(map.heightfield, own.goal.x, own.goal.z), own.goal.z)
+      }
       car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
       else {
@@ -177,10 +230,23 @@ export async function joinOnline(
       const sync =
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
-      return { ...car.presence.hudState(title, controls, sync), radar: radarOf(prediction.ownSeat, prediction.seats) }
+      const own = prediction.ownSeat
+      const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal)
+      return {
+        ...car.presence.hudState(title, controls, sync),
+        radar: radarOf(own, prediction.seats),
+        ...(goal === null ? {} : { goal, goalWon: wonFor > 0 }),
+      }
     },
     changeVehicle(profile) {
       client.changeVehicle(profile)
+    },
+    map,
+    goal() {
+      return prediction.ownSeat.goal
+    },
+    setGoal(goal) {
+      client.setGoal(goal)
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
@@ -189,6 +255,8 @@ export async function joinOnline(
       others.dispose()
       car.dispose()
       arena.dispose()
+      beacon.geometry.dispose()
+      ;(beacon.material as THREE.Material).dispose()
       scene.remove(root)
     },
   }

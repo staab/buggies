@@ -357,6 +357,10 @@ export class LocalPrediction {
       seat.vehicle.damage = vehicle.damage
       seat.vehicle.wrecked = vehicle.wrecked
       seat.score = vehicle.score
+      seat.collected = vehicle.collected
+      seat.kills = vehicle.kills
+      seat.goal = vehicle.goal === null ? null : { ...vehicle.goal }
+      seat.goalsWon = vehicle.goalsWon
       seat.weapon = vehicle.weapon
       seat.wins = vehicle.wins
       seat.ammoTicks = vehicle.ammoTicks

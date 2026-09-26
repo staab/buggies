@@ -1,5 +1,6 @@
 import {
   advance,
+  awardGoals,
   changeVehicle,
   takeSeat,
   createVehicleInput,
@@ -7,6 +8,8 @@ import {
   leaveSeat,
   respawnLost,
   respawnNearby,
+  setGoal,
+  validGoal,
   type Arena,
   type Seat,
   type VehicleInput,
@@ -14,6 +17,7 @@ import {
 import { InputTimeline } from './input-timeline.ts'
 import {
   CLIENT_CHANGE_VEHICLE,
+  CLIENT_GOAL,
   CLIENT_HELLO,
   CLIENT_INPUT,
   INPUT_TIMELINE_TICKS,
@@ -32,6 +36,7 @@ import { createRoomSnapshots, gatherSnapshot, rememberTold, type RoomSnapshots }
 import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
   decodeChangeVehicle,
+  decodeGoal,
   decodeHello,
   decodeInput,
   encodeReject,
@@ -68,6 +73,9 @@ export interface GameServerEvents {
   onRejected(connectionId: number, reason: string): void
   onRespawned(seat: Seat, why: 'lost' | 'asked'): void
   onChangedVehicle(seat: Seat): void
+  /** A player has set a goal, or cleared theirs, and has reached one. */
+  onGoalSet?(seat: Seat): void
+  onGoalReached?(seat: Seat): void
   /** A room has been made for a seed nobody was on, or closed behind the last to leave it. */
   onRoomOpened(seed: number): void
   onRoomClosed(seed: number): void
@@ -197,6 +205,7 @@ export class GameServer implements TransportHandlers {
       const tick = room.arena.tick
       advance(room.arena, (seat) => this.playerIn(room, seat)?.timeline.consume(tick) ?? this.scratchInput)
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
+      for (const seat of awardGoals(room.arena.seats)) this.events.onGoalReached?.(seat)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
     this.expireHandshakes()
@@ -243,6 +252,19 @@ export class GameServer implements TransportHandlers {
       player.respawnedTick = arena.tick
       changeVehicle(arena, player.seat, profile)
       this.events.onChangedVehicle?.(player.seat)
+      return
+    }
+
+    if (messageTypeOf(payload) === CLIENT_GOAL) {
+      const request = decodeGoal(payload)
+      const extent = arena.map.size * arena.map.cellSize
+      const goal = request === null ? null : request === undefined ? undefined : validGoal(request, extent)
+      if (goal === undefined || (request !== null && goal === null)) {
+        this.reject(connection, REJECT_MALFORMED_MESSAGE)
+        return
+      }
+      setGoal(player.seat, goal)
+      this.events.onGoalSet?.(player.seat)
       return
     }
 

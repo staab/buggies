@@ -194,6 +194,14 @@ export class Shell implements MenuHost {
     this.huds[0]?.notice(text)
   }
 
+  /** A panel over the game, such as the goal panel: while it is open, no one is driving. */
+  overlay: { readonly open: boolean } = { open: false }
+
+  /** The game being played, if any. */
+  get played(): ModeView | null {
+    return this.game?.mode ?? null
+  }
+
   /** Open the menu on its first page, with the island that would be driven coming up behind it. */
   welcome(): void {
     this.menu.show(this.choiceNow)
@@ -323,7 +331,7 @@ export class Shell implements MenuHost {
    */
   frame(dt: number): void {
     const { menu, game, backdrop } = this
-    game?.mode.update(dt, !menu.open)
+    game?.mode.update(dt, !menu.open && !this.overlay.open)
     if (menu.open) backdrop?.mode.update(dt, false)
     // The island's clocks keep the game's time.
     if (this.view !== null) this.view.userData.tick = game?.mode.tick ?? null
