@@ -24,6 +24,7 @@ import {
   KIND_TUNNEL,
   MAX_ROAD_CURVATURE,
   MAX_ROAD_GRADE,
+  RAMP_ALONG,
   RAMP_DROP,
   RAMP_REACH,
   ROAD_BRIDGE,
@@ -42,7 +43,7 @@ import {
 import { buildInterchanges, crossRoad, interchangeCenters, sampleOpen } from './roads/crossings.ts'
 import { cumulativeLengths } from './roads/geometry.ts'
 import { limitGrade, limitVerticalCurvature } from './roads/grades.ts'
-import { routeLoop } from './roads/highway.ts'
+import { highwayCities, routeLoop } from './roads/highway.ts'
 import { alignJunctions } from './roads/junctions.ts'
 import { sampleTerrain } from './roads/sampling.ts'
 import {
@@ -74,7 +75,9 @@ export {
   CLIMB_LOT,
   CLIMB_WIDTH,
   CROSS_WIDTH,
+  INTERCHANGE_CLEAR,
   INTERCHANGE_SEARCH,
+  INTERCHANGE_SPACING,
   RAMP_PLATEAU,
   RAMP_LANE_REACH,
   RAMP_ALONG,
@@ -97,11 +100,12 @@ export {
 export { type CityFrame, STREET_GRID_LEAST, cityFrame } from './roads/streets.ts'
 
 /**
- * Build the highway network: a single closed loop that visits every city, so
- * no road ends in a dead end. The horizontal route is shaped by `routeLoop`;
- * the vertical route is grade-limited, which forces a bridge where it crosses
- * water and a tunnel where it passes beneath a mountain. Interchanges branch
- * off the finished loop as open cross roads and ramps.
+ * Build the road network: a single closed highway loop through three of the
+ * cities, so no road ends in a dead end, and arterials reaching the rest. The
+ * horizontal route is shaped by `routeLoop`; the vertical route is
+ * grade-limited, which forces a bridge where it crosses water and a tunnel
+ * where it passes beneath a mountain. Interchanges branch off the finished
+ * loop as open cross roads and ramps.
  */
 export function generateRoads(
   field: Heightfield,
@@ -113,7 +117,8 @@ export function generateRoads(
   districtOf?: Uint8Array,
   mountains: Mountain[] = [],
 ): Road[] {
-  const samples = routeLoop(districts, field, seaLevel)
+  const onHighway = highwayCities(districts, field, seaLevel)
+  const samples = routeLoop(onHighway, field, seaLevel)
   const count = samples.length
   if (count < 3) return []
 
@@ -212,7 +217,6 @@ export function generateRoads(
     (x, z) => surfaceAt(x, z).wet,
     cum,
     total,
-    districts,
     deck,
   ).map((c) => ({ index: c, cross: crossRoad(field, samples, c) }))
 
@@ -259,8 +263,11 @@ export function generateRoads(
     else structure[i] = ROAD_GRADE
   }
 
+  // Nothing of an interchange may be in a tunnel, from one pair of ramp mouths
+  // to the other, nor any segment reaching into one.
+  const mouths = Math.ceil((RAMP_ALONG + RAMP_WIDTH) / (total / count)) + 1
   const built = crossings.filter(({ index, cross }) => {
-    if (kind[index] === KIND_TUNNEL) return false
+    for (let k = -mouths; k <= mouths; k++) if (kind[(index + k + count) % count] === KIND_TUNNEL) return false
     if (profile[index]! - at(cross.heights, cross.centerIndex, 'cross road center') < UNDERPASS_CLEARANCE - 0.5) return false
     // A ramp lands ROAD_SURFACE below the cross road's centerline, on its ground.
     const drop =
@@ -280,10 +287,18 @@ export function generateRoads(
     1,
   )
   const crossRoads = access.filter((road) => road.width === CROSS_WIDTH)
+  // A city the highway runs through is served by its interchanges; any
+  // other is somewhere the arterials must reach.
+  const offHighway = districts.filter(
+    (district) =>
+      !onHighway.includes(district) &&
+      samples.every((point) => hypot(point.x - district.cx, point.z - district.cz) > district.radius),
+  )
   const arterials = buildArterials(
     field,
     seaLevel,
     crossRoads,
+    offHighway,
     [highway, ...access],
     surfaceAt,
     (seed ^ ARTERIAL_SALT) >>> 0,
@@ -299,7 +314,7 @@ export function generateRoads(
   alignJunctions(network)
   // Junction alignment moves roads, so only once every road is where it will
   // finally be drawn is it worth asking what a street runs into and reaches.
-  const trimmed = trimStreetsAlongArterials(network, nextId + streets.length)
+  const trimmed = trimStreetsAlongArterials(network, nextId + streets.length, cellSize)
   joinStreetsToRoads(trimmed, keepOut)
   const connectors = connectStreetGrids(
     trimmed,

@@ -89,7 +89,7 @@ export const RAMP_WIDTH = 8
 export const CROSS_WIDTH = 12
 
 /** Distance along the highway between interchanges, in world units. */
-export const INTERCHANGE_SPACING = 500
+export const INTERCHANGE_SPACING = 300
 
 /** How far either way a candidate may slide to find dry, water-free ground. */
 export const INTERCHANGE_SEARCH = 150
@@ -278,6 +278,15 @@ export const ARTERIAL_ACCESS_AVOID = 16
 export const ARTERIAL_SLOPE_COST = 24
 
 export const ARTERIAL_WATER_COST = 8
+
+/** Extra cost for each nav cell of open sea an arterial bridges, so it keeps to land where it can. */
+export const ARTERIAL_SEA_COST = 96
+
+/** Most tries at bridging an outlying land mass to the network before giving it up. */
+export const ARTERIAL_LINK_TRIES = 24
+
+/** Most places tried for a link from one outlying piece to meet the network. */
+export const ARTERIAL_LINK_ARRIVALS = 6
 
 
 /** Cap on cells a single A* may expand, so a bad map can never hang. */

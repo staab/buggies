@@ -16,8 +16,8 @@ import { pullAllInland, pullInland, sampleTerrain } from './sampling.ts'
 const { atan2, cos, hypot, sin } = exact
 
 /**
- * The highway: one loop around the island's cities, shaped as a stadium or bowed
- * around the coast, and sampled into a smooth run of points.
+ * The highway: one loop through three of the cities, shaped as a stadium or
+ * bowed around the coast, and sampled into a smooth run of points.
  */
 
 /**
@@ -317,6 +317,63 @@ function controlPoints(
     }
   }
   return controls
+}
+
+/** How many cities the highway visits. */
+const HIGHWAY_CITIES = 3
+/** A meter of highway over open sea counts this many times one over land in choosing its cities. */
+const SEA_RUN_WEIGHT = 3
+/**
+ * Each square meter of ground standing above both cities, under the straight
+ * run between them, counts this many meters of highway: a run over a mountain
+ * has to tunnel, and leaves no ground for interchanges.
+ */
+const HIGH_GROUND_WEIGHT = 0.1
+/** A choice of cities that turns sharper than this at a corner, in degrees, counts twice as long. */
+const SHARP_CITY_CORNER = 30
+/** The ground is looked at this often along a run between two cities. */
+const RUN_PROBE_STEP = 8
+
+/** What the straight run from one city to another counts for: its length, more over the sea and more over high ground. */
+function runCost(field: Heightfield, seaLevel: number, a: District, b: District): number {
+  const length = hypot(b.cx - a.cx, b.cz - a.cz)
+  const steps = Math.max(1, Math.ceil(length / RUN_PROBE_STEP))
+  const step = length / steps
+  const level = Math.max(sampleTerrain(field, a.cx, a.cz), sampleTerrain(field, b.cx, b.cz))
+  let cost = length
+  for (let k = 0; k <= steps; k++) {
+    const t = k / steps
+    const ground = sampleTerrain(field, a.cx + (b.cx - a.cx) * t, a.cz + (b.cz - a.cz) * t)
+    if (ground <= seaLevel) cost += SEA_RUN_WEIGHT * step
+    else cost += HIGH_GROUND_WEIGHT * Math.max(ground - level, 0) * step
+  }
+  return cost
+}
+
+/**
+ * The cities the highway loop runs through: of every three, the ones it
+ * reaches most cheaply, counting what runs over the sea or high ground
+ * extra and a sharp corner double. The rest are left to the arterials.
+ */
+export function highwayCities(districts: District[], field: Heightfield, seaLevel: number): District[] {
+  if (districts.length <= HIGHWAY_CITIES) return districts.slice()
+  let best: District[] = districts.slice(0, HIGHWAY_CITIES)
+  let bestCost = Infinity
+  for (let i = 0; i < districts.length; i++) {
+    for (let j = i + 1; j < districts.length; j++) {
+      for (let k = j + 1; k < districts.length; k++) {
+        const trio = [districts[i]!, districts[j]!, districts[k]!]
+        let cost = 0
+        for (let side = 0; side < 3; side++) cost += runCost(field, seaLevel, trio[side]!, trio[(side + 1) % 3]!)
+        if (sharpestCorner(trio) < SHARP_CITY_CORNER) cost *= 2
+        if (cost < bestCost) {
+          bestCost = cost
+          best = trio
+        }
+      }
+    }
+  }
+  return best
 }
 
 /**

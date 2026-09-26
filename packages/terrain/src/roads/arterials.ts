@@ -1,6 +1,6 @@
 import { createRng, type Rng } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import type { Heightfield, Road, RoadPoint } from '../types.ts'
+import type { District, Heightfield, Road, RoadPoint } from '../types.ts'
 import {
   ARTERIAL_ACCESS_AVOID,
   ARTERIAL_BLOCK_COST,
@@ -11,6 +11,8 @@ import {
   ARTERIAL_GRID,
   ARTERIAL_HIGHWAY_AVOID,
   ARTERIAL_LENS_COST,
+  ARTERIAL_LINK_ARRIVALS,
+  ARTERIAL_LINK_TRIES,
   ARTERIAL_MAX_COUNT,
   ARTERIAL_MAX_EXPANSIONS,
   ARTERIAL_MAX_POINTS,
@@ -20,6 +22,7 @@ import {
   ARTERIAL_MIN_RADIUS,
   ARTERIAL_NEIGHBORS,
   ARTERIAL_PRUNE_TURN,
+  ARTERIAL_SEA_COST,
   ARTERIAL_SLOPE_COST,
   ARTERIAL_STEP,
   ARTERIAL_WATER_COST,
@@ -36,12 +39,16 @@ import { sampleTerrain } from './sampling.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { acos, hypot, tan } = exact
+const { acos, cos, hypot, sin, tan } = exact
 
 /**
  * Arterials: the roads between cities, routed cell by cell over a navigation
  * grid and smoothed into drivable runs.
  */
+
+/** How far apart the rings are, and how many bearings on each, that a wet city middle is searched out from for dry ground. */
+const CITY_NODE_STEP = 8
+const CITY_NODE_BEARINGS = 16
 
 interface ArterialNode {
   x: number
@@ -49,6 +56,8 @@ interface ArterialNode {
   y: number
   /** Cross road this node belongs to, shared by its two ends; -1 for field nodes. */
   cross: number
+  /** Whether it is the middle of a city the highway does not run through. */
+  city: boolean
 }
 
 interface PathPoint {
@@ -194,10 +203,12 @@ interface SearchBuffers {
 }
 
 /**
- * A* across the nav grid, returning every cell from start to goal. Moves that
- * would break the grade limit are refused, water costs extra (bridges), highway
- * cells are blocked so a route only crosses at an interchange, leaving the
- * edge's Voronoi lens costs extra, and cells already carrying a road repel.
+ * A* across the nav grid, returning every cell from start to goal, or to
+ * the nearest of `goals` where those are given. Moves that
+ * would break the grade limit are refused, water costs extra (bridges), open
+ * sea is refused unless `openSea` allows it, highway cells are blocked so a
+ * route only crosses at an interchange, leaving the edge's Voronoi lens costs
+ * extra, and cells already carrying a road repel.
  */
 function routeCells(
   grid: NavGrid,
@@ -210,6 +221,8 @@ function routeCells(
   strict: boolean,
   anchorA: number,
   anchorB: number,
+  openSea = false,
+  goals: Uint8Array | null = null,
 ): number[] | null {
   const { cell, cols, rows, height, wet, sea, charged } = grid
   const { gScore, cameFrom, closed, priority, open } = buffers
@@ -254,7 +267,7 @@ function routeCells(
   }
 
   const heuristic = (index: number): number =>
-    hypot((index % cols) - (goal % cols), ((index / cols) | 0) - ((goal / cols) | 0)) * cell
+    goals !== null ? 0 : hypot((index % cols) - (goal % cols), ((index / cols) | 0) - ((goal / cols) | 0)) * cell
 
   gScore[start] = 0
   priority[start] = heuristic(start)
@@ -264,7 +277,7 @@ function routeCells(
   while (open.length > 0) {
     if (++expanded > ARTERIAL_MAX_EXPANSIONS) return null
     const current = pop()
-    if (current === goal) {
+    if (current === goal || (goals !== null && goals[current] === 1)) {
       const path: number[] = []
       for (let at = current; at !== -1; at = cameFrom[at]!) path.push(at)
       return path.reverse()
@@ -282,6 +295,7 @@ function routeCells(
         if (ncol < 0 || ncol >= cols || nrow < 0 || nrow >= rows) continue
         const next = nrow * cols + ncol
         if (closed[next]) continue
+        const arrives = next === goal || (goals !== null && goals[next] === 1)
 
         const run = hypot(dx, dz) * cell
         const grade = Math.abs(height[next]! - height[current]!) / run
@@ -289,22 +303,25 @@ function routeCells(
         if (grade > (wetMove ? ARTERIAL_BRIDGE_GRADE : MAX_ARTERIAL_GRADE)) continue
         // Highway cells are blocked outright; the only way across is the cleared
         // corridor at an interchange, so arterials cannot cut through.
-        if (charged[next] === 1 && next !== goal) continue
-        // Open sea is never crossed: the highway's bridges are the only way
-        // from one island to the other, and a bay is driven around.
-        if (sea[next] === 1 && next !== goal) continue
+        if (charged[next] === 1 && !arrives) continue
+        // Open sea is crossed only to reach land the network cannot reach
+        // otherwise, and a bay is driven around.
+        if (sea[next] === 1 && !arrives && !openSea) continue
 
         let cost = run + grade * ARTERIAL_SLOPE_COST
-        // Rivers and lakes are bridged.
+        // Rivers and lakes are bridged, and so is the sea when it must be.
         if (wetMove) cost += ARTERIAL_WATER_COST
+        if (sea[next] === 1) cost += ARTERIAL_SEA_COST
         let tag = label[next]!
         // The exact start and goal cells are always allowed, even if another
         // anchor is marginally nearer.
-        if (next === start || next === goal) tag = anchorA
+        if (next === start || arrives) tag = anchorA
         // Stay inside the union of the two anchors' Voronoi cells: a road may
         // never wander into a third cell, so it cannot collide with another.
-        // Dead-end repairs may bow outside the lens for a cost.
-        if (tag !== anchorA && tag !== anchorB) {
+        // Dead-end repairs may bow outside the lens for a cost. A link over
+        // the sea, run between pieces the lenses were never drawn for, has
+        // no lens at all.
+        if (!openSea && tag !== anchorA && tag !== anchorB) {
           if (strict) continue
           cost += ARTERIAL_LENS_COST
         }
@@ -488,20 +505,37 @@ function sampleOpenSpline(points: PathPoint[], step: number): PathPoint[] {
   return result
 }
 
-/** Node set: both ends of every cross road, plus an even grid of inland sites. */
+/** Node set: both ends of every cross road, the middle of every city off the highway, and an even grid of inland sites. */
 function buildArterialNodes(
   field: Heightfield,
   seaLevel: number,
   crossRoads: Road[],
+  cities: District[],
   rng: Rng,
   wetAt: (x: number, z: number) => boolean,
 ): ArterialNode[] {
   const nodes: ArterialNode[] = []
   crossRoads.forEach((cross, id) => {
-    nodes.push({ x: cross.points[0]!.x, z: cross.points[0]!.z, y: cross.points[0]!.y, cross: id })
+    nodes.push({ x: cross.points[0]!.x, z: cross.points[0]!.z, y: cross.points[0]!.y, cross: id, city: false })
     const end = cross.points[cross.points.length - 1]!
-    nodes.push({ x: end.x, z: end.z, y: end.y, cross: id })
+    nodes.push({ x: end.x, z: end.z, y: end.y, cross: id, city: false })
   })
+  // A city's node is at its middle, or where a river runs through that, on
+  // the nearest dry ground within the city.
+  for (const district of cities) {
+    const dry = (x: number, z: number): boolean => sampleTerrain(field, x, z) > seaLevel && !wetAt(x, z)
+    let spot: { x: number; z: number } | null = dry(district.cx, district.cz) ? { x: district.cx, z: district.cz } : null
+    for (let out = CITY_NODE_STEP; spot === null && out <= district.radius; out += CITY_NODE_STEP) {
+      for (let k = 0; k < CITY_NODE_BEARINGS && spot === null; k++) {
+        const angle = (k / CITY_NODE_BEARINGS) * Math.PI * 2
+        const x = district.cx + cos(angle) * out
+        const z = district.cz + sin(angle) * out
+        if (dry(x, z)) spot = { x, z }
+      }
+    }
+    if (spot === null) continue
+    nodes.push({ x: spot.x, z: spot.z, y: sampleTerrain(field, spot.x, spot.z), cross: -1, city: true })
+  }
 
   const worldX = field.width * field.cellSize
   const worldZ = field.depth * field.cellSize
@@ -512,7 +546,7 @@ function buildArterialNodes(
       const ground = sampleTerrain(field, x, z)
       if (ground <= seaLevel || wetAt(x, z)) continue
       if (nodes.some((node) => hypot(node.x - x, node.z - z) < ARTERIAL_FIELD_SPACING * 0.45)) continue
-      nodes.push({ x, z, y: ground, cross: -1 })
+      nodes.push({ x, z, y: ground, cross: -1, city: false })
     }
   }
   return nodes
@@ -735,13 +769,14 @@ export function buildArterials(
   field: Heightfield,
   seaLevel: number,
   crossRoads: Road[],
+  cities: District[],
   existing: Road[],
   surfaceAt: (x: number, z: number) => { wet: boolean; level: number },
   seed: number,
   nextId: number,
 ): Road[] {
   const rng: Rng = createRng(seed)
-  const nodes = buildArterialNodes(field, seaLevel, crossRoads, rng, (x, z) => surfaceAt(x, z).wet)
+  const nodes = buildArterialNodes(field, seaLevel, crossRoads, cities, rng, (x, z) => surfaceAt(x, z).wet)
   if (nodes.length < 2) return []
   const grid = buildNavGrid(field, seaLevel, surfaceAt, existing)
   const label = labelAnchors(grid, nodes)
@@ -765,7 +800,7 @@ export function buildArterials(
   const tried = new Set<number>()
   let id = nextId
 
-  const buildRoad = (a: number, b: number, relaxed = false): boolean => {
+  const buildRoad = (a: number, b: number, relaxed = false, openSea = false): boolean => {
     const start = nodes[a]!
     const goal = nodes[b]!
 
@@ -846,7 +881,9 @@ export function buildArterials(
 
     const startCell = cellAt(grid, start.x, start.z)
     const goalCell = cellAt(grid, goal.x, goal.z)
-    let cells = routeCells(grid, buffers, startCell, goalCell, label, density, block, !relaxed, a, b)
+    const route = (): number[] | null =>
+      routeCells(grid, buffers, startCell, goalCell, label, density, block, !relaxed, a, b, openSea)
+    let cells = route()
     if (cells === null) return false
     let road = makeRoad(cells)
     if (road === null) return false
@@ -859,7 +896,7 @@ export function buildArterials(
         if (block[index] === 0) touched.push(index)
         block[index] = 1
       }
-      const retry = routeCells(grid, buffers, startCell, goalCell, label, density, block, !relaxed, a, b)
+      const retry = route()
       if (retry === null) {
         road = null
         break
@@ -920,15 +957,147 @@ export function buildArterials(
     for (let i = 0; i < roads.length; i++) {
       if (!alive[i]) continue
       const [a, b] = endpoints[i]!
-      // A leaf at a cross road end is fine: the cross road is its second link.
-      const leafA = join[a] === 1 && nodes[a]!.cross < 0
-      const leafB = join[b] === 1 && nodes[b]!.cross < 0
+      // A leaf at a cross road end is fine: the cross road is its second
+      // link. So is one in the middle of a city, where the streets are.
+      const leafA = join[a] === 1 && nodes[a]!.cross < 0 && !nodes[a]!.city
+      const leafB = join[b] === 1 && nodes[b]!.cross < 0 && !nodes[b]!.city
       if (leafA || leafB || sharpestTurn(roads[i]!.points) > ARTERIAL_PRUNE_TURN) {
         alive[i] = false
         pruned = true
       }
     }
     if (!pruned) break
+  }
+
+  // Every city off the highway, and every stretch of arterial, is joined to
+  // the network the highway is on: a land mass the highway never reaches is
+  // bridged to from the nearest one that is, over the sea if it must be.
+  // Whatever still cannot be reached is dropped.
+  obstacles.length = 0
+  obstacles.push(...existing, ...roads.filter((_, index) => alive[index]!))
+  const parent = nodes.map((_, index) => index)
+  const find = (start: number): number => {
+    let root = start
+    while (parent[root]! !== root) root = parent[root]!
+    return root
+  }
+  const union = (a: number, b: number): void => {
+    parent[find(a)] = find(b)
+  }
+  const onRoad = nodes.map(() => false)
+  const firstCross = nodes.findIndex((node) => node.cross >= 0)
+  for (const [index, node] of nodes.entries()) {
+    if (node.cross < 0) continue
+    onRoad[index] = true
+    union(index, firstCross)
+  }
+  for (const [index, [a, b]] of endpoints.entries()) {
+    if (!alive[index]) continue
+    onRoad[a] = true
+    onRoad[b] = true
+    union(a, b)
+  }
+  // A link may not cross an arterial any more than the highway: it runs up
+  // to the first node or arterial of the network it comes to, and meets an
+  // arterial in a junction cut into it there.
+  for (const road of obstacles) {
+    if (road.kind !== 'arterial') continue
+    for (const point of road.points) grid.charged[cellAt(grid, point.x, point.z)] = 1
+  }
+  /** Cut arterial `k` in two at its point `at`, and the new node there, joining the two halves. */
+  const split = (k: number, at: number): number => {
+    const road = roads[k]!
+    const [a, b] = endpoints[k]!
+    const point = road.points[at]!
+    const node = nodes.push({ x: point.x, z: point.z, y: point.y, cross: -1, city: false }) - 1
+    parent.push(node)
+    onRoad.push(true)
+    degree.push(2)
+    union(node, a)
+    roads[k] = { ...road, points: road.points.slice(0, at + 1), structure: road.structure.slice(0, at) }
+    endpoints[k] = [a, node]
+    roads.push({ ...road, id: id++, points: road.points.slice(at), structure: road.structure.slice(at) })
+    endpoints.push([node, b])
+    alive.push(true)
+    return node
+  }
+  /** Undo the last `split`, of arterial `k`, when no link could be made to meet it. */
+  const unsplit = (k: number): void => {
+    const tail = roads.pop()!
+    const [, b] = endpoints.pop()!
+    alive.pop()
+    nodes.pop()
+    parent.pop()
+    onRoad.pop()
+    degree.pop()
+    id--
+    const head = roads[k]!
+    roads[k] = { ...head, points: [...head.points, ...tail.points.slice(1)], structure: Uint8Array.from([...head.structure, ...tail.structure]) }
+    endpoints[k] = [endpoints[k]![0], b]
+  }
+  // Each outlying piece is tried from its node nearest the network first.
+  const nearestNetwork = (a: number, network: number): number => {
+    let nearest = Infinity
+    for (let b = 0; b < nodes.length; b++) {
+      if (onRoad[b] && find(b) === network) nearest = Math.min(nearest, hypot(nodes[a]!.x - nodes[b]!.x, nodes[a]!.z - nodes[b]!.z))
+    }
+    return nearest
+  }
+  const given = new Set<number>()
+  for (let tries = 0; firstCross >= 0 && tries < ARTERIAL_LINK_TRIES; tries++) {
+    const network = find(firstCross)
+    let from = -1
+    let nearest = Infinity
+    for (let a = 0; a < nodes.length; a++) {
+      if ((!onRoad[a] && !nodes[a]!.city) || find(a) === network || given.has(a)) continue
+      const distance = nearestNetwork(a, network)
+      if (distance < nearest) {
+        nearest = distance
+        from = a
+      }
+    }
+    if (from < 0) break
+    given.add(from)
+    // Where the network can be reached: its nodes, and the length of its arterials.
+    const goals = new Uint8Array(grid.cols * grid.rows)
+    const nodeAt = new Map<number, number>()
+    const roadAt = new Map<number, [number, number]>()
+    for (let b = 0; b < nodes.length; b++) {
+      if (!onRoad[b] || find(b) !== network) continue
+      const cell = cellAt(grid, nodes[b]!.x, nodes[b]!.z)
+      goals[cell] = 1
+      if (!nodeAt.has(cell)) nodeAt.set(cell, b)
+    }
+    for (const [k, road] of roads.entries()) {
+      if (!alive[k] || find(endpoints[k]![0]) !== network) continue
+      for (let at = 1; at < road.points.length - 1; at++) {
+        const cell = cellAt(grid, road.points[at]!.x, road.points[at]!.z)
+        goals[cell] = 1
+        if (!roadAt.has(cell)) roadAt.set(cell, [k, at])
+      }
+    }
+    const start = cellAt(grid, nodes[from]!.x, nodes[from]!.z)
+    // Where one arrival will not take a road, the next nearest is tried.
+    for (let attempt = 0; attempt < ARTERIAL_LINK_ARRIVALS; attempt++) {
+      const way = routeCells(grid, buffers, start, -1, label, density, block, false, from, -1, true, goals)
+      if (way === null) break
+      const arrival = way.at(-1)!
+      goals[arrival] = 0
+      let to = nodeAt.get(arrival)
+      const cut = to === undefined ? roadAt.get(arrival)! : null
+      if (cut !== null) to = split(cut[0], cut[1])
+      if (buildRoad(from, to!, true, true)) {
+        alive.push(true)
+        onRoad[from] = true
+        union(from, to!)
+        break
+      }
+      if (cut !== null) unsplit(cut[0])
+    }
+  }
+  if (firstCross >= 0) {
+    const network = find(firstCross)
+    for (const [index, [a]] of endpoints.entries()) if (find(a) !== network) alive[index] = false
   }
   return roads.filter((_, index) => alive[index]!)
 }

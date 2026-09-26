@@ -393,8 +393,15 @@ function pastMouth(mouth: Mouth, x: number, z: number): number {
  * A new segment takes the structure of the old one its middle lies in.
  */
 function resampleSurfaceRoad(road: Road, spacing: number): void {
+  const resampled = resampledSurfaceRoad(road, spacing)
+  road.points = resampled.points
+  road.structure = resampled.structure
+}
+
+/** The points and structure `resampleSurfaceRoad` would lay a road out on, leaving the road as it is. */
+export function resampledSurfaceRoad(road: Road, spacing: number): { points: RoadPoint[]; structure: Uint8Array } {
   const { points, structure } = road
-  if (road.closed || points.length < 2) return
+  if (road.closed || points.length < 2) return { points, structure }
   const cumulative = [0]
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1]!
@@ -424,8 +431,7 @@ function resampleSurfaceRoad(road: Road, spacing: number): void {
     resampled.push(k === 0 ? points[0]! : k === steps ? points[points.length - 1]! : at(distance).point)
     if (k < steps) codes.push(structure[at((total * (k + 0.5)) / steps).segment]!)
   }
-  road.points = resampled
-  road.structure = Uint8Array.from(codes)
+  return { points: resampled, structure: Uint8Array.from(codes) }
 }
 
 /**

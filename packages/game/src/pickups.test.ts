@@ -4,6 +4,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   arm,
   BANANA_REACH,
+  BANANA_SLOTS,
+  HEALTH_MEND,
+  HEALTH_SLOTS,
   NEUTRAL_INPUT,
   PICKUP_HEIGHT,
   PICKUP_RESPAWN_TICKS,
@@ -17,6 +20,7 @@ import {
   createArena,
   initPhysics,
   wreckVehicle,
+  pickupKind,
   pickupOut,
   pickupSpot,
   respawn,
@@ -95,6 +99,24 @@ describe('pickups', () => {
     // The one taken is not taken again, and the rest were out of reach.
     for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
+    arena.world.free()
+  })
+
+  it('health packs are left for a car with damage to mend, and mend half of what wrecks one', () => {
+    const arena = createArena(map)
+    const slot = BANANA_SLOTS + 3
+    expect(pickupKind(slot)).toBe('health')
+    expect(PICKUP_SLOTS).toBe(BANANA_SLOTS + HEALTH_SLOTS)
+    const seat = driveOnto(arena, slot)
+    // Undamaged, the car drives through and leaves it.
+    for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.pickups[slot]!.generation).toBe(0)
+    seat.vehicle.damage = 0.8
+    for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.pickups[slot]!.generation).toBe(1)
+    expect(seat.vehicle.damage).toBeCloseTo(0.8 - HEALTH_MEND, 2)
+    // A health pack is no banana: nothing is scored for it.
+    expect(seat.score).toBe(0)
     arena.world.free()
   })
 

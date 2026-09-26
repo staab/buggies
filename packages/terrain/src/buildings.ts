@@ -15,6 +15,7 @@ import { sampleHeight } from './heightfield.ts'
 import { insidePolygon, interchangeZones, meetsInterchange } from './interchanges.ts'
 import { orientedTriangle, signedDistanceToTriangle, triangleInradius, type Triangle } from './mountain.ts'
 import { fbm2D, smoothstep } from './noise.ts'
+import { RAIL_THICKNESS, railRuns, type RailRun } from './rails.ts'
 import { RIVER_BANK_LAP } from './rivers.ts'
 import { boreFloorAt, tunnelSegments } from './tunnels.ts'
 import {
@@ -197,6 +198,8 @@ const FARMS_MOST = 5
 const FARM_TRIES = 150
 /** Farms keep this far from one another, so they do not bunch up. */
 const FARM_APART = 200
+/** How far apart two barns stand, at the least. */
+const BARNS_APART = 160
 const FIELDS_PER_FARM = { min: 2, max: 4 } as const
 const FIELD_LENGTH = { min: 45, max: 75 } as const
 const FIELD_WIDTH = { min: 28, max: 45 } as const
@@ -615,12 +618,54 @@ type Planter = (x: number, z: number, kind: Tree['kind'], wet: (x: number, z: nu
  * building and every other crown, and off the roads; a shrub only has to
  * find open ground.
  */
+/** The grid rails are looked up in, a cell this wide. */
+const RAIL_CELL = 16
+
+/**
+ * Whether a point stands clear of every guardrail by this much: a rail runs
+ * along a road's edge and flares away from it at each end, out past the
+ * ground a road keeps clear, so what grows keeps off the rails as well.
+ */
+function railClearance(runs: RailRun[]): (x: number, z: number, reach: number) => boolean {
+  const cells = new Map<string, { ax: number; az: number; bx: number; bz: number }[]>()
+  for (const run of runs) {
+    for (let i = 0; i + 1 < run.points.length; i++) {
+      const a = run.points[i]!
+      const b = run.points[i + 1]!
+      const segment = { ax: a.x, az: a.z, bx: b.x, bz: b.z }
+      for (let col = Math.floor(Math.min(a.x, b.x) / RAIL_CELL); col <= Math.floor(Math.max(a.x, b.x) / RAIL_CELL); col++) {
+        for (let row = Math.floor(Math.min(a.z, b.z) / RAIL_CELL); row <= Math.floor(Math.max(a.z, b.z) / RAIL_CELL); row++) {
+          const key = `${col},${row}`
+          const list = cells.get(key)
+          if (list) list.push(segment)
+          else cells.set(key, [segment])
+        }
+      }
+    }
+  }
+  return (x, z, reach) => {
+    const within = reach + RAIL_THICKNESS
+    for (let col = Math.floor((x - within) / RAIL_CELL); col <= Math.floor((x + within) / RAIL_CELL); col++) {
+      for (let row = Math.floor((z - within) / RAIL_CELL); row <= Math.floor((z + within) / RAIL_CELL); row++) {
+        for (const { ax, az, bx, bz } of cells.get(`${col},${row}`) ?? []) {
+          const vx = bx - ax
+          const vz = bz - az
+          const t = Math.min(Math.max(((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz || 1), 0), 1)
+          if (hypot(x - ax - vx * t, z - az - vz * t) < within) return false
+        }
+      }
+    }
+    return true
+  }
+}
+
 function planter(
   rng: Rng,
   field: Heightfield,
   placed: Placed,
   trees: Tree[],
   clear: (footprint: Footprint, margin: number) => boolean,
+  offRails: (x: number, z: number, reach: number) => boolean,
 ): Planter {
   return (x, z, kind, wet) => {
     const [radii, heights] =
@@ -637,7 +682,7 @@ function planter(
     // way the rows run, so they keep only the middle of theirs.
     const footing = kind === 'fruit' ? radius * 1.4 : radius * 2
     const footprint: Footprint = { x, z, yaw: 0, width: footing, depth: footing }
-    if (!clear(footprint, 0) || placed.meets(footprint, 0)) return false
+    if (!clear(footprint, 0) || placed.meets(footprint, 0) || !offRails(x, z, footing / 2)) return false
     placed.add(footprint)
     trees.push({ kind, x, z, bottom: sampleHeight(field, x, z), height, radius, tone })
     return true
@@ -1428,7 +1473,7 @@ export function generateBuildings(
   const trees: Tree[] = []
   const ramps: Ramp[] = []
   const sidewalks: Sidewalk[] = []
-  const plant = planter(rng, field, placed, trees, clearOfStreets)
+  const plant = planter(rng, field, placed, trees, clearOfStreets, railClearance(railRuns(roads)))
   const fields: Field[] = []
   const props: Prop[] = []
   fillCities(
@@ -1649,8 +1694,13 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter, mountains: 
     if (first === undefined) continue
     const out = first.width / 2 + BARN.width / 2 + BARN_OFF
     const barn: Footprint = { x: first.x + ux * out, z: first.z + uz * out, yaw, width: BARN.width, depth: BARN.depth }
-    const ground = standsHere(stands, barn, ROAD_MARGIN, HOUSE_RELIEF, FURNITURE_GAP)
+    // Farms are kept apart by where their rows start, and a barn stands off
+    // the end of its row: so the barns are kept apart too.
+    const ground = farFromKind(stands, 'barn', barn.x, barn.z, BARNS_APART)
+      ? standsHere(stands, barn, ROAD_MARGIN, HOUSE_RELIEF, FURNITURE_GAP)
+      : null
     if (ground !== null) {
+      noteStood(stands, 'barn', barn.x, barn.z)
       placed.add(barn)
       stands.buildings.push({ kind: 'barn', ...barn, bottom: ground.low - BURY, top: ground.high + BARN.height, tone: rng() })
       for (let k = randomInt(rng, SILOS.min, SILOS.max), n = 0; n < k; n++) {
@@ -1985,6 +2035,9 @@ function coneOffRoadworks(stands: Stands): void {
           at += 1
         }
         const base = road.points[at]!
+        // A line that runs out of road stops at its end.
+        const beyond = road.points[at + 1]
+        if (beyond === undefined || left > hypot(beyond.x - base.x, beyond.z - base.z)) break
         const { dx, dz, nx, nz } = frameAlong(road, at, base)
         prop(stands, 'cone', base.x + dx * left + nx * side * edge, base.z + dz * left + nz * side * edge, -atan2(dz, dx))
         left += ROADWORKS.apart
@@ -2353,9 +2406,12 @@ function raiseLift(stands: Stands, peak: { x: number; z: number }, city: Distric
     const bottomGround = standsHere(stands, bottom, LIFT_ROAD_MARGIN, LIFT_STATION_RELIEF, FURNITURE_GAP)
     const topGround = standsHere(stands, top, LIFT_ROAD_MARGIN, LIFT_STATION_RELIEF, FURNITURE_GAP)
     if (bottomGround === null || topGround === null) return false
-    // The pylons, up the line from the bottom station, none too near either station.
+    // The pylons, up the line from the bottom station, none too near either
+    // station, and each standing higher than the one below it, so the line
+    // climbs all the way.
     const pylons: { footprint: Footprint; ground: Ground }[] = []
     let sound = true
+    let below = -Infinity
     for (let along = PYLON.spacing; along < length - PYLON.spacing / 2 && sound; along += PYLON.spacing) {
       const footprint: Footprint = {
         x: bottom.x + (dx * -1 * along),
@@ -2365,10 +2421,14 @@ function raiseLift(stands: Stands, peak: { x: number; z: number }, city: Distric
         depth: PYLON.size,
       }
       const ground = standsHere(stands, footprint, LIFT_ROAD_MARGIN, PYLON_RELIEF, FURNITURE_GAP)
-      if (ground === null) sound = false
-      else pylons.push({ footprint, ground })
+      if (ground === null || ground.high <= below) sound = false
+      else {
+        pylons.push({ footprint, ground })
+        below = ground.high
+      }
     }
     if (!sound || pylons.length < PYLON.least) return false
+    if (topGround.high + LIFT_STATION.height <= below + PYLON.height) return false
     // The cable's way between must cross no road: looked at every few meters.
     for (let along = 0; along <= length && sound; along += 8) {
       const probe: Footprint = { x: bottom.x - dx * along, z: bottom.z - dz * along, yaw, width: 4, depth: 4 }
