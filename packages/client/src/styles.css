@@ -44,6 +44,52 @@ body {
 #hud-right {
   left: calc(50% + 12px);
 }
+/* The mini-map, in the bottom corner of its half of the screen. */
+.radar {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: 160px;
+  height: 160px;
+  pointer-events: none;
+}
+#radar:has(~ #radar-right:not([hidden])) {
+  right: calc(50% + 12px);
+}
+.radar[hidden] {
+  display: none;
+}
+.radar svg {
+  width: 100%;
+  height: 100%;
+}
+.radar .face {
+  fill: var(--panel);
+  stroke: var(--edge);
+  stroke-width: 0.02;
+}
+.radar .ring {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 0.01;
+}
+.radar .self {
+  fill: var(--accent);
+}
+.radar circle[fill] {
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 0.015;
+}
+.radar .beyond {
+  opacity: 0.55;
+}
+.radar .range {
+  position: absolute;
+  right: 4px;
+  bottom: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
 /* A speaker in the corner, crossed out when muted. */
 #mute {
   position: fixed;

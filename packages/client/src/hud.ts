@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 
+import { Radar, type RadarState } from './radar.ts'
+
 /** What the HUD shows of a mode: a title always, and the driving gauges when someone is driving. */
 export interface HudState {
   /** Who is driving what, where. */
@@ -20,6 +22,8 @@ export interface HudState {
   rolling?: boolean
   /** How the car is keeping up with the server, in a line, for anyone wondering about a jump. */
   sync?: string
+  /** Where everyone else is, for the mini-map. */
+  radar?: RadarState
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -191,9 +195,12 @@ export class Hud {
   private shownWeapon = ''
   private readonly scoreCount = document.createElement('span')
   private readonly weaponName = document.createElement('span')
+  private readonly radar: Radar | null
 
-  constructor(root: HTMLElement) {
+  /** `radarRoot` is where the mini-map goes, in a corner of its own. */
+  constructor(root: HTMLElement, radarRoot?: HTMLElement) {
     this.root = root
+    this.radar = radarRoot === undefined ? null : new Radar(radarRoot)
     root.replaceChildren()
 
     this.gauges.append(this.speedo.element, this.damage.element)
@@ -239,6 +246,7 @@ export class Hud {
   render(state: HudState | null): void {
     this.root.hidden = state === null
     this.root.classList.remove('busy')
+    this.radar?.render(state?.radar)
     if (state === null) return
 
     if (state.title !== this.shownTitle) {

@@ -261,7 +261,7 @@ export function buildShield(): THREE.Group {
 export function buildMagnet(): THREE.Group {
   const group = new THREE.Group()
   const bend = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.1, 8, 20, Math.PI), metal(MAGNET, 0.4))
-  bend.rotation.x = -Math.PI / 2
+  bend.rotation.x = Math.PI / 2
   bend.position.z = 0.1
   group.add(bend)
   for (const side of [-1, 1]) {
