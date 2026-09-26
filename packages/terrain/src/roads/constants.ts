@@ -89,7 +89,7 @@ export const RAMP_WIDTH = 8
 export const CROSS_WIDTH = 12
 
 /** Distance along the highway between interchanges, in world units. */
-export const INTERCHANGE_SPACING = 800
+export const INTERCHANGE_SPACING = 500
 
 /** How far either way a candidate may slide to find dry, water-free ground. */
 export const INTERCHANGE_SEARCH = 150
@@ -279,8 +279,6 @@ export const ARTERIAL_SLOPE_COST = 24
 
 export const ARTERIAL_WATER_COST = 8
 
-/** Open sea costs far more than a river, so bridges stay rare. */
-export const ARTERIAL_SEA_COST = 400
 
 /** Cap on cells a single A* may expand, so a bad map can never hang. */
 export const ARTERIAL_MAX_EXPANSIONS = 40000

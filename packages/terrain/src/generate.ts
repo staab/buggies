@@ -2,7 +2,7 @@ import { createRng, randomRange, type Rng } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 
 import { generateBuildings } from './buildings.ts'
-import { generateDistricts } from './districts.ts'
+import { ISLAND_MAIN, ISLAND_NONE, ISLAND_SMALL, generateDistricts } from './districts.ts'
 import { computeFlowRouting, findLakes } from './flow.ts'
 import {
   orientedTriangle,
@@ -25,10 +25,10 @@ import type {
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { cos, hypot, sin } = exact
+const { atan2, cos, hypot, sin } = exact
 
 const DEFAULTS = {
-  size: 1025,
+  size: 1281,
   cellSize: 1,
   seaLevel: 0,
   oceanDepth: 10,
@@ -41,8 +41,27 @@ const DEFAULTS = {
  */
 export const WORLD_SCALE = 3
 
-/** Island extent as a fraction of the map, leaving a ring of open sea. */
-const ISLAND_RADIUS_FRACTION = 0.35
+/**
+ * The main island's extent as a fraction of the map: a fifth wider than the
+ * one island of a 1025 map used to be, on a map grown to make room for a
+ * second, smaller island across a strait from it.
+ */
+const ISLAND_RADIUS_FRACTION = (0.35 * 1025 * 1.2) / 1281
+/** The small island's extent, as a fraction of the map. */
+const SMALL_ISLAND_FRACTION = 200 / 1281
+/**
+ * Half the narrowest the strait between the islands may be, as a fraction of
+ * the map: neither island's land comes nearer the line between them than this.
+ */
+const STRAIT_HALF_FRACTION = 25 / 1281
+/** Land fades out to sea this far in from the map's edge, as a fraction of the map, so no coast is cut off by it. */
+const EDGE_FRACTION = 30 / 1281
+/** Mountains on the small island: this many, clustered this far out from its middle, as fractions of its radius. */
+const SMALL_ISLAND_MOUNTAINS = 2
+const SMALL_ISLAND_MOUNTAIN_OFFSET = 0.35
+const SMALL_ISLAND_MOUNTAIN_SPREAD = 0.25
+/** How far a cluster given a direction may turn from it, in radians. */
+const CLUSTER_WANDER = 0.6
 /** Mountains keep a fixed world size so a bigger island means more land around them. */
 const MOUNTAIN_RADIUS = { min: 50, max: 80 } as const
 const MOUNTAIN_SKIRT = { min: 22, max: 38 } as const
@@ -84,21 +103,66 @@ const LAKE_SHORE = 10
  */
 const RIVER_DROP_MAX = 0.25
 
+/** An island: where its middle is, and how far its land reaches before the coast's wander. */
+interface Island {
+  cx: number
+  cz: number
+  radius: number
+}
+
+/**
+ * Where the two islands lie: the main one and the small one on opposite
+ * sides of the map's middle, along a direction of the seed's choosing, as
+ * far apart as leaves a strait between them and both inside the map. The
+ * strait runs across that direction through `straitX`, `straitZ`.
+ */
+interface IslandLayout {
+  main: Island
+  small: Island
+  /** The way from the main island to the small one. */
+  ux: number
+  uz: number
+  straitX: number
+  straitZ: number
+  straitHalf: number
+}
+
+function layIslands(rng: Rng, worldSize: number, mainRadius: number): IslandLayout {
+  const center = worldSize / 2
+  const smallRadius = worldSize * SMALL_ISLAND_FRACTION
+  const straitHalf = worldSize * STRAIT_HALF_FRACTION
+  const angle = randomRange(rng, 0, Math.PI * 2)
+  const ux = cos(angle)
+  const uz = sin(angle)
+  // Each island's solid land reaches about four fifths of its radius; the
+  // strait keeps them twice its half apart beyond that.
+  const apart = 0.8 * mainRadius + 0.8 * smallRadius + 2 * straitHalf
+  // The main island gives up its share of the move by how much room it has.
+  const mainRoom = Math.max(center - mainRadius, 0)
+  const smallRoom = Math.max(center - smallRadius, 0)
+  const mainShift = apart * (mainRoom / Math.max(mainRoom + smallRoom, 1e-6))
+  const main = { cx: center - ux * mainShift, cz: center - uz * mainShift, radius: mainRadius }
+  const small = { cx: main.cx + ux * apart, cz: main.cz + uz * apart, radius: smallRadius }
+  const straitAt = 0.8 * mainRadius + straitHalf
+  return { main, small, ux, uz, straitX: main.cx + ux * straitAt, straitZ: main.cz + uz * straitAt, straitHalf }
+}
+
 function createMountains(
   rng: Rng,
   count: number,
-  worldSize: number,
-  islandRadius: number,
+  island: Island,
   spread: number,
+  clusterOffset: { min: number; max: number } = { min: 0, max: 0.5 },
+  /** Which way from the island's middle the cluster lies, give or take `CLUSTER_WANDER`; any way at all if not given. */
+  toward?: number,
 ): Mountain[] {
-  const mapCenter = worldSize / 2
-
   // The massif cluster can sit anywhere on the island; the individual peaks are
   // scattered within it rather than pinned to a single crossing.
-  const clusterAngle = randomRange(rng, 0, Math.PI * 2)
-  const clusterDistance = islandRadius * randomRange(rng, 0, 0.5)
-  const clusterX = mapCenter + cos(clusterAngle) * clusterDistance
-  const clusterZ = mapCenter + sin(clusterAngle) * clusterDistance
+  const clusterAngle =
+    toward === undefined ? randomRange(rng, 0, Math.PI * 2) : toward + randomRange(rng, -CLUSTER_WANDER, CLUSTER_WANDER)
+  const clusterDistance = island.radius * randomRange(rng, clusterOffset.min, clusterOffset.max)
+  const clusterX = island.cx + cos(clusterAngle) * clusterDistance
+  const clusterZ = island.cz + sin(clusterAngle) * clusterDistance
 
   return Array.from({ length: count }, () => {
     const offsetAngle = randomRange(rng, 0, Math.PI * 2)
@@ -144,27 +208,33 @@ interface MountainShape {
   height: number
 }
 
+/**
+ * Raise the islands out of the sea and the mountains on them, and say which
+ * island each cell is land of.
+ */
 function buildHeights(
   field: Heightfield,
   seed: number,
   shapes: MountainShape[],
   seaLevel: number,
   oceanDepth: number,
-  islandRadius: number,
-): void {
+  layout: IslandLayout,
+): Uint8Array {
   const { width, depth, cellSize, heights } = field
-  const center = (width * cellSize) / 2
+  const worldSize = width * cellSize
+  const edge = worldSize * EDGE_FRACTION
+  const islandOf = new Uint8Array(width * depth)
+  const islands = [layout.main, layout.small]
   // The plains are all but flat: what relief they keep is long and low, so a
   // road across them needs no cutting and a car at speed feels nothing of it.
   // The hills are the mountains' skirts.
-  const plainsAmplitude = islandRadius * 0.002
-  const domeHeight = islandRadius * 0.032
+  const plainsAmplitude = layout.main.radius * 0.002
 
   // Frequencies are in world units, so terrain detail does not grow with the map.
   const baseFrequency = 0.008
   const roughFrequency = 0.03
   const warpFrequency = 0.006
-  const warpAmplitude = islandRadius * 0.45
+  const { ux, uz, straitX, straitZ, straitHalf } = layout
 
   for (let row = 0; row < depth; row++) {
     for (let col = 0; col < width; col++) {
@@ -179,17 +249,33 @@ function buildHeights(
       const warpZ =
         (fbm2D(x * warpFrequency + 3.7, z * warpFrequency + 19.2, seed + 211, 4) - 0.5) +
         (fbm2D(x * warpFrequency * 3.7 + 9.4, z * warpFrequency * 3.7 + 13.8, seed + 241, 3) - 0.5) * 0.5
-      const distance = hypot(x - center + warpX * warpAmplitude, z - center + warpZ * warpAmplitude)
-      const mask = 1 - smoothstep(islandRadius * 0.55, islandRadius, distance)
+      // Each island keeps to its own side of the strait, and all land fades
+      // out before the map's edge.
+      const across = (x - straitX) * ux + (z - straitZ) * uz
+      const sides = [1 - smoothstep(-2 * straitHalf, -straitHalf, across), smoothstep(straitHalf, 2 * straitHalf, across)]
+      const inside = smoothstep(0, edge, Math.min(x, z, worldSize - x, worldSize - z))
+      let mask = 0
+      let dome = 0
+      let owner = ISLAND_NONE
+      for (const [i, island] of islands.entries()) {
+        const warpAmplitude = island.radius * 0.45
+        const distance = hypot(x - island.cx + warpX * warpAmplitude, z - island.cz + warpZ * warpAmplitude)
+        const own = (1 - smoothstep(island.radius * 0.55, island.radius, distance)) * sides[i]! * inside
+        if (own > mask) {
+          mask = own
+          owner = i === 0 ? ISLAND_MAIN : ISLAND_SMALL
+        }
+        // A gentle central dome keeps water draining outward to the sea instead
+        // of pooling into giant interior basins. It follows the plain distance
+        // from the center, not the warped one the coast is cut by: warping it
+        // too would fold the coast's bays and headlands into slopes inland.
+        const rise = island.radius * 0.032 * (1 - smoothstep(0, island.radius * 0.85, hypot(x - island.cx, z - island.cz)))
+        dome = Math.max(dome, rise * sides[i]!)
+      }
 
       const base = fbm2D(x * baseFrequency, z * baseFrequency, seed + 1, 2)
       const roughness = ridged2D(x * roughFrequency, z * roughFrequency, seed + 2, 5)
-      // A gentle central dome keeps water draining outward to the sea instead
-      // of pooling into giant interior basins. It follows the plain distance
-      // from the center, not the warped one the coast is cut by: warping it
-      // too would fold the coast's bays and headlands into slopes inland.
-      const dome = 1 - smoothstep(0, islandRadius * 0.85, hypot(x - center, z - center))
-      const land = base * plainsAmplitude + domeHeight * dome
+      const land = base * plainsAmplitude + dome
 
       let mountain = 0
       for (const shape of shapes) {
@@ -207,8 +293,10 @@ function buildHeights(
 
       const cell = row * width + col
       heights[cell] = (land + mountain) * mask - oceanDepth * (1 - mask)
+      if (heights[cell]! > seaLevel) islandOf[cell] = owner
     }
   }
+  return islandOf
 }
 
 function riverCellSet(rivers: River[], width: number, depth: number, cellSize: number): Set<number> {
@@ -457,7 +545,11 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
         const bed = half * 0.5
         const climbRun = Math.max(half - bed, cellSize)
         const cut = Math.min(CHANNEL_DEPTH, climbRun * CHANNEL_SLOPE)
-        const outer = half + CHANNEL_BANK
+        // A thread of a headwater can be narrower than a cell and pass between
+        // the samples; the nearest one is under its water all the same, so
+        // the bed reaches at least that far, at the water line out there.
+        const reach = Math.max(half, cellSize * Math.SQRT1_2)
+        const outer = reach + CHANNEL_BANK
         const minCol = Math.max(Math.floor((point.x - outer) / cellSize), 0)
         const maxCol = Math.min(Math.ceil((point.x + outer) / cellSize), width - 1)
         const minRow = Math.max(Math.floor((point.z - outer) / cellSize), 0)
@@ -468,8 +560,8 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
             const distance = hypot(col * cellSize - point.x, row * cellSize - point.z)
             if (distance > outer) continue
             const cell = row * width + col
-            if (distance <= half) {
-              const climb = distance <= bed ? 0 : (distance - bed) / climbRun
+            if (distance <= reach) {
+              const climb = distance <= bed ? 0 : Math.min((distance - bed) / climbRun, 1)
               const level = point.y - cut * (1 - climb)
               const known = bedOf.get(cell)
               if (known === undefined || level < known) bedOf.set(cell, level)
@@ -479,8 +571,8 @@ function seatRivers(field: Heightfield, rivers: River[], lakes: Lake[]): void {
               // the cut at a fixed level instead leaves a wall wherever the
               // ground stood higher, and the mesh can only draw that as a
               // staircase along the shore.
-              const fade = (distance - half) / CHANNEL_BANK
-              const bank = point.y + (distance - half) * CHANNEL_SLOPE
+              const fade = (distance - reach) / CHANNEL_BANK
+              const bank = point.y + (distance - reach) * CHANNEL_SLOPE
               const level = bank + (heights[cell]! - bank) * fade
               const known = bankOf.get(cell)
               if (known === undefined || level > known) bankOf.set(cell, level)
@@ -561,14 +653,24 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const islandRadius = options.islandRadius ?? worldSize * ISLAND_RADIUS_FRACTION
 
   const rng = createRng(seed)
+  const layout = layIslands(rng, worldSize, islandRadius)
   const mountainCount = options.mountainCount ?? 3
-  const mountains = createMountains(
-    rng,
-    mountainCount,
-    worldSize,
-    islandRadius,
-    options.mountainSpread ?? MOUNTAIN_SPREAD,
-  )
+  // The main island's massif, one more peak of its own anywhere on its
+  // solid land, and a pair on the small island off to its far side.
+  const mountains = [
+    ...createMountains(rng, mountainCount, layout.main, options.mountainSpread ?? MOUNTAIN_SPREAD),
+    ...createMountains(rng, 1, layout.main, 0, { min: 0, max: 0.55 }),
+    ...createMountains(
+      rng,
+      SMALL_ISLAND_MOUNTAINS,
+      layout.small,
+      layout.small.radius * SMALL_ISLAND_MOUNTAIN_SPREAD,
+      { min: SMALL_ISLAND_MOUNTAIN_OFFSET, max: SMALL_ISLAND_MOUNTAIN_OFFSET },
+      // On the far side from the main island, leaving the near side, which
+      // the highway comes over the strait to, flat for the city.
+      atan2(layout.uz, layout.ux),
+    ),
+  ]
   const shapes: MountainShape[] = mountains.map((mountain) => {
     const triangle = orientedTriangle(mountain)
     return {
@@ -580,7 +682,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   })
 
   const field: Heightfield = { width: size, depth: size, cellSize, heights: new Float32Array(size * size) }
-  buildHeights(field, seed, shapes, seaLevel, oceanDepth, islandRadius)
+  const islandOf = buildHeights(field, seed, shapes, seaLevel, oceanDepth, layout)
 
   const routing = computeFlowRouting(field, seaLevel)
   const riverCount = options.riverCount ?? Math.min(2, mountainCount)
@@ -598,7 +700,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   for (const lake of lakes) {
     for (const cell of lake.cells) water.add(cell)
   }
-  const { districts, districtOf } = generateDistricts(field, seed, seaLevel, water)
+  const { districts, districtOf } = generateDistricts(field, seed, seaLevel, water, islandOf)
 
   const map: TerrainMap = {
     seed,

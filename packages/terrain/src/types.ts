@@ -62,6 +62,8 @@ export interface District {
   suburbWidth: number
   /** Buildable land cells the district covers. */
   area: number
+  /** Which island it is on: the main one, or the small one across the strait. */
+  island: number
 }
 
 /** A sample along a road centerline, in world units. */
