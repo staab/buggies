@@ -212,11 +212,10 @@ describe('game', () => {
     expect(seat.profile).toBe('tank')
     expect(seat.tuning.mass).toBe(14000)
     const after = seat.vehicle.frame
-    // The new one starts near where the old one was, on a road, heading the
-    // same way; the arena itself was not started over.
-    expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(15)
-    expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.7)
-    expect(offRoad(after.position.x, after.position.z)).toBeLessThan(1)
+    // The new one starts right where the old one was, heading the same way;
+    // the arena itself was not started over.
+    expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(0.01)
+    expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.99)
     expect(arena.tick).toBe(tick)
     // And it sits as the new vehicle: on the tank's springs, at the tank's height.
     run(arena, NEUTRAL_INPUT, 1)

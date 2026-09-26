@@ -107,11 +107,16 @@ describe('the garage', () => {
         const run = start(createVehicleTuning(profile))
         hold(run, { throttle: 1 }, 6)
         const before = run.vehicle.frame.forward.z
-        const turning = hold(run, { throttle: 1, steer: 1 }, 4)
+        // How far the nose came around at most: a quick turner can come full circle by the end.
+        let swung = 0
+        const turning = hold(run, { throttle: 1, steer: 1 }, 4, (vehicle) => {
+          swung = Math.max(swung, Math.abs(vehicle.frame.forward.z - before))
+          return false
+        })
         expect(turning.minUp).toBeGreaterThan(0.75)
         expect(run.vehicle.wrecked).toBe(false)
         // It did turn: the nose has come around from straight down the runway.
-        expect(Math.abs(run.vehicle.frame.forward.z - before)).toBeGreaterThan(0.3)
+        expect(swung).toBeGreaterThan(0.3)
         run.world.free()
       })
 

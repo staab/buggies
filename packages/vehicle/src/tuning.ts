@@ -8,6 +8,13 @@ export interface VehicleTuning {
   chassisHalfWidth: number
   chassisHalfHeight: number
   chassisHalfLength: number
+  /**
+   * How far up from the bottom of the drawn body its collider starts: a
+   * belly held clear of the ground between the tracks, so that a curb or a
+   * rise is climbed by the wheels rather than met by the hull. None unless
+   * given.
+   */
+  hullLift?: number
   mass: number
   centerOfMassOffsetY: number
   centerOfMassOffsetZ: number
@@ -637,13 +644,17 @@ const TANK_TUNING: Readonly<VehicleTuning> = Object.freeze({
   chassisHalfWidth: 1.6,
   chassisHalfHeight: 1.0,
   chassisHalfLength: 1.69,
+  // The tracks' height held clear under the hull, for the most ground
+  // clearance of anything: a curb or a bank is climbed, not rammed.
+  hullLift: 0.65,
   mass: 14000,
   centerOfMassOffsetY: -0.45,
   centerOfMassOffsetZ: 0.0,
 
   halfTrackWidth: 1.3,
-  frontAxleZ: -1.05,
-  rearAxleZ: 1.05,
+  // Out near the ends of the tracks, which is where a tank meets a slope.
+  frontAxleZ: -1.45,
+  rearAxleZ: 1.45,
   suspensionMountY: -0.375,
   wheelRadius: 0.45,
 
@@ -952,7 +963,7 @@ const GO_KART_TUNING: Readonly<VehicleTuning> = Object.freeze({
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
   damageAcceleration: 80,
-  damageToWreck: 44,
+  damageToWreck: 56,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
   airLevelLandingLookahead: 0.35,

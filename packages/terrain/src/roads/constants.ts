@@ -138,11 +138,11 @@ export const UNDERPASS_SPAN = 30
  */
 export const INTERCHANGE_CLEAR = 2 * (RAMP_ALONG + UNDERPASS_SPAN)
 
-/** The bridge deck clears the cross road by at least this much. */
-export const UNDERPASS_CLEARANCE = 2.5
+/** The bridge deck clears the cross road by at least this much: enough for a semi, with room to bounce. */
+export const UNDERPASS_CLEARANCE = 4.5
 
 /** Most a ramp may drop from the deck to the cross road, so it stays drivable. */
-export const RAMP_DROP = 7
+export const RAMP_DROP = 9
 
 /**
  * Headroom a site is chosen with. The deck a site is judged against is the one

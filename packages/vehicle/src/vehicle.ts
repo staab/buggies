@@ -47,6 +47,33 @@ const MIN_WHEEL_RADIUS = 1e-3
 const MIN_SPEED_LIMIT = 1e-3
 const YAW_ASSIST_SLIP_FADE_MULTIPLE = 2
 
+/**
+ * How much harder the damper holds a spring back on the way out than on
+ * the way in, as a car's does: a bump is taken softly, and the kick back up
+ * off it is not let through. Only the spring's own lengthening counts, not
+ * the car rising up a slope.
+ */
+const REBOUND_DAMPING_SCALE = 1.5
+
+/**
+ * The strongest a corner's damper may be, as a share of what would stop its
+ * share of the car dead in one step. Stronger, it overshoots within the step
+ * and feeds the bounce it should be taking out: a light car hits this first.
+ */
+const STABLE_DAMPING_SHARE = 0.6
+
+/**
+ * How much of its push a bump stop keeps while the car rises off it: rubber
+ * soaks up most of a hard landing rather than throwing the car back into
+ * the air. Only past this rate is the car taken to be rising, so that one
+ * sitting on its stops does not flicker between the two.
+ */
+const BUMP_STOP_RETURN = 0.25
+const BUMP_STOP_RISING_RATE = 0.05
+
+/** How squarely a wheel's ray has to meet the ground for the spring's rate to be read off it. */
+const MIN_SPRING_RATE_FACING = 0.3
+
 const mountLocal = v3()
 const mountWorld = v3()
 const steeredForward = v3()
@@ -192,6 +219,7 @@ function markWheelAirborne(wheel: WheelState, tuning: VehicleTuning, frame: Chas
   wheel.compression = 0
   wheel.suspensionLength = tuning.suspensionRestLength
   wheel.suspensionExtensionRate = 0
+  wheel.springExtensionRate = 0
   wheel.suspensionForce = 0
   wheel.bumpStopDepth = 0
   wheel.stickDepth = 0
@@ -227,6 +255,11 @@ function settleWheelOnContact(
   velocityAtPoint(pointVelocity, vehicle.body, frame, wheel.contactPoint)
 
   wheel.suspensionExtensionRate = vdot(pointVelocity, frame.up)
+  // The ray's length to the ground changes with the speed away from it along
+  // its normal, over how squarely the ray meets it; grazing ground says little.
+  const facing = vdot(contactNormal, frame.up)
+  wheel.springExtensionRate =
+    facing > MIN_SPRING_RATE_FACING ? vdot(pointVelocity, contactNormal) / facing : wheel.suspensionExtensionRate
 }
 
 function settleWheelTravel(
@@ -284,8 +317,20 @@ function antiRollForceOnLeft(axle: Axle, tuning: VehicleTuning): number {
   return stiffness * (left.compression - right.compression)
 }
 
-function applyWheelSuspensionForce(vehicle: Vehicle, wheel: WheelState, tuning: VehicleTuning, antiRoll: number): void {
+function applyWheelSuspensionForce(
+  vehicle: Vehicle,
+  wheel: WheelState,
+  tuning: VehicleTuning,
+  antiRoll: number,
+  dt: number,
+): void {
   if (!wheel.grounded) return
+
+  const rising = wheel.springExtensionRate
+  // On top of the damper, more against the spring lengthening, as far as
+  // the corner can take it.
+  const stable = (STABLE_DAMPING_SHARE * tuning.mass) / WHEEL_COUNT / dt
+  const rebound = Math.min(tuning.suspensionDamping * (REBOUND_DAMPING_SCALE - 1), Math.max(stable - tuning.suspensionDamping, 0))
 
   // Past full droop the spring and damper have nothing to
   // push with; the stick pulls the corner down toward the ground instead, the
@@ -299,8 +344,9 @@ function applyWheelSuspensionForce(vehicle: Vehicle, wheel: WheelState, tuning: 
         )
       : clamp(
           tuning.suspensionStiffness * wheel.compression +
-            tuning.bumpStopStiffness * wheel.bumpStopDepth -
-            tuning.suspensionDamping * wheel.suspensionExtensionRate +
+            tuning.bumpStopStiffness * wheel.bumpStopDepth * (rising > BUMP_STOP_RISING_RATE ? BUMP_STOP_RETURN : 1) -
+            tuning.suspensionDamping * wheel.suspensionExtensionRate -
+            rebound * Math.max(rising, 0) +
             antiRoll,
           0,
           tuning.maxSuspensionForce,
@@ -328,8 +374,8 @@ function applySuspensionForces(world: RAPIER.World, vehicle: Vehicle, tuning: Ve
   for (const axle of axles) {
     const antiRoll = antiRollForceOnLeft(axle, tuning)
 
-    applyWheelSuspensionForce(vehicle, axle.left, tuning, antiRoll)
-    applyWheelSuspensionForce(vehicle, axle.right, tuning, -antiRoll)
+    applyWheelSuspensionForce(vehicle, axle.left, tuning, antiRoll, dt)
+    applyWheelSuspensionForce(vehicle, axle.right, tuning, -antiRoll, dt)
   }
 }
 

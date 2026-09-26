@@ -25,7 +25,14 @@ export interface WheelState {
   steerAngle: number
   suspensionLength: number
   compression: number
+  /** How fast the chassis over the wheel is rising, in m/s. */
   suspensionExtensionRate: number
+  /**
+   * How fast the spring itself is lengthening, in m/s: the chassis's rise
+   * against the ground under it, so that driving up a slope is not taken
+   * for the car lifting off its wheels.
+   */
+  springExtensionRate: number
   suspensionForce: number
   bumpStopDepth: number
   /** How far past full droop the ground is, while the wheel is still holding on to it. */
@@ -122,6 +129,7 @@ const NEUTRAL_WHEEL_MOTION: Readonly<WheelMotion> = Object.freeze({
   suspensionLength: 0,
   compression: 0,
   suspensionExtensionRate: 0,
+  springExtensionRate: 0,
   suspensionForce: 0,
   bumpStopDepth: 0,
   stickDepth: 0,
@@ -280,10 +288,11 @@ export function createVehicle(world: RAPIER.World, tuning: VehicleTuning, spawn:
   const collider = world.createCollider(
     RAPIER.ColliderDesc.roundCuboid(
       tuning.chassisHalfWidth - CHASSIS_ROUNDING,
-      tuning.chassisHalfHeight - CHASSIS_ROUNDING,
+      hullHalfHeight(tuning) - CHASSIS_ROUNDING,
       tuning.chassisHalfLength - CHASSIS_ROUNDING,
       CHASSIS_ROUNDING,
     )
+      .setTranslation(0, (tuning.hullLift ?? 0) / 2, 0)
       .setDensity(DENSITY_FROM_EXPLICIT_MASS_ONLY)
       .setFriction(CHASSIS_FRICTION)
       .setRestitution(CHASSIS_RESTITUTION),
@@ -296,6 +305,11 @@ export function createVehicle(world: RAPIER.World, tuning: VehicleTuning, spawn:
   resetVehicle(vehicle, spawn)
 
   return vehicle
+}
+
+/** Half the collider's height: the drawn body's, less what its belly is lifted by. */
+function hullHalfHeight(tuning: VehicleTuning): number {
+  return tuning.chassisHalfHeight - (tuning.hullLift ?? 0) / 2
 }
 
 function cuboidPrincipalInertia(out: Vec3, mass: number, tuning: VehicleTuning): Vec3 {
@@ -316,9 +330,10 @@ export function applyChassisMassProperties(vehicle: Vehicle, tuning: VehicleTuni
   // the chassis would be a rounding bigger all around than the tuning says.
   vehicle.collider.setHalfExtents({
     x: tuning.chassisHalfWidth - CHASSIS_ROUNDING,
-    y: tuning.chassisHalfHeight - CHASSIS_ROUNDING,
+    y: hullHalfHeight(tuning) - CHASSIS_ROUNDING,
     z: tuning.chassisHalfLength - CHASSIS_ROUNDING,
   })
+  vehicle.collider.setTranslationWrtParent({ x: 0, y: (tuning.hullLift ?? 0) / 2, z: 0 })
 
   vehicle.body.setAdditionalMassProperties(
     tuning.mass,

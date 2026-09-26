@@ -1,5 +1,6 @@
 import {
   advance,
+  changeVehicle,
   takeSeat,
   createVehicleInput,
   freeSeat,
@@ -12,6 +13,7 @@ import {
 } from '@buggies/game'
 import { InputTimeline } from './input-timeline.ts'
 import {
+  CLIENT_CHANGE_VEHICLE,
   CLIENT_HELLO,
   CLIENT_INPUT,
   INPUT_TIMELINE_TICKS,
@@ -29,6 +31,7 @@ import {
 import { createRoomSnapshots, gatherSnapshot, rememberTold, type RoomSnapshots } from './room-snapshot.ts'
 import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
+  decodeChangeVehicle,
   decodeHello,
   decodeInput,
   encodeReject,
@@ -64,6 +67,7 @@ export interface GameServerEvents {
   onLeft(seat: Seat, connectionId: number, seed: number): void
   onRejected(connectionId: number, reason: string): void
   onRespawned(seat: Seat, why: 'lost' | 'asked'): void
+  onChangedVehicle(seat: Seat): void
   /** A room has been made for a seed nobody was on, or closed behind the last to leave it. */
   onRoomOpened(seed: number): void
   onRoomClosed(seed: number): void
@@ -225,6 +229,20 @@ export class GameServer implements TransportHandlers {
       player.respawnedTick = arena.tick
       respawnNearby(arena, player.seat)
       this.events.onRespawned?.(player.seat, 'asked')
+      return
+    }
+
+    if (messageTypeOf(payload) === CLIENT_CHANGE_VEHICLE) {
+      const profile = decodeChangeVehicle(payload)
+      if (profile === null) {
+        this.reject(connection, REJECT_MALFORMED_MESSAGE)
+        return
+      }
+      // A change puts the car back on the road, so it waits out a respawn's cooldown too.
+      if (profile === player.seat.profile || arena.tick - player.respawnedTick < RESPAWN_COOLDOWN_TICKS) return
+      player.respawnedTick = arena.tick
+      changeVehicle(arena, player.seat, profile)
+      this.events.onChangedVehicle?.(player.seat)
       return
     }
 
