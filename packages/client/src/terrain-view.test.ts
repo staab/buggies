@@ -59,7 +59,7 @@ describe('createTerrainView', () => {
     expect(plain[0]!.geometry.getAttribute('color').count).toBe(plain[0]!.geometry.getAttribute('position').count)
     let texels = 0
     for (const piece of textured) {
-      const { image } = (piece.material as THREE.MeshStandardMaterial).map!
+      const image = (piece.material as THREE.MeshStandardMaterial).map!.image as { width: number; height: number }
       texels += image.width * image.height
     }
     // A good deal less than one texture over the whole island at the same detail.
