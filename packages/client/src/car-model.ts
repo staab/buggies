@@ -9,6 +9,8 @@ import {
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
+import { buildDuneBuggy, buildRocketShip } from './built-models.ts'
+
 /** Who made a model, for the credits. */
 export interface ModelCredit {
   title: string
@@ -18,10 +20,12 @@ export interface ModelCredit {
   licenseUrl: string
 }
 
-/** A vehicle's model: which file, how big a unit of it is, and what in it is a wheel. */
+/** A vehicle's model: which file, or what builds it, how big a unit of it is, and what in it is a wheel. */
 export interface CarModelSpec {
-  /** Where the file is, under the models directory. */
-  file: string
+  /** Where the file is, under the models directory, for a model loaded from one. */
+  file?: string
+  /** What builds it, for a model made here rather than loaded. */
+  build?: (tuning: VehicleTuning) => THREE.Object3D
   /** Meters per unit of the model. */
   scale: number
   /** Nodes left out: a rider, a trailer. */
@@ -30,7 +34,8 @@ export interface CarModelSpec {
   wheels: RegExp
   /** The colors the model's roof lights flash, left and right, for an emergency vehicle. */
   sirens?: readonly [left: number, right: number]
-  credit: ModelCredit
+  /** Whose it is, for a model someone else made. */
+  credit?: ModelCredit
 }
 
 const KENNEY: ModelCredit = {
@@ -108,6 +113,9 @@ export const CAR_MODELS: Readonly<Record<VehicleProfileId, CarModelSpec>> = Obje
     },
   },
   goKart: { file: 'kenney/kart-oobi.glb', scale: 1.3, hidden: ['character'], wheels: KENNEY_WHEELS, credit: KENNEY },
+  duneBuggy: { build: buildDuneBuggy, scale: 1, hidden: [], wheels: /^wheel-/ },
+  // No wheels, and its parts have no names, so nothing at all is taken for one: it rides on its thrusters.
+  rocketShip: { build: buildRocketShip, scale: 1, hidden: [], wheels: /(?!)/ },
 })
 
 /** One of a model's wheels, ready to be drawn where the simulation has it. */
@@ -376,9 +384,10 @@ export async function loadCarModels(base = '/models/'): Promise<void> {
   await Promise.all(
     VEHICLE_PROFILE_IDS.map(async (profile) => {
       const spec = CAR_MODELS[profile]
+      const tuning = createVehicleTuning(profile)
       try {
-        const gltf = await loader.loadAsync(base + spec.file)
-        fitted.set(profile, fitCarModel(gltf.scene, spec, createVehicleTuning(profile)))
+        const scene = spec.build !== undefined ? spec.build(tuning) : (await loader.loadAsync(base + spec.file)).scene
+        fitted.set(profile, fitCarModel(scene, spec, tuning))
       } catch (error) {
         console.warn(`the ${profile} model did not load, so it is drawn as boxes:`, error)
       }
@@ -391,7 +400,7 @@ export function modelCredits(): ModelCredit[] {
   const credits: ModelCredit[] = []
   for (const profile of VEHICLE_PROFILE_IDS) {
     const { credit } = CAR_MODELS[profile]
-    if (!credits.includes(credit)) credits.push(credit)
+    if (credit !== undefined && !credits.includes(credit)) credits.push(credit)
   }
   return credits
 }

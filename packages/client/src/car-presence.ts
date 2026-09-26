@@ -296,7 +296,7 @@ export class CarPresence {
     const engine = this.seat.weapon === 'engine' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
     this.mount.burn(engine)
     const off = this.distance()
-    const boosting = acting(this.seat) && own.kind === 'boost'
+    const boosting = acting(this.seat) && (own.kind === 'boost' || own.kind === 'fly')
     this.thrust?.set(engine || boosting ? 1 : 0, off)
     this.boostFlame.visible = boosting
     if (boosting) {

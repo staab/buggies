@@ -619,6 +619,40 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
+  it('the dune buggy fires three rockets of its own in a fan on a press, and not again for thirty seconds', () => {
+    const arena = createArena(map)
+    const [a] = twoCars(arena, 'duneBuggy', 'sportsCar', 40)
+    press(arena, a)
+    expect(a.rocketsFired).toBe(3)
+    expect(arena.rockets.length).toBeGreaterThan(0)
+    expect(a.cooldownTicks).toBeGreaterThan(60 * 29)
+    // Cooling down, a press does nothing.
+    hold(arena, a, 60)
+    press(arena, a)
+    expect(a.rocketsFired).toBe(3)
+    // Cooled down, it goes again.
+    for (let i = 0; i < 60 * 30; i++) advance(arena)
+    press(arena, a)
+    expect(a.rocketsFired).toBe(6)
+    arena.world.free()
+  })
+
+  it('the rocket ship hovers clear of the ground, lifts off and flies while its key is held, and settles again when let go', () => {
+    const arena = createArena(map)
+    const [a] = twoCars(arena, 'rocketShip', 'sportsCar', 40)
+    for (let i = 0; i < 60; i++) advance(arena)
+    const resting = a.vehicle.frame.position.y
+    expect(a.vehicle.groundedCount).toBeGreaterThan(0)
+    const climb = { ...ABILITY, throttle: 1 }
+    hold(arena, a, 120, climb)
+    expect(a.vehicle.frame.position.y).toBeGreaterThan(resting + 5)
+    expect(a.vehicle.wrecked).toBe(false)
+    // Let go, it comes back down to hover.
+    for (let i = 0; i < 60 * 8; i++) advance(arena)
+    expect(a.vehicle.groundedCount).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
   it('a police car takes half the bite of a machine gun', () => {
     const arena = createArena(map)
     const [a, b] = twoCars(arena, 'sportsCar', 'police', 25, 12)

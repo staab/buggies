@@ -200,7 +200,8 @@ const OBSERVATORY_RELIEF = 8
  * as wide as all of it. A tunnel this wide and this high runs through the
  * first tier one way; the other way, a straight ramp this long runs up
  * either side from the ground to the top, over the ledges between. The ground is leveled under it and this far around,
- * blended back to the land over this much more, and the site is looked
+ * blended back to the land over this much more, or this many times as
+ * far as the land rises and falls across it if that is more, and the site is looked
  * for this many times, on country ground that rises and falls no more than
  * this across it, or failing that no more than this.
  */
@@ -214,6 +215,7 @@ const PYRAMID = {
   blend: 12,
   tries: 400,
   relief: [8, 16],
+  easing: 5,
 } as const
 const FARMS_MOST = 5
 const FARM_TRIES = 150
@@ -1604,8 +1606,12 @@ function raisePyramid(stands: Stands, ramps: Ramp[], mountains: Mountain[]): voi
       }
     }
     if (!sound || high - low > relief) continue
+    // The more the land rises and falls, the further out it is blended back
+    // to the level, so no step in the grade is a jump.
+    const spread = Math.max(blend, (high - low) * PYRAMID.easing)
+    if (!stands.clear({ ...site, width: site.width + 2 * spread, depth: site.depth + 2 * spread }, ROAD_MARGIN)) continue
     const level = sum / count
-    levelSite(field, site, level, blend)
+    levelSite(field, site, level, spread)
     placed.add(site)
 
     const at = (u: number, v: number): { x: number; z: number } => ({ x: spot.x + ux * u + vx * v, z: spot.z + uz * u + vz * v })
