@@ -69,6 +69,8 @@ const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
   ambulance: 'A tall van, loaded. Steady if you let it be.',
   semi: 'The tractor, bobtail. Slow to turn, slower to stop.',
   goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
+  duneBuggy: 'Light and springy. Bounds over everything, and keeps bouncing.',
+  rocketShip: 'Hovers, flies, and outruns everything. Turns like a barge.',
 }
 
 /** The pages a mode goes through: two players have two vehicles to pick. */

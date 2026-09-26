@@ -36,9 +36,11 @@ const fits = new Map<string, Promise<CarModel>>()
 function fitted(profile: (typeof VEHICLE_PROFILE_IDS)[number]): Promise<CarModel> {
   let fit = fits.get(profile)
   if (fit === undefined) {
-    fit = loadModel(CAR_MODELS[profile].file).then((scene) =>
-      fitCarModel(scene, CAR_MODELS[profile], createVehicleTuning(profile)),
-    )
+    const spec = CAR_MODELS[profile]
+    const tuning = createVehicleTuning(profile)
+    // A model made here is built, not read off disk.
+    const scene = spec.build !== undefined ? Promise.resolve(spec.build(tuning)) : loadModel(spec.file!)
+    fit = scene.then((made) => fitCarModel(made, spec, tuning))
     fits.set(profile, fit)
   }
   return fit
@@ -64,7 +66,8 @@ describe('car models', () => {
       it('has its wheels on the axles, as big as the tuning says', async () => {
         const tuning = createVehicleTuning(profile)
         const { wheels } = await fitted(profile)
-        if (profile === 'tank') {
+        // The tank's wheels are inside its tracks, and the rocket ship rides on thrusters.
+        if (profile === 'tank' || profile === 'rocketShip') {
           expect(wheels).toHaveLength(0)
           return
         }

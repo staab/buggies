@@ -73,6 +73,8 @@ Each vehicle has an active ability on its own key, separate from any power-up it
 - **Small car** drops an oil slick behind, as slippery as the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.
 - **Semi truck** honks its horn, stunning every car within 30 meters for five seconds, every five seconds.
 - **Heavy pickup** drops a bomb behind with the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
+- **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets. It fires three rockets in a fan, as the triple rocket power-up does, every thirty seconds.
+- **Rocket ship** has no wheels: it hovers on thrusters, is faster than the race car, and turns wide. Holding its key lifts it off to fly, with the pedals driving it along and the steering banking it into turns, as the wings power-up does.
 - **Police car, ambulance and fire truck** turn their lights on or off. While the lights are on, every car within 30 meters is slowed by half. As a passive ability, none of them is slowed by sirens or lights. The ambulance also repairs 1% of its health every five seconds, the fire truck takes a tenth of the damage from bombs, and the police car takes half damage from machine guns.
 
 ## Docker
@@ -135,4 +137,4 @@ The tests cover terrain, driving, the wire format, and a full session with two p
 
 ## Credits
 
-The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a [tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a [cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). See `CREDITS.md`.
+The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a [tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a [cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). The dune buggy and the rocket ship are built in code. See `CREDITS.md`.

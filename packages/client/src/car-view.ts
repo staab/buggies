@@ -41,6 +41,8 @@ const PROFILE_COLORS: Record<VehicleProfileId, number> = {
   ambulance: 0xf7f2e8,
   semi: 0xe6e6e6,
   goKart: 0x9b59b6,
+  duneBuggy: 0xe8742a,
+  rocketShip: 0xf2f2ee,
 }
 
 export function profileColor(profile: VehicleProfileId): number {
