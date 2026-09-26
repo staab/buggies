@@ -1,5 +1,5 @@
 import * as exact from '@buggies/physics'
-import type { District, Heightfield, Road } from '../types.ts'
+import type { Heightfield, Road } from '../types.ts'
 import {
   CROSS_REACH,
   CROSS_RELIEF,
@@ -86,8 +86,8 @@ function findDryCrossing(
       // The ramps leave the deck RAMP_ALONG either side, and run level beside
       // it for a while after: the highway must be on the ground along each
       // mouth, not on a bridge, for the ramp to have a shoulder to leave onto.
-      // A city that has no such site is still given its exit, and its ramps
-      // may come out with nothing beside the deck at the mouth.
+      // Where no such site is to be had, the ramps may come out with nothing
+      // beside the deck at the mouth.
       const mouthFrom = Math.floor((RAMP_ALONG - RAMP_MOUTH_GROUND) / step)
       const mouthTo = Math.ceil((RAMP_ALONG + RAMP_WIDTH) / step)
       let bridged = false
@@ -131,8 +131,8 @@ function findDryCrossing(
       // The ramps leave the deck RAMP_ALONG either side of the crossing, where
       // the highway can stand higher than at the crossing itself: judge the
       // drop from the higher of the deck there and the raised deck's descent.
-      // A city that has no site good enough is still given its exit, judged
-      // at the crossing alone, and its ramps come out steeper for it.
+      // Where no site is good enough, one is judged at the crossing alone,
+      // and its ramps come out steeper for it.
       const attachDeck = strict
         ? Math.max(
             roof - MAX_ROAD_GRADE * RAMP_ALONG,
@@ -148,14 +148,12 @@ function findDryCrossing(
 }
 
 /**
- * Interchange crossings around the highway loop: one serving each city, then
- * periodic ones along the country between them.
- *
- * Cities are served first and from as near their center as the ground allows,
- * so a city gets its exit before the spacing rule has any say. The periodic pass
- * then skips any candidate standing on a city, which is what holds a city to one
- * and never two. A city whose highway frontage is too steep or too broken to
- * carry a crossing at all goes without: no site there could be driven.
+ * Interchange crossings around the highway loop, one every
+ * `INTERCHANGE_SPACING` wherever the ground will carry one, wherever the
+ * cities are. A candidate on ground that will not slides along the loop
+ * to the nearest that will, but never nearer another crossing than their
+ * ramps and decks can stand. Where no site within reach is good, one
+ * that is merely drivable is taken.
  */
 export function interchangeCenters(
   field: Heightfield,
@@ -166,96 +164,43 @@ export function interchangeCenters(
   wetAt: (x: number, z: number) => boolean,
   cum: Float32Array,
   total: number,
-  districts: District[],
   deck: Float32Array,
 ): number[] {
   const count = samples.length
   const step = total / count
   const search = Math.max(1, Math.round(INTERCHANGE_SEARCH / step))
-  const minGap = Math.round((INTERCHANGE_SPACING * 0.6) / step)
   const centers: number[] = []
 
-  /** Shortest way around the loop from `c` to the nearest crossing already placed. */
+  /** Shortest way around the loop, in world units, from `c` to the nearest crossing already placed. */
   const gapTo = (c: number): number => {
     let gap = Infinity
     for (const other of centers) {
-      const apart = Math.abs(other - c)
-      gap = Math.min(gap, Math.min(apart, count - apart))
+      const apart = Math.abs(cum[other]! - cum[c]!)
+      gap = Math.min(gap, apart, total - apart)
     }
     return gap
   }
 
-  /** The city a crossing at `c` belongs to: whichever center is nearest it. */
-  const nearestCity = (c: number): District | null => {
-    let best: District | null = null
-    let nearest = Infinity
-    for (const district of districts) {
-      const distance = hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz)
-      if (distance < nearest) {
-        nearest = distance
-        best = district
-      }
-    }
-    return best
-  }
-
-  /**
-   * True when a crossing at `c` stands clear of every city, and of the
-   * ground beyond each where its own exit may have been pushed out to by
-   * the search, so no city ends up with a second exit at its edge.
-   */
-  const rural = (c: number): boolean =>
-    districts.every(
-      (district) =>
-        hypot(samples[c]!.x - district.cx, samples[c]!.z - district.cz) >
-        district.radius + district.suburbWidth + INTERCHANGE_SEARCH,
-    )
-
-  const touching = Math.max(1, Math.round(INTERCHANGE_CLEAR / step))
-  for (const district of districts) {
-    let seed = 0
-    let nearest = Infinity
-    for (let i = 0; i < count; i++) {
-      const distance = hypot(samples[i]!.x - district.cx, samples[i]!.z - district.cz)
-      if (distance < nearest) {
-        nearest = distance
-        seed = i
-      }
-    }
-    // Search out as far as the city reaches, then a little further, rather than
-    // give up on a city whose own ground will not take a crossing. Ground
-    // nearer to another city is that city's to use: without that, a neighbor
-    // standing on better land takes the exits and this city is left with none.
-    const reach = Math.round((district.radius + district.suburbWidth) / step) + search
-    const permits = (candidate: number): boolean =>
-      nearestCity(candidate) === district && gapTo(candidate) >= touching
-    let c = findDryCrossing(field, seaLevel, samples, wet, buried, wetAt, deck, cum, total, seed, reach, permits)
-    if (c < 0) {
-      c = findDryCrossing(field, seaLevel, samples, wet, buried, wetAt, deck, cum, total, seed, reach, permits, false)
-    }
-    if (c >= 0) centers.push(c)
-  }
-
   for (let distance = 0; distance < total; distance += INTERCHANGE_SPACING) {
     const index = indexAtDistance(cum, distance)
-    // Every city is served by now, so a periodic exit belongs only in the
-    // country between them; one landing on a city would give it a second.
-    // A candidate near the end of the loop can slide onto the first one across
-    // the wrap, so keep a minimum cyclic gap between crossings.
-    const c = findDryCrossing(
-      field,
-      seaLevel,
-      samples,
-      wet,
-      buried,
-      wetAt,
-      deck,
-      cum,
-      total,
-      index,
-      search,
-      (candidate) => rural(candidate) && gapTo(candidate) >= minGap,
-    )
+    const find = (strict: boolean): number =>
+      findDryCrossing(
+        field,
+        seaLevel,
+        samples,
+        wet,
+        buried,
+        wetAt,
+        deck,
+        cum,
+        total,
+        index,
+        search,
+        (candidate) => gapTo(candidate) >= INTERCHANGE_CLEAR,
+        strict,
+      )
+    let c = find(true)
+    if (c < 0) c = find(false)
     if (c >= 0) centers.push(c)
   }
   return centers

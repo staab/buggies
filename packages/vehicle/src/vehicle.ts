@@ -122,9 +122,15 @@ function takeDamage(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
   vcopy(lastLinearVelocity, frame.linearVelocity)
   const knock = jolt - tuning.damageAcceleration * dt
   if (knock <= 0) return
-  vehicle.damage = Math.min(vehicle.damage + knock / tuning.damageToWreck, 1)
+  vehicle.damage = Math.min(vehicle.damage + knock / (tuning.damageToWreck * DURABILITY), 1)
   if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
 }
+
+/**
+ * How many times over every car can take what its tuning and the weapons
+ * would otherwise wreck it with: the knocks, the blasts and the bullets.
+ */
+export const DURABILITY = 3
 
 /** Past this much damage the car is smoking. */
 export const DAMAGE_SMOKING = 0.5
@@ -151,9 +157,12 @@ export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
   wreck(vehicle, tuning)
 }
 
-/** Hurt a car from outside, by this much of its life. Enough of it blows the car up. */
+/**
+ * Hurt a car from outside, by this much of what would wreck a car with no
+ * more than its tuning's toughness: `DURABILITY` times as much blows it up.
+ */
 export function hurtVehicle(vehicle: Vehicle, tuning: VehicleTuning, amount: number): void {
-  vehicle.damage = Math.min(vehicle.damage + amount, 1)
+  vehicle.damage = Math.min(vehicle.damage + amount / DURABILITY, 1)
   if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
 }
 

@@ -12,6 +12,8 @@ import {
   NO_TARGET,
   PICKUP_HEIGHT,
   ROCKET_DAMAGE,
+  BOMB_DAMAGE,
+  DURABILITY,
   ROCKET_LIFE_TICKS,
   ROCKET_SPEED,
   SPILL_FLIGHT_TICKS,
@@ -174,7 +176,7 @@ describe('weapons', () => {
     expect(b.aimTarget).toBe(NO_TARGET)
     // Held for a second: ten shots, every one into the car ahead.
     expect(fire(arena, a, 60)).toBe(10)
-    expect(b.vehicle.damage).toBeCloseTo(10 * MACHINE_GUN_DAMAGE, 6)
+    expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE) / DURABILITY, 6)
     expect(a.ammoTicks).toBe(MACHINE_GUN_AMMO_TICKS - 60)
     expect(a.vehicle.damage).toBe(0)
     // Dry, and gone.
@@ -202,7 +204,7 @@ describe('weapons', () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 40, 10)
     arm(a, 'rocket')
-    b.vehicle.damage = 1 - ROCKET_DAMAGE
+    b.vehicle.damage = 1 - ROCKET_DAMAGE / DURABILITY
     fire(arena, a, 1)
     expect(a.weapon).toBe('none')
     expect(arena.rockets).toHaveLength(1)
@@ -239,8 +241,8 @@ describe('weapons', () => {
     expect(a.vehicle.wrecked).toBe(false)
     expect(arena.loose).toHaveLength(1)
     for (let i = 0; i < 20; i++) advance(arena)
-    expect(a.vehicle.wrecked).toBe(true)
-    expect(b.vehicle.wrecked).toBe(false)
+    expect(a.vehicle.damage).toBeGreaterThanOrEqual(BOMB_DAMAGE / DURABILITY - 1e-6)
+    expect(b.vehicle.damage).toBe(0)
     expect(arena.loose.filter((loose) => loose.kind === 'bomb')).toHaveLength(0)
     arena.world.free()
   })
@@ -489,7 +491,7 @@ describe("the car's own key", () => {
     expect(arena.rockets.length).toBeLessThanOrEqual(1)
     // The missile takes half of what a rocket would, and the car is not wrecked by it.
     for (let i = 0; i < ROCKET_LIFE_TICKS && arena.rockets.length > 0; i++) advance(arena)
-    expect(b.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE * OWN_MISSILE_POWER, 5)
+    expect(b.vehicle.damage).toBeCloseTo((ROCKET_DAMAGE * OWN_MISSILE_POWER) / DURABILITY, 5)
     expect(b.vehicle.wrecked).toBe(false)
     // Cooled down, it goes again.
     for (let i = 0; i < OWN_ACTIONS.tank.cooldownTicks; i++) advance(arena)
@@ -599,7 +601,7 @@ describe("the car's own key", () => {
     const [a, b] = twoCars(arena, 'sportsCar', 'sportsCar', 25, 12)
     expect(hold(arena, a, 60)).toBe(10)
     expect(a.aimTarget).toBe(b.id)
-    expect(b.vehicle.damage).toBeCloseTo(10 * MACHINE_GUN_DAMAGE * OWN_GUN_POWER, 6)
+    expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * OWN_GUN_POWER) / DURABILITY, 6)
     // From the nose of the car, and not from over its roof.
     while (arena.shots.length === 0) hold(arena, a, 1)
     const nose = nosePoint({ x: 0, y: 0, z: 0 }, a)
@@ -620,7 +622,7 @@ describe("the car's own key", () => {
     const [a, b] = twoCars(arena, 'sportsCar', 'police', 25, 12)
     arm(a, 'machineGun')
     expect(hold(arena, a, 60, FIRE)).toBe(10)
-    expect(b.vehicle.damage).toBeCloseTo(10 * MACHINE_GUN_DAMAGE * POLICE_SHOT_SHARE, 6)
+    expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * POLICE_SHOT_SHARE) / DURABILITY, 6)
     arena.world.free()
   })
 
@@ -700,7 +702,7 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it("the pickup's bomb wrecks a car as a bomb won does, and a fire truck takes a tenth of a bomb's blast", () => {
+  it("the pickup's bomb blasts a car as a bomb won does, and a fire truck takes a tenth of a bomb's blast", () => {
     const arena = createArena(map)
     const [a, b] = twoCars(arena, 'pickup', 'sportsCar', 40)
     press(arena, a)
@@ -708,8 +710,7 @@ describe("the car's own key", () => {
     expect(own.power).toBe(OWN_BOMB_POWER)
     onto(b, own.position)
     for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
-    expect(b.vehicle.damage).toBeCloseTo(OWN_BOMB_POWER, 5)
-    expect(b.vehicle.wrecked).toBe(true)
+    expect(b.vehicle.damage).toBeCloseTo(OWN_BOMB_POWER / DURABILITY, 5)
     expect(arena.loose.filter((loose) => loose.kind === 'bomb')).toHaveLength(0)
     // A bomb won, dropped by the sports car once it is back, only dents a fire truck.
     respawn(b)
@@ -720,7 +721,7 @@ describe("the car's own key", () => {
     expect(won.power).toBe(1)
     onto(truck, won.position)
     for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
-    expect(truck.vehicle.damage).toBeCloseTo(FIRETRUCK_BOMB_SHARE, 5)
+    expect(truck.vehicle.damage).toBeCloseTo(FIRETRUCK_BOMB_SHARE / DURABILITY, 5)
     expect(truck.vehicle.wrecked).toBe(false)
     arena.world.free()
   })
@@ -966,7 +967,7 @@ describe("the car's own key", () => {
     expect(mines.every((mine) => mine.power === MINE_POWER)).toBe(true)
     onto(b, mines[2]!.position)
     for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
-    expect(b.vehicle.damage).toBeCloseTo(MINE_POWER, 5)
+    expect(b.vehicle.damage).toBeCloseTo(MINE_POWER / DURABILITY, 5)
     expect(arena.loose.filter((loose) => loose.kind === 'mine').length).toBeLessThan(MINES)
     arena.world.free()
   })

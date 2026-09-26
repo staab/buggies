@@ -22,6 +22,7 @@ import {
   roadBounds,
   segmentGap,
 } from './geometry.ts'
+import { resampledSurfaceRoad } from './beds.ts'
 import { limitSweepGrade } from './grades.ts'
 import { sampleTerrain } from './sampling.ts'
 
@@ -245,12 +246,17 @@ export function buildCityGrids(
  * because junction alignment re-smooths arterials afterward and can walk one
  * into a street that was clear when it was drawn.
  */
-export function trimStreetsAlongArterials(roads: Road[], nextId: number): Road[] {
+export function trimStreetsAlongArterials(roads: Road[], nextId: number, spacing: number): Road[] {
   const arterials = roads.filter((road) => road.kind === 'arterial')
   if (arterials.length === 0) return roads
 
+  // Each arterial as it will be drawn: settled onto the ground, it is laid
+  // out afresh every `spacing`, and where it bends, those chords can run
+  // shallower beside a street than the line they were laid along.
   const near = indexSegments(
-    arterials.flatMap((road) => claimedSegments(road, STREET_ARTERIAL_TOUCH)),
+    arterials.flatMap((road) =>
+      claimedSegments({ ...road, ...resampledSurfaceRoad(road, spacing) }, STREET_ARTERIAL_TOUCH),
+    ),
   )
   const square = cosine(STREET_ARTERIAL_ANGLE)
 

@@ -5,6 +5,7 @@ import {
   OIL_REACH,
   SPILL_FLIGHT_TICKS,
   SPILL_LIFE_TICKS,
+  pickupKind,
   pickupOut,
   type LooseKind,
   type Pickup,
@@ -145,6 +146,29 @@ export function mineGeometry(radius = MINE_RADIUS): THREE.BufferGeometry {
   ])
 }
 
+/** How wide a health pack is across its face: about as big as a banana, to be seen as far. */
+export const HEALTH_DIAMETER = 2.6
+const HEALTH_FACE = new THREE.Color('#f4f2ee')
+const HEALTH_CROSS = new THREE.Color('#d8262c')
+
+/**
+ * A health pack: a red cross on both faces of a white disc, standing up so
+ * that it shows its face as it turns, colored by vertex. Built once and shared.
+ */
+export function healthGeometry(diameter = HEALTH_DIAMETER): THREE.BufferGeometry {
+  const radius = diameter / 2
+  const thick = radius * 0.2
+  const arm = radius * 1.3
+  const bar = radius * 0.38
+  const parts: [THREE.BufferGeometry, THREE.Color][] = [[new THREE.CylinderGeometry(radius, radius, thick, 28).rotateX(Math.PI / 2), HEALTH_FACE]]
+  for (const face of [-1, 1]) {
+    const z = face * (thick / 2 + 0.01)
+    parts.push([new THREE.BoxGeometry(bar, arm, 0.02).translate(0, 0, z), HEALTH_CROSS])
+    parts.push([new THREE.BoxGeometry(arm, bar, 0.02).translate(0, 0, z), HEALTH_CROSS])
+  }
+  return mergePainted(parts)
+}
+
 /** How big an oil slick starts, as a share of its full size, the moment it is dropped. */
 const OIL_SEED = 0.05
 
@@ -178,11 +202,12 @@ interface Seen {
 
 interface Pop {
   group: THREE.Group
-  banana: THREE.Mesh
+  /** What was taken: a banana or a health pack. */
+  prize: THREE.Mesh
   sparks: THREE.Mesh[]
   velocities: THREE.Vector3[]
   ring: THREE.Mesh
-  bananaMaterial: THREE.MeshStandardMaterial
+  prizeMaterial: THREE.MeshStandardMaterial
   sparkMaterial: THREE.MeshBasicMaterial
   ringMaterial: THREE.MeshBasicMaterial
   age: number
@@ -210,6 +235,11 @@ export class PickupField {
     emissiveIntensity: 0.12,
   })
   private readonly bananas: THREE.InstancedMesh
+  private readonly healthShape = healthGeometry()
+  private readonly healthMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.1 })
+  private readonly health: THREE.InstancedMesh
+  /** Which mesh each slot is drawn by, and where in it. */
+  private readonly drawnBy: { mesh: THREE.InstancedMesh; index: number }[]
   private readonly bombMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.3 })
   private readonly oilMaterial = new THREE.MeshStandardMaterial({ color: '#0d0e10', roughness: 0.08, metalness: 0.4 })
   /** Everything loose, a mesh a kind. */
@@ -228,14 +258,19 @@ export class PickupField {
   constructor(source: PickupSource, onBomb: (at: Vec3) => void = () => {}) {
     this.source = source
     this.onBomb = onBomb
-    this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(source.pickups.length, 1))
+    const kinds = source.pickups.map((_, slot) => pickupKind(slot))
+    const bananaCount = kinds.filter((kind) => kind === 'banana').length
+    this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(bananaCount, 1))
+    this.health = new THREE.InstancedMesh(this.healthShape, this.healthMaterial, Math.max(kinds.length - bananaCount, 1))
+    const counts = { banana: 0, health: 0 }
+    this.drawnBy = kinds.map((kind) => ({ mesh: kind === 'banana' ? this.bananas : this.health, index: counts[kind]++ }))
     this.loose = {
       banana: new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST),
       bomb: new THREE.InstancedMesh(bombGeometry(), this.bombMaterial, LOOSE_MOST),
       mine: new THREE.InstancedMesh(mineGeometry(), this.bombMaterial, LOOSE_MOST),
       oil: new THREE.InstancedMesh(oilGeometry(), this.oilMaterial, LOOSE_MOST),
     }
-    for (const mesh of [this.bananas, ...Object.values(this.loose)]) {
+    for (const mesh of [this.bananas, ...Object.values(this.loose), this.health]) {
       mesh.castShadow = true
       mesh.frustumCulled = false
       this.object.add(mesh)
@@ -243,7 +278,8 @@ export class PickupField {
     // An oil slick is a film on the road: it takes shadows, and casts none.
     this.loose.oil.castShadow = false
     this.loose.oil.receiveShadow = true
-    this.bananas.count = source.pickups.length
+    this.bananas.count = counts.banana
+    this.health.count = counts.health
     for (const mesh of Object.values(this.loose)) mesh.count = 0
     this.seen = source.pickups.map((pickup) => pickup.generation)
     this.wasOut = source.pickups.map(() => false)
@@ -262,21 +298,24 @@ export class PickupField {
     // What is remembered a slot was made with the field, one a slot.
     for (const [slot, pickup] of pickups.entries()) {
       const out = pickupOut(pickup, tick)
-      // A slot moving on to its next banana means this one was taken.
+      // A slot moving on to its next pickup means this one was taken.
       if (pickup.generation !== this.seen[slot]) {
-        if (this.wasOut[slot]) this.pop(this.lastPositions[slot]!)
+        if (this.wasOut[slot]) this.pop(this.lastPositions[slot]!, this.drawnBy[slot]!.mesh === this.health)
         this.seen[slot] = pickup.generation
       }
       const phase = this.time * BOB_RATE + slot * 1.7
       this.placer.position.set(pickup.position.x, pickup.position.y + Math.sin(phase) * BOB, pickup.position.z)
-      this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, TILT, 'YXZ')
+      // A banana is tipped over to show its curve; a health pack stands up to show its face.
+      const { mesh, index } = this.drawnBy[slot]!
+      this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, mesh === this.bananas ? TILT : 0, 'YXZ')
       this.placer.scale.setScalar(out ? 1 : 0)
       this.placer.updateMatrix()
-      this.bananas.setMatrixAt(slot, this.placer.matrix)
+      mesh.setMatrixAt(index, this.placer.matrix)
       this.lastPositions[slot]!.copy(this.placer.position)
       this.wasOut[slot] = out
     }
     this.bananas.instanceMatrix.needsUpdate = true
+    this.health.instanceMatrix.needsUpdate = true
     this.updateLoose()
     this.updatePops(dt)
   }
@@ -362,26 +401,29 @@ export class PickupField {
     this.object.removeFromParent()
     this.object.clear()
     this.bananas.dispose()
+    this.health.dispose()
     for (const mesh of Object.values(this.loose)) {
       if (mesh.geometry !== this.bananaShape) mesh.geometry.dispose()
       mesh.dispose()
     }
     this.bananaShape.dispose()
     this.bananaMaterial.dispose()
+    this.healthShape.dispose()
+    this.healthMaterial.dispose()
     this.bombMaterial.dispose()
     this.oilMaterial.dispose()
     this.spark.dispose()
     this.ringGeometry.dispose()
   }
 
-  private pop(at: THREE.Vector3): void {
+  private pop(at: THREE.Vector3, health = false): void {
     const group = new THREE.Group()
     group.position.copy(at)
-    const bananaMaterial = this.bananaMaterial.clone()
-    bananaMaterial.transparent = true
-    const banana = new THREE.Mesh(this.bananaShape, bananaMaterial)
-    banana.rotation.z = TILT
-    group.add(banana)
+    const prizeMaterial = (health ? this.healthMaterial : this.bananaMaterial).clone()
+    prizeMaterial.transparent = true
+    const prize = new THREE.Mesh(health ? this.healthShape : this.bananaShape, prizeMaterial)
+    if (!health) prize.rotation.z = TILT
+    group.add(prize)
     const sparkMaterial = new THREE.MeshBasicMaterial({ color: SPARK, transparent: true })
     const sparks: THREE.Mesh[] = []
     const velocities: THREE.Vector3[] = []
@@ -394,12 +436,12 @@ export class PickupField {
         new THREE.Vector3(Math.cos(angle) * SPARK_SPEED, 2.5 + (i % 3) * 1.2, Math.sin(angle) * SPARK_SPEED),
       )
     }
-    const ringMaterial = new THREE.MeshBasicMaterial({ color: SKIN, transparent: true, opacity: 0.8 })
+    const ringMaterial = new THREE.MeshBasicMaterial({ color: health ? HEALTH_CROSS : SKIN, transparent: true, opacity: 0.8 })
     const ring = new THREE.Mesh(this.ringGeometry, ringMaterial)
     ring.scale.setScalar(0.3)
     group.add(ring)
     this.object.add(group)
-    this.pops.push({ group, banana, sparks, velocities, ring, bananaMaterial, sparkMaterial, ringMaterial, age: 0 })
+    this.pops.push({ group, prize, sparks, velocities, ring, prizeMaterial, sparkMaterial, ringMaterial, age: 0 })
   }
 
   private updatePops(dt: number): void {
@@ -412,11 +454,11 @@ export class PickupField {
         continue
       }
       alive.push(pop)
-      // The banana leaps, spins, and is gone.
-      pop.banana.position.y = POP_RISE * (1 - (1 - life) * (1 - life))
-      pop.banana.rotation.y += POP_SPIN * dt
-      pop.banana.scale.setScalar(Math.max(1 - life * 1.3, 0))
-      pop.bananaMaterial.opacity = Math.max(1 - life * 1.3, 0)
+      // What was taken leaps, spins, and is gone.
+      pop.prize.position.y = POP_RISE * (1 - (1 - life) * (1 - life))
+      pop.prize.rotation.y += POP_SPIN * dt
+      pop.prize.scale.setScalar(Math.max(1 - life * 1.3, 0))
+      pop.prizeMaterial.opacity = Math.max(1 - life * 1.3, 0)
       // The velocities were made alongside the sparks, one each.
       for (const [i, spark] of pop.sparks.entries()) {
         const velocity = pop.velocities[i]!
@@ -436,7 +478,7 @@ export class PickupField {
 
   private remove(pop: Pop): void {
     this.object.remove(pop.group)
-    pop.bananaMaterial.dispose()
+    pop.prizeMaterial.dispose()
     pop.sparkMaterial.dispose()
     pop.ringMaterial.dispose()
   }

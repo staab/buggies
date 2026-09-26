@@ -8,14 +8,27 @@ const { cos, hypot, sin } = exact
 
 /** How many bananas are out on a map at once. */
 export const BANANA_SLOTS = 160
-export const PICKUP_SLOTS = BANANA_SLOTS
+/** How many health packs are out on a map at once, in the slots after the bananas'. */
+export const HEALTH_SLOTS = 32
+export const PICKUP_SLOTS = BANANA_SLOTS + HEALTH_SLOTS
+
+/** What a slot holds: a banana, or a health pack. */
+export type PickupKind = 'banana' | 'health'
+
+/** What a slot holds, by its number. */
+export function pickupKind(slot: number): PickupKind {
+  return slot < BANANA_SLOTS ? 'banana' : 'health'
+}
+
+/** How much of a car's damage a health pack mends, of what wrecks it. */
+export const HEALTH_MEND = 0.5
 
 /** How far above the ground a pickup floats, to be seen from a car. */
 export const PICKUP_HEIGHT = 1.4
 
 /**
  * How close a chassis has to come, across the ground and up it, to take a
- * banana: about as far as one is drawn out to.
+ * banana or a health pack: about as far as one is drawn out to.
  */
 export const BANANA_REACH = 3.4
 export const PICKUP_REACH_UP = 2.8
@@ -36,12 +49,13 @@ const LAND_MARGIN = 40
 const LAND_TRIES = 12
 
 /**
- * One of the map's banana slots. Each banana a slot has had is somewhere
- * else, worked out from the map's seed, the slot and how many it has had,
- * so that everyone with the map agrees where it is without being told.
+ * One of the map's pickup slots, a banana's or a health pack's. Each pickup
+ * a slot has had is somewhere else, worked out from the map's seed, the slot
+ * and how many it has had, so that everyone with the map agrees where it is
+ * without being told.
  */
 export interface Pickup {
-  /** How many bananas this slot has had. */
+  /** How many pickups this slot has had. */
   generation: number
   /** The tick the slot's current pickup appears on, or did. */
   spawnTick: number
@@ -92,13 +106,13 @@ function lengthsOf(map: TerrainMap): RoadLengths {
 }
 
 /**
- * A spot on the map's roads, somewhere in one share of their length: every stretch of road gets its bananas, a city's short streets
- * no more than a long highway; none if the map has no road to speak of.
+ * A spot on the map's roads, somewhere in one of `shares` shares of their length: every stretch of road gets its pickups, a city's
+ * short streets no more than a long highway; none if the map has no road to speak of.
  */
-function roadSpot(map: TerrainMap, rng: () => number, share: number, out: Vec3): Vec3 | null {
+function roadSpot(map: TerrainMap, rng: () => number, share: number, shares: number, out: Vec3): Vec3 | null {
   const { stretches, total } = lengthsOf(map)
   if (stretches.length === 0) return null
-  const along = ((share + rng()) / PICKUP_SLOTS) * total
+  const along = ((share + rng()) / shares) * total
   let low = 0
   let high = stretches.length - 1
   while (low < high) {
@@ -123,33 +137,36 @@ function roadSpot(map: TerrainMap, rng: () => number, share: number, out: Vec3):
 
 /**
  * How many shares a slot moves on by with each pickup it has: coprime with
- * the number of slots, so that at any one generation every slot has a share
- * of its own, and each pickup is well away from the last.
+ * the number of slots of its kind, so that at any one generation every slot
+ * has a share of its own, and each pickup is well away from the last.
  */
 const SHARE_STEP = 67
-
-/** How many cells a side the land is cut into, one a slot, so that bananas off the road are spread over all of it. */
-const LAND_GRID = Math.ceil(Math.sqrt(PICKUP_SLOTS))
 
 /**
  * Where a slot's pickup of a given generation is: on a road for the most
  * part, and otherwise on dry land in its share's patch of the map, or
- * failing that anywhere dry, floating above the ground.
+ * failing that anywhere dry, floating above the ground. Bananas and health
+ * packs each have the map shared out among their own slots, so each kind is
+ * spread over all of it.
  */
 export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, generation: number, out: Vec3 = v3()): Vec3 {
   const rng = createRng(pickupSeed(map.seed, slot, generation))
-  const share = (slot + generation * SHARE_STEP) % PICKUP_SLOTS
+  const banana = pickupKind(slot) === 'banana'
+  const shares = banana ? BANANA_SLOTS : HEALTH_SLOTS
+  const share = ((banana ? slot : slot - BANANA_SLOTS) + generation * SHARE_STEP) % shares
   const onRoad = map.roads.length > 0 && rng() < ON_ROADS
   if (onRoad) {
-    const spot = roadSpot(map, rng, share, out)
+    const spot = roadSpot(map, rng, share, shares, out)
     if (spot !== null) return spot
   }
+  // The land is cut into a cell a slot, so that pickups off the road are spread over all of it.
+  const grid = Math.ceil(Math.sqrt(shares))
   const extent = map.size * map.cellSize
   const span = extent - 2 * LAND_MARGIN
-  const cell = span / LAND_GRID
-  const patch = share % (LAND_GRID * LAND_GRID)
-  const left = LAND_MARGIN + (patch % LAND_GRID) * cell
-  const top = LAND_MARGIN + Math.floor(patch / LAND_GRID) * cell
+  const cell = span / grid
+  const patch = share % (grid * grid)
+  const left = LAND_MARGIN + (patch % grid) * cell
+  const top = LAND_MARGIN + Math.floor(patch / grid) * cell
   for (let attempt = 0; attempt < LAND_TRIES; attempt++) {
     // Half the tries in its own patch; if that is lake or sea, anywhere.
     const own = attempt < LAND_TRIES / 2
@@ -162,7 +179,7 @@ export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, g
     return out
   }
   if (map.roads.length > 0) {
-    const spot = roadSpot(map, rng, share, out)
+    const spot = roadSpot(map, rng, share, shares, out)
     if (spot !== null) return spot
   }
   out.x = extent / 2
@@ -199,7 +216,7 @@ export function pickupOut(pickup: Pickup, tick: number): boolean {
   return tick >= pickup.spawnTick
 }
 
-/** Whether something at this point has reached a pickup: from a banana's own reach, or a magnet's if that is further. */
+/** Whether something at this point has reached a pickup: from its own reach, or a magnet's if that is further. */
 export function reachesPickup(pickup: Pickup, point: Vec3, magnet = 0): boolean {
   return within(point, pickup.position, Math.max(BANANA_REACH, magnet), Math.max(PICKUP_REACH_UP, magnet))
 }

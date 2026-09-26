@@ -1,4 +1,4 @@
-import { LOOSE_KINDS, OIL_LIFE_TICKS, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Loose } from '@buggies/game'
+import { BANANA_SLOTS, LOOSE_KINDS, OIL_LIFE_TICKS, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Loose } from '@buggies/game'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -55,6 +55,26 @@ describe('bananas as drawn', () => {
     field.dispose()
   })
 
+  it('draw the slots past the bananas as health packs, and pop one when taken', () => {
+    const source = { pickups: pickups(BANANA_SLOTS + 2), loose: [] as Loose[], tick: 0 }
+    const field = new PickupField(source)
+    field.update(0.1)
+    const children = field.object.children as THREE.InstancedMesh[]
+    const [bananas] = children
+    const health = children.at(-1)!
+    expect(bananas!.count).toBe(BANANA_SLOTS)
+    expect(health.count).toBe(2)
+    expect(health.geometry).not.toBe(bananas!.geometry)
+    const matrix = new THREE.Matrix4()
+    health.getMatrixAt(1, matrix)
+    expect(new THREE.Vector3().setFromMatrixPosition(matrix).x).toBeCloseTo((BANANA_SLOTS + 1) * 10, 5)
+    source.pickups[BANANA_SLOTS]!.generation = 1
+    source.pickups[BANANA_SLOTS]!.spawnTick = 480
+    field.update(0.1)
+    expect(field.popping).toBe(1)
+    field.dispose()
+  })
+
   it('pop when taken, and only then', () => {
     const source = { pickups: pickups(2), loose: [] as Loose[], tick: 0 }
     const field = new PickupField(source)
@@ -65,8 +85,8 @@ describe('bananas as drawn', () => {
     source.pickups[0]!.spawnTick = 480
     field.update(0.1)
     expect(field.popping).toBe(1)
-    // The meshes of the field, the map's bananas and one for each kind of loose thing, and the pop.
-    const meshes = 1 + LOOSE_KINDS.length
+    // The meshes of the field, the map's bananas, one for each kind of loose thing and the health packs, and the pop.
+    const meshes = 2 + LOOSE_KINDS.length
     expect(field.object.children.length).toBe(meshes + 1)
     field.update(POP_LIFE)
     expect(field.popping).toBe(0)

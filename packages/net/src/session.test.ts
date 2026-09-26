@@ -2,6 +2,8 @@ import {
   MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
+  BANANAS_PER_WEAPON,
+  DURABILITY,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
   arm,
@@ -231,12 +233,18 @@ class Session {
   }
 }
 
-/** How far a position is from the nearest road point on a map. */
+/** How far a position is from the nearest road's centerline on a map. */
 function offRoad(map: TerrainMap, position: { x: number; z: number }): number {
   let nearest = Infinity
   for (const road of map.roads) {
-    for (const point of road.points) {
-      nearest = Math.min(nearest, Math.hypot(point.x - position.x, point.z - position.z))
+    const count = road.closed ? road.points.length : road.points.length - 1
+    for (let i = 0; i < count; i++) {
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % road.points.length]!
+      const vx = b.x - a.x
+      const vz = b.z - a.z
+      const t = Math.min(Math.max(((position.x - a.x) * vx + (position.z - a.z) * vz) / (vx * vx + vz * vz || 1), 0), 1)
+      nearest = Math.min(nearest, Math.hypot(position.x - a.x - vx * t, position.z - a.z - vz * t))
     }
   }
   return nearest
@@ -511,7 +519,8 @@ describe('a session', () => {
     a.input.throttle = 1
     session.run(3)
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    seat.score = 3
+    // One short of what a power-up costs, so that they are kept rather than spent.
+    seat.score = BANANAS_PER_WEAPON - 1
     const before = session.serverPositionOf(a)
     expect(distance(before, seat.spawn.position)).toBeGreaterThan(5)
 
@@ -522,7 +531,7 @@ describe('a session', () => {
     expect(session.server.playerCount).toBe(1)
     // The same seat, in a tank, where the sports car was, with the bananas it had.
     expect(seat.profile).toBe('tank')
-    expect(seat.score).toBe(3)
+    expect(seat.score).toBe(BANANAS_PER_WEAPON - 1)
     expect(distance(session.serverPositionOf(a), before)).toBeLessThan(3)
     // The prediction is in a tank too, where the server has it.
     expect(a.prediction.ownSeat.profile).toBe('tank')
@@ -586,7 +595,8 @@ describe('a session', () => {
   it('tells of the bananas in full once, then only what changes, and the whole again to a newcomer', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
-    session.run(0.5)
+    // Long enough for the props to have settled and gone to sleep.
+    session.run(3)
     // The whole word, then nothing but the vehicles while nothing changes.
     expect(a.client.bananas.pickups).toHaveLength(PICKUP_SLOTS)
     expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_BYTES)
@@ -656,8 +666,8 @@ describe('a session', () => {
     expect(b.prediction.rockets[0]!.id).toBe(arena.rockets[0]!.id)
     session.run(1.5)
     expect(arena.rockets).toHaveLength(0)
-    expect(bSeat.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE, 5)
-    expect(b.prediction.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE, 1)
+    expect(bSeat.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE / DURABILITY, 5)
+    expect(b.prediction.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE / DURABILITY, 1)
     expect(aSeat.vehicle.damage).toBe(0)
 
     // A bomb dropped is numbered the same in the sports car's own prediction as on the server, so
@@ -683,7 +693,7 @@ describe('a session', () => {
     session.run(1)
     a.input.fire = false
     session.run(0.3)
-    expect(bSeat.vehicle.damage).toBeGreaterThan(ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE)
+    expect(bSeat.vehicle.damage).toBeGreaterThan((ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE) / DURABILITY)
     expect(aSeat.ammoTicks).toBeLessThan(MACHINE_GUN_AMMO_TICKS - 50)
     expect(a.prediction.ownSeat.ammoTicks).toBe(aSeat.ammoTicks)
     session.dispose()

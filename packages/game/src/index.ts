@@ -55,6 +55,7 @@ export {
   DAMAGE_SMOKING,
   DEFAULT_WORLD_TUNING,
   DEFAULT_VEHICLE_PROFILE,
+  DURABILITY,
   hurtVehicle,
   initPhysics,
   NEUTRAL_INPUT,
@@ -81,6 +82,8 @@ export { findSpawns } from './spawns.ts'
 export {
   BANANA_REACH,
   BANANA_SLOTS,
+  HEALTH_MEND,
+  HEALTH_SLOTS,
   PICKUP_HEIGHT,
   PICKUP_REACH_UP,
   PICKUP_RESPAWN_TICKS,
@@ -97,6 +100,7 @@ export {
   OIL_LIFE_TICKS,
   OIL_REACH,
   LOOSE_MOST,
+  pickupKind,
   pickupOut,
   pickupSeed,
   pickupSpot,
@@ -107,6 +111,7 @@ export {
   looseGone,
   looseOut,
   type Pickup,
+  type PickupKind,
   type Loose,
   type LooseKind,
 } from './pickups.ts'
@@ -265,6 +270,8 @@ import {
 } from './weapons.ts'
 import {
   createPickups,
+  HEALTH_MEND,
+  pickupKind,
   pickupOut,
   reachesPickup,
   reachesLoose,
@@ -663,14 +670,20 @@ function magnetOf(seat: Seat): number {
  * Every banana a vehicle has reached is taken, a point to whoever reached
  * it, and its slot moves on to the next, to turn up elsewhere in a while.
  * A car with its magnet pulling reaches bananas from much further off. A
- * wreck takes nothing.
+ * health pack is taken the same way, by a car with damage to mend and
+ * from its own reach alone, and mends half of what wrecks a car. A wreck
+ * takes nothing.
  */
 function collectPickups(arena: Arena): void {
   for (const [slot, pickup] of arena.pickups.entries()) {
     if (!pickupOut(pickup, arena.tick)) continue
+    const health = pickupKind(slot) === 'health'
     for (const seat of arena.seats) {
-      if (!seat.occupied || seat.vehicle.wrecked || !reachesPickup(pickup, seat.vehicle.frame.position, magnetOf(seat))) continue
-      score(seat)
+      if (!seat.occupied || seat.vehicle.wrecked) continue
+      if (health && seat.vehicle.damage <= 0) continue
+      if (!reachesPickup(pickup, seat.vehicle.frame.position, health ? 0 : magnetOf(seat))) continue
+      if (health) seat.vehicle.damage = Math.max(seat.vehicle.damage - HEALTH_MEND, 0)
+      else score(seat)
       setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
       break
     }

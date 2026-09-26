@@ -460,6 +460,8 @@ export function buildClimbs(
       if (steep < CLIMB_END.steepLeast || steep > CLIMB_END.steep) continue
       if (nearestRoad(roads, at.x, at.z) < CLIMB_END.roadKeep) continue
       lot = lotAtEnd(field, surfaceAt, line.slice(0, end + 1))
+      // The road ends at the lot's level, which is where it enters the lot, below its end.
+      if (lot !== null && lot.y - from.y < CLIMB_END.rise) lot = null
       if (lot !== null) {
         line = line.slice(0, end + 1)
         break

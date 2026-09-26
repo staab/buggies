@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { NEUTRAL_INPUT } from './input.ts'
 import { addHeightfield } from './terrain.ts'
 import { createVehicleTuning } from './tuning.ts'
-import { DAMAGE_SMOKING, stepVehicle } from './vehicle.ts'
+import { DAMAGE_SMOKING, DURABILITY, stepVehicle } from './vehicle.ts'
 import { createVehicle, type Vehicle } from './vehicleBody.ts'
 import { FIXED_TIMESTEP, addStaticWall, createPhysicsWorld, initPhysics } from './world.ts'
 
@@ -80,37 +80,35 @@ describe('damage', () => {
 
     // A nudge does next to nothing.
     crash(track, 3)
-    expect(vehicle.damage).toBeLessThan(0.15)
-    expect(vehicle.wrecked).toBe(false)
-    const nudged = vehicle.damage
-
-    crash(track, 24)
-    const dented = vehicle.damage
-    expect(dented - nudged).toBeGreaterThan(0.25)
-    expect(dented).toBeLessThan(0.6)
+    expect(vehicle.damage).toBeLessThan(0.05)
     expect(vehicle.wrecked).toBe(false)
 
-    crash(track, 24)
-    expect(vehicle.damage).toBeGreaterThan(dented)
-    expect(vehicle.damage).toBeGreaterThanOrEqual(DAMAGE_SMOKING)
-    expect(vehicle.damage).toBeLessThan(1)
-    expect(vehicle.wrecked).toBe(false)
-
-    const last = crash(track, 24)
+    // Every hard hit dents it further, and it takes a good few of them to blow it up.
+    let hits = 0
+    let last = crash(track, 24)
+    let before = 0
+    while (!vehicle.wrecked && hits < 20) {
+      hits += 1
+      expect(vehicle.damage).toBeGreaterThan(before)
+      before = vehicle.damage
+      last = crash(track, 24)
+    }
+    expect(hits).toBeGreaterThan(3 * DURABILITY - 3)
     expect(vehicle.damage).toBe(1)
     expect(vehicle.wrecked).toBe(true)
+    expect(before).toBeGreaterThanOrEqual(DAMAGE_SMOKING)
     // Thrown into the air, and not driven again however hard the throttle is held.
     expect(last.liftedOff).toBe(true)
     expect(last.drivenAfter).toBe(0)
     track.world.free()
   })
 
-  it('blows a car up outright when it hits hard enough for that', () => {
+  it('takes a hard crash at speed without blowing up, however hard it hits', () => {
     const track = range()
     // A long run at it, to be going fast enough to matter.
     crash(track, 80, 440)
-    expect(track.vehicle.damage).toBe(1)
-    expect(track.vehicle.wrecked).toBe(true)
+    expect(track.vehicle.damage).toBeGreaterThan(0.2)
+    expect(track.vehicle.wrecked).toBe(false)
     track.world.free()
   })
 })

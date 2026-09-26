@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { generateTerrain } from './generate.ts'
 import { RAIL_BASE, RAIL_FLARE, RAIL_HEIGHT, RAIL_THICKNESS, railMesh, railRuns } from './rails.ts'
-import { RAMP_WIDTH, ROAD_BRIDGE, ROAD_GRADE, ROAD_TUNNEL, isSurfaceRoad } from './roads.ts'
+import { RAMP_LANE_REACH, RAMP_WIDTH, ROAD_BRIDGE, ROAD_GRADE, ROAD_TUNNEL, isSurfaceRoad } from './roads.ts'
 import type { Road, RoadPoint, TerrainMap } from './types.ts'
 
 let map: TerrainMap
@@ -37,16 +37,22 @@ describe('guardrails', () => {
     const runs = railRuns(map.roads)
     const highway = map.roads.find((road) => road.kind === 'highway')!
     const half = highway.width / 2
+    // Only the ramps' mouths go without, each open along the lane's whole
+    // way out from under the deck and a flare's length either side.
+    const mouths = map.roads.filter((road) => road.kind === 'ramp').flatMap((ramp) => [ramp.points[0]!, ramp.points.at(-1)!])
+    const reach = RAMP_LANE_REACH + RAMP_WIDTH / 2 + RAIL_FLARE + half + 4
     let open = 0
     let railed = 0
     for (const middle of segmentMidpoints(highway, ROAD_GRADE)) {
       open++
-      if (nearestRunDistance(runs, middle.x, middle.z) < half + 1) railed++
+      if (nearestRunDistance(runs, middle.x, middle.z) < half + 1) {
+        railed++
+        continue
+      }
+      expect(Math.min(...mouths.map((mouth) => Math.hypot(mouth.x - middle.x, mouth.z - middle.z)))).toBeLessThan(reach)
     }
     expect(open).toBeGreaterThan(100)
-    // Only the ramps' mouths go without, each open along the lane's whole
-    // way out from under the deck and a flare's length either side.
-    expect(railed / open).toBeGreaterThan(0.8)
+    expect(railed).toBeGreaterThan(0)
 
     for (const road of map.roads) {
       if (!isSurfaceRoad(road)) continue

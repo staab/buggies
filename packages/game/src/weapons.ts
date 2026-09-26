@@ -91,7 +91,7 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
 export const BOMB_DROP_BACK = 5
 
 /** Every so many bananas wins something. */
-export const BANANAS_PER_WEAPON = 5
+export const BANANAS_PER_WEAPON = 3
 
 /** How far over the roof a weapon rides, and rockets and bullets leave from. */
 export const MOUNT_HEIGHT = 1.1
@@ -174,7 +174,7 @@ export const SHOCKWAVE_STUN_TICKS = 60 * 5
 export const SLOW_DRAG = 9
 export const SLOW_HOLD_TICKS = 2
 
-/** What a bomb takes of a car's life: all of it, for one won; a car's own take a share of that. */
+/** What a bomb takes of what wrecks a car before its `DURABILITY`: all of it, for one won; a car's own take a share of that. */
 export const BOMB_DAMAGE = 1
 
 /**
@@ -266,9 +266,9 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   tank: {
     kind: 'missile',
     label: 'Missile',
-    about: 'Fires a missile with the blast of the rocket power-up, every three seconds.',
+    about: 'Fires a missile with the blast of the rocket power-up, every eight seconds.',
     activeTicks: 0,
-    cooldownTicks: 60 * 3,
+    cooldownTicks: 60 * 8,
   },
   goKart: { kind: 'hop', label: 'Hop', about: 'Jumps into the air whenever the kart is on the ground.', activeTicks: 6, cooldownTicks: 0 },
   raceCar: {
@@ -382,17 +382,22 @@ export function shotShare(profile: VehicleProfileId): number {
  */
 export const MACHINE_GUN_RANGE = 70
 export const MACHINE_GUN_SWEEP_COS = 0.82
-/** How much of a car's life one shot takes: a few seconds of hits blows it up. */
+/** How much one shot takes of what wrecks a car before its `DURABILITY`. */
 export const MACHINE_GUN_DAMAGE = 0.02
 
 export const ROCKET_SPEED = 45
 export const ROCKET_LIFE_TICKS = 60 * 4
 /** How much of the way toward its target a rocket turns each tick. */
 export const ROCKET_TURN = 0.12
+/**
+ * The tightest a rocket turns, in meters: it swings wide of a car that
+ * dodges late or close, rather than following it round on the spot.
+ */
+export const ROCKET_LEAST_RADIUS = 25
 /** How far ahead, and how far off dead ahead, a car has to be for a rocket to go after it. */
 export const ROCKET_LOCK_RANGE = 90
 export const ROCKET_LOCK_COS = 0.5
-/** How close a rocket has to come to a car to go off on it, and what that takes of its life. */
+/** How close a rocket has to come to a car to go off on it, and what that takes of what wrecks a car before its `DURABILITY`. */
 export const ROCKET_REACH = 3.5
 export const ROCKET_DAMAGE = 0.6
 
@@ -479,7 +484,7 @@ export interface Battlefield {
 }
 
 // The exact trigonometry, so every copy of the simulation turns the same.
-const { atan2, cos: cosine, hypot, sin: sine } = exact
+const { acos, atan2, cos: cosine, hypot, sin: sine } = exact
 
 const muzzle = v3()
 const toward = v3()
@@ -1231,8 +1236,17 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
       desired.y += 0.5
       vnormalize(desired, desired)
       vnormalize(heading, rocket.velocity)
-      vaddScaled(heading, heading, desired, ROCKET_TURN)
-      vnormalize(heading, heading)
+      vaddScaled(desired, heading, desired, ROCKET_TURN)
+      vnormalize(desired, desired)
+      // No tighter than its least radius: past that, it turns only so far this tick.
+      const most = (ROCKET_SPEED * dt) / ROCKET_LEAST_RADIUS
+      const turn = acos(Math.min(Math.max(vdot(heading, desired), -1), 1))
+      if (turn > most) {
+        const s = sine(turn)
+        vscale(heading, heading, sine(turn - most) / s)
+        vaddScaled(heading, heading, desired, sine(most) / s)
+        vnormalize(heading, heading)
+      } else vcopy(heading, desired)
       vscale(rocket.velocity, heading, ROCKET_SPEED)
     } else {
       rocket.target = NO_TARGET

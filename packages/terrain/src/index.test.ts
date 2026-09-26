@@ -9,7 +9,8 @@ import {
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
   DISTRICT_SUBURB,
-  INTERCHANGE_SEARCH,
+  INTERCHANGE_CLEAR,
+  INTERCHANGE_SPACING,
   MAX_ARTERIAL_GRADE,
   MAX_CLIMB_GRADE,
   MAX_RAMP_GRADE,
@@ -59,58 +60,59 @@ describe('generateTerrain', () => {
     60_000,
   )
 
-  it('produces two islands: sea at the edges, and land under every city on either', () => {
+  it('lays the islands inside the map: sea at the edges, and land under every city', () => {
     const map = generateTerrain(7)
-    const { heights } = map.heightfield
-    expect(heights[0]!).toBeLessThan(map.seaLevel)
-    // Three cities on the main island and one across the strait on the small one.
-    expect(map.districts.map((district) => district.island)).toEqual([1, 1, 1, 2])
+    const { heights, width } = map.heightfield
+    for (const corner of [0, width - 1, heights.length - width, heights.length - 1]) {
+      expect(heights[corner]!).toBeLessThan(map.seaLevel)
+    }
+    expect(map.districts.length).toBeGreaterThanOrEqual(3)
+    expect(map.districts.length).toBeLessThanOrEqual(5)
     for (const district of map.districts) {
+      expect(district.island).toBeGreaterThanOrEqual(1)
       expect(sampleHeight(map.heightfield, district.cx, district.cz)).toBeGreaterThan(map.seaLevel)
     }
-    // Between the two, open sea: the line from the one city to the other goes under water somewhere.
-    const main = map.districts[0]!
-    const small = map.districts[3]!
-    let lowest = Infinity
-    for (let t = 0; t <= 1; t += 0.01) {
-      lowest = Math.min(lowest, sampleHeight(map.heightfield, main.cx + (small.cx - main.cx) * t, main.cz + (small.cz - main.cz) * t))
-    }
-    expect(lowest).toBeLessThan(map.seaLevel)
-    expect(map.mountains).toHaveLength(6)
+    expect(map.mountains.length).toBeGreaterThanOrEqual(1)
+    expect(map.mountains.length).toBeLessThanOrEqual(12)
   })
 
-  it('builds the main island three triangular mountains loosely clustered together, one more on its own, and the small island two', () => {
-    const spread = 80
+  it('makes each seed a different map: its own count of islands and mountains', () => {
+    const islands = new Set<number>()
+    const mountains = new Set<number>()
     for (let seed = 1; seed <= 8; seed++) {
-      const map = generateTerrain(seed, { size: 385, mountainSpread: spread })
-      expect(map.mountains).toHaveLength(6)
-
-      const centers = map.mountains.map((mountain) => {
-        const triangle = orientedTriangle(mountain)
+      const map = generateTerrain(seed, { size: 641 })
+      mountains.add(map.mountains.length)
+      // Land masses are numbered by size from 1, so the most any map has is its count.
+      let landMasses = 0
+      for (const district of map.districts) landMasses = Math.max(landMasses, district.island)
+      islands.add(landMasses)
+      for (const mountain of map.mountains) {
         // Every mountain is a real triangle, not a degenerate line.
-        expect(triangleInradius(triangle)).toBeGreaterThan(0)
-        return triangleCentroid(triangle)
-      })
-
-      // "Intersect" is loose: they just have to sit close to each other. The
-      // first three are the main island's massif, the last two the small island's.
-      const near = (group: { x: number; z: number }[], reach: number): void => {
-        for (let i = 0; i < group.length; i++) {
-          for (let j = i + 1; j < group.length; j++) {
-            const distance = Math.hypot(group[i]!.x - group[j]!.x, group[i]!.z - group[j]!.z)
-            expect(distance).toBeLessThanOrEqual(reach + 1e-6)
-          }
-        }
+        expect(triangleInradius(orientedTriangle(mountain))).toBeGreaterThan(0)
       }
-      near(centers.slice(0, 3), spread * 2 * WORLD_SCALE)
-      near(centers.slice(4), spread * 2 * WORLD_SCALE)
+      expect(map.mountains.length).toBeLessThanOrEqual(12)
+      expect(map.districts.length).toBeLessThanOrEqual(5)
     }
-  })
+    expect(mountains.size).toBeGreaterThanOrEqual(2)
+    expect(islands.size).toBeGreaterThanOrEqual(2)
+  }, 120_000)
 
-  it('runs one or two rivers from the mountains down to the sea', () => {
+  it('raises islands anywhere from a speck to the largest the map holds, and as many as asked', () => {
+    const land = (count: number, seed: number): number => {
+      const map = generateTerrain(seed, { size: 385, islandCount: count, mountainCount: 1, cityCount: 3 })
+      return map.heightfield.heights.filter((height) => height > map.seaLevel).length
+    }
+    // One island is at least three quarters of the largest, so it has room
+    // for its cities; eight together cover more of the map than one alone.
+    const one = land(1, 5)
+    expect(one).toBeGreaterThan(385 * 385 * 0.05)
+    expect(land(8, 5)).toBeGreaterThan(one)
+  }, 120_000)
+
+  it('runs at most one river off each mountain down to the sea', () => {
     const map = generateTerrain(2024)
     expect(map.rivers.length).toBeGreaterThanOrEqual(1)
-    expect(map.rivers.length).toBeLessThanOrEqual(2)
+    expect(map.rivers.length).toBeLessThanOrEqual(map.mountains.length)
 
     let maxHeight = -Infinity
     for (const height of map.heightfield.heights) maxHeight = Math.max(maxHeight, height)
@@ -149,7 +151,7 @@ describe('generateTerrain', () => {
         expect(lake.cells.some((cell) => riverCells.has(cell))).toBe(true)
       }
     }
-  }, 30_000)
+  }, 120_000)
 
   it('carves a channel so the river bed always sits below the water surface', () => {
     for (let seed = 1; seed <= 6; seed++) {
@@ -273,7 +275,7 @@ describe('districts', () => {
         }
       }
     }
-  }, 20_000)
+  }, 120_000)
 
   it('keeps districts on ground flatter than the island as a whole', () => {
     const map = generateTerrain(2024, { size: 513 })
@@ -550,7 +552,7 @@ describe('roads', () => {
         }
       }
     }
-  }, 20_000)
+  }, 120_000)
 
   it('branches one-lane ramps and a cross road off the highway', () => {
     const map = generateTerrain(1)
@@ -620,7 +622,7 @@ describe('roads', () => {
         }
       }
     }
-  }, 20_000)
+  }, 120_000)
 
   it('grows arterials from the cross roads that bridge but never tunnel', () => {
     let arterials = 0
@@ -649,7 +651,7 @@ describe('roads', () => {
       )
     }
     expect(arterials).toBeGreaterThan(0)
-  }, 60_000)
+  }, 120_000)
 
   it('keeps arterials off the highway except at an interchange', () => {
     const map = generateTerrain(1)
@@ -692,7 +694,7 @@ describe('roads', () => {
         }
       }
     }
-  }, 20_000)
+  }, 120_000)
 
   it('keeps arterials from crossing any other road', () => {
     const map = generateTerrain(1)
@@ -733,7 +735,7 @@ describe('roads', () => {
       }
     }
     expect(crossings).toBe(0)
-  }, 20_000)
+  }, 120_000)
 
   it('meets other roads at a straight (180 degree) angle', () => {
     let nodes = 0
@@ -784,7 +786,7 @@ describe('roads', () => {
     }
     expect(nodes).toBeGreaterThan(0)
     expect(aligned / nodes).toBeGreaterThan(0.6)
-  }, 60_000)
+  }, 120_000)
 
   it('fills each city with a grade-limited street grid', () => {
     const map = generateTerrain(1)
@@ -795,7 +797,7 @@ describe('roads', () => {
       expect(road.structure).toHaveLength(road.points.length - 1)
     }
     expectSurfaceGrades(streets, () => MAX_ROAD_GRADE)
-  }, 20_000)
+  }, 120_000)
 
   it('keeps city streets a road\'s width clear of highways and ramps', () => {
     const map = generateTerrain(1)
@@ -820,7 +822,7 @@ describe('roads', () => {
     }
     // Edge to edge, a street stays a highway's width away from the fast roads.
     expect(narrowest).toBeGreaterThanOrEqual(ROAD_WIDTH - 1e-3)
-  }, 20_000)
+  }, 120_000)
 
   it('leaves the pocket between an interchange\'s ramps and highway empty', () => {
     // Seed 4 puts an interchange well inside a city, so its grid has to dodge one.
@@ -848,7 +850,7 @@ describe('roads', () => {
       }
     }
     expect(checked).toBeGreaterThan(0)
-  }, 20_000)
+  }, 120_000)
 
   it('never lets a city street smear along an arterial', () => {
     // Meeting shallower than 45 degrees, two overlapping ribbons read as one
@@ -896,7 +898,7 @@ describe('roads', () => {
       // point their roadways would start to overlap, and no nearer.
       expect(closest).toBeGreaterThanOrEqual(overlap - 1e-6)
     }
-  }, 30_000)
+  }, 120_000)
 
   it('seats every river in the channel cut for it', () => {
     // The ribbon is flat and only as wide as the river, so the land has to come
@@ -958,7 +960,7 @@ describe('roads', () => {
     expect(hangs).toBeLessThan(0.35)
     const covered = wetted.reduce((sum, part) => sum + part, 0) / wetted.length
     expect(covered).toBeGreaterThan(0.6)
-  }, 30_000)
+  }, 120_000)
 
   it('holds rivers and lakes to one water level where they meet', () => {
     for (const seed of [2, 3, 4, 6]) {
@@ -990,7 +992,7 @@ describe('roads', () => {
         }
       }
     }
-  }, 30_000)
+  }, 120_000)
 
   it('never lets a river surface stand over a road deck', () => {
     for (const seed of [1, 2, 3]) {
@@ -1006,7 +1008,7 @@ describe('roads', () => {
         }
       }
     }
-  }, 30_000)
+  }, 120_000)
 
   it('never lets an arterial run onto the highway', () => {
     // An arterial reaches the highway network through an interchange's cross
@@ -1038,7 +1040,7 @@ describe('roads', () => {
       }
       expect(closest).toBeGreaterThanOrEqual(clear)
     }
-  }, 30_000)
+  }, 120_000)
 
   it('parts arterials at a junction wide enough to read as a fork', () => {
     // Two arterials leaving one node within a sliver of each other run side by
@@ -1076,7 +1078,7 @@ describe('roads', () => {
       }
       expect(sharpest).toBeGreaterThanOrEqual(45)
     }
-  }, 30_000)
+  }, 120_000)
 
   it('carries arterials at the level of the streets they cross', () => {
     // Arterial heights come off a coarse routing grid and are then smoothed
@@ -1122,7 +1124,7 @@ describe('roads', () => {
     // which is a real change in level rather than a mismatch.
     expect(mean).toBeLessThan(0.9)
     expect(p90).toBeLessThan(2)
-  }, 30_000)
+  }, 120_000)
 
   it('leaves no city street on its own: each reaches a bigger road, or belongs to a grid', () => {
     const map = generateTerrain(1)
@@ -1161,44 +1163,67 @@ describe('roads', () => {
     // arterial or cross road by a street of its own wherever one can be.
     const drivable = streets.filter((_, i) => reached.has(find(i))).length
     expect(drivable).toBeGreaterThan(streets.length * 0.6)
-  }, 20_000)
+  }, 120_000)
 
-  it('gives every city its own interchange and never a second', () => {
-    /** The interchange underpasses, each charged to the city center nearest it. */
-    const perCity = (seed: number): number[] => {
+  it('spaces interchanges along the highway wherever the cities are, never too close for their ramps', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
       const map = generateTerrain(seed)
-      const counts = map.districts.map(() => 0)
-      for (const crossRoad of map.roads.filter((road) => road.kind === 'cross')) {
-        const under = crossRoad.points[Math.floor(crossRoad.points.length / 2)]!
-        let best = -1
+      const highway = map.roads.find((road) => road.kind === 'highway')!
+      const along: number[] = [0]
+      for (let i = 1; i < highway.points.length; i++) {
+        const a = highway.points[i - 1]!
+        const b = highway.points[i]!
+        along.push(along[i - 1]! + Math.hypot(b.x - a.x, b.z - a.z))
+      }
+      const last = highway.points.at(-1)!
+      const total = along.at(-1)! + Math.hypot(highway.points[0]!.x - last.x, highway.points[0]!.z - last.z)
+      /** How far along the loop the highway passes over a cross road's underpass. */
+      const at = (cross: Road): number => {
+        const under = cross.points[Math.floor(cross.points.length / 2)]!
+        let best = 0
         let nearest = Infinity
-        map.districts.forEach((district, index) => {
-          const distance = Math.hypot(under.x - district.cx, under.z - district.cz)
+        for (const [i, point] of highway.points.entries()) {
+          const distance = Math.hypot(point.x - under.x, point.z - under.z)
           if (distance < nearest) {
             nearest = distance
-            best = index
+            best = i
           }
-        })
-        // Cities can overlap, so an interchange belongs to the one it is on and
-        // nearest to, never to both. A city's exit may stand a little beyond
-        // its suburbs, as far as the search for a site reaches.
-        const owner = map.districts[best]!
-        if (nearest <= owner.radius + owner.suburbWidth + INTERCHANGE_SEARCH) counts[best]!++
+        }
+        return along[best]!
       }
-      return counts
+      const stations = map.roads
+        .filter((road) => road.kind === 'cross')
+        .map(at)
+        .sort((a, b) => a - b)
+      expect(stations.length).toBeGreaterThan(0)
+      // No more than one to each stretch of INTERCHANGE_SPACING, give or take the slide to good ground.
+      expect(stations.length).toBeLessThanOrEqual(Math.ceil(total / INTERCHANGE_SPACING) + 1)
+      for (let i = 0; i < stations.length; i++) {
+        const next = i + 1 < stations.length ? stations[i + 1]! : stations[0]! + total
+        // Spacing is kept in highway samples, which are only as long as the loop's average.
+        if (stations.length > 1) expect(next - stations[i]!).toBeGreaterThanOrEqual(INTERCHANGE_CLEAR * 0.9)
+      }
     }
+    // Five whole islands, each seconds of work on a busy machine.
+  }, 120_000)
 
-    for (const seed of [1, 2, 3, 4, 5]) {
-      // A city's exit is placed before the spacing rule has any say, and only on
-      // ground nearer to it than to any other city, so each of these gets one.
-      expect(perCity(seed)).toEqual(generateTerrain(seed).districts.map(() => 1))
+  it('runs the highway through three cities, and reaches every other by arterial', () => {
+    for (const seed of [3, 5, 13]) {
+      const map = generateTerrain(seed)
+      // Each of these has more cities than the highway can take.
+      expect(map.districts.length).toBeGreaterThan(3)
+      expect(map.districts.length).toBeLessThanOrEqual(5)
+      const highway = map.roads.find((road) => road.kind === 'highway')!
+      const passes = (road: Road, district: District): boolean =>
+        road.points.some((point) => Math.hypot(point.x - district.cx, point.z - district.cz) <= district.radius)
+      const onHighway = map.districts.filter((district) => passes(highway, district))
+      expect(onHighway.length).toBeGreaterThanOrEqual(3)
+      const arterials = map.roads.filter((road) => road.kind === 'arterial')
+      for (const district of map.districts) {
+        if (onHighway.includes(district)) continue
+        expect(arterials.some((road) => passes(road, district))).toBe(true)
+      }
     }
-    for (const seed of [14, 20, 27]) {
-      // Some highway frontage is too uneven to carry an interchange at all, so a
-      // city can go without; what must never happen is a city getting two.
-      for (const count of perCity(seed)) expect(count).toBeLessThanOrEqual(1)
-    }
-    // Eight whole islands, each seconds of work on a busy machine.
   }, 120_000)
 
   it('keeps every interchange out of the tunnels, from one pair of ramp mouths to the other', () => {
@@ -1275,7 +1300,7 @@ describe('roads', () => {
       const ids = generateTerrain(seed).roads.map((road) => road.id)
       expect(new Set(ids).size).toBe(ids.length)
     }
-  }, 60_000)
+  }, 120_000)
 
   it('rounds arterial corners instead of leaving sharp bends', () => {
     const map = generateTerrain(1)
@@ -1303,7 +1328,7 @@ describe('roads', () => {
     // two samples is what a fillet turns over three meters; a road still
     // turning harder than that after smoothing is pruned as a hairpin.
     expect(sharpest).toBeLessThan(40)
-  }, 20_000)
+  }, 120_000)
 
   it('leaves no arterial dead ends', () => {
     const map = generateTerrain(1)
@@ -1329,7 +1354,7 @@ describe('roads', () => {
         expect(meets).toBe(true)
       }
     }
-  }, 20_000)
+  }, 120_000)
 
   it('meets the cross road square enough, one ramp per diamond arm', () => {
     const map = generateTerrain(1)

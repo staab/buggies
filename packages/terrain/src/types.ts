@@ -62,7 +62,7 @@ export interface District {
   suburbWidth: number
   /** Buildable land cells the district covers. */
   area: number
-  /** Which island it is on: the main one, or the small one across the strait. */
+  /** Which land mass it is on, numbered from 1 by size, largest first. */
   island: number
 }
 
@@ -259,14 +259,16 @@ export interface TerrainOptions {
   cellSize?: number
   seaLevel?: number
   oceanDepth?: number
-  /** Radius of the island in world units. Defaults to a fraction of the map. */
+  /** Radius of the largest island in world units. Defaults to a fraction of the map. */
   islandRadius?: number
-  /** Number of triangular mountains. Defaults to 3. */
+  /** Number of islands. Defaults to one to eight, by the seed. */
+  islandCount?: number
+  /** Number of triangular mountains. Defaults to one to twelve, by the seed. */
   mountainCount?: number
-  /** Radius, in world units, of the cluster the mountains are placed within. */
-  mountainSpread?: number
-  /** Number of rivers. Defaults to two, or one per mountain if fewer. */
+  /** Most rivers. Defaults to one for about half the mountains, and at least one. */
   riverCount?: number
+  /** Number of cities. Defaults to three to five, by the seed. */
+  cityCount?: number
   /** Depressions smaller than this are not treated as lakes. */
   minLakeCells?: number
   /** Depressions shallower than this are not treated as lakes. */
