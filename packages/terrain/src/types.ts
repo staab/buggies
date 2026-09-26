@@ -152,6 +152,7 @@ export type BuildingKind =
   | 'fountain'
   | 'statue'
   | 'clocktower'
+  | 'pyramid'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
@@ -159,8 +160,8 @@ export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa'
 /** The kinds that are round towers rather than boxes, as wide as they are deep. */
 export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower', 'fountain']
 
-/** Kinds that stand in the air on something else, a canopy on its posts or a lintel on its stones, rather than on the ground. */
-export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy']
+/** Kinds that stand in the air on something else, a canopy on its posts, a lintel on its stones or a pyramid's tier on the one below, rather than on the ground. */
+export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyramid']
 
 /** Kinds that stand in the water rather than on the land: the boats moored off the shore, and a dam across a river. */
 export const WATER_KINDS: readonly BuildingKind[] = ['boat']
@@ -213,6 +214,8 @@ export interface Ramp {
   /** Ground height at the foot, and the height of the lip. */
   bottom: number
   top: number
+  /** A straight climb from foot to lip, rather than a kicker's arc. */
+  straight?: true
 }
 
 /**

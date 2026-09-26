@@ -194,6 +194,27 @@ const OBSERVATORY_RELIEF = 8
  * than this across it, hedged about, with a barn and a silo or two off the
  * end of the row.
  */
+/**
+ * The pyramid: tiers this tall, the first the tallest, each set this far in
+ * from the edges of the one below and the top this wide, so the base is
+ * as wide as all of it. A tunnel this wide and this high runs through the
+ * first tier one way; the other way, a straight ramp this long runs up
+ * either side from the ground to the top, over the ledges between. The ground is leveled under it and this far around,
+ * blended back to the land over this much more, and the site is looked
+ * for this many times, on country ground that rises and falls no more than
+ * this across it, or failing that no more than this.
+ */
+const PYRAMID = {
+  tiers: [8, 5, 5, 5],
+  ledge: 10,
+  top: 16,
+  tunnel: { width: 14, height: 6 },
+  ramp: 60,
+  apron: 36,
+  blend: 12,
+  tries: 400,
+  relief: [8, 16],
+} as const
 const FARMS_MOST = 5
 const FARM_TRIES = 150
 /** Farms keep this far from one another, so they do not bunch up. */
@@ -1513,6 +1534,8 @@ export function generateBuildings(
     land: countryLand(field, seaLevel, districtOf),
     stood: new Map(),
   }
+  // The pyramid levels the ground it stands on, so it comes before anything else in the country.
+  raisePyramid(stands, ramps, mountains)
   // The stations take their lots before the houses line the roads, or the houses would leave them none.
   raiseStations(stands, fields)
   coneOffRoadworks(stands)
@@ -1540,6 +1563,101 @@ export function generateBuildings(
   const rocks: Rock[] = []
   plantWilds(rng, field, seaLevel, mountains, districtOf, seed, clear, wet, plant, placed, rocks)
   return { buildings, trees, rocks, props, ramps, sidewalks, fields }
+}
+
+/**
+ * The island's one pyramid, if there is open country enough for it: a
+ * stepped pyramid of stone with a tunnel through its foot, and a straight
+ * ramp up each of its other two sides to the top. The ground is leveled under it,
+ * so it is placed before anything else in the country.
+ */
+function raisePyramid(stands: Stands, ramps: Ramp[], mountains: Mountain[]): void {
+  const { field, rng, placed, buildings } = stands
+  const { tiers, ledge, top, tunnel, ramp, apron, blend } = PYRAMID
+  const base = top + 2 * ledge * (tiers.length - 1)
+  const reach = base / 2 + apron
+  for (let attempt = 0; attempt < PYRAMID.tries * PYRAMID.relief.length; attempt++) {
+    const relief = PYRAMID.relief[Math.floor(attempt / PYRAMID.tries)]!
+    const spot = countrySpot(stands)
+    if (spot === null) return
+    const yaw = randomRange(rng, 0, Math.PI / 2)
+    const site: Footprint = { x: spot.x, z: spot.z, yaw, width: reach * 2, depth: reach * 2 }
+    if (!inCountry(stands, site) || footprintOnMountain(mountains, site)) continue
+    if (!stands.clear({ ...site, width: site.width + 2 * blend, depth: site.depth + 2 * blend }, ROAD_MARGIN) || placed.meets(site, 0)) continue
+    // Level enough, dry, and all of it country: looked at across a grid over the site.
+    const { ux, uz, vx, vz } = axesOf(yaw)
+    let low = Infinity
+    let high = -Infinity
+    let sum = 0
+    let count = 0
+    let sound = true
+    for (let i = -4; i <= 4 && sound; i++) {
+      for (let j = -4; j <= 4 && sound; j++) {
+        const x = spot.x + ux * (i / 4) * reach + vx * (j / 4) * reach
+        const z = spot.z + uz * (i / 4) * reach + vz * (j / 4) * reach
+        const height = sampleHeight(field, x, z)
+        if (height <= stands.seaLevel || stands.wet(x, z) || districtAt(stands, x, z) !== DISTRICT_COUNTRY) sound = false
+        low = Math.min(low, height)
+        high = Math.max(high, height)
+        sum += height
+        count += 1
+      }
+    }
+    if (!sound || high - low > relief) continue
+    const level = sum / count
+    levelSite(field, site, level, blend)
+    placed.add(site)
+
+    const at = (u: number, v: number): { x: number; z: number } => ({ x: spot.x + ux * u + vx * v, z: spot.z + uz * u + vz * v })
+    const stone = (u: number, v: number, width: number, depth: number, bottom: number, height: number, tier: number): void => {
+      buildings.push({ kind: 'pyramid', ...at(u, v), yaw, width, depth, bottom, top: height, tone: tier / tiers.length })
+    }
+    // The first tier either side of the tunnel, and the lintel over it; each tier above on the one below.
+    let floor = level
+    for (const [tier, rise] of tiers.entries()) {
+      const side = base - 2 * ledge * tier
+      const roof = floor + rise
+      if (tier === 0) {
+        const wing = (base - tunnel.width) / 2
+        for (const s of [-1, 1]) stone(0, s * (tunnel.width / 2 + wing / 2), base, wing, level - BURY, roof, tier)
+        stone(0, 0, base, tunnel.width, level + tunnel.height, roof, tier)
+      } else {
+        stone(0, 0, side, side, floor, roof, tier)
+      }
+      floor = roof
+    }
+    // A straight ramp up each side the tunnel does not run through, from
+    // the ground out beyond the foot to the edge of the top.
+    for (const s of [-1, 1]) {
+      const foot = at(0, s * (top / 2 + ramp))
+      ramps.push({ ...foot, dx: -vx * s, dz: -vz * s, width: tunnel.width, length: ramp, bottom: level, top: floor, straight: true })
+    }
+    return
+  }
+}
+
+/** Level the ground over a site to one height, blended back to the land around it over `blend`. */
+function levelSite(field: Heightfield, site: Footprint, level: number, blend: number): void {
+  const { width, depth, cellSize, heights } = field
+  const { ux, uz, vx, vz } = axesOf(site.yaw)
+  const reach = Math.hypot(site.width, site.depth) / 2 + blend
+  const minCol = Math.max(Math.floor((site.x - reach) / cellSize), 0)
+  const maxCol = Math.min(Math.ceil((site.x + reach) / cellSize), width - 1)
+  const minRow = Math.max(Math.floor((site.z - reach) / cellSize), 0)
+  const maxRow = Math.min(Math.ceil((site.z + reach) / cellSize), depth - 1)
+  for (let row = minRow; row <= maxRow; row++) {
+    for (let col = minCol; col <= maxCol; col++) {
+      const dx = col * cellSize - site.x
+      const dz = row * cellSize - site.z
+      const u = Math.abs(dx * ux + dz * uz) - site.width / 2
+      const v = Math.abs(dx * vx + dz * vz) - site.depth / 2
+      const out = hypot(Math.max(u, 0), Math.max(v, 0))
+      if (out >= blend) continue
+      const cell = row * width + col
+      const keep = smoothstep(0, blend, out)
+      heights[cell] = level + (heights[cell]! - level) * keep
+    }
+  }
 }
 
 /** What everything that stands about the country is placed with. */
