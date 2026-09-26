@@ -5,7 +5,9 @@ import {
   flatHeightfield,
   CURB_HEIGHT,
   RAMP_FACETS,
+  deckSpans,
   generateTerrain,
+  lowestDeckOver,
   rampFacets,
   rampRise,
   roadLift,
@@ -118,13 +120,20 @@ describe('terrain colliders', () => {
           if (road.structure[i] !== ROAD_GRADE) continue
           const a = road.points[i]!
           const b = road.points[(i + 1) % count]!
-          const deck = (a.y + b.y) / 2 + roadLift(road)
           total++
-          const found = castDown(world, (a.x + b.x) / 2, (a.z + b.z) / 2, deck + 3)
-          // Reading higher than its own deck is a junction: another
-          // roadway crossing above this one, which is meant to be there.
-          // Reading lower is a hole, and a hole is a vehicle in a ditch.
-          if (found === null || found < deck - 0.1) below++
+          // Read at three places along the segment: Rapier's heightfield lets
+          // a ray through that falls on a hairline seam of its grid over
+          // sloping ground, and city streets can run right along one. A hole
+          // is missing at every one of them.
+          const holed = [0.3, 0.5, 0.7].every((t) => {
+            const deck = a.y + (b.y - a.y) * t + roadLift(road)
+            const found = castDown(world, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, deck + 3)
+            // Reading higher than its own deck is a junction: another
+            // roadway crossing above this one, which is meant to be there.
+            // Reading lower is a hole, and a hole is a vehicle in a ditch.
+            return found === null || found < deck - 0.1
+          })
+          if (holed) below++
         }
       }
       expect(total).toBeGreaterThan(1000)
@@ -178,10 +187,15 @@ describe('terrain colliders', () => {
       const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
       expect(trees.length).toBeGreaterThan(50)
       expect(shrubs.length).toBeGreaterThan(50)
+      // A tree standing under the edge of a raised highway is found from
+      // above as the deck over it, which is where the ray is stopped.
+      const decks = deckSpans(map.roads)
       let trunks = 0
       for (const tree of trees) {
-        const found = castDown(world, tree.x, tree.z, tree.bottom + tree.height + 5)
-        if (found !== null && Math.abs(found - tree.bottom - tree.height) < 0.01) trunks++
+        const top = tree.bottom + tree.height
+        const overhead = lowestDeckOver(decks, tree.x, tree.z, top)
+        const found = castDown(world, tree.x, tree.z, Math.min(top + 5, overhead - 1))
+        if (found !== null && Math.abs(found - top) < 0.01) trunks++
       }
       expect(trunks).toBe(trees.length)
       // A shrub is nothing to hit: the ray passes down through it to the

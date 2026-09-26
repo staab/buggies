@@ -7,15 +7,16 @@ import {
   arm,
   createArena,
   initPhysics,
-  respawnNearby,
+  respawn,
   setPickup,
   takeSeat,
   type Arena,
   type Loose,
+  type Seat,
   type VehicleInput,
   type VehicleProfileId,
 } from '@buggies/game'
-import { generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { ROAD_TUNNEL, generateTerrain, roadLift, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
@@ -239,6 +240,39 @@ function offRoad(map: TerrainMap, position: { x: number; z: number }): number {
     }
   }
   return nearest
+}
+
+/**
+ * Put one car on an open stretch of the highway, and another so far ahead
+ * of it along the road, both facing the same way: out in the open, on the
+ * ground or a bridge, with nothing but road between them.
+ */
+function lineUp(arena: Arena, first: Seat, second: Seat, meters: number): void {
+  const road = arena.map.roads.find((candidate) => candidate.kind === 'highway')!
+  const count = road.points.length
+  const at = (i: number) => road.points[((i % count) + count) % count]!
+  for (let start = 0; start < count; start++) {
+    let end = start
+    let gone = 0
+    let open = true
+    while (gone < meters + 20 && open) {
+      open = road.structure[((end % count) + count) % count] !== ROAD_TUNNEL
+      gone += Math.hypot(at(end + 1).x - at(end).x, at(end + 1).z - at(end).z)
+      end += 1
+    }
+    if (!open) continue
+    const put = (seat: Seat, i: number): void => {
+      const point = at(i)
+      const next = at(i + 1)
+      respawn(seat, { position: { x: point.x, y: point.y + roadLift(road), z: point.z }, yaw: Math.atan2(-(next.x - point.x), -(next.z - point.z)) })
+    }
+    let ahead = start
+    for (let walked = 0; walked < meters; ahead++) walked += Math.hypot(at(ahead + 1).x - at(ahead).x, at(ahead + 1).z - at(ahead).z)
+    put(first, start)
+    put(second, ahead)
+    return
+  }
+  throw new Error('no open stretch of highway')
 }
 
 function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
@@ -604,10 +638,7 @@ describe('a session', () => {
     const bSeat = arena.seats[b.client.welcome!.seat]!
     session.run(0.5)
     // The tank is put down on the road thirty meters ahead of the sports car, which is handed a rocket.
-    const { position, forward } = aSeat.vehicle.frame
-    bSeat.vehicle.body.setTranslation({ x: position.x + forward.x * 30, y: position.y, z: position.z + forward.z * 30 }, true)
-    session.step()
-    respawnNearby(arena, bSeat)
+    lineUp(arena, aSeat, bSeat, 30)
     arm(aSeat, 'rocket')
     session.run(0.5)
     expect(a.prediction.ownSeat.weapon).toBe('rocket')
@@ -668,10 +699,7 @@ describe('a session', () => {
     // that its missile has nothing to go after and flies on for as long as the test watches it.
     const aSeat = arena.seats[a.client.welcome!.seat]!
     const bSeat = arena.seats[b.client.welcome!.seat]!
-    const { position, forward } = aSeat.vehicle.frame
-    bSeat.vehicle.body.setTranslation({ x: position.x + forward.x * 30, y: position.y, z: position.z + forward.z * 30 }, true)
-    session.step()
-    respawnNearby(arena, bSeat)
+    lineUp(arena, aSeat, bSeat, 30)
     session.run(0.5)
     const bombs = (loose: readonly Loose[]): number[] => loose.filter((thing) => thing.kind === 'bomb').map((thing) => thing.id)
     // The pickup's key goes down and stays down. The bomb is predicted at once, and the server has it

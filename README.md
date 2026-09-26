@@ -81,7 +81,7 @@ podman run --rm -p 8787:8787 buggies-server
 ## Packages
 
 - `physics`: vectors, quaternions, a seeded RNG, the fixed timestep.
-- `terrain`: an island from a seed, with its heightfield, rivers, lakes, districts, roads and tunnels.
+- `terrain`: a main island and a smaller one across a strait from a seed, joined by the highway's bridges, with their heightfield, rivers, lakes, districts, roads and tunnels.
 - `vehicle`: the car, with its suspension, tires, air control, self-righting and water, on Rapier.
 - `game`: the arena, a map with seats on it, stepped one fixed tick at a time.
 - `net`: the protocol, the server and the client's prediction, with no DOM and no three.js.

@@ -25,7 +25,15 @@ const MAX_CITY_SLOPE = 0.1
 /** Land must clear the sea by this much before it can be built on. */
 const COAST_MARGIN = 1.5
 /** Cities to place, when the island has room for them. */
-const CITY_COUNT = 3
+/** Which island a cell is land of: none, the main island, or the small one. */
+export const ISLAND_NONE = 0
+export const ISLAND_MAIN = 1
+export const ISLAND_SMALL = 2
+/** How many cities each island has. */
+const CITY_COUNTS: readonly [island: number, count: number][] = [
+  [ISLAND_MAIN, 3],
+  [ISLAND_SMALL, 1],
+]
 const CITY_RADIUS = { min: 57, max: 82 } as const
 const SUBURB_WIDTH = { min: 45, max: 70 } as const
 /** A candidate needs this much level ground around it to become a city. */
@@ -217,6 +225,7 @@ export function generateDistricts(
   seed: number,
   seaLevel: number,
   water: Set<number>,
+  islandOf: Uint8Array = new Uint8Array(field.width * field.depth).fill(ISLAND_MAIN),
 ): DistrictMap {
   const { width, depth, cellSize, heights } = field
   const count = width * depth
@@ -262,75 +271,83 @@ export function generateDistricts(
   candidates.sort((a, b) => level[b]! - level[a]! || grade[a]! - grade[b]! || a - b)
 
   const rng: Rng = createRng(seed ^ DISTRICT_SALT)
-  const centers: Point[] = []
   const districts: District[] = []
 
-  const placeCity = (cell: number): void => {
-    const col = cell % width
-    const row = (cell / width) | 0
-    centers.push({ x: (col + 0.5) * cellSize, z: (row + 0.5) * cellSize })
-    districts.push({
-      id: districts.length,
-      cx: (col + 0.5) * cellSize,
-      cz: (row + 0.5) * cellSize,
-      radius: randomRange(rng, CITY_RADIUS.min, CITY_RADIUS.max),
-      suburbWidth: randomRange(rng, SUBURB_WIDTH.min, SUBURB_WIDTH.max),
-      area: 0,
-    })
-  }
+  for (const [island, cities] of CITY_COUNTS) {
+    const onIsland = candidates.filter((cell) => islandOf[cell] === island)
+    const centers: Point[] = []
+    const placed = (): number => centers.length
 
-  const tooClose = (cell: number, spacingSq: number): boolean => {
-    const center = cellCenter(cell, width, cellSize)
-    for (const placed of centers) {
-      const dx = center.x - placed.x
-      const dz = center.z - placed.z
-      if (dx * dx + dz * dz < spacingSq) return true
+    const placeCity = (cell: number): void => {
+      const col = cell % width
+      const row = (cell / width) | 0
+      centers.push({ x: (col + 0.5) * cellSize, z: (row + 0.5) * cellSize })
+      districts.push({
+        id: districts.length,
+        cx: (col + 0.5) * cellSize,
+        cz: (row + 0.5) * cellSize,
+        radius: randomRange(rng, CITY_RADIUS.min, CITY_RADIUS.max),
+        suburbWidth: randomRange(rng, SUBURB_WIDTH.min, SUBURB_WIDTH.max),
+        area: 0,
+        island,
+      })
     }
-    return false
-  }
 
-  // Prefer a roughly equilateral triangle of roomy sites, so the cities do not
-  // line up and the loop between them has room to bend.
-  const sites = representativeSites(candidates, width, cellSize)
-  const triangle = bestTriangle(sites, level, width, cellSize)
-  if (triangle) for (const cell of triangle) placeCity(cell)
-
-  // Roomiest, flattest sites first.
-  for (const cell of candidates) {
-    if (districts.length >= CITY_COUNT) break
-    if (tooClose(cell, MIN_CITY_SPACING ** 2)) continue
-    if (level[cell]! < MIN_LEVEL_FRACTION) continue
-    placeCity(cell)
-  }
-
-  // Backfill from the gentlest remaining land, then from the dry land farthest
-  // from the cities so far, so a small or rough island still gets its full
-  // complement of cities without stacking them on top of one another.
-  const fillSpacingSq = (MIN_CITY_SPACING * FILL_SPACING_FRACTION) ** 2
-  for (const cell of candidates) {
-    if (districts.length >= CITY_COUNT) break
-    if (tooClose(cell, fillSpacingSq)) continue
-    placeCity(cell)
-  }
-  while (districts.length < CITY_COUNT) {
-    let best = -1
-    let bestDistance = -1
-    for (let cell = 0; cell < count; cell++) {
-      if (heights[cell]! <= seaLevel || water.has(cell)) continue
-      const point = cellCenter(cell, width, cellSize)
-      let nearest = Infinity
-      for (const center of centers) {
-        const dx = point.x - center.x
-        const dz = point.z - center.z
-        nearest = Math.min(nearest, dx * dx + dz * dz)
+    const tooClose = (cell: number, spacingSq: number): boolean => {
+      const center = cellCenter(cell, width, cellSize)
+      for (const other of centers) {
+        const dx = center.x - other.x
+        const dz = center.z - other.z
+        if (dx * dx + dz * dz < spacingSq) return true
       }
-      if (nearest > bestDistance) {
-        bestDistance = nearest
-        best = cell
-      }
+      return false
     }
-    if (best < 0) break
-    placeCity(best)
+
+    // Prefer a roughly equilateral triangle of roomy sites, so the cities do not
+    // line up and the loop between them has room to bend.
+    if (cities === 3) {
+      const sites = representativeSites(onIsland, width, cellSize)
+      const triangle = bestTriangle(sites, level, width, cellSize)
+      if (triangle) for (const cell of triangle) placeCity(cell)
+    }
+
+    // Roomiest, flattest sites first.
+    for (const cell of onIsland) {
+      if (placed() >= cities) break
+      if (tooClose(cell, MIN_CITY_SPACING ** 2)) continue
+      if (level[cell]! < MIN_LEVEL_FRACTION) continue
+      placeCity(cell)
+    }
+
+    // Backfill from the gentlest remaining land, then from the dry land farthest
+    // from the cities so far, so a small or rough island still gets its full
+    // complement of cities without stacking them on top of one another.
+    const fillSpacingSq = (MIN_CITY_SPACING * FILL_SPACING_FRACTION) ** 2
+    for (const cell of onIsland) {
+      if (placed() >= cities) break
+      if (tooClose(cell, fillSpacingSq)) continue
+      placeCity(cell)
+    }
+    while (placed() < cities) {
+      let best = -1
+      let bestDistance = -1
+      for (let cell = 0; cell < count; cell++) {
+        if (islandOf[cell] !== island || heights[cell]! <= seaLevel || water.has(cell)) continue
+        const point = cellCenter(cell, width, cellSize)
+        let nearest = Infinity
+        for (const center of centers) {
+          const dx = point.x - center.x
+          const dz = point.z - center.z
+          nearest = Math.min(nearest, dx * dx + dz * dz)
+        }
+        if (nearest > bestDistance) {
+          bestDistance = nearest
+          best = cell
+        }
+      }
+      if (best < 0) break
+      placeCity(best)
+    }
   }
 
   const districtOf = new Uint8Array(count)
@@ -343,6 +360,7 @@ export function generateDistricts(
     let district: District | null = null
     let nearestSq = Infinity
     for (const candidate of districts) {
+      if (candidate.island !== islandOf[cell]) continue
       const dx = x - candidate.cx
       const dz = z - candidate.cz
       const distanceSq = dx * dx + dz * dz

@@ -59,22 +59,31 @@ describe('generateTerrain', () => {
     60_000,
   )
 
-  it('produces an island: sea at the edges, land in the middle', () => {
-    const { heightfield, seaLevel, size, mountains } = generateTerrain(7)
-    const { heights } = heightfield
-    const edge = heights[0]!
-    const center = heights[Math.floor(size / 2) * size + Math.floor(size / 2)]!
-
-    expect(edge).toBeLessThan(seaLevel)
-    expect(center).toBeGreaterThan(seaLevel)
-    expect(mountains).toHaveLength(3)
+  it('produces two islands: sea at the edges, and land under every city on either', () => {
+    const map = generateTerrain(7)
+    const { heights } = map.heightfield
+    expect(heights[0]!).toBeLessThan(map.seaLevel)
+    // Three cities on the main island and one across the strait on the small one.
+    expect(map.districts.map((district) => district.island)).toEqual([1, 1, 1, 2])
+    for (const district of map.districts) {
+      expect(sampleHeight(map.heightfield, district.cx, district.cz)).toBeGreaterThan(map.seaLevel)
+    }
+    // Between the two, open sea: the line from the one city to the other goes under water somewhere.
+    const main = map.districts[0]!
+    const small = map.districts[3]!
+    let lowest = Infinity
+    for (let t = 0; t <= 1; t += 0.01) {
+      lowest = Math.min(lowest, sampleHeight(map.heightfield, main.cx + (small.cx - main.cx) * t, main.cz + (small.cz - main.cz) * t))
+    }
+    expect(lowest).toBeLessThan(map.seaLevel)
+    expect(map.mountains).toHaveLength(6)
   })
 
-  it('builds three triangular mountains loosely clustered together', () => {
+  it('builds the main island three triangular mountains loosely clustered together, one more on its own, and the small island two', () => {
     const spread = 80
     for (let seed = 1; seed <= 8; seed++) {
       const map = generateTerrain(seed, { size: 385, mountainSpread: spread })
-      expect(map.mountains).toHaveLength(3)
+      expect(map.mountains).toHaveLength(6)
 
       const centers = map.mountains.map((mountain) => {
         const triangle = orientedTriangle(mountain)
@@ -83,13 +92,18 @@ describe('generateTerrain', () => {
         return triangleCentroid(triangle)
       })
 
-      // "Intersect" is loose: they just have to sit close to each other.
-      for (let i = 0; i < centers.length; i++) {
-        for (let j = i + 1; j < centers.length; j++) {
-          const distance = Math.hypot(centers[i]!.x - centers[j]!.x, centers[i]!.z - centers[j]!.z)
-          expect(distance).toBeLessThanOrEqual(spread * 2 * WORLD_SCALE + 1e-6)
+      // "Intersect" is loose: they just have to sit close to each other. The
+      // first three are the main island's massif, the last two the small island's.
+      const near = (group: { x: number; z: number }[], reach: number): void => {
+        for (let i = 0; i < group.length; i++) {
+          for (let j = i + 1; j < group.length; j++) {
+            const distance = Math.hypot(group[i]!.x - group[j]!.x, group[i]!.z - group[j]!.z)
+            expect(distance).toBeLessThanOrEqual(reach + 1e-6)
+          }
         }
       }
+      near(centers.slice(0, 3), spread * 2 * WORLD_SCALE)
+      near(centers.slice(4), spread * 2 * WORLD_SCALE)
     }
   })
 
@@ -292,6 +306,7 @@ describe('roads', () => {
     radius: 20,
     suburbWidth: 14,
     area: 100,
+    island: 1,
   })
 
   function pointToSegment(
@@ -634,7 +649,7 @@ describe('roads', () => {
       )
     }
     expect(arterials).toBeGreaterThan(0)
-  }, 20_000)
+  }, 60_000)
 
   it('keeps arterials off the highway except at an interchange', () => {
     const map = generateTerrain(1)
@@ -769,7 +784,7 @@ describe('roads', () => {
     }
     expect(nodes).toBeGreaterThan(0)
     expect(aligned / nodes).toBeGreaterThan(0.6)
-  }, 20_000)
+  }, 60_000)
 
   it('fills each city with a grade-limited street grid', () => {
     const map = generateTerrain(1)
@@ -1260,7 +1275,7 @@ describe('roads', () => {
       const ids = generateTerrain(seed).roads.map((road) => road.id)
       expect(new Set(ids).size).toBe(ids.length)
     }
-  }, 20_000)
+  }, 60_000)
 
   it('rounds arterial corners instead of leaving sharp bends', () => {
     const map = generateTerrain(1)

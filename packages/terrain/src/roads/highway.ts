@@ -129,6 +129,7 @@ function sharpestCorner(ordered: District[]): number {
  */
 function bowControls(
   control: Vec2[],
+  islands: number[],
   fraction: number,
   field: Heightfield,
   seaLevel: number,
@@ -139,6 +140,7 @@ function bowControls(
     const a = control[i]!
     const b = control[(i + 1) % control.length]!
     points.push({ x: a.x, z: a.z })
+    const strait = islands[i] !== islands[(i + 1) % control.length]
 
     const midX = (a.x + b.x) / 2
     const midZ = (a.z + b.z) / 2
@@ -148,7 +150,10 @@ function bowControls(
     outX /= length
     outZ /= length
     const bow = hypot(b.x - a.x, b.z - a.z) * fraction
-    points.push(pullInland(midX + outX * bow, midZ + outZ * bow, center.x, center.z, field, seaLevel))
+    // A run from one island to the other is meant to go out over the sea.
+    points.push(
+      strait ? { x: midX + outX * bow, z: midZ + outZ * bow } : pullInland(midX + outX * bow, midZ + outZ * bow, center.x, center.z, field, seaLevel),
+    )
   }
   return points
 }
@@ -156,13 +161,17 @@ function bowControls(
 /**
  * A constant-radius offset of the control polygon: every city is wrapped in an
  * arc of the same radius and joined by straight runs. However sharp the layout,
- * the highway then turns on that radius and never doubles back on itself.
+ * the highway then turns on that radius and never doubles back on itself. A
+ * city the polygon bends in at, rather than out around, cannot be wrapped: the
+ * arc would fold back into a spike. There the two runs are carried on until
+ * they meet, and the corner they make is rounded on the same radius.
  */
 function offsetLoop(control: Vec2[], radius: number, step: number): Vec2[] {
   const count = control.length
   const center = centroid(control)
 
   const normals: Vec2[] = []
+  const directions: Vec2[] = []
   for (let i = 0; i < count; i++) {
     const a = control[i]!
     const b = control[(i + 1) % count]!
@@ -171,8 +180,10 @@ function offsetLoop(control: Vec2[], radius: number, step: number): Vec2[] {
     const length = hypot(dx, dz)
     if (length < 1e-6) {
       normals.push(normals[i - 1] ?? { x: 1, z: 0 })
+      directions.push(directions[i - 1] ?? { x: 0, z: 1 })
       continue
     }
+    directions.push({ x: dx / length, z: dz / length })
     let nx = dz / length
     let nz = -dx / length
     const midX = (a.x + b.x) / 2
@@ -184,25 +195,64 @@ function offsetLoop(control: Vec2[], radius: number, step: number): Vec2[] {
     normals.push({ x: nx, z: nz })
   }
 
-  const points: Vec2[] = []
+  // Which way the loop turns at its corners, by its area's sign.
+  let area = 0
+  for (let i = 0; i < count; i++) {
+    const a = control[i]!
+    const b = control[(i + 1) % count]!
+    area += a.x * b.z - b.x * a.z
+  }
+  const winding = Math.sign(area) || 1
+
+  const arc = (from: Vec2, around: Vec2, sweep: number, points: Vec2[]): void => {
+    const startAngle = atan2(from.z - around.z, from.x - around.x)
+    const arcRadius = hypot(from.x - around.x, from.z - around.z)
+    const arcSteps = Math.max(1, Math.ceil((Math.abs(sweep) * arcRadius) / step))
+    for (let k = 0; k <= arcSteps; k++) {
+      const angle = startAngle + sweep * (k / arcSteps)
+      points.push({ x: around.x + cos(angle) * arcRadius, z: around.z + sin(angle) * arcRadius })
+    }
+  }
+
+  // Each corner's own stretch of the loop, from where it leaves the run in to where it joins the run out.
+  const corners: Vec2[][] = []
   for (let i = 0; i < count; i++) {
     const city = control[i]!
     const incoming = normals[(i - 1 + count) % count]!
     const outgoing = normals[i]!
+    const into = directions[(i - 1 + count) % count]!
+    const out = directions[i]!
+    const turn = into.x * out.z - into.z * out.x
     const start = { x: city.x + incoming.x * radius, z: city.z + incoming.z * radius }
     const end = { x: city.x + outgoing.x * radius, z: city.z + outgoing.z * radius }
-    const startAngle = atan2(start.z - city.z, start.x - city.x)
-    let sweep = atan2(end.z - city.z, end.x - city.x) - startAngle
-    while (sweep <= -Math.PI) sweep += Math.PI * 2
-    while (sweep > Math.PI) sweep -= Math.PI * 2
-    const arcSteps = Math.max(1, Math.ceil((Math.abs(sweep) * radius) / step))
-    for (let k = 0; k <= arcSteps; k++) {
-      const angle = startAngle + sweep * (k / arcSteps)
-      points.push({ x: city.x + cos(angle) * radius, z: city.z + sin(angle) * radius })
+    const points: Vec2[] = []
+    if (turn * winding >= 0) {
+      let sweep = atan2(end.z - city.z, end.x - city.x) - atan2(start.z - city.z, start.x - city.x)
+      while (sweep <= -Math.PI) sweep += Math.PI * 2
+      while (sweep > Math.PI) sweep -= Math.PI * 2
+      arc(start, city, sweep, points)
+    } else {
+      // Bent in: where the two runs meet, and a fillet of the same radius
+      // tangent to both, turning the other way from the wrapped corners.
+      const across = into.x * out.z - into.z * out.x
+      const t = ((end.x - start.x) * out.z - (end.z - start.z) * out.x) / across
+      const meet = { x: start.x + into.x * t, z: start.z + into.z * t }
+      const bend = Math.acos(Math.min(Math.max(into.x * out.x + into.z * out.z, -1), 1))
+      const back = radius * Math.tan(bend / 2)
+      const enter = { x: meet.x - into.x * back, z: meet.z - into.z * back }
+      const side = Math.sign(turn) || 1
+      const around = { x: enter.x - into.z * side * radius, z: enter.z + into.x * side * radius }
+      arc(enter, around, side * bend, points)
     }
+    corners.push(points)
+  }
 
-    const next = control[(i + 1) % count]!
-    const nextStart = { x: next.x + outgoing.x * radius, z: next.z + outgoing.z * radius }
+  const points: Vec2[] = []
+  for (let i = 0; i < count; i++) {
+    const corner = corners[i]!
+    for (const point of corner) points.push(point)
+    const end = corner.at(-1)!
+    const nextStart = corners[(i + 1) % count]![0]!
     const runX = nextStart.x - end.x
     const runZ = nextStart.z - end.z
     const runSteps = Math.max(1, Math.ceil(hypot(runX, runZ) / step))
@@ -224,6 +274,7 @@ function controlPoints(
   districts: District[],
   field: Heightfield,
   seaLevel: number,
+  islands: number[] = [],
 ): Vec2[] {
   const count = districts.length
   if (count === 0) return []
@@ -253,13 +304,16 @@ function controlPoints(
   for (let i = 0; i < count; i++) {
     const a = ordered[i]!
     controls.push({ x: a.cx, z: a.cz })
+    islands.push(a.island)
 
     const b = ordered[(i + 1) % count]!
     const midX = (a.cx + b.cx) / 2
     const midZ = (a.cz + b.cz) / 2
-    // Only a sea crossing is worth detouring around; rivers are bridged.
-    if (sampleTerrain(field, midX, midZ) <= seaLevel) {
+    // Only a sea crossing is worth detouring around; rivers are bridged, and
+    // so is the strait between two islands, which the run is there to cross.
+    if (a.island === b.island && sampleTerrain(field, midX, midZ) <= seaLevel) {
       controls.push(pullInland(midX, midZ, centerX, centerZ, field, seaLevel))
+      islands.push(a.island)
     }
   }
   return controls
@@ -273,7 +327,8 @@ function controlPoints(
  * constant-radius offset that never doubles back on itself.
  */
 export function routeLoop(districts: District[], field: Heightfield, seaLevel: number): Vec2[] {
-  const controls = controlPoints(districts, field, seaLevel)
+  const islands: number[] = []
+  const controls = controlPoints(districts, field, seaLevel, islands)
   if (controls.length < 3) return []
   if (districts.length < 3) return sampleLoop(controls, SAMPLE_STEP)
 
@@ -281,10 +336,13 @@ export function routeLoop(districts: District[], field: Heightfield, seaLevel: n
   const turnRadius = Math.min(...districts.map((district) => district.radius)) * TURN_RADIUS_FRACTION
 
   if (sharpestCorner(ordered) >= BOW_ANGLE) {
-    return sampleLoop(bowControls(controls, BOW_FRACTION, field, seaLevel), SAMPLE_STEP)
+    return sampleLoop(bowControls(controls, islands, BOW_FRACTION, field, seaLevel), SAMPLE_STEP)
   }
 
-  const stadium = stadiumFor(ordered, turnRadius)
+  // A stadium is pulled back onto land all round, which would drag its
+  // crossings of the strait back onto the one island.
+  const oneIsland = districts.every((district) => district.island === districts[0]!.island)
+  const stadium = oneIsland ? stadiumFor(ordered, turnRadius) : null
   if (stadium) return sampleLoop(pullAllInland(stadium, centerX, centerZ, field, seaLevel), SAMPLE_STEP)
 
   const inradius = polygonInradius(ordered.map((district) => ({ x: district.cx, z: district.cz })))

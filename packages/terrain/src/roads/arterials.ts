@@ -20,7 +20,6 @@ import {
   ARTERIAL_MIN_RADIUS,
   ARTERIAL_NEIGHBORS,
   ARTERIAL_PRUNE_TURN,
-  ARTERIAL_SEA_COST,
   ARTERIAL_SLOPE_COST,
   ARTERIAL_STEP,
   ARTERIAL_WATER_COST,
@@ -291,12 +290,13 @@ function routeCells(
         // Highway cells are blocked outright; the only way across is the cleared
         // corridor at an interchange, so arterials cannot cut through.
         if (charged[next] === 1 && next !== goal) continue
+        // Open sea is never crossed: the highway's bridges are the only way
+        // from one island to the other, and a bay is driven around.
+        if (sea[next] === 1 && next !== goal) continue
 
         let cost = run + grade * ARTERIAL_SLOPE_COST
-        if (wetMove) {
-          // Rivers and lakes are bridged; open sea is avoided strongly.
-          cost += sea[current] === 1 || sea[next] === 1 ? ARTERIAL_SEA_COST : ARTERIAL_WATER_COST
-        }
+        // Rivers and lakes are bridged.
+        if (wetMove) cost += ARTERIAL_WATER_COST
         let tag = label[next]!
         // The exact start and goal cells are always allowed, even if another
         // anchor is marginally nearer.
