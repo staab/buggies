@@ -123,6 +123,8 @@ export interface VehicleSnapshot {
   cooldownTicks: number
   lightsOn: boolean
   abilityHeld: boolean
+  /** A car nobody drives. */
+  npc: boolean
   /** How many rockets it has fired, which numbers the next. */
   rocketsFired: number
   /** How long it is stunned for, and slowed for, by this share of a full slow. */
@@ -557,7 +559,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(Math.max(vehicle.stunnedTicks, 0), 0xffff))
     writer.u8(Math.min(Math.max(vehicle.slowedTicks, 0), 0xff))
     writer.u8(Math.round(Math.min(Math.max(vehicle.slowedBy, 0), 1) * 255))
-    writer.u8((vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0))
+    writer.u8((vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0) | (vehicle.npc ? 4 : 0))
     writer.u16(vehicle.rocketsFired & 0xffff)
     for (const ticks of [vehicle.shieldTicks, vehicle.magnetTicks, vehicle.plowTicks, vehicle.slipTicks, vehicle.grappleTicks]) {
       writer.u16(Math.min(Math.max(ticks, 0), 0xffff))
@@ -680,6 +682,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const flags = reader.u8()
     const lightsOn = (flags & 1) === 1
     const abilityHeld = (flags & 2) === 2
+    const npc = (flags & 4) === 4
     const rocketsFired = reader.u16()
     const shieldTicks = reader.u16()
     const magnetTicks = reader.u16()
@@ -709,6 +712,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       cooldownTicks,
       lightsOn,
       abilityHeld,
+      npc,
       rocketsFired,
       stunnedTicks,
       slowedTicks,

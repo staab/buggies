@@ -32,6 +32,7 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import type { Goal } from './goals.ts'
+import { NPC_FRAGILITY, NPC_PROFILES, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
 import {
   ROBOT_COOLDOWN_TICKS,
   ROBOT_DAMAGE,
@@ -91,6 +92,7 @@ export {
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
+export { NPC_CARS, NPC_FRAGILITY, NPC_PROFILES, NPC_SPEED, type Driver } from './npcs.ts'
 export {
   ROBOTS,
   ROBOT_BEAM_TICKS,
@@ -362,6 +364,9 @@ export interface Seat {
   /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
   goal: Goal | null
   goalsWon: number
+  /** A car nobody drives, and what drives it: a round of the arterials. */
+  npc: boolean
+  driver: Driver | null
   /** What it is carrying over its roof, won with bananas, and how long the machine gun has left. */
   weapon: Weapon
   /** How many weapons it has won, counted around past 255: a new one is told from the last even when it is the same. */
@@ -458,6 +463,8 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       kills: 0,
       goal: null,
       goalsWon: 0,
+      npc: false,
+      driver: null,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -748,6 +755,43 @@ function clearTally(seat: Seat): void {
   seat.kills = 0
   seat.goal = null
   seat.goalsWon = 0
+  seat.npc = false
+  seat.driver = null
+}
+
+/**
+ * Put a car nobody drives in a seat: one of the NPC vehicles, in turn by
+ * seat, on a round of the arterials, and a third as tough as any other.
+ * Nothing, on an island without arterials.
+ */
+export function seatNpc(arena: Arena, id: number): Seat | null {
+  const driver = createDriver(arena.map, id)
+  if (driver === null) return null
+  const seat = takeSeat(arena, id, NPC_PROFILES[id % NPC_PROFILES.length]!)
+  seat.npc = true
+  seat.driver = driver
+  seat.tuning.damageToWreck /= NPC_FRAGILITY
+  respawn(seat, driverSpawn(arena.map, driver))
+  return seat
+}
+
+const npcCommand: DriverCommand = { steer: 0, throttle: 0, brake: 0, stuck: false }
+
+/** What a car nobody drives is asking for this tick, written into `out`: put back on its road, if it has been stuck too long. */
+export function npcInput(arena: Arena, seat: Seat, out: VehicleInput): VehicleInput {
+  Object.assign(out, NEUTRAL_INPUT)
+  const { driver, vehicle } = seat
+  if (driver === null || vehicle.wrecked) return out
+  const { frame } = vehicle
+  drive(arena.map, driver, { position: frame.position, forward: frame.forward, right: frame.right, speed: vehicle.speed }, npcCommand)
+  if (npcCommand.stuck) {
+    respawnNearby(arena, seat)
+    return out
+  }
+  out.steer = npcCommand.steer
+  out.throttle = npcCommand.throttle
+  out.brake = npcCommand.brake
+  return out
 }
 
 /**
