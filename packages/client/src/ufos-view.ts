@@ -2,6 +2,10 @@ import { type Ufo } from '@buggies/game'
 import { sampleHeight, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import type { PresenceEffects } from './car-presence.ts'
+import { distanceFrom, type Ear } from './ear.ts'
+import { MACHINE_SMOKING } from './robots-view.ts'
+
 /** Where the saucers are: an arena, or a mirror of one. */
 export interface UfoSource {
   readonly ufos: readonly Ufo[]
@@ -56,7 +60,11 @@ interface Shown {
   model: THREE.Group
   lights: THREE.MeshBasicMaterial[]
   beam: THREE.Mesh
+  /** How many times it had been brought down when last drawn. */
+  deaths: number
 }
+
+const STILL = { x: 0, y: 0, z: 0 }
 
 /** The saucers, each where the simulation has it, its lights chasing round, and its beam down while it lifts a car. */
 export class UfosView {
@@ -64,12 +72,16 @@ export class UfosView {
 
   private readonly source: UfoSource
   private readonly map: TerrainMap | null
+  private readonly effects: PresenceEffects | null
+  private readonly ear: Ear | null
   private readonly shown = new Map<number, Shown>()
   private time = 0
 
-  constructor(source: UfoSource, map: TerrainMap | null = null) {
+  constructor(source: UfoSource, map: TerrainMap | null = null, effects: PresenceEffects | null = null, ear: Ear | null = null) {
     this.source = source
     this.map = map
+    this.effects = effects
+    this.ear = ear
     this.update(0)
   }
 
@@ -78,10 +90,18 @@ export class UfosView {
     for (const ufo of this.source.ufos) {
       let view = this.shown.get(ufo.id)
       if (view === undefined) {
-        view = buildUfo()
+        view = { ...buildUfo(), deaths: ufo.deaths }
         this.shown.set(ufo.id, view)
         this.object.add(view.model)
       }
+      // Brought down since: it blows up where it was, and comes back elsewhere.
+      if (ufo.deaths !== view.deaths) {
+        view.deaths = ufo.deaths
+        const where = { x: view.model.position.x, y: view.model.position.y, z: view.model.position.z }
+        this.effects?.explosions.burst(where)
+        if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
+      }
+      if (ufo.damage > MACHINE_SMOKING) this.effects?.smoke.trail(ufo.position, STILL, (ufo.damage - MACHINE_SMOKING) * 2, dt)
       view.model.position.set(ufo.position.x, ufo.position.y, ufo.position.z)
       view.model.rotation.y = this.time * 0.6
       const lit = Math.floor(this.time * BLINK_RATE) % view.lights.length

@@ -44,7 +44,7 @@ export class MirrorCars {
 
   render(fraction: number, dt: number): void {
     for (const entry of this.entries.values()) {
-      entry.presence.aimAt(aimPointOf(entry.seat, this.prediction.seats))
+      entry.presence.aimAt(aimPointOf(entry.seat, this.prediction))
       entry.presence.hookAt(hookPointOf(entry.seat, this.prediction.seats))
       entry.presence.render(fraction, dt)
     }

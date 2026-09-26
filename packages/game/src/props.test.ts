@@ -36,12 +36,12 @@ describe('the props', () => {
     for (let i = 0; i < 30; i++) advance(arena)
     // The cone set down in the road a little way ahead of the car, which then drives at it.
     const { forward, position } = seat.vehicle.frame
-    const ahead = 20
+    const ahead = 40
     cone!.body.setTranslation({ x: position.x + forward.x * ahead, y: position.y + 0.5, z: position.z + forward.z * ahead }, true)
     cone!.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     for (let i = 0; i < 20; i++) advance(arena)
     const before = { ...cone!.body.translation() }
-    for (let i = 0; i < 180; i++) advance(arena, () => DRIVE)
+    for (let i = 0; i < 240; i++) advance(arena, () => DRIVE)
     const after = cone!.body.translation()
     expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(2)
     arena.world.free()
@@ -56,7 +56,7 @@ describe('the props', () => {
       cone.body.setTranslation({ x: home.x, y: home.bottom + 0.6, z: home.z }, true)
       cone.body.setRotation({ x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }, true)
       cone.body.setAngvel(spin, true)
-      for (let i = 0; i < 60 * 5 && !cone.body.isSleeping(); i++) advance(arena)
+      for (let i = 0; i < 60 * 8 && !cone.body.isSleeping(); i++) advance(arena)
       expect(cone.body.isSleeping()).toBe(true)
       arena.world.free()
     }

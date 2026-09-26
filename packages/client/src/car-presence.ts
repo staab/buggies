@@ -5,15 +5,17 @@ import {
   MAGNET_REACH,
   MOUNT_HEIGHT,
   NO_TARGET,
+  aimPoint,
   OWN_ACTIONS,
   SHOCKWAVE_RANGE,
   WEAPON_LABELS,
   acting,
   hasBuiltInGun,
+  type Arena,
   type Seat,
   type Weapon,
 } from '@buggies/game'
-import type { Vec3 } from '@buggies/physics'
+import { v3, type Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import { engineRev, skidAmount, type EngineVoice, type SirenVoice, type SkidVoice, type Sound, type ThrustVoice } from './audio.ts'
@@ -79,10 +81,10 @@ const SHIELD_BUBBLE = { scale: 1.6, opacity: 0.28 } as const
 /** How far in front of the chassis the ram plow's blade is set. */
 const PLOW_OUT = 0.35
 
-/** Where a seat's gun is trained: the middle of the car it has picked out, if any. */
-export function aimPointOf(seat: Seat, seats: readonly Seat[]): Vec3 | null {
+/** Where a seat's gun is trained: the middle of the car, or the machine, it has picked out, if any. */
+export function aimPointOf(seat: Seat, field: Pick<Arena, 'seats' | 'robots' | 'ufos'>): Vec3 | null {
   if ((seat.weapon !== 'machineGun' && seat.weapon !== 'laser') || seat.aimTarget === NO_TARGET) return null
-  return seats[seat.aimTarget]?.vehicle.frame.position ?? null
+  return aimPoint(field, seat.aimTarget, v3())
 }
 
 /** What every car on a screen feeds: one set for the whole view. */
@@ -335,7 +337,8 @@ export class CarPresence {
       smoke.trail(vehicle.frame.position, vehicle.frame.linearVelocity, smokeAmount(vehicle.damage), dt)
     }
     this.voice?.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, tuning.maxSpeed, vehicle.command.throttle), off)
-    this.skid?.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels, tuning), off)
+    // A ship on its thrusters has no tires to squeal.
+    this.skid?.set(vehicle.wrecked || this.seat.profile === 'rocketShip' ? 0 : skidAmount(vehicle.wheels, tuning), off)
     const knock = vehicle.damage - this.lastDamage
     if (knock > 0 && !vehicle.wrecked) sound?.thud(knock / LOUD_KNOCK, off)
     this.lastDamage = vehicle.damage

@@ -415,6 +415,8 @@ export class LocalPrediction {
       robot.target = known.target
       robot.beamTicks = known.beamTicks
       robot.cooldownTicks = known.cooldownTicks
+      robot.damage = known.damage
+      robot.deaths = known.deaths
       placeRobot(this.mirror.map, robot)
       seatRobotBody(robot, true)
     }
@@ -428,6 +430,8 @@ export class LocalPrediction {
       ufo.cooldownTicks = known.cooldownTicks
       ufo.legs = known.legs
       ufo.abductions = known.abductions
+      ufo.damage = known.damage
+      ufo.deaths = known.deaths
     }
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,

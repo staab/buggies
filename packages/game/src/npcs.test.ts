@@ -2,14 +2,18 @@ import { generateTerrain, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  BANANA_SLOTS,
   DURABILITY,
   NPC_FRAGILITY,
+  PICKUP_HEIGHT,
   advance,
   createArena,
   createVehicleInput,
   harm,
   initPhysics,
   npcInput,
+  pickupOut,
+  respawn,
   seatNpc,
   takeSeat,
 } from './index.ts'
@@ -65,6 +69,23 @@ describe('cars nobody drives', () => {
     harm(car, 0.3)
     expect(car.vehicle.damage).toBeCloseTo(0.3 / DURABILITY, 5)
     expect(npc.vehicle.damage).toBeCloseTo((0.3 * NPC_FRAGILITY) / DURABILITY, 5)
+    arena.world.free()
+  })
+
+  it('take no bananas and no health packs, and carry no weapons', () => {
+    const arena = createArena(map)
+    const npc = seatNpc(arena, 7)!
+    advance(arena)
+    npc.vehicle.damage = 0.5
+    for (const slot of [3, BANANA_SLOTS + 3]) {
+      const { position } = arena.pickups[slot]!
+      respawn(npc, { position: { x: position.x, y: position.y - PICKUP_HEIGHT, z: position.z }, yaw: 0 })
+      for (let i = 0; i < 10; i++) advance(arena)
+      expect(pickupOut(arena.pickups[slot]!, arena.tick)).toBe(true)
+    }
+    expect(npc.score).toBe(0)
+    expect(npc.weapon).toBe('none')
+    expect(npc.vehicle.damage).toBeGreaterThanOrEqual(0.5)
     arena.world.free()
   })
 })

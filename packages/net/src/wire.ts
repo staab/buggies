@@ -57,8 +57,8 @@ export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
-export const SNAPSHOT_ROBOT_BYTES = 14
-export const SNAPSHOT_UFO_BYTES = 23
+export const SNAPSHOT_ROBOT_BYTES = 16
+export const SNAPSHOT_UFO_BYTES = 25
 
 /** What a goal is, by the byte that says so: none first. */
 const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
@@ -155,6 +155,9 @@ export interface RobotSnapshot {
   target: number
   beamTicks: number
   cooldownTicks: number
+  /** How much of what brings it down it has taken, in steps of a 255th, and how many times it has been brought down, counted around past 255. */
+  damage: number
+  deaths: number
 }
 
 /** A flying saucer, as the server has it. */
@@ -167,6 +170,8 @@ export interface UfoSnapshot {
   cooldownTicks: number
   legs: number
   abductions: number
+  damage: number
+  deaths: number
 }
 
 /** A rocket in the air, as the server has it. */
@@ -624,6 +629,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(robot.target === NO_TARGET ? NOBODY_BYTE : robot.target)
     writer.u8(Math.min(Math.max(robot.beamTicks, 0), 0xff))
     writer.u16(Math.min(Math.max(robot.cooldownTicks, 0), 0xffff))
+    writer.u8(Math.round(Math.min(Math.max(robot.damage, 0), 1) * 255))
+    writer.u8(robot.deaths & 0xff)
   }  for (const ufo of message.ufos) {
     writer.u8(ufo.id)
     writer.vec3(ufo.position)
@@ -633,6 +640,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(Math.max(ufo.cooldownTicks, 0), 0xffff))
     writer.u16(ufo.legs & 0xffff)
     writer.u16(ufo.abductions & 0xffff)
+    writer.u8(Math.round(Math.min(Math.max(ufo.damage, 0), 1) * 255))
+    writer.u8(ufo.deaths & 0xff)
   }
 
 
@@ -820,6 +829,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       target: target === NOBODY_BYTE ? NO_TARGET : target,
       beamTicks: reader.u8(),
       cooldownTicks: reader.u16(),
+      damage: reader.u8() / 255,
+      deaths: reader.u8(),
     })
   }
   const ufos: UfoSnapshot[] = []
@@ -838,6 +849,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       cooldownTicks: reader.u16(),
       legs: reader.u16(),
       abductions: reader.u16(),
+      damage: reader.u8() / 255,
+      deaths: reader.u8(),
     })
   }
   return {

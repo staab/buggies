@@ -1062,7 +1062,9 @@ const DUNE_BUGGY_TUNING: Readonly<VehicleTuning> = Object.freeze({
  * over the ground, set far down from the hull and sprung smooth. It is the
  * fastest thing on the island and the worst at turning: a slow, short
  * rack, and little to hold it across its line, so it drifts wide. Its own
- * key lifts it off to fly.
+ * key lifts it off to fly. The thrusters give only so much however hard
+ * the ground comes up at them, and the hull shrugs off the shaking they
+ * pass on at speed: only a real knock is damage.
  */
 const ROCKET_SHIP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   chassisHalfWidth: 1.0,
@@ -1081,7 +1083,7 @@ const ROCKET_SHIP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   suspensionRestLength: 0.35,
   suspensionStiffness: 30000,
   suspensionDamping: 5000,
-  maxSuspensionForce: 70000,
+  maxSuspensionForce: 24000,
   bumpStopStiffness: 220000,
   antiRollStiffnessFront: 30000,
   antiRollStiffnessRear: 30000,
@@ -1132,7 +1134,7 @@ const ROCKET_SHIP_TUNING: Readonly<VehicleTuning> = Object.freeze({
   airLevelEngageDelay: 0.06,
   impactSpeedChange: 4,
   impactTumbleTime: 2.5,
-  damageAcceleration: 80,
+  damageAcceleration: 250,
   damageToWreck: 90,
   airLevelInputYield: 0.35,
   airLevelLandingCastDistance: 20,
