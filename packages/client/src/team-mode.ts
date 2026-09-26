@@ -71,6 +71,12 @@ export async function createTeamMode(
     hud() {
       return views.map((view) => view.hud())
     },
+    changeVehicles(profiles) {
+      views.forEach((view, index) => {
+        const profile = profiles[index]
+        if (profile !== undefined) view.changeVehicle(profile)
+      })
+    },
     dispose() {
       for (const view of views) view.dispose()
     },

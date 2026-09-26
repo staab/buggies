@@ -1,3 +1,4 @@
+import type { VehicleProfileId } from '@buggies/game'
 import type * as THREE from 'three'
 
 import type { HudState } from './hud.ts'
@@ -19,5 +20,7 @@ export interface ModeView {
   render?(renderer: THREE.WebGLRenderer): void
   /** What the HUD should say of the mode, one entry a viewport; none, and it is not shown. */
   hud(): readonly HudState[]
+  /** Put everyone on this screen into these vehicles, one a player, where they are; a mode with no one driving has none. */
+  changeVehicles?(profiles: readonly VehicleProfileId[]): void
   dispose(): void
 }

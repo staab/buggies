@@ -12,6 +12,7 @@ import {
 import type { Quat, Vec3 } from '@buggies/physics'
 
 import {
+  CLIENT_CHANGE_VEHICLE,
   CLIENT_HELLO,
   CLIENT_INPUT,
   CLIENT_RESPAWN,
@@ -37,6 +38,7 @@ export const WELCOME_BYTES = 15
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
+export const CHANGE_VEHICLE_BYTES = 2
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
@@ -410,6 +412,16 @@ export function encodeRespawn(): Uint8Array {
 
 export function isRespawn(payload: Uint8Array): boolean {
   return payload.length === RESPAWN_BYTES && messageTypeOf(payload) === CLIENT_RESPAWN
+}
+
+export function encodeChangeVehicle(profile: VehicleProfileId): Uint8Array {
+  return Uint8Array.of(CLIENT_CHANGE_VEHICLE, profileIndex(profile))
+}
+
+/** The vehicle a change asks for, or null if it is not one. */
+export function decodeChangeVehicle(payload: Uint8Array): VehicleProfileId | null {
+  if (payload.length !== CHANGE_VEHICLE_BYTES || messageTypeOf(payload) !== CLIENT_CHANGE_VEHICLE) return null
+  return VEHICLE_PROFILE_IDS[payload[1]!] ?? null
 }
 
 export function encodeRoomsRequest(): Uint8Array {

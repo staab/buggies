@@ -105,7 +105,8 @@ export interface PredictionUpdate {
   /**
    * How many ticks to run once the snapshot has been taken in, given the
    * tick the mirror is then about to simulate: one as a rule, none or two
-   * to hold the lead, many after a stall.
+   * to hold the lead, many after a stall, and fewer than none, back to
+   * the server's clock, after the server's.
    */
   stepsFor: (nextTick: number) => number
   input: VehicleInput
@@ -276,7 +277,7 @@ export class LocalPrediction {
   advance(update: PredictionUpdate, send: SendInput): void {
     const steps = update.stepsFor(this.mirror.tick)
     const target = this.mirror.tick + steps
-    if (steps > MAX_REPLAY_TICKS) {
+    if (steps > MAX_REPLAY_TICKS || steps < 0) {
       this.jumpTo(target)
     } else {
       while (this.mirror.tick < target) {
@@ -328,8 +329,9 @@ export class LocalPrediction {
 
   /**
    * After a long stall the mirror is too far behind to simulate its way
-   * forward in one frame; it is moved to the newest snapshot and carries on
-   * from there, and the next snapshot starts it over properly.
+   * forward in one frame, or after the server's, too far ahead to wait for
+   * it; it is moved to the newest snapshot and carries on from there, and
+   * the next snapshot starts it over properly.
    */
   private jumpTo(tick: number): void {
     if (this.newestSnapshot !== null) this.writeSnapshotBodies(this.newestSnapshot)

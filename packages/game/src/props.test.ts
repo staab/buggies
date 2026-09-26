@@ -36,7 +36,7 @@ describe('the props', () => {
     for (let i = 0; i < 30; i++) advance(arena)
     // The cone set down in the road a little way ahead of the car, which then drives at it.
     const { forward, position } = seat.vehicle.frame
-    const ahead = 12
+    const ahead = 20
     cone!.body.setTranslation({ x: position.x + forward.x * ahead, y: position.y + 0.5, z: position.z + forward.z * ahead }, true)
     cone!.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     for (let i = 0; i < 20; i++) advance(arena)

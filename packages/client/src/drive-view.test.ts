@@ -15,6 +15,7 @@ function restingWheels(travel: number, steer = 0, spin = 0): WheelState[] {
     suspensionLength: travel,
     compression: 0,
     suspensionExtensionRate: 0,
+    springExtensionRate: 0,
     suspensionForce: 0,
     bumpStopDepth: 0,
     stickDepth: 0,

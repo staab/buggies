@@ -36,6 +36,7 @@ const server = new GameServer(
     onLeft: (seat, connection, seed) => log(`left seed=${seed} seat=${seat.id} connection=${connection}`),
     onRejected: (connection, reason) => log(`rejected connection=${connection}: ${reason}`),
     onRespawned: (seat, why) => log(`respawned seat=${seat.id} (${why})`),
+    onChangedVehicle: (seat) => log(`changed vehicle seat=${seat.id} ${seat.profile}`),
     onRoomOpened: (seed) => log(`room opened seed=${seed}`),
     onRoomClosed: (seed) => log(`room closed seed=${seed}`),
   },

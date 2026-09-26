@@ -99,12 +99,20 @@ export type OnShow = 'game' | 'island' | 'showroom' | null
 
 /**
  * Whether a choice is the game already being played: the same island, the
- * same players in the same vehicles. Anything else means joining again,
- * since the server seats a player on one island in one vehicle for good.
+ * same players in the same vehicles.
  */
 export function continues(running: Choice, next: Choice): boolean {
-  if (running.mode !== next.mode || running.seed !== next.seed || running.vehicle !== next.vehicle) return false
+  if (!sameSeats(running, next) || running.vehicle !== next.vehicle) return false
   return next.mode === 'solo' || running.vehicle2 === next.vehicle2
+}
+
+/**
+ * Whether a choice keeps everyone in the seats they have: the same island
+ * and as many players. Vehicles are swapped where the cars are; anything
+ * else means joining again.
+ */
+export function sameSeats(running: Choice, next: Choice): boolean {
+  return running.mode === next.mode && running.seed === next.seed
 }
 
 /** Who a choice puts on the server, on which keys. */
@@ -246,6 +254,13 @@ export class Shell implements MenuHost {
     this.menu.hide()
 
     if (this.game !== null && continues(this.game.choice, next)) {
+      await this.resume()
+      return
+    }
+    const { game } = this
+    if (game?.mode.changeVehicles !== undefined && sameSeats(game.choice, next)) {
+      game.mode.changeVehicles(playersFor(next).map((player) => player.profile))
+      game.choice = next
       await this.resume()
       return
     }

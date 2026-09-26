@@ -19,6 +19,7 @@ import {
   addForceAlong,
   addTorqueAbout,
   hurtVehicle,
+  VEHICLE_PROFILE_IDS,
   type Vehicle,
   type VehicleInput,
   type VehicleProfileId,
@@ -187,7 +188,7 @@ export const OIL_SLIP_TICKS = 60 * 5
 export const SHIELD_TICKS = 60 * 10
 
 /** The magnet takes every banana within this of the car, for this long. */
-export const MAGNET_REACH = 25
+export const MAGNET_REACH = 50
 export const MAGNET_TICKS = 60 * 30
 
 /**
@@ -240,8 +241,8 @@ export const MINES_DEEP = 4
 
 /**
  * What a car does with its own key: something of the vehicle's own, had
- * besides whatever it carries, and lesser than the power-ups. Nothing is
- * mounted over the roof for it, and the HUD makes nothing of it.
+ * besides whatever it carries, and as strong as the power-up it is like.
+ * Nothing is mounted over the roof for it, and the HUD makes nothing of it.
  */
 export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'oil' | 'horn' | 'bomb'
 export interface OwnAction {
@@ -257,7 +258,7 @@ export interface OwnAction {
 const LIGHTS: OwnAction = {
   kind: 'lights',
   label: 'Lights',
-  about: 'Turns the lights on or off. While they are on, every car within 30 meters is slowed by 20%.',
+  about: 'Turns the lights on or off. While they are on, every car within 30 meters is slowed by half.',
   activeTicks: 0,
   cooldownTicks: 0,
 }
@@ -265,7 +266,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   tank: {
     kind: 'missile',
     label: 'Missile',
-    about: 'Fires a missile with half the blast of the rocket power-up, every three seconds.',
+    about: 'Fires a missile with the blast of the rocket power-up, every three seconds.',
     activeTicks: 0,
     cooldownTicks: 60 * 3,
   },
@@ -273,7 +274,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   raceCar: {
     kind: 'boost',
     label: 'Boost',
-    about: 'Pushes with half the force of the rocket engine power-up while held.',
+    about: 'Pushes with the force of the rocket engine power-up while held.',
     activeTicks: 0,
     cooldownTicks: 0,
   },
@@ -283,28 +284,28 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   sportsCar: {
     kind: 'gun',
     label: 'Machine gun',
-    about: 'Fires at the car ahead while held, with a quarter of the damage of the machine gun power-up.',
+    about: 'Fires at the car ahead while held, with the damage of the machine gun power-up.',
     activeTicks: 0,
     cooldownTicks: 0,
   },
   smallCar: {
     kind: 'oil',
     label: 'Oil slick',
-    about: 'Drops an oil slick behind with half the slip of the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.',
+    about: 'Drops an oil slick behind, as slippery as the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.',
     activeTicks: 0,
     cooldownTicks: 60 * 3,
   },
   semi: {
     kind: 'horn',
     label: 'Horn',
-    about: 'Stuns every car within 10 meters for a second.',
+    about: 'Stuns every car within 30 meters for five seconds, every five seconds.',
     activeTicks: 60,
-    cooldownTicks: 0,
+    cooldownTicks: 60 * 5,
   },
   pickup: {
     kind: 'bomb',
     label: 'Bomb',
-    about: 'Drops a bomb behind with a quarter of the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.',
+    about: 'Drops a bomb behind with the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.',
     activeTicks: 0,
     cooldownTicks: 60 * 5,
   },
@@ -313,21 +314,21 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
 const LASTING: readonly OwnActionKind[] = ['boost', 'gun']
 /** The hop: this much speed straight up, from the ground, which carries the kart a few meters into the air. */
 export const HOP_SPEED = 8
-/** The race car's boost: this much of the rocket engine's push. */
-export const BOOST_PUSH = ENGINE_PUSH * 0.5
-/** The semi's horn stuns every car within this for this long; an emergency vehicle's lights slow every car within the siren's reach by this much. */
-export const HORN_RANGE = 10
-export const HORN_STUN_TICKS = 60
-export const EMERGENCY_SLOW = 0.2
+/** The race car's boost: the rocket engine's push. */
+export const BOOST_PUSH = ENGINE_PUSH
+/** The semi's horn stuns as the shockwave does; an emergency vehicle's lights slow every car within the siren's reach as the siren does. */
+export const HORN_RANGE = SHOCKWAVE_RANGE
+export const HORN_STUN_TICKS = SHOCKWAVE_STUN_TICKS
+export const EMERGENCY_SLOW = SIREN_SLOW
 /**
  * How much of what is won a car's own is: the tank's missile of a rocket's
  * blast, the sports car's gun of a shot's bite, the pickup's bomb of a
- * bomb's blast, and the small car's oil of an oil slick's slip.
+ * bomb's blast, and the small car's oil of an oil slick's slip. All of it.
  */
-export const OWN_MISSILE_POWER = 0.5
-export const OWN_GUN_POWER = 0.25
-export const OWN_BOMB_POWER = 0.25
-export const OWN_OIL_POWER = 0.5
+export const OWN_MISSILE_POWER = 1
+export const OWN_GUN_POWER = 1
+export const OWN_BOMB_POWER = 1
+export const OWN_OIL_POWER = 1
 /** The pickup has this many bombs out at once at most, and the small car this many oil slicks: past that, the oldest goes as the next is dropped. */
 export const OWN_BOMBS_MOST = 5
 export const OWN_OILS_MOST = 3
@@ -489,13 +490,40 @@ const aside = v3()
 const shove = v3()
 
 /**
- * What a seat wins with its bananas: anyone's guess, but the same guess on
- * every copy of the simulation, worked out from the map, the seat, the tick
- * and the score.
+ * The power-up each vehicle already has in its own key, and so is never
+ * given: the tank's missile is a rocket, the race car's boost a rocket
+ * engine, an emergency vehicle's lights a siren, and so on.
  */
-export function weaponWon(mapSeed: number, seat: number, tick: number, score: number): Weapon {
+export const NATIVE_POWER_UPS: Readonly<Record<VehicleProfileId, readonly Weapon[]>> = {
+  tank: ['rocket'],
+  raceCar: ['engine'],
+  police: ['siren'],
+  ambulance: ['siren'],
+  firetruck: ['siren'],
+  sportsCar: ['machineGun'],
+  smallCar: ['oil'],
+  semi: ['shockwave'],
+  pickup: ['bomb'],
+  goKart: [],
+}
+
+/** What a vehicle can win: everything but what it has of its own. */
+export function weaponsFor(profile: VehicleProfileId): readonly Weapon[] {
+  return WEAPON_POOLS.get(profile) ?? WEAPONS
+}
+const WEAPON_POOLS = new Map<VehicleProfileId, readonly Weapon[]>(
+  VEHICLE_PROFILE_IDS.map((profile) => [profile, WEAPONS.filter((weapon) => !NATIVE_POWER_UPS[profile].includes(weapon))]),
+)
+
+/**
+ * What a seat wins with its bananas: anyone's guess among what its vehicle
+ * can win, but the same guess on every copy of the simulation, worked out
+ * from the map, the seat, the tick and the score.
+ */
+export function weaponWon(mapSeed: number, seat: number, tick: number, score: number, profile: VehicleProfileId): Weapon {
   const hash = pickupSeed(mapSeed ^ Math.imul(score, 0x27d4eb2f), seat, tick)
-  return WEAPONS[hash % WEAPONS.length] ?? 'none'
+  const pool = weaponsFor(profile)
+  return pool[hash % pool.length] ?? 'none'
 }
 
 /** How long a weapon lasts, held down: none at all for one that goes all at once. */

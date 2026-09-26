@@ -18,6 +18,7 @@ import {
   decodeWelcome,
   encodeHello,
   encodeInput,
+  encodeChangeVehicle,
   encodeRespawn,
   messageTypeOf,
   type SnapshotMessage,
@@ -52,8 +53,9 @@ const LEAD_RELAX_INTERVAL_MS = 3000
  * than this from the lead it should hold over the server's clock is it
  * nudged, a tick at a time. Behind, where inputs would arrive late, it
  * catches up a tick every step; ahead, which costs nothing but a little
- * lag, it gives a tick back no more often than this. Further behind than
- * `STALL_TICKS` it is not nudged but jumped, since that is a stall.
+ * lag, it gives a tick back no more often than this. Further off than
+ * `STALL_TICKS` either way it is not nudged but jumped: behind, the client
+ * stalled; ahead, the server did, and picked up seconds behind where it was.
  */
 const SLEW_SLACK_TICKS = 2
 const SLEW_BACK_INTERVAL_MS = 250
@@ -152,14 +154,19 @@ export class NetClient {
    * How many ticks the prediction should run this step, given that its
    * mirror is about to simulate `nextTick`: one, nearly always; none or two
    * now and then, to hold the lead over the server's clock; many after a
-   * stall. Asked once the snapshot has been taken in, since that can move
-   * the mirror.
+   * stall, or fewer than none after the server's. Asked once the snapshot
+   * has been taken in, since that can move the mirror.
    */
   stepsFor(nextTick: number): number {
     if (!this.timeline.hasClock) return 1
     const nowMs = this.clock()
     const behind = this.timeline.estimatedServerTick(nowMs) + this.lead - nextTick
     if (behind > STALL_TICKS) return behind
+    if (behind < -STALL_TICKS) {
+      // The ticks jumped back over are sent for again, on the server's new clock.
+      this.lastSentTick = nextTick + behind - 1
+      return behind
+    }
     if (behind > SLEW_SLACK_TICKS) return 2
     if (behind < -SLEW_SLACK_TICKS && nowMs - this.slewedAtMs >= SLEW_BACK_INTERVAL_MS) {
       this.slewedAtMs = nowMs
@@ -174,6 +181,12 @@ export class NetClient {
     if (tick <= this.lastSentTick) return
     this.lastSentTick = tick
     this.transport.send(encodeInput(tick, input))
+  }
+
+  /** Swap into another vehicle where the car is, keeping the seat. */
+  changeVehicle(profile: VehicleProfileId): void {
+    if (this.welcomeMessage === null || this.closedReason !== null) return
+    this.transport.send(encodeChangeVehicle(profile))
   }
 
   requestRespawn(): void {

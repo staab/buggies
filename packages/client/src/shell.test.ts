@@ -7,7 +7,7 @@ import type { Sound } from './audio.ts'
 import type { HudState } from './hud.ts'
 import type { Choice, MenuHost, Step } from './menu.ts'
 import type { ModeView } from './mode.ts'
-import { Shell, continues, playersFor, type ShellMenu, type ShellModes } from './shell.ts'
+import { Shell, continues, playersFor, sameSeats, type ShellMenu, type ShellModes } from './shell.ts'
 import type { ShowroomView } from './showroom-mode.ts'
 import { Sun } from './sun.ts'
 
@@ -16,6 +16,8 @@ interface StubGame extends ModeView {
   kind: string
   disposed: boolean
   updates: { dt: number; active: boolean }[]
+  /** The vehicles everyone was swapped into, where they were, one entry a swap. */
+  swaps: VehicleProfileId[][]
 }
 
 interface StubShowroom extends ShowroomView {
@@ -133,6 +135,7 @@ function build(refuse: string | null = null) {
         kind: `${players.map((player) => player.profile).join('+')} on ${seed}`,
         disposed: false,
         updates: [],
+        swaps: [],
         camera: new THREE.PerspectiveCamera(),
         resize() {},
         update(dt, active) {
@@ -140,6 +143,9 @@ function build(refuse: string | null = null) {
         },
         hud() {
           return players.map((player) => ({ title: player.profile }))
+        },
+        changeVehicles(profiles) {
+          game.swaps.push([...profiles])
         },
         dispose() {
           game.disposed = true
@@ -250,28 +256,34 @@ describe('the shell', () => {
     expect(games[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: true })
   })
 
-  it('goes back to the same game, and rejoins for another island, vehicle or a second player', async () => {
+  it('goes back to the same game, swaps vehicles where the cars are, and rejoins for another island or a second player', async () => {
     const { shell, games, joined, generated } = build()
     await shell.start(CHOICE)
     await shell.start(CHOICE)
     expect(joined).toHaveLength(1)
     expect(games[0]!.disposed).toBe(false)
 
+    // Another vehicle is the same seat on the same island, in something else.
     await shell.start({ ...CHOICE, vehicle: 'tank' })
-    expect(joined).toHaveLength(2)
-    expect(games[0]!.disposed).toBe(true)
-    expect(games[1]!.kind).toBe('tank on 5')
-    // The island is kept: it is the same one.
-    expect(generated).toEqual([5])
+    expect(joined).toHaveLength(1)
+    expect(games[0]!.disposed).toBe(false)
+    expect(games[0]!.swaps).toEqual([['tank']])
+    await shell.start({ ...CHOICE, vehicle: 'tank' })
+    expect(games[0]!.swaps).toHaveLength(1)
 
     await shell.start({ mode: 'duo', seed: 5, vehicle: 'tank', vehicle2: 'goKart' })
-    expect(games[2]!.kind).toBe('tank+goKart on 5')
+    expect(joined).toHaveLength(2)
+    expect(games[0]!.disposed).toBe(true)
+    expect(games[1]!.kind).toBe('tank+goKart on 5')
+    await shell.start({ mode: 'duo', seed: 5, vehicle: 'tank', vehicle2: 'semi' })
+    expect(games[1]!.swaps).toEqual([['tank', 'semi']])
+    // The island is kept: it is the same one.
     expect(generated).toEqual([5])
 
     // Another island is another room, made afresh.
     await shell.start({ ...CHOICE, seed: 6 })
     expect(joined.at(-1)).toBe(`${SERVER}#6`)
-    expect(games[3]!.kind).toBe('sportsCar on 6')
+    expect(games[2]!.kind).toBe('sportsCar on 6')
     expect(generated).toEqual([5, 6])
   })
 
@@ -323,6 +335,9 @@ describe('the shell', () => {
     const duo: Choice = { ...CHOICE, mode: 'duo' }
     expect(continues(duo, { ...duo, vehicle2: 'tank' })).toBe(false)
     expect(continues(CHOICE, duo)).toBe(false)
+    expect(sameSeats(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(true)
+    expect(sameSeats(CHOICE, { ...CHOICE, seed: 6 })).toBe(false)
+    expect(sameSeats(CHOICE, duo)).toBe(false)
     expect(playersFor(CHOICE).map((player) => player.profile)).toEqual(['sportsCar'])
     expect(playersFor(duo).map((player) => player.profile)).toEqual(['sportsCar', 'raceCar'])
   })

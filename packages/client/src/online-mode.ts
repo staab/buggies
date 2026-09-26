@@ -64,6 +64,8 @@ export interface OnlineView {
   /** The mirror's tick: the game's time, the same on every mirror. */
   readonly tick: number
   hud(): HudState
+  /** Swap into another vehicle where the car is, keeping the seat and its bananas. */
+  changeVehicle(profile: VehicleProfileId): void
   dispose(): void
 }
 
@@ -122,8 +124,6 @@ export async function joinOnline(
     if (player.keys.respawn(event)) client.requestRespawn()
   }
   window.addEventListener('keydown', onKey)
-  // The keys, told with what this car does of its own.
-  const controls = player.keys.controls(OWN_ACTIONS[welcome.profile].label)
 
   let owed = 0
   let chaseSnapped = false
@@ -168,13 +168,19 @@ export async function joinOnline(
     },
     hud() {
       const players = client.playerCount
-      const title = `${VEHICLE_PROFILE_LABELS[welcome.profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
+      const { profile } = prediction.ownSeat
+      // The keys, told with what this car does of its own.
+      const controls = player.keys.controls(OWN_ACTIONS[profile].label)
+      const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       if (lost !== null) return { title, state: `disconnected: ${lost}` }
       const { stats } = prediction
       const sync =
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
       return { ...car.presence.hudState(title, controls, sync), radar: radarOf(prediction.ownSeat, prediction.seats) }
+    },
+    changeVehicle(profile) {
+      client.changeVehicle(profile)
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

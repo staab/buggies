@@ -129,6 +129,8 @@ class Session {
   readonly server: GameServer
   readonly players: Player[] = []
   readonly events: string[] = []
+  /** Whether the server is busy with something else, neither stepping nor reading nor sending. */
+  serverStalled = false
 
   constructor() {
     this.server = new GameServer(
@@ -138,6 +140,7 @@ class Session {
         onLeft: (seat) => this.events.push(`left ${seat.id}`),
         onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
         onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
+        onChangedVehicle: (seat) => this.events.push(`changed ${seat.id} ${seat.profile}`),
         onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
         onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
       },
@@ -185,11 +188,11 @@ class Session {
 
   /** One server tick, with every connected client pumping once. */
   step(extraWires: Loopback[] = []): void {
-    this.server.advance()
+    if (!this.serverStalled) this.server.advance()
     this.clock.tick += 1
-    for (const wire of extraWires) wire.deliver()
+    if (!this.serverStalled) for (const wire of extraWires) wire.deliver()
     for (const player of this.players) {
-      player.wire.deliver()
+      if (!this.serverStalled) player.wire.deliver()
       if (player.paused) continue
       const update = player.client.pump(player.input)
       // Where the watched car stood in the mirror before the server's word,
@@ -425,6 +428,30 @@ describe('a session', () => {
     session.dispose()
   })
 
+  it('lets a driver carry on once the server is back from seconds spent on something else', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    a.input = { ...NEUTRAL_INPUT, throttle: 1 }
+    session.run(2)
+    // The server is busy for three seconds, making another island, and
+    // then picks up where it left off: its clock is now that far behind.
+    session.serverStalled = true
+    session.run(3)
+    session.serverStalled = false
+    session.run(1)
+    const before = session.serverPositionOf(a)
+    const resyncsBefore = a.prediction.stats.hardResyncs
+    session.run(3)
+    // The car drives on the server again, and the mirror holds its lead
+    // over the server's new clock rather than the one it had before.
+    expect(distance(before, session.serverPositionOf(a))).toBeGreaterThan(20)
+    expect(a.prediction.stats.ticksAheadOfServer).toBeGreaterThan(0)
+    expect(a.prediction.stats.ticksAheadOfServer).toBeLessThan(INPUT_TIMELINE_TICKS / 2)
+    expect(a.prediction.stats.hardResyncs - resyncsBefore).toBe(0)
+    expect(a.prediction.stats.lastCorrectionMeters).toBeLessThan(0.5)
+    session.dispose()
+  })
+
   it('puts a player back on request, and the prediction follows the new epoch', async () => {
     const session = new Session()
     const a = await session.join()
@@ -440,6 +467,31 @@ describe('a session', () => {
     // Back on the road nearest to where it was, not at its spawn, and the prediction there with it.
     expect(offRoad(session.arena.map, session.serverPositionOf(a))).toBeLessThan(1)
     expect(a.prediction.stats.hardResyncs).toBe(resyncs + 1)
+    expect(distance(session.predictedPositionOf(a), session.serverPositionOf(a))).toBeLessThan(1)
+    session.dispose()
+  })
+
+  it('swaps a player into another vehicle where they are, keeping the seat and its bananas', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    a.input.throttle = 1
+    session.run(3)
+    const seat = session.arena.seats[a.client.welcome!.seat]!
+    seat.score = 3
+    const before = session.serverPositionOf(a)
+    expect(distance(before, seat.spawn.position)).toBeGreaterThan(5)
+
+    a.input.throttle = 0
+    a.client.changeVehicle('tank')
+    session.run(1)
+    expect(session.events).toContain('changed 0 tank')
+    expect(session.server.playerCount).toBe(1)
+    // The same seat, in a tank, where the sports car was, with the bananas it had.
+    expect(seat.profile).toBe('tank')
+    expect(seat.score).toBe(3)
+    expect(distance(session.serverPositionOf(a), before)).toBeLessThan(3)
+    // The prediction is in a tank too, where the server has it.
+    expect(a.prediction.ownSeat.profile).toBe('tank')
     expect(distance(session.predictedPositionOf(a), session.serverPositionOf(a))).toBeLessThan(1)
     session.dispose()
   })

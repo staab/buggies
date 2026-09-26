@@ -1,3 +1,4 @@
+import * as exact from '@buggies/physics'
 import { FIXED_TIMESTEP } from '@buggies/physics'
 import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
@@ -31,6 +32,8 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { findSpawns, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
+
+const { atan2, hypot } = exact
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
@@ -217,8 +220,10 @@ export {
   slowable,
   stunned,
   weaponWon,
+  weaponsFor,
   winged,
   wingsTurnRadius,
+  NATIVE_POWER_UPS,
   type Battlefield,
   type Gunner,
   type WeaponKeys,
@@ -471,17 +476,28 @@ export function respawnNearby(arena: Arena, seat: Seat): void {
 }
 
 /**
- * Put someone in a different vehicle where they are: on the road nearest to
- * where the old one was, facing the way it was going. The map, and the rest
- * of the arena, go on as they were.
+ * Put someone in a different vehicle where they are: right where the old one
+ * was, facing the way it was going, on whatever it was on, ground, road or
+ * deck. The map, and the rest of the arena, go on as they were.
  */
 export function changeVehicle(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
-  const { position, forward } = seat.vehicle.frame
-  const spot = nearestRoadSpotTo(arena.map, position.x, position.z)
-  const spawn = spot === null ? seat.spawn : spawnFacing(spot, forward)
+  const { position, forward, up } = seat.vehicle.frame
+  // Upright, the old car stood its ride height over what it was on; on its
+  // side or roof, no more than its half height, so the new one is never set
+  // down under the ground.
+  const upright = up.y > UPRIGHT
+  const below = upright ? seat.vehicle.rideHeight : seat.tuning.chassisHalfHeight
+  const heading = hypot(forward.x, forward.z)
+  const spawn: VehicleSpawn = {
+    position: { x: position.x, y: position.y - below, z: position.z },
+    yaw: heading > 1e-6 ? atan2(-forward.x, -forward.z) : seat.spawn.yaw,
+  }
   reshape(arena, seat, profile)
   respawn(seat, spawn)
 }
+
+/** How far up a car's up has to point for it to count as on its wheels. */
+const UPRIGHT = 0.7
 
 /** Put someone in a seat, in the vehicle they asked for, on the spawn. */
 export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): Seat {
@@ -617,7 +633,7 @@ function armFromBananas(arena: Arena): void {
   for (const seat of arena.seats) {
     if (!seat.occupied || seat.vehicle.wrecked || seat.weapon !== 'none' || seat.score < BANANAS_PER_WEAPON) continue
     seat.score -= BANANAS_PER_WEAPON
-    arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score))
+    arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score, seat.profile))
   }
 }
 
