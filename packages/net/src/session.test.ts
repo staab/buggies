@@ -6,6 +6,7 @@ import {
   GOAL_PRIZE,
   MAX_PLAYERS,
   NPC_CARS,
+  UFOS,
   DURABILITY,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
@@ -42,7 +43,10 @@ import type {
   TransportConnection,
   TransportHandlers,
 } from './transport.ts'
-import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
+import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_UFO_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
+
+/** What every snapshot carries whatever else changes: the header and the saucers. There are no robots on these small islands. */
+const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES
 
 /**
  * A wire made of queues. Messages are delivered when `deliver` is called,
@@ -663,7 +667,7 @@ describe('a session', () => {
     session.run(3)
     // The whole word, then nothing but the vehicles while nothing changes.
     expect(a.client.bananas.pickups).toHaveLength(PICKUP_SLOTS)
-    expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_BYTES)
+    expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + SNAPSHOT_VEHICLE_BYTES)
 
     // A slot moves on, and a banana is spilled: told once, and the mirror has them.
     const { arena } = session
@@ -681,7 +685,7 @@ describe('a session', () => {
     expect(a.client.bananas.pickups[3]).toEqual({ generation: 1, spawnTick: arena.pickups[3]!.spawnTick })
     expect(a.prediction.pickups[3]!.generation).toBe(1)
     expect(a.prediction.loose.map((loose) => loose.id)).toEqual([7])
-    expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_BYTES)
+    expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + SNAPSHOT_VEHICLE_BYTES)
 
     // A banana the mirror takes on its own is put back as the server has it.
     setPickup(arena.map, arena.water, a.prediction.pickups[5]!, 5, 9, 0)
@@ -822,7 +826,7 @@ describe('a session', () => {
     expect(session.arena.props.length).toBeGreaterThanOrEqual(cones)
     for (const prop of session.arena.props) prop.body.sleep()
     session.run(0.5)
-    expect(session.server.stats().snapshotBytes).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
+    expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
     // A cone knocked into the air on the server is seen flying on both mirrors.
     const cone = session.arena.props.find((prop) => prop.kind === 'cone')!
     cone.body.setLinvel({ x: 3, y: 6, z: 0 }, true)

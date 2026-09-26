@@ -11,6 +11,7 @@ import {
   type GoalRequest,
   type Robot,
   type Seat,
+  type Ufo,
   type VehicleProfileId,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
@@ -47,12 +48,13 @@ const BEACON_RADIUS = 3
 /** How long a goal reached is told of, in seconds. */
 const GOAL_WON_SECONDS = 5
 
-/** The colors the robots, and the cars nobody drives, are marked in on the mini-map. */
+/** The colors the robots, the cars nobody drives and the saucers are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
 const NPC_COLOR = 0x9aa0a6
+const UFO_COLOR = 0x5cff8a
 
 /** The mini-map from a seat: where it is and faces, every other occupied seat, the robots, and the spot it is playing for. */
-function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[]): RadarState {
+function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[]): RadarState {
   const others: RadarBlip[] = []
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
@@ -60,6 +62,7 @@ function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[]): R
     others.push({ x, z, color: seat.npc ? NPC_COLOR : seatColor(seat.id) })
   }
   for (const robot of robots) others.push({ x: robot.position.x, z: robot.position.z, color: ROBOT_COLOR })
+  for (const ufo of ufos) others.push({ x: ufo.position.x, z: ufo.position.z, color: UFO_COLOR })
   if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })
   return { position: own.vehicle.frame.position, forward: own.vehicle.frame.forward, others }
 }
@@ -148,7 +151,7 @@ export async function joinOnline(
   scene.add(root)
   const keyboard = new Keyboard(player.keys.bindings)
   // The island around the cars, heard from the local car.
-  const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position)
+  const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position, map)
   root.add(arena.object)
   const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), arena.effects)
   root.add(car.object)
@@ -240,7 +243,7 @@ export async function joinOnline(
       const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal)
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats, prediction.robots),
+        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos),
         ...(goal === null ? {} : { goal, goalWon: wonFor > 0 }),
       }
     },

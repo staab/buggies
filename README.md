@@ -36,6 +36,10 @@ Thirty-two health packs, red crosses on white discs, are scattered the same way.
 
 Two robots patrol the arterials of every island, rolling slowly along one road and turning off onto another at each junction. A robot burns the nearest car its eyes can see within 70 m with a laser beam for a second, then takes four seconds to charge. They are shown in red on the mini-map. Nothing stops a robot: it rolls through whatever is in its way, and a car that runs into it hits a wall.
 
+## Flying saucer
+
+A flying saucer cruises high over every island, shown in green on the mini-map. Every forty seconds or so it goes after the nearest car within 250 m, comes down over it, and lifts it up a green beam for three seconds before setting it down on a road somewhere else on the island. A car that gets clear of the beam, or has its shield up, is let go.
+
 ## Traffic
 
 Three cars nobody drives potter slowly around the arterials of every island in the seats players leave empty. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back on its road if it gets stuck.
