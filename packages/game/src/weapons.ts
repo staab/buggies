@@ -48,6 +48,7 @@ export type Weapon =
   | 'plow'
   | 'grapple'
   | 'mines'
+  | 'laser'
 
 /** What can be won, in the order the HUD rolls through them. */
 export const WEAPONS: readonly Weapon[] = [
@@ -66,6 +67,7 @@ export const WEAPONS: readonly Weapon[] = [
   'plow',
   'grapple',
   'mines',
+  'laser',
 ]
 
 export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
@@ -85,6 +87,7 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
   plow: 'Ram plow',
   grapple: 'Grappling hook',
   mines: 'Mine field',
+  laser: 'Laser',
 }
 
 /** How far behind the middle of the car a bomb is dropped. */
@@ -402,6 +405,13 @@ export const MACHINE_GUN_RANGE = 70
 export const MACHINE_GUN_SWEEP_COS = 0.82
 /** How much one shot takes of what wrecks a car before its `DURABILITY`. */
 export const MACHINE_GUN_DAMAGE = 0.02
+/**
+ * The laser: how long it burns for, in ticks, how far it reaches, and what
+ * each tick of its beam takes of what wrecks a car before its `DURABILITY`.
+ */
+export const LASER_AMMO_TICKS = 60 * 4
+export const LASER_RANGE = 100
+export const LASER_DAMAGE = 0.006
 
 export const ROCKET_SPEED = 45
 export const ROCKET_LIFE_TICKS = 60 * 4
@@ -482,10 +492,13 @@ export interface Rocket {
 
 /** One shot of a machine gun, from the muzzle to where it stopped, and whom it hit if anyone. */
 export interface Shot {
+  /** Whose it is: a seat, or nobody, for a robot's eyes. */
   readonly owner: number
   readonly from: Vec3
   readonly to: Vec3
   readonly hit: number
+  /** A bullet, gone in a flash, or a tick of a laser's beam, which holds while the laser does. */
+  readonly kind: 'bullet' | 'laser'
 }
 
 /** What of an arena the weapons need. */
@@ -558,6 +571,8 @@ export function ammoFor(weapon: Weapon): number {
   switch (weapon) {
     case 'machineGun':
       return MACHINE_GUN_AMMO_TICKS
+    case 'laser':
+      return LASER_AMMO_TICKS
     case 'engine':
       return ENGINE_BURN_TICKS
     case 'wings':
@@ -816,7 +831,7 @@ export function rocketId(seat: number, fired: number): number {
  * How far along the line from one point to another the ground lets a shot
  * go: all the way, as one, or the share of it before a hill gets in the way.
  */
-function sightLine(map: TerrainMap, from: Vec3, to: Vec3): number {
+export function sightLine(map: TerrainMap, from: Vec3, to: Vec3): number {
   const dx = to.x - from.x
   const dy = to.y - from.y
   const dz = to.z - from.z
@@ -858,13 +873,14 @@ function inPlay(seat: Gunner, other: Gunner): boolean {
  * neither, it is trained on nothing.
  */
 function trainGun(arena: Battlefield, seat: Gunner): void {
-  const carried = seat.weapon === 'machineGun'
+  const laser = seat.weapon === 'laser'
+  const carried = seat.weapon === 'machineGun' || laser
   if (!carried && !(ownAction(seat).kind === 'gun' && acting(seat))) {
     seat.aimTarget = NO_TARGET
     return
   }
   muzzlePoint(muzzle, seat, !carried)
-  seat.aimTarget = pickOut(arena, seat, muzzle, MACHINE_GUN_RANGE, MACHINE_GUN_SWEEP_COS)
+  seat.aimTarget = pickOut(arena, seat, muzzle, laser ? LASER_RANGE : MACHINE_GUN_RANGE, MACHINE_GUN_SWEEP_COS)
 }
 
 /**
@@ -873,21 +889,23 @@ function trainGun(arena: Battlefield, seat: Gunner): void {
  * way; or straight ahead at nothing when there is no such car. Either way
  * it is on the record for the tick, to be drawn.
  */
-function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean): void {
+function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean, kind: Shot['kind'] = 'bullet'): void {
   muzzlePoint(muzzle, seat, own)
   const from = vcopy(v3(), muzzle)
   const to = v3()
   const target = seat.aimTarget === NO_TARGET ? undefined : arena.seats[seat.aimTarget]
   if (target === undefined) {
-    vaddScaled(to, muzzle, seat.vehicle.frame.forward, MACHINE_GUN_RANGE)
-    arena.shots.push({ owner: seat.id, from, to, hit: NO_TARGET })
+    vaddScaled(to, muzzle, seat.vehicle.frame.forward, kind === 'laser' ? LASER_RANGE : MACHINE_GUN_RANGE)
+    arena.shots.push({ owner: seat.id, from, to, hit: NO_TARGET, kind })
     return
   }
   const clear = sightLine(arena.map, muzzle, target.vehicle.frame.position)
   vsub(toward, target.vehicle.frame.position, muzzle)
   vaddScaled(to, muzzle, toward, clear)
-  if (clear === 1) harm(target, MACHINE_GUN_DAMAGE * power * shotShare(target.profile), seat)
-  arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? target.id : NO_TARGET })
+  // A police car's armor turns bullets, not light.
+  const damage = kind === 'laser' ? LASER_DAMAGE : MACHINE_GUN_DAMAGE * shotShare(target.profile)
+  if (clear === 1) harm(target, damage * power, seat)
+  arena.shots.push({ owner: seat.id, from, to, hit: clear === 1 ? target.id : NO_TARGET, kind })
 }
 
 /** Every other car within reach of a seat, middle to middle, in play, given to a hand. */
@@ -1203,6 +1221,7 @@ export function fireWeapons(arena: Battlefield): void {
     // engine burning, the wings holding the car up, the siren sounding,
     // until they run out.
     if (seat.weapon === 'machineGun' && seat.ammoTicks % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat, 1, false)
+    if (seat.weapon === 'laser') shoot(arena, seat, 1, false, 'laser')
     if (seat.weapon === 'siren') reach(arena, seat, SIREN_RANGE, slow(SIREN_SLOW))
     seat.ammoTicks -= 1
     if (seat.ammoTicks <= 0) disarm(seat)

@@ -12,6 +12,8 @@ import {
   NO_TARGET,
   PICKUP_HEIGHT,
   ROCKET_DAMAGE,
+  LASER_AMMO_TICKS,
+  LASER_DAMAGE,
   BOMB_DAMAGE,
   DURABILITY,
   ROCKET_LIFE_TICKS,
@@ -196,6 +198,21 @@ describe('weapons', () => {
     expect(b.vehicle.damage).toBe(0)
     wreckVehicle(a.vehicle, a.tuning)
     advance(arena)
+    expect(a.weapon).toBe('none')
+    arena.world.free()
+  })
+
+  it('the laser burns the car ahead for as long as the key is held, tick by tick, and runs dry', () => {
+    const arena = createArena(map)
+    const [a, b] = pair(arena, 40, 0)
+    arm(a, 'laser')
+    expect(a.ammoTicks).toBe(LASER_AMMO_TICKS)
+    const lit = fire(arena, a, 60)
+    expect(lit).toBeGreaterThan(0)
+    expect(a.aimTarget).toBe(b.id)
+    expect(b.vehicle.damage).toBeCloseTo((60 * LASER_DAMAGE) / DURABILITY, 3)
+    expect(arena.shots.every((shot) => shot.kind === 'laser')).toBe(true)
+    fire(arena, a, LASER_AMMO_TICKS)
     expect(a.weapon).toBe('none')
     arena.world.free()
   })

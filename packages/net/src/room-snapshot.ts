@@ -1,7 +1,7 @@
 import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
-import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RocketSnapshot, SnapshotMessage, VehicleSnapshot } from './wire.ts'
+import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, VehicleSnapshot } from './wire.ts'
 
 /**
  * What a room's snapshots are gathered into, kept from one to the next so
@@ -14,6 +14,7 @@ export interface RoomSnapshots {
   readonly loose: LooseSnapshot[]
   readonly removed: number[]
   readonly rockets: RocketSnapshot[]
+  readonly robots: RobotSnapshot[]
   readonly props: PropSnapshot[]
   /** Each slot's generation as last told, and which loose things were out. */
   readonly toldGenerations: number[]
@@ -28,6 +29,7 @@ export function createRoomSnapshots(): RoomSnapshots {
     loose: [],
     removed: [],
     rockets: [],
+    robots: [],
     props: [],
     toldGenerations: [],
     toldLoose: new Set(),
@@ -60,6 +62,7 @@ export function gatherSnapshot(
     removed: out.removed,
     rockets: gatherRockets(arena, out),
     props: gatherProps(arena, out, whole),
+    robots: gatherRobots(arena, out),
   }
 }
 
@@ -233,4 +236,22 @@ function gatherRockets(arena: Arena, out: RoomSnapshots): RocketSnapshot[] {
   }
   rockets.length = count
   return rockets
+}
+
+/** Every robot, where it is on its rounds and what its eyes are on. */
+function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
+  const { robots } = out
+  arena.robots.forEach((robot, index) => {
+    const entry = (robots[index] ??= { id: 0, road: 0, along: 0, direction: 1, legs: 0, target: NO_TARGET, beamTicks: 0, cooldownTicks: 0 })
+    entry.id = robot.id
+    entry.road = robot.road
+    entry.along = robot.along
+    entry.direction = robot.direction
+    entry.legs = robot.legs
+    entry.target = robot.target
+    entry.beamTicks = robot.beamTicks
+    entry.cooldownTicks = robot.cooldownTicks
+  })
+  robots.length = arena.robots.length
+  return robots
 }

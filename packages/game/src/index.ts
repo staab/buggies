@@ -1,5 +1,5 @@
 import * as exact from '@buggies/physics'
-import { FIXED_TIMESTEP } from '@buggies/physics'
+import { FIXED_TIMESTEP, v3 } from '@buggies/physics'
 import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
@@ -32,6 +32,17 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import type { Goal } from './goals.ts'
+import {
+  ROBOT_COOLDOWN_TICKS,
+  ROBOT_DAMAGE,
+  ROBOT_RANGE,
+  ROBOT_BEAM_TICKS,
+  createRobots,
+  robotEyes,
+  seatRobotBody,
+  walkRobot,
+  type Robot,
+} from './robots.ts'
 import { findSpawns, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
 const { atan2, hypot } = exact
@@ -80,6 +91,20 @@ export {
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
+export {
+  ROBOTS,
+  ROBOT_BEAM_TICKS,
+  ROBOT_COOLDOWN_TICKS,
+  ROBOT_DAMAGE,
+  ROBOT_EYES,
+  ROBOT_RANGE,
+  ROBOT_SIZE,
+  ROBOT_SPEED,
+  placeRobot,
+  robotEyes,
+  seatRobotBody,
+  type Robot,
+} from './robots.ts'
 export {
   GOAL_KINDS,
   GOAL_LABELS,
@@ -144,6 +169,9 @@ export {
   ENGINE_TOP_SPEED,
   MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
+  LASER_AMMO_TICKS,
+  LASER_DAMAGE,
+  LASER_RANGE,
   MACHINE_GUN_RANGE,
   MACHINE_GUN_SHOT_TICKS,
   MACHINE_GUN_SWEEP_COS,
@@ -273,6 +301,7 @@ import {
   hinder,
   hooked,
   lifting,
+  sightLine,
   mend,
   pushWithWeapons,
   reel,
@@ -393,8 +422,10 @@ export interface Arena {
   looseNext: number
   /** Rockets in the air. Replaced whole by the server's word. */
   rockets: Rocket[]
-  /** The machine gun shots of the last tick, for drawing. */
+  /** The machine gun and laser shots of the last tick, the robots' included, for drawing. */
   readonly shots: Shot[]
+  /** The robots on their rounds. Their places are replaced by the server's word. */
+  readonly robots: readonly Robot[]
   /** The props, numbered as the map lists them, each a body the physics steps. */
   readonly props: readonly ArenaProp[]
   tick: number
@@ -466,6 +497,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     looseNext: 0,
     rockets: [],
     shots: [],
+    robots: createRobots(map, world),
     tick: 0,
   }
 }
@@ -606,15 +638,66 @@ export function advance(
     seat.submersion =
       level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level)
   }
+  // The robots roll on, their bodies carried there over the step.
+  for (const robot of arena.robots) {
+    walkRobot(arena.map, robot, dt)
+    seatRobotBody(robot, false)
+  }
   arena.world.step()
   arena.tick += 1
   restoreProps(arena)
   collectPickups(arena)
   spillBananas(arena)
   fireWeapons(arena)
+  fireRobots(arena)
   armFromBananas(arena)
   flyRockets(arena, dt)
   trimLoose(arena)
+}
+
+const eyes = v3()
+
+/**
+ * The robots' eyes: each one holds its beam on a car for a while, burning
+ * it as long as it can see it and it is in reach, then takes a while to
+ * charge before it looks for the nearest car it can see to burn next.
+ */
+function fireRobots(arena: Arena): void {
+  for (const robot of arena.robots) {
+    robotEyes(eyes, robot)
+    if (robot.beamTicks > 0) {
+      robot.beamTicks -= 1
+      if (robot.beamTicks === 0) robot.cooldownTicks = ROBOT_COOLDOWN_TICKS
+      const target = arena.seats[robot.target]
+      if (target === undefined || !target.occupied || target.vehicle.wrecked) {
+        robot.beamTicks = 0
+        robot.cooldownTicks = ROBOT_COOLDOWN_TICKS
+        continue
+      }
+      const at = target.vehicle.frame.position
+      const clear = sightLine(arena.map, eyes, at)
+      const to = v3(eyes.x + (at.x - eyes.x) * clear, eyes.y + (at.y - eyes.y) * clear, eyes.z + (at.z - eyes.z) * clear)
+      const hit = clear === 1 && hypot(at.x - eyes.x, at.z - eyes.z) <= ROBOT_RANGE
+      if (hit) harm(target, ROBOT_DAMAGE)
+      arena.shots.push({ owner: NO_TARGET, from: v3(eyes.x, eyes.y, eyes.z), to, hit: hit ? target.id : NO_TARGET, kind: 'laser' })
+      continue
+    }
+    if (robot.cooldownTicks > 0) {
+      robot.cooldownTicks -= 1
+      continue
+    }
+    let nearest = ROBOT_RANGE
+    robot.target = NO_TARGET
+    for (const seat of arena.seats) {
+      if (!seat.occupied || seat.vehicle.wrecked) continue
+      const at = seat.vehicle.frame.position
+      const distance = hypot(at.x - eyes.x, at.z - eyes.z)
+      if (distance > nearest || sightLine(arena.map, eyes, at) < 1) continue
+      nearest = distance
+      robot.target = seat.id
+    }
+    if (robot.target !== NO_TARGET) robot.beamTicks = ROBOT_BEAM_TICKS
+  }
 }
 
 /**

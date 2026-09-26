@@ -9,6 +9,7 @@ import {
   takeSeat,
   type Goal,
   type GoalRequest,
+  type Robot,
   type Seat,
   type VehicleProfileId,
 } from '@buggies/game'
@@ -46,14 +47,18 @@ const BEACON_RADIUS = 3
 /** How long a goal reached is told of, in seconds. */
 const GOAL_WON_SECONDS = 5
 
-/** The mini-map from a seat: where it is and faces, every other occupied seat, and the spot it is playing for. */
-function radarOf(own: Seat, seats: readonly Seat[]): RadarState {
+/** The color the robots are marked in on the mini-map. */
+const ROBOT_COLOR = 0xff3030
+
+/** The mini-map from a seat: where it is and faces, every other occupied seat, the robots, and the spot it is playing for. */
+function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[]): RadarState {
   const others: RadarBlip[] = []
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
     const { x, z } = seat.vehicle.frame.position
     others.push({ x, z, color: seatColor(seat.id) })
   }
+  for (const robot of robots) others.push({ x: robot.position.x, z: robot.position.z, color: ROBOT_COLOR })
   if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })
   return { position: own.vehicle.frame.position, forward: own.vehicle.frame.forward, others }
 }
@@ -234,7 +239,7 @@ export async function joinOnline(
       const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal)
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats),
+        radar: radarOf(own, prediction.seats, prediction.robots),
         ...(goal === null ? {} : { goal, goalWon: wonFor > 0 }),
       }
     },

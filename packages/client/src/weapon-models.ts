@@ -146,6 +146,35 @@ export function buildGun(): THREE.Group {
   return group
 }
 
+/**
+ * A laser: a squat white housing with cooling fins, and a red lens at the
+ * front of a short barrel. Like the gun, it points along +Z, to be aimed.
+ */
+export function buildLaser(): THREE.Group {
+  const group = new THREE.Group()
+  const housing = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.7), metal(new THREE.Color('#e9ecef'), 0.4))
+  group.add(housing)
+  for (const offset of [-0.2, 0, 0.2]) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.08), metal(STEEL))
+    fin.position.set(0, 0.17, offset)
+    group.add(fin)
+  }
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.5, 12), metal(STEEL))
+  barrel.rotation.x = Math.PI / 2
+  barrel.position.z = 0.55
+  group.add(barrel)
+  const lens = new THREE.Mesh(
+    new THREE.CircleGeometry(0.08, 16),
+    new THREE.MeshStandardMaterial({ color: '#ff2a2a', emissive: '#ff2a2a', emissiveIntensity: 1.5 }),
+  )
+  lens.position.z = 0.81
+  group.add(lens)
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh) node.castShadow = true
+  })
+  return group
+}
+
 /** A repair kit: a red cross on a white disc, standing up over the roof and seen from either side. */
 export function buildRepair(): THREE.Group {
   const group = new THREE.Group()

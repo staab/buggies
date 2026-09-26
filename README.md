@@ -32,6 +32,10 @@ Bananas float around every island, turning slowly. Drive through one to collect 
 
 Thirty-two health packs, red crosses on white discs, are scattered the same way. A damaged car that drives through one has half its damage mended, and another pack appears somewhere else a little later. A car with no damage passes through and leaves the pack for someone else, and a magnet does not pull health packs.
 
+## Robots
+
+Two robots patrol the arterials of every island, rolling slowly along one road and turning off onto another at each junction. A robot burns the nearest car its eyes can see within 70 m with a laser beam for a second, then takes four seconds to charge. They are shown in red on the mini-map. Nothing stops a robot: it rolls through whatever is in its way, and a car that runs into it hits a wall.
+
 ## Goals
 
 The game is free play, but the trophy beside the speaker, in the top corner while a game is on, opens a panel for setting a goal to play for. A goal is one of three kinds:
@@ -61,6 +65,7 @@ The fire key uses whatever the car carries.
 - **Ram plow** mounts a blade on the front of the car for ten seconds. Cars and props in front of it are thrown forward, faster than the car is closing on them.
 - **Grappling hook** catches the nearest car within 60 meters ahead and reels the two together for four seconds, pulling the car that fired it harder. With no car ahead, the line shoots out and back and the hook is spent.
 - **Mine field** lays five mines on the ground in a spread behind the car. Each mine goes off with 30% of a bomb's blast.
+- **Laser** burns the nearest car ahead within 100 m for as long as the key is held, for four seconds in total. Its beam is steadier than the machine gun's, and its four seconds take about half of a car's health.
 
 ## Vehicles
 
