@@ -14,7 +14,7 @@ import type { OnlinePlayer } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 import { createTeamMode } from './team-mode.ts'
-import { createTerrainView } from './terrain-view.ts'
+import { createTerrainView, moveBoats } from './terrain-view.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /** The menu, as the shell drives it. */
@@ -153,6 +153,8 @@ export class Shell implements MenuHost {
   private choiceNow: Choice
   private map: TerrainMap | null = null
   private view: THREE.Group | null = null
+  /** Seconds the screen has run, for what keeps time with no game on. */
+  private idle = 0
   /** An island on its way, so that two players joining at once do not each make one. */
   private making: { seed: number; island: Promise<TerrainMap> } | null = null
   private game: Game | null = null
@@ -334,7 +336,12 @@ export class Shell implements MenuHost {
     game?.mode.update(dt, !menu.open && !this.overlay.open)
     if (menu.open) backdrop?.mode.update(dt, false)
     // The island's clocks keep the game's time.
-    if (this.view !== null) this.view.userData.tick = game?.mode.tick ?? null
+    if (this.view !== null) {
+      this.view.userData.tick = game?.mode.tick ?? null
+      // The boats by the game's time where there is one, to be where the game has them; by the screen's otherwise.
+      this.idle += dt
+      moveBoats(this.view, game?.mode.tick === undefined ? this.idle : game.mode.tick / 60)
+    }
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
       if (shown.render) shown.render(this.renderer)

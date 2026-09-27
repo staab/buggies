@@ -302,6 +302,8 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
       .setRestitution(0)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
   for (const building of map.buildings) {
+    // A boat drifts about where it lies, a body of its own that the game moves.
+    if (building.kind === 'boat') continue
     const halfHeight = (building.top - building.bottom) / 2
     // The round towers are cylinders; everything else is the box it is drawn as.
     const shape = ROUND_KINDS.includes(building.kind)

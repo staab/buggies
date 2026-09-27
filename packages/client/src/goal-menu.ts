@@ -10,11 +10,12 @@ const MAP_PIXELS = 360
 const GOAL_NOTES: Readonly<Record<GoalKind, string>> = {
   score: 'Collect this many bananas',
   kills: 'Wreck this many cars with your weapons',
+  robots: 'Bring down this many robots with your weapons',
   location: 'Drive to a spot on the map',
 }
 
 /** What each goal starts at, when first picked. */
-const GOAL_DEFAULTS: Readonly<Record<Exclude<GoalKind, 'location'>, number>> = { score: 20, kills: 3 }
+const GOAL_DEFAULTS: Readonly<Record<Exclude<GoalKind, 'location'>, number>> = { score: 20, kills: 3, robots: 1 }
 
 /** What the goal panel needs of the game behind it. */
 export interface GoalHost {
@@ -251,5 +252,6 @@ export class GoalMenu {
 export function describeGoal(goal: Goal): string {
   if (goal.kind === 'score') return `collect ${goal.target} ${goal.target === 1 ? 'banana' : 'bananas'}`
   if (goal.kind === 'kills') return `wreck ${goal.target} ${goal.target === 1 ? 'car' : 'cars'}`
+  if (goal.kind === 'robots') return `bring down ${goal.target} ${goal.target === 1 ? 'robot' : 'robots'}`
   return 'reach the spot on the map'
 }

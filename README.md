@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. Each seed is a room on the server, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
 
 The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
@@ -25,32 +25,37 @@ The client connects to a server on the same host it was loaded from. To use anot
 | Map of the island | `Tab` | `Tab` | `Tab` |
 | Menu | `Esc` | `Esc` | `Esc` |
 
-The map shows the whole island live, with every car, the traffic, the robots, the saucer and the spot a goal is set for; the button beside the trophy opens it too. In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
+The map shows the whole island live, with every car, the traffic, the robots, the saucer, the spider and the spot a goal is set for; the button beside the trophy opens it too. In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
 
 ## Bananas
 
-Bananas float around every island, turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has three bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills up to sixteen of its bananas around the wreck for anyone to collect. An island holds at most 256 loose items, and past that the oldest disappear.
+An island has 256 bananas, floating around it and turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has three bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills all of its bananas around the wreck for anyone to collect, and they lie there until someone does. Each spilled banana takes one of the island's 256: the ones waiting to reappear first, then ones out on the island, which vanish from where they were. An island holds at most 256 bombs, mines, oil slicks and rockets at once, and past that the oldest disappear.
 
 Thirty-two health packs, red crosses on white discs, are scattered the same way. A damaged car that drives through one has half its damage mended, and another pack appears somewhere else a little later. A car with no damage passes through and leaves the pack for someone else, and a magnet does not pull health packs.
 
 ## Robots
 
-Two robots patrol the arterials of every island, rolling slowly along one road and turning off onto another at each junction. A robot burns the nearest car its eyes can see within 70 m with a laser beam for a second, then takes four seconds to charge. They are shown in red on the mini-map. Nothing stops a robot: it rolls through whatever is in its way, and a car that runs into it hits a wall. A robot can be shot, though it is ten times tougher than any car; it smokes when badly hurt, and when brought down it blows up and comes back whole on another arterial.
+Two robots patrol the arterials of every island, rolling slowly along one road and turning off onto another at each junction. A robot burns the nearest car its eyes can see within 70 m with a laser beam for a second, then takes four seconds to charge. They are shown in red on the mini-map. Nothing stops a robot: it rolls through whatever is in its way, and a car that runs into it hits a wall. A robot takes damage from guns, lasers, rockets, bombs, mines and a ram plow driven into it, though it is five times tougher than the sports car, and it sets off any bomb or mine it rolls onto. It smokes when badly hurt, and when brought down it blows up and comes back whole on another arterial.
 
 ## Flying saucer
 
-A flying saucer cruises high over every island, shown in green on the mini-map. Every forty seconds or so it goes after the nearest car within 250 m, comes down over it, and lifts it up a green beam for three seconds before setting it down on a road somewhere else on the island. A car that gets clear of the beam, or has its shield up, is let go. The saucer can be shot down as a robot can, and comes back high over somewhere else.
+A flying saucer cruises high over every island, shown in green on the mini-map. Every forty seconds or so it goes after the nearest car within 250 m, comes down over it, and lifts it up a green beam for three seconds. It then carries the car off across the island at 40 m/s and lowers it onto a road there. A car that gets clear of the beam while it is being lifted, or has its shield up, is let go. The saucer can be shot down as a robot can, and comes back high over somewhere else.
+
+## Spider
+
+A giant spider, its body ten meters up on legs nearly twenty meters long, walks slowly across every island from one spot on the land to the next, high enough for a car to drive under it between its legs. Every thirty seconds a bomb falls from its belly. It is shown in purple on the mini-map, and can be shot down as a robot can, coming back somewhere else.
 
 ## Traffic
 
-Three cars nobody drives potter slowly around the arterials of every island in the seats players leave empty. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They carry no weapons and take no bananas or health packs. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back on its road if it gets stuck.
+Three cars nobody drives potter slowly around the arterials of every island in the seats players leave empty. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They keep to the right-hand lane, carry no weapons, take no bananas or health packs, and set off any bomb or mine they drive onto. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back a little further along its road if it goes nowhere for six seconds.
 
 ## Goals
 
-The game is free play, but the trophy beside the speaker, in the top corner while a game is on, opens a panel for setting a goal to play for. A goal is one of three kinds:
+The game is free play, but the trophy beside the speaker, in the top corner while a game is on, opens a panel for setting a goal to play for. A goal is one of four kinds:
 
 - **Score** asks for a number of bananas collected from when the goal is set. Bananas spent on power-ups still count.
 - **Kills** asks for a number of cars wrecked by the player's own weapons from when the goal is set: any hit that finishes a car, whether from a power-up or the vehicle's own ability.
+- **Robots** asks for a number of robots brought down by the player's own weapons from when the goal is set.
 - **Location** asks the player to drive to a spot picked on a map of the island. A gold beacon stands over it, and it shows on the mini-map. Coming within 20 m of it counts.
 
 The HUD shows how the goal is going. Reaching it wins 100 bananas and returns to free play. In two-player mode the goal is set for both players, and each is paid for reaching it. Escape closes the panel.
@@ -78,6 +83,8 @@ The fire key uses whatever the car carries.
 ## Vehicles
 
 Each vehicle has an active ability on its own key, separate from any power-up it carries. Most are weaker forms of the power-ups, and only the tank's, the small car's and the pickup's have a cooldown. Active abilities are not mounted over the roof or shown in the HUD, and their shots and missiles come from the front of the car. Some vehicles also have a passive ability. The vehicle page of the menu describes both.
+
+Each vehicle has its own armor, which sets how much it takes from crashes and weapons alike. Against a weapon, the tank takes under half of what the sports car takes, and the go-kart takes a little more.
 
 - **Tank** fires a missile from its gun with the blast of the rocket power-up, every eight seconds. Its rocket, triple rocket and machine gun power-ups also fire from its gun, with nothing mounted over its roof.
 - **Go-kart** jumps into the air whenever it is on the ground.
@@ -108,7 +115,7 @@ podman run --rm -p 8787:8787 buggies-server
 ## Packages
 
 - `physics`: vectors, quaternions, a seeded RNG, the fixed timestep.
-- `terrain`: one to eight islands from a seed, with their heightfield, rivers, lakes, districts, roads, bridges and tunnels.
+- `terrain`: one to fifteen islands from a seed, with their heightfield, rivers, lakes, districts, roads, bridges and tunnels.
 - `vehicle`: the car, with its suspension, tires, air control, self-righting and water, on Rapier.
 - `game`: the arena, a map with seats on it, stepped one fixed tick at a time.
 - `net`: the protocol, the server and the client's prediction, with no DOM and no three.js.
@@ -121,7 +128,7 @@ podman run --rm -p 8787:8787 buggies-server
 
 The land is grown on a 1281 × 1281 grid of cells at a reference scale, then enlarged threefold to a map about 3.8 km across. The roads and everything built along them come afterward, at full size, so they keep their real widths and grades.
 
-1. **Islands.** The seed picks one to eight islands, each anywhere from about 100 m across to the size of the largest island the map holds, and places them anywhere clear of the map's edge. Islands may overlap into one land mass. The first is drawn at least three quarters of the largest size, so every map has room for its cities.
+1. **Islands.** The seed picks one to fifteen islands, each anywhere from about 100 m across to the size of the largest island the map holds, and places them anywhere clear of the map's edge. Islands may overlap into one land mass. The first is drawn at least three quarters of the largest size, so every map has room for its cities.
 2. **Mountains.** The seed picks one to twelve mountains. Each is a jittered triangle with a skirt around it, standing near the middle of an island picked in proportion to its area from those big enough to carry one. About half the mountains, and always at least one, get a river.
 3. **Heightfield.** Each island's land is a radial falloff from its middle, warped by noise into bays and peninsulas and faded out before the map's edge. On it sit nearly flat plains of low noise, a gentle dome that drains water outward, and the mountains. Each mountain is full height inside its triangle and falls away over its skirt, roughened with ridged noise, and overlapping mountains reinforce each other only partly. Past the coast the sea floor drops away. Every land cell records which land mass it belongs to, numbered by size.
 4. **Drainage.** A priority flood from the map's edges raises every cell to the level at which its water can escape to the sea and gives it a downhill neighbor. Wherever the flooded surface stands above the ground is a depression.
@@ -137,7 +144,7 @@ The land is grown on a 1281 × 1281 grid of cells at a reference scale, then enl
 14. **Junctions.** Road ends meeting at a node are paired off and bent to leave in opposite directions. A street running alongside an arterial rather than across it is cut back to meet it, and street ends are joined to the roads they reach. A grid cut off from the network gets a street to the nearest arterial or cross road, and any street nothing can reach is dropped.
 15. **Climbs.** Each map has at most one mountain road. It leaves an arterial for the highest mountain the arterial comes near, winds up the slope at its grade with hairpins where the way is blocked, and ends in a level lot with a view.
 16. **Road beds.** The ground is cut away beneath the highway so it never pokes through the deck, except where a surface road runs. Every other road lies on the ground itself. The ground is cut or filled to the road's profile across the roadway and blended back over the shoulders, two roads crossing share one level, and each road is held to its grade and curvature limits. Tunnels are not stored as geometry. The bore is derived from the road being marked as a tunnel, the same way for the drawn mesh and for the collider.
-17. **What stands on the land.** Cities fill their blocks with lots, sidewalks, parks and buildings that grow taller toward the middle. Jump ramps stand on the shoulders of the country roads, and filling stations, roadworks, houses and gardens line the roads through the suburbs. The landmarks follow: an observatory on a peak, farms, orchards, a wind farm, standing stones, lighthouses, moored boats, a cable lift up a mountain, viewpoints, churches, water towers and camps. Last, woods and clearings spread over the country and up the foothills, and rocks over the bare heights. Everything is placed off the finished roads, clear of the interchanges, on ground that has already been settled.
+17. **What stands on the land.** Cities fill their blocks with lots, sidewalks, parks and buildings that grow taller toward the middle. Jump ramps stand on the shoulders of the country roads, and filling stations, roadworks, houses and gardens line the roads through the suburbs. The landmarks follow: an observatory on a peak, farms, orchards, a wind farm, standing stones, lighthouses, boats meandering about their moorings, a cable lift up a mountain, viewpoints, churches, water towers and camps. Last, woods and clearings spread over the country and up the foothills, and rocks over the bare heights. Everything is placed off the finished roads, clear of the interchanges, on ground that has already been settled.
 
 ## Check it
 

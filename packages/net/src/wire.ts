@@ -50,15 +50,16 @@ export const GOAL_BYTES = 12
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
-export const SNAPSHOT_HEADER_BYTES = 20
-export const SNAPSHOT_VEHICLE_BYTES = 116
-export const SNAPSHOT_PICKUP_BYTES = 5
+export const SNAPSHOT_HEADER_BYTES = 24
+export const SNAPSHOT_VEHICLE_BYTES = 118
+export const SNAPSHOT_PICKUP_BYTES = 6
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
 export const SNAPSHOT_ROBOT_BYTES = 16
 export const SNAPSHOT_UFO_BYTES = 25
+export const SNAPSHOT_SPIDER_BYTES = 27
 
 /** What a goal is, by the byte that says so: none first. */
 const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
@@ -113,6 +114,7 @@ export interface VehicleSnapshot {
   /** Bananas taken since sitting down, all told, and cars its weapons have wrecked. */
   collected: number
   kills: number
+  robotKills: number
   /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
   goal: Goal | null
   goalsWon: number
@@ -170,6 +172,18 @@ export interface UfoSnapshot {
   cooldownTicks: number
   legs: number
   abductions: number
+  damage: number
+  deaths: number
+}
+
+/** A giant spider, as the server has it. */
+export interface SpiderSnapshot {
+  id: number
+  position: Vec3
+  heading: number
+  legs: number
+  stride: number
+  bombTicks: number
   damage: number
   deaths: number
 }
@@ -241,6 +255,7 @@ export interface SnapshotMessage {
   /** Every robot and every saucer, every snapshot: there are only ever a few. */
   robots: RobotSnapshot[]
   ufos: UfoSnapshot[]
+  spiders: SpiderSnapshot[]
 }
 
 /** Something loose on the map, a banana or a bomb, as the server has it. */
@@ -540,7 +555,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
       message.rockets.length * SNAPSHOT_ROCKET_BYTES +
       message.props.length * SNAPSHOT_PROP_BYTES +
       message.robots.length * SNAPSHOT_ROBOT_BYTES +
-      message.ufos.length * SNAPSHOT_UFO_BYTES,
+      message.ufos.length * SNAPSHOT_UFO_BYTES +
+      message.spiders.length * SNAPSHOT_SPIDER_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
@@ -548,13 +564,14 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.full ? 1 : 0)
   writer.u16(message.looseNext)
   writer.u8(message.vehicles.length)
-  writer.u8(message.pickups.length)
-  writer.u8(message.loose.length)
-  writer.u8(message.removed.length)
+  writer.u16(message.pickups.length)
+  writer.u16(message.loose.length)
+  writer.u16(message.removed.length)
   writer.u8(message.rockets.length)
   writer.u8(message.props.length)
   writer.u8(message.robots.length)
   writer.u8(message.ufos.length)
+  writer.u8(message.spiders.length)
   for (const vehicle of message.vehicles) {
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
@@ -563,11 +580,13 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.quat(vehicle.rotation)
     writer.vec3(vehicle.linearVelocity)
     writer.vec3(vehicle.angularVelocity)
-    writer.u8(Math.round(Math.min(Math.max(vehicle.damage, 0), 1) * 255))
+    // Rounded down: a car short of a wreck on the server is never a full 1 on the client.
+    writer.u8(Math.floor(Math.min(Math.max(vehicle.damage, 0), 1) * 255))
     writer.u8(vehicle.wrecked ? 1 : 0)
     writer.u16(Math.min(vehicle.score, 0xffff))
     writer.u16(Math.min(vehicle.collected, 0xffff))
     writer.u16(Math.min(vehicle.kills, 0xffff))
+    writer.u16(Math.min(vehicle.robotKills, 0xffff))
     writer.u8(vehicle.goal === null ? 0 : GOAL_CODES.indexOf(vehicle.goal.kind))
     writer.u16(Math.min(vehicle.goal?.target ?? 0, 0xffff))
     writer.u16(Math.min(Math.max(vehicle.goal?.from ?? 0, 0), 0xffff))
@@ -591,7 +610,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
-    writer.u8(pickup.slot)
+    writer.u16(pickup.slot)
     writer.u16(pickup.generation & 0xffff)
     writer.u16(Math.min(Math.max(pickup.ticksUntilOut, 0), 0xffff))
   }
@@ -631,7 +650,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(Math.max(robot.cooldownTicks, 0), 0xffff))
     writer.u8(Math.round(Math.min(Math.max(robot.damage, 0), 1) * 255))
     writer.u8(robot.deaths & 0xff)
-  }  for (const ufo of message.ufos) {
+  }
+  for (const ufo of message.ufos) {
     writer.u8(ufo.id)
     writer.vec3(ufo.position)
     writer.u8(UFO_STATES.indexOf(ufo.state))
@@ -642,6 +662,16 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(ufo.abductions & 0xffff)
     writer.u8(Math.round(Math.min(Math.max(ufo.damage, 0), 1) * 255))
     writer.u8(ufo.deaths & 0xff)
+  }
+  for (const spider of message.spiders) {
+    writer.u8(spider.id)
+    writer.vec3(spider.position)
+    writer.f32(spider.heading)
+    writer.u16(spider.legs & 0xffff)
+    writer.f32(spider.stride)
+    writer.u16(Math.min(Math.max(spider.bombTicks, 0), 0xffff))
+    writer.u8(Math.round(Math.min(Math.max(spider.damage, 0), 1) * 255))
+    writer.u8(spider.deaths & 0xff)
   }
 
 
@@ -668,13 +698,14 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const full = reader.u8() === 1
   const looseNext = reader.u16()
   const count = reader.u8()
-  const pickupCount = reader.u8()
-  const looseCount = reader.u8()
-  const removedCount = reader.u8()
+  const pickupCount = reader.u16()
+  const looseCount = reader.u16()
+  const removedCount = reader.u16()
   const rocketCount = reader.u8()
   const propCount = reader.u8()
   const robotCount = reader.u8()
   const ufoCount = reader.u8()
+  const spiderCount = reader.u8()
   const expected =
     SNAPSHOT_HEADER_BYTES +
     count * SNAPSHOT_VEHICLE_BYTES +
@@ -684,7 +715,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     rocketCount * SNAPSHOT_ROCKET_BYTES +
     propCount * SNAPSHOT_PROP_BYTES +
     robotCount * SNAPSHOT_ROBOT_BYTES +
-    ufoCount * SNAPSHOT_UFO_BYTES
+    ufoCount * SNAPSHOT_UFO_BYTES +
+    spiderCount * SNAPSHOT_SPIDER_BYTES
   if (payload.length !== expected) return null
 
   const vehicles: VehicleSnapshot[] = []
@@ -702,6 +734,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const score = reader.u16()
     const collected = reader.u16()
     const kills = reader.u16()
+    const robotKills = reader.u16()
     const goalKind = GOAL_CODES[reader.u8()]
     const target = reader.u16()
     const from = reader.u16()
@@ -742,6 +775,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       score,
       collected,
       kills,
+      robotKills,
       goal: goalKind === 'none' ? null : { kind: goalKind, target, from, x, z },
       goalsWon,
       weapon,
@@ -767,7 +801,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   }
   const pickups: PickupSnapshot[] = []
   for (let i = 0; i < pickupCount; i++) {
-    pickups.push({ slot: reader.u8(), generation: reader.u16(), ticksUntilOut: reader.u16() })
+    pickups.push({ slot: reader.u16(), generation: reader.u16(), ticksUntilOut: reader.u16() })
   }
   const loose: LooseSnapshot[] = []
   for (let i = 0; i < looseCount; i++) {
@@ -853,6 +887,19 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       deaths: reader.u8(),
     })
   }
+  const spiders: SpiderSnapshot[] = []
+  for (let i = 0; i < spiderCount; i++) {
+    spiders.push({
+      id: reader.u8(),
+      position: reader.vec3(),
+      heading: reader.f32(),
+      legs: reader.u16(),
+      stride: reader.f32(),
+      bombTicks: reader.u16(),
+      damage: reader.u8() / 255,
+      deaths: reader.u8(),
+    })
+  }
   return {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
@@ -866,5 +913,6 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     props,
     robots,
     ufos,
+    spiders,
   }
 }

@@ -5,7 +5,7 @@ import {
   UFO_COOLDOWN_TICKS,
   UFO_CRUISE,
   UFOS,
-  abduct,
+  UFO_CARRY_SPEED,
   advance,
   createArena,
   initPhysics,
@@ -35,19 +35,34 @@ describe('flying saucers', () => {
     ufo!.position.z = seat.vehicle.frame.position.z
     const before = { ...seat.vehicle.frame.position }
     let lifted = -Infinity
-    let taken = false
-    for (let i = 0; i < 60 * 30 && !taken; i++) {
+    let fastest = 0
+    let jump = 0
+    let last = { ...before }
+    let carried = false
+    for (let i = 0; i < 60 * 90 && ufo!.abductions === 0; i++) {
       advance(arena)
-      if (ufo!.state === 'lift') lifted = Math.max(lifted, seat.vehicle.frame.position.y - before.y)
-      taken = abduct(arena).includes(seat)
+      const now = seat.vehicle.frame.position
+      if (ufo!.state === 'lift') lifted = Math.max(lifted, now.y - before.y)
+      if (ufo!.state === 'carry') carried = true
+      // Carried off under the saucer, never put somewhere else in a blink.
+      jump = Math.max(jump, Math.hypot(now.x - last.x, now.z - last.z))
+      fastest = Math.max(fastest, seat.vehicle.frame.linearVelocity.x ** 2 + seat.vehicle.frame.linearVelocity.z ** 2)
+      last = { ...now }
     }
-    expect(taken).toBe(true)
+    expect(ufo!.abductions).toBe(1)
+    expect(carried).toBe(true)
     expect(lifted).toBeGreaterThan(2)
+    expect(jump).toBeLessThan(UFO_CARRY_SPEED / 60 + 0.5)
+    expect(Math.sqrt(fastest)).toBeGreaterThan(UFO_CARRY_SPEED / 2)
     const { x, z } = seat.vehicle.frame.position
     expect(Math.hypot(x - before.x, z - before.z)).toBeGreaterThan(50)
+    // Let down onto the road, and settled on it a moment later, whole.
+    for (let i = 0; i < 120; i++) advance(arena)
+    expect(seat.vehicle.wrecked).toBe(false)
+    expect(seat.vehicle.groundedCount).toBeGreaterThan(0)
     expect(ufo!.state).toBe('roam')
     expect(ufo!.abductions).toBe(1)
-    expect(ufo!.cooldownTicks).toBeGreaterThan(UFO_COOLDOWN_TICKS - 5)
+    expect(ufo!.cooldownTicks).toBeGreaterThan(UFO_COOLDOWN_TICKS - 130)
     arena.world.free()
   }, 60_000)
 
@@ -62,7 +77,7 @@ describe('flying saucers', () => {
     ufo!.position.z = seat.vehicle.frame.position.z
     for (let i = 0; i < 60 * 10; i++) {
       advance(arena)
-      expect(abduct(arena)).toHaveLength(0)
+      expect(ufo!.state === 'carry' || ufo!.state === 'lower').toBe(false)
     }
     expect(ufo!.state).toBe('roam')
     arena.world.free()

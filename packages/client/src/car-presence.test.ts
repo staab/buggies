@@ -49,6 +49,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     score: 0,
     collected: 0,
     kills: 0,
+    robotKills: 0,
     goal: null,
     goalsWon: 0,
     npc: false,

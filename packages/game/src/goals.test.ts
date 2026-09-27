@@ -16,6 +16,7 @@ function seat(x = 0, z = 0): GoalSeat {
   return {
     collected: 0,
     kills: 0,
+    robotKills: 0,
     goal: null,
     goalsWon: 0,
     score: 0,
@@ -41,6 +42,15 @@ describe('goals', () => {
     expect(goalProgress(player, player.goal!)).toBe(1)
     expect(goalMet(player)).toBe(false)
     player.kills += 1
+    expect(goalMet(player)).toBe(true)
+  })
+
+  it('counts robots brought down from when the goal is set', () => {
+    const player = seat()
+    player.robotKills = 2
+    setGoal(player, { kind: 'robots', target: 1, x: 0, z: 0 })
+    expect(goalMet(player)).toBe(false)
+    player.robotKills += 1
     expect(goalMet(player)).toBe(true)
   })
 

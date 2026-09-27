@@ -6,8 +6,8 @@ import { DRY, roadLift, sampleHeight, waterLevelAt, type Road, type TerrainMap }
 // is several times slower under the test runner's module loader, and these run hot.
 const { cos, hypot, sin } = exact
 
-/** How many bananas are out on a map at once. */
-export const BANANA_SLOTS = 160
+/** How many bananas a map has, out on it or spilled from wrecks: a spilled one holds a slot until it is taken. */
+export const BANANA_SLOTS = 256
 /** How many health packs are out on a map at once, in the slots after the bananas'. */
 export const HEALTH_SLOTS = 32
 export const PICKUP_SLOTS = BANANA_SLOTS + HEALTH_SLOTS
@@ -211,6 +211,9 @@ export function setPickup(
   pickup.spawnTick = spawnTick
 }
 
+/** A slot's spawn tick while its banana lies spilled from a wreck: it is not out on the map again until that one is taken. */
+export const PICKUP_HELD = Number.MAX_SAFE_INTEGER
+
 /** Whether a slot's pickup is out to be taken on this tick. */
 export function pickupOut(pickup: Pickup, tick: number): boolean {
   return tick >= pickup.spawnTick
@@ -228,9 +231,6 @@ function within(point: Vec3, at: Vec3, reach: number, up: number): boolean {
   return Math.abs(point.y - at.y) <= up && dx * dx + dz * dz <= reach * reach
 }
 
-/** How many of a wreck's bananas spill out, at most; the rest are lost in the blast. */
-export const SPILL_MOST = 16
-
 /** How far from the wreck a spilled banana lands, in meters, at the nearest and the furthest. */
 export const SPILL_NEAR = 5
 export const SPILL_FAR = 16
@@ -238,10 +238,7 @@ export const SPILL_FAR = 16
 /** How long a spilled banana is in the air, in ticks, before it can be taken. */
 export const SPILL_FLIGHT_TICKS = 60
 
-/** How long a spilled banana lies about before it is gone, in ticks. */
-export const SPILL_LIFE_TICKS = 60 * 90
-
-/** How many loose things a map holds at once, bananas, bombs and rockets together; past that the oldest go. */
+/** How many bombs, mines, oil slicks and rockets a map holds at once; past that the oldest go. Spilled bananas are held to the banana slots instead. */
 export const LOOSE_MOST = 256
 
 /** What lies loose on the map: a banana spilled from a wreck, or a bomb, a mine or an oil slick dropped from a car. */
@@ -318,9 +315,8 @@ export function looseOut(loose: Loose, tick: number): boolean {
   return tick >= loose.bornTick + SPILL_FLIGHT_TICKS
 }
 
-/** Whether a spilled banana or an oil slick has lain about long enough to be gone. A bomb or a mine lies there until it goes off. */
+/** Whether an oil slick has lain about long enough to be gone. A spilled banana lies there until it is taken, and a bomb or a mine until it goes off. */
 export function looseGone(loose: Loose, tick: number): boolean {
-  if (loose.kind === 'banana') return tick >= loose.bornTick + SPILL_LIFE_TICKS
   if (loose.kind === 'oil') return tick >= loose.bornTick + OIL_LIFE_TICKS
   return false
 }

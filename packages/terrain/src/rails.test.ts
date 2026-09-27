@@ -54,9 +54,17 @@ describe('guardrails', () => {
     expect(open).toBeGreaterThan(100)
     expect(railed).toBeGreaterThan(0)
 
+    // Every bridge but where another road joins it, open for a flare's length either side of the mouth.
+    const ends = map.roads
+      .filter((road) => isSurfaceRoad(road) && !road.closed)
+      .flatMap((road) => [road.points[0]!, road.points.at(-1)!].map((end) => ({ road, end })))
     for (const road of map.roads) {
       if (!isSurfaceRoad(road)) continue
       for (const middle of segmentMidpoints(road, ROAD_BRIDGE)) {
+        const joined = ends.some(
+          ({ road: other, end }) => other !== road && Math.hypot(end.x - middle.x, end.z - middle.z) < other.width / 2 + RAIL_FLARE + road.width / 2 + 4,
+        )
+        if (joined) continue
         expect(nearestRunDistance(runs, middle.x, middle.z)).toBeLessThan(road.width / 2 + 1)
       }
     }

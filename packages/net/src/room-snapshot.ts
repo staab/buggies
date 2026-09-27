@@ -1,7 +1,7 @@
 import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
-import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, UfoSnapshot, VehicleSnapshot } from './wire.ts'
+import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, SpiderSnapshot, UfoSnapshot, VehicleSnapshot } from './wire.ts'
 
 /**
  * What a room's snapshots are gathered into, kept from one to the next so
@@ -16,6 +16,7 @@ export interface RoomSnapshots {
   readonly rockets: RocketSnapshot[]
   readonly robots: RobotSnapshot[]
   readonly ufos: UfoSnapshot[]
+  readonly spiders: SpiderSnapshot[]
   readonly props: PropSnapshot[]
   /** Each slot's generation as last told, and which loose things were out. */
   readonly toldGenerations: number[]
@@ -32,6 +33,7 @@ export function createRoomSnapshots(): RoomSnapshots {
     rockets: [],
     robots: [],
     ufos: [],
+    spiders: [],
     props: [],
     toldGenerations: [],
     toldLoose: new Set(),
@@ -66,6 +68,7 @@ export function gatherSnapshot(
     props: gatherProps(arena, out, whole),
     robots: gatherRobots(arena, out),
     ufos: gatherUfos(arena, out),
+    spiders: gatherSpiders(arena, out),
   }
 }
 
@@ -98,6 +101,7 @@ function gatherVehicles(
       score: 0,
       collected: 0,
       kills: 0,
+      robotKills: 0,
       goal: null,
       goalsWon: 0,
       weapon: 'none',
@@ -133,6 +137,7 @@ function gatherVehicles(
     vehicle.npc = seat.npc
     vehicle.collected = seat.collected
     vehicle.kills = seat.kills
+    vehicle.robotKills = seat.robotKills
     vehicle.goal = seat.goal
     vehicle.goalsWon = seat.goalsWon
     vehicle.weapon = seat.weapon
@@ -303,4 +308,22 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
   })
   ufos.length = arena.ufos.length
   return ufos
+}
+
+/** Every spider, where it is and how far on its walk. */
+function gatherSpiders(arena: Arena, out: RoomSnapshots): SpiderSnapshot[] {
+  const { spiders } = out
+  arena.spiders.forEach((spider, index) => {
+    const entry = (spiders[index] ??= { id: 0, position: v3(), heading: 0, legs: 0, stride: 0, bombTicks: 0, damage: 0, deaths: 0 })
+    entry.id = spider.id
+    vcopy(entry.position, spider.position)
+    entry.heading = spider.heading
+    entry.legs = spider.legs
+    entry.stride = spider.stride
+    entry.bombTicks = spider.bombTicks
+    entry.damage = spider.damage
+    entry.deaths = spider.deaths
+  })
+  spiders.length = arena.spiders.length
+  return spiders
 }

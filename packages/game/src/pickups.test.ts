@@ -9,12 +9,11 @@ import {
   HEALTH_SLOTS,
   NEUTRAL_INPUT,
   PICKUP_HEIGHT,
+  PICKUP_HELD,
   PICKUP_RESPAWN_TICKS,
   PICKUP_SLOTS,
   SPILL_FAR,
   SPILL_FLIGHT_TICKS,
-  SPILL_LIFE_TICKS,
-  SPILL_MOST,
   SPILL_NEAR,
   advance,
   createArena,
@@ -168,16 +167,21 @@ describe('pickups', () => {
     expect(arena.loose).toHaveLength(4)
     expect(arena.loose.includes(target)).toBe(false)
 
-    // The rest fade in time.
-    arena.tick = arena.loose[0]!.bornTick + SPILL_LIFE_TICKS
+    // Each one spilled holds a banana slot off the map until it is taken; the one taken has let its slot go.
+    const held = (): number => arena.pickups.filter((pickup) => pickup.spawnTick === PICKUP_HELD).length
+    expect(held()).toBe(4)
+    // The rest lie there until they are taken.
+    arena.tick += 60 * 60 * 10
     advance(arena, () => NEUTRAL_INPUT)
-    expect(arena.loose).toHaveLength(0)
+    expect(arena.loose).toHaveLength(4)
 
-    // Only so many come out of one blast.
-    a.score = SPILL_MOST + 10
+    // Every banana of a wreck spills, as many as there are banana slots to hold them, taken off the map if need be.
+    a.score = BANANA_SLOTS + 40
     advance(arena, () => NEUTRAL_INPUT)
-    expect(arena.loose).toHaveLength(SPILL_MOST)
-    expect(arena.loose[0]!.id).toBe(5)
+    expect(arena.loose).toHaveLength(BANANA_SLOTS)
+    expect(held()).toBe(BANANA_SLOTS)
+    expect(arena.pickups.slice(0, BANANA_SLOTS).some((pickup) => pickupOut(pickup, arena.tick))).toBe(false)
+    expect(arena.loose[4]!.id).toBe(5)
     arena.world.free()
   })
 

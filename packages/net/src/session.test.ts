@@ -7,6 +7,7 @@ import {
   MAX_PLAYERS,
   NPC_CARS,
   UFOS,
+  armorShare,
   DURABILITY,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
@@ -529,10 +530,12 @@ describe('a session', () => {
     const a = await session.join('sportsCar')
     session.run(0.5)
     const seat = session.arena.seats[a.client.welcome!.seat]!
+    // Counted from whatever it has taken already, a banana by the spawn perhaps.
+    const collected = seat.collected
     a.client.setGoal({ kind: 'score', target: 2, x: 0, z: 0 })
     session.run(0.5)
     expect(session.events).toContain('goal 0 score 2')
-    expect(seat.goal).toEqual({ kind: 'score', target: 2, x: 0, z: 0, from: 0 })
+    expect(seat.goal).toEqual({ kind: 'score', target: 2, x: 0, z: 0, from: collected })
     expect(a.prediction.ownSeat.goal).toEqual(seat.goal)
 
     // Two bananas more, and the prize is paid: once, and the goal is done with.
@@ -629,10 +632,10 @@ describe('a session', () => {
     session.dispose()
   })
 
-  it('refuses a ninth player', async () => {
+  it('refuses a player past the last seat', async () => {
     const session = new Session()
-    for (let i = 0; i < 8; i++) await session.join()
-    expect(session.server.playerCount).toBe(8)
+    for (let i = 0; i < MAX_PLAYERS; i++) await session.join()
+    expect(session.server.playerCount).toBe(MAX_PLAYERS)
     await expect(session.join()).rejects.toBeInstanceOf(ConnectionFailure)
     expect(session.events).toContain('rejected: server is full')
     session.dispose()
@@ -734,8 +737,8 @@ describe('a session', () => {
     expect(b.prediction.rockets[0]!.id).toBe(arena.rockets[0]!.id)
     session.run(1.5)
     expect(arena.rockets).toHaveLength(0)
-    expect(bSeat.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE / DURABILITY, 5)
-    expect(b.prediction.vehicle.damage).toBeCloseTo(ROCKET_DAMAGE / DURABILITY, 1)
+    expect(bSeat.vehicle.damage).toBeCloseTo((ROCKET_DAMAGE * armorShare(bSeat.tuning)) / DURABILITY, 5)
+    expect(b.prediction.vehicle.damage).toBeCloseTo((ROCKET_DAMAGE * armorShare(bSeat.tuning)) / DURABILITY, 1)
     expect(aSeat.vehicle.damage).toBe(0)
 
     // A bomb dropped is numbered the same in the sports car's own prediction as on the server, so
@@ -761,7 +764,7 @@ describe('a session', () => {
     session.run(1)
     a.input.fire = false
     session.run(0.3)
-    expect(bSeat.vehicle.damage).toBeGreaterThan((ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE) / DURABILITY)
+    expect(bSeat.vehicle.damage).toBeGreaterThan(((ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE) * armorShare(bSeat.tuning)) / DURABILITY)
     expect(aSeat.ammoTicks).toBeLessThan(MACHINE_GUN_AMMO_TICKS - 50)
     expect(a.prediction.ownSeat.ammoTicks).toBe(aSeat.ammoTicks)
     session.dispose()

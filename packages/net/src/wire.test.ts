@@ -11,6 +11,7 @@ import {
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_PROP_BYTES,
   SNAPSHOT_ROBOT_BYTES,
+  SNAPSHOT_SPIDER_BYTES,
   SNAPSHOT_UFO_BYTES,
   SNAPSHOT_PICKUP_BYTES,
   SNAPSHOT_REMOVED_BYTES,
@@ -57,7 +58,8 @@ const snapshot: SnapshotMessage = {
       wrecked: true,
       score: 60000,
       collected: 1234,
-      kills: 7,
+      robotKills: 1,
+    kills: 7,
       goal: { kind: 'location', target: 0, from: 0, x: 1500.5, z: 2400.25 },
       goalsWon: 3,
       weapon: 'machineGun',
@@ -92,7 +94,8 @@ const snapshot: SnapshotMessage = {
       wrecked: false,
       score: 3,
       collected: 3,
-      kills: 0,
+      robotKills: 1,
+    kills: 0,
       goal: { kind: 'kills', target: 5, from: 2, x: 0, z: 0 },
       goalsWon: 0,
       weapon: 'none',
@@ -159,6 +162,7 @@ const snapshot: SnapshotMessage = {
       deaths: 1,
     },
   ],
+  spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, heading: 1.5, legs: 4, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],
 }
 
 describe('wire', () => {
@@ -206,6 +210,7 @@ describe('wire', () => {
         snapshot.props.length * SNAPSHOT_PROP_BYTES +
         snapshot.robots.length * SNAPSHOT_ROBOT_BYTES +
         snapshot.ufos.length * SNAPSHOT_UFO_BYTES +
+        snapshot.spiders.length * SNAPSHOT_SPIDER_BYTES +
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
         snapshot.loose.length * SNAPSHOT_SPILLED_BYTES +
@@ -231,7 +236,7 @@ describe('wire', () => {
     expect(decoded.ufos).toEqual(snapshot.ufos)
     // With nothing changed, a snapshot is its vehicles, robots and saucers alone.
     const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [] }
-    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES + SNAPSHOT_UFO_BYTES)
+    expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES + SNAPSHOT_UFO_BYTES + SNAPSHOT_SPIDER_BYTES)
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
       const got = decoded.loose[i]!

@@ -6,12 +6,12 @@ const { hypot } = exact
 
 /**
  * What a player may play for on top of free play: a number of bananas
- * collected, a number of cars wrecked by their weapons, or a spot on the
- * island to drive to.
+ * collected, a number of cars wrecked by their weapons, a spot on the
+ * island to drive to, or a number of robots brought down.
  */
-export type GoalKind = 'score' | 'kills' | 'location'
-export const GOAL_KINDS: readonly GoalKind[] = ['score', 'kills', 'location']
-export const GOAL_LABELS: Readonly<Record<GoalKind, string>> = { score: 'Score', kills: 'Kills', location: 'Location' }
+export type GoalKind = 'score' | 'kills' | 'location' | 'robots'
+export const GOAL_KINDS: readonly GoalKind[] = ['score', 'kills', 'location', 'robots']
+export const GOAL_LABELS: Readonly<Record<GoalKind, string>> = { score: 'Score', kills: 'Kills', location: 'Location', robots: 'Robots' }
 
 /** The most bananas or wrecks a goal may ask for. */
 export const GOAL_TARGET_MOST = 999
@@ -41,6 +41,7 @@ export interface Goal extends GoalRequest {
 export interface GoalSeat {
   collected: number
   kills: number
+  robotKills: number
   goal: Goal | null
   goalsWon: number
   score: number
@@ -67,14 +68,18 @@ export function setGoal(seat: GoalSeat, request: GoalRequest | null): void {
     seat.goal = null
     return
   }
-  const from = request.kind === 'score' ? seat.collected : request.kind === 'kills' ? seat.kills : 0
+  const from = request.kind === 'location' ? 0 : countOf(seat, request.kind)
   seat.goal = { ...request, from }
+}
+
+/** The count a goal of this kind is played for by. */
+function countOf(seat: GoalSeat, kind: Exclude<GoalKind, 'location'>): number {
+  return kind === 'score' ? seat.collected : kind === 'kills' ? seat.kills : seat.robotKills
 }
 
 /** How far a seat has come toward its goal: bananas or wrecks since it was set, or meters still to go to the spot. */
 export function goalProgress(seat: GoalSeat, goal: Goal): number {
-  if (goal.kind === 'score') return seat.collected - goal.from
-  if (goal.kind === 'kills') return seat.kills - goal.from
+  if (goal.kind !== 'location') return countOf(seat, goal.kind) - goal.from
   const { x, z } = seat.vehicle.frame.position
   return hypot(goal.x - x, goal.z - z)
 }
