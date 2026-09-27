@@ -1,8 +1,9 @@
-import { createRng, v3, type Vec3 } from '@buggies/physics'
+import { createRng, shapeToWorld, uprightRotation, v3, vaddScaled, vdot, type Vec3, type WorldShape } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 import { mapExtent, roadLift, sampleHeight, type TerrainMap } from '@buggies/terrain'
 import { addForceAlong, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
+import type { SeatChart } from './chart.ts'
 import { nearestRoadSpotTo } from './spawns.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
@@ -74,6 +75,9 @@ export interface Abductee {
   readonly id: number
   readonly occupied: boolean
   readonly vehicle: Vehicle
+  /** Where its car is on the map, and the shape of the world its body is in. */
+  readonly chart: SeatChart
+  readonly shape: WorldShape
   readonly tuning: VehicleTuning
   readonly shieldTicks: number
 }
@@ -173,7 +177,7 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
       let nearest = UFO_HUNT_RANGE
       for (const seat of seats) {
         if (!takeable(seat)) continue
-        const { x, z } = seat.vehicle.frame.position
+        const { x, z } = seat.chart.position
         const distance = hypot(x - ufo.position.x, z - ufo.position.z)
         if (distance >= nearest) continue
         nearest = distance
@@ -190,7 +194,7 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
         giveUp(ufo, UFO_LOST_TICKS)
         return
       }
-      const { x, y, z } = target.vehicle.frame.position
+      const { x, y, z } = target.chart.position
       if (fly(ufo, x, z, y + UFO_HOVER, UFO_HUNT_SPEED, dt) < UFO_BEAM_REACH / 2) {
         ufo.state = 'lift'
         ufo.stateTicks = 0
@@ -202,7 +206,9 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
         giveUp(ufo, UFO_LOST_TICKS)
         return
       }
-      const { position, linearVelocity } = target.vehicle.frame
+      const { position } = target.chart
+      const { linearVelocity } = target.vehicle.frame
+      const { up } = target.vehicle
       const off = fly(ufo, position.x, position.z, ufo.position.y, UFO_SPEED, dt)
       if (off > UFO_BEAM_REACH * 2) {
         giveUp(ufo, UFO_LOST_TICKS)
@@ -211,12 +217,16 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
       // Up toward it, no faster than the beam lets it rise, and in under it.
       const { body } = target.vehicle
       const mass = target.tuning.mass
-      const rising = Math.min(Math.max(1 - linearVelocity.y / LIFT_RISE, 0), 1)
-      if (position.y < ufo.position.y - 4) addForceAlong(body, target.vehicle.up, mass * (gravity + LIFT_PULL * rising))
-      across.x = (ufo.position.x - position.x) * 2 - linearVelocity.x * 1.5
-      across.y = 0
-      across.z = (ufo.position.z - position.z) * 2 - linearVelocity.z * 1.5
-      body.addForce({ x: across.x * mass, y: 0, z: across.z * mass }, true)
+      const rising = Math.min(Math.max(1 - vdot(linearVelocity, up) / LIFT_RISE, 0), 1)
+      if (position.y < ufo.position.y - 4) addForceAlong(body, up, mass * (gravity + LIFT_PULL * rising))
+      // In toward the point under the saucer at the car's own height, along the ground: nothing up or down.
+      shapeToWorld(target.shape, ufo.position.x, position.y, ufo.position.z, under)
+      const at = target.vehicle.frame.position
+      across.x = (under.x - at.x) * 2 - linearVelocity.x * 1.5
+      across.y = (under.y - at.y) * 2 - linearVelocity.y * 1.5
+      across.z = (under.z - at.z) * 2 - linearVelocity.z * 1.5
+      vaddScaled(across, across, up, -vdot(across, up))
+      body.addForce({ x: across.x * mass, y: across.y * mass, z: across.z * mass }, true)
       if (ufo.stateTicks >= UFO_LIFT_TICKS) {
         ufo.state = 'carry'
         ufo.stateTicks = 0
@@ -251,8 +261,8 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
   }
 }
 
-const spun = { x: 0, y: 0, z: 0, w: 1 }
 const drift = v3()
+const under = v3()
 
 /**
  * Hold a car on the beam this high under a saucer, level and facing the way
@@ -260,14 +270,12 @@ const drift = v3()
  * never put anywhere in a blink.
  */
 function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
-  const { body, frame, lastLinearVelocity } = seat.vehicle
-  const yaw = atan2(-frame.forward.x, -frame.forward.z)
-  spun.y = sin(yaw / 2)
-  spun.w = cos(yaw / 2)
+  const { body, frame, lastLinearVelocity, up } = seat.vehicle
   const at = body.translation()
-  drift.x = ufo.position.x - at.x
-  drift.y = height - at.y
-  drift.z = ufo.position.z - at.z
+  shapeToWorld(seat.shape, ufo.position.x, height, ufo.position.z, under)
+  drift.x = under.x - at.x
+  drift.y = under.y - at.y
+  drift.z = under.z - at.z
   const off = Math.hypot(drift.x, drift.y, drift.z)
   const most = UFO_CARRY_SPEED * dt
   const share = off > most ? most / off : 1
@@ -275,7 +283,7 @@ function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
   drift.y *= share / dt
   drift.z *= share / dt
   body.setTranslation({ x: at.x + drift.x * dt, y: at.y + drift.y * dt, z: at.z + drift.z * dt }, true)
-  body.setRotation(spun, true)
+  body.setRotation(uprightRotation(up, frame.forward), true)
   body.setLinvel(drift, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   // Carried is not knocked about: the car reads its knocks against the velocity it is given.

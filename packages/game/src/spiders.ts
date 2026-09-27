@@ -1,7 +1,7 @@
-import { createRng, v3, type Vec3 } from '@buggies/physics'
+import { FLAT, createRng, v3, type Vec3, type WorldShape } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
-import { addMover } from '@buggies/vehicle'
+import { addMover, placeOnShape } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 // The exact trigonometry, copied into this module: called through the import binding it
@@ -48,6 +48,8 @@ export interface Spider {
   deaths: number
   /** Its body, which the cars run into. */
   readonly body: RAPIER.RigidBody
+  /** The shape of the world its body is in: it walks the map, and its body goes where that is in the world. */
+  readonly shape: WorldShape
 }
 
 function spiderSeed(map: TerrainMap, id: number): number {
@@ -113,8 +115,13 @@ export function spiderWaypoint(
 
 /** Its body where its feet are now: at once, or over the next step. */
 export function seatSpiderBody(spider: Spider, now: boolean): void {
-  const at = { x: spider.position.x, y: spider.position.y + SPIDER_BELLY + SPIDER_BODY.halfHeight, z: spider.position.z }
-  const turn = { x: 0, y: sin(spider.heading / 2), z: 0, w: cos(spider.heading / 2) }
+  const { position: at, rotation: turn } = placeOnShape(
+    spider.shape,
+    spider.position.x,
+    spider.position.y + SPIDER_BELLY + SPIDER_BODY.halfHeight,
+    spider.position.z,
+    spider.heading,
+  )
   if (now) {
     spider.body.setTranslation(at, true)
     spider.body.setRotation(turn, true)
@@ -136,7 +143,7 @@ function place(map: TerrainMap, spider: Spider, legs: number): void {
 }
 
 /** The island's spiders, each somewhere on the land, a while from its first bomb. */
-export function createSpiders(map: TerrainMap, world: RAPIER.World): Spider[] {
+export function createSpiders(map: TerrainMap, world: RAPIER.World, shape: WorldShape = FLAT): Spider[] {
   return Array.from({ length: SPIDERS }, (_, id) => {
     const spider: Spider = {
       id,
@@ -149,6 +156,7 @@ export function createSpiders(map: TerrainMap, world: RAPIER.World): Spider[] {
       damage: 0,
       deaths: 0,
       body: addMover(world, SPIDER_BODY.halfWidth, SPIDER_BODY.halfHeight, SPIDER_BODY.halfDepth, { x: 0, y: -1000, z: 0 }),
+      shape,
     }
     place(map, spider, -1)
     return spider

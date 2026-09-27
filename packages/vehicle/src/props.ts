@@ -45,6 +45,21 @@ function conePoints(halfHeight: number, radius: number): Float32Array {
   return new Float32Array(points)
 }
 
+/** How many sides the prism a drum is drawn round on a planet has. */
+const DRUM_SIDES = 12
+
+/** The corners of a many-sided prism round a drum: its ends, top and bottom, each a ring of them. */
+function drumPoints(halfHeight: number, radius: number): Float32Array {
+  const points: number[] = []
+  for (let side = 0; side < DRUM_SIDES; side++) {
+    const angle = (side / DRUM_SIDES) * Math.PI * 2
+    const x = Math.sin(angle) * radius
+    const z = Math.cos(angle) * radius
+    points.push(x, halfHeight, z, x, -halfHeight, z)
+  }
+  return new Float32Array(points)
+}
+
 /** How high a prop's middle stands over the ground it starts on. */
 export function propRise(kind: PropKind): number {
   const shape = PROP_SHAPES[kind]
@@ -80,12 +95,19 @@ export function addProp(world: RAPIER.World, prop: Prop, shape: WorldShape = FLA
     form.shape === 'box'
       ? RAPIER.ColliderDesc.cuboid(form.halfWidth, form.halfHeight, form.halfDepth)
       : form.shape === 'drum'
-        ? RAPIER.ColliderDesc.cylinder(form.halfHeight, form.halfWidth)
+        ? // On a planet the ground is a mesh, and a true cylinder rolling on a mesh costs ten times what
+          // a prism round it does; on the flat it rolls on the ground's heightfield, which is cheap.
+          shape.kind === 'planet'
+          ? RAPIER.ColliderDesc.convexHull(drumPoints(form.halfHeight, form.halfWidth))!
+          : RAPIER.ColliderDesc.cylinder(form.halfHeight, form.halfWidth)
         : // A hull of distinct points always makes a collider.
           RAPIER.ColliderDesc.convexHull(conePoints(form.halfHeight, form.halfWidth))!
   world.createCollider(desc.setDensity(0).setMass(form.mass).setFriction(form.friction).setRestitution(form.restitution), body)
   return body
 }
+
+/** How far over the ground a prop is set down on a planet, to drop onto it. */
+const PLANET_PROP_CLEARANCE = 0.05
 
 /**
  * Where a prop stands at home, and how it is turned: as the map has it on
@@ -95,9 +117,11 @@ export function addProp(world: RAPIER.World, prop: Prop, shape: WorldShape = FLA
 export function propPlacement(shape: WorldShape, prop: Prop): { position: Vec3; rotation: Quat } {
   if (shape.kind === 'flat') return { position: { x: prop.x, y: prop.bottom + propRise(prop.kind), z: prop.z }, rotation: propRotation(prop.kind, prop.yaw) }
   const { position, rotation } = placeOnShape(shape, prop.x, prop.bottom, prop.z, 0)
-  // Lifted along the way up there by its own rise, and turned as it stands on the flat, only upright here.
+  // Lifted along the way up there by its own rise, and a little more to settle from: the ground is a
+  // mesh on a planet, which a prop set down a hair into is pushed out the wrong side of; and turned as
+  // it stands on the flat, only upright here.
   const up = qrotate(v3(), rotation, { x: 0, y: 1, z: 0 })
-  const rise = propRise(prop.kind)
+  const rise = propRise(prop.kind) + PLANET_PROP_CLEARANCE
   return {
     position: { x: position.x + up.x * rise, y: position.y + up.y * rise, z: position.z + up.z * rise },
     rotation: qmultiply(rotation, propRotation(prop.kind, prop.yaw)),

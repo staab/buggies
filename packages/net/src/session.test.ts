@@ -24,7 +24,7 @@ import {
   type VehicleInput,
   type VehicleProfileId,
 } from '@buggies/game'
-import { ROAD_TUNNEL, generateTerrain, roadLift, type TerrainMap } from '@buggies/terrain'
+import { PLANET_TERRAIN, ROAD_TUNNEL, generateTerrain, roadLift, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
@@ -402,6 +402,31 @@ describe('a session', () => {
     expect(distance(predicted, session.serverPositionOf(a))).toBeLessThan(1.5)
     session.dispose()
   })
+
+  it('plays on a planet: the car set down upright on the sphere, and its prediction kept in line with the server as it drives', async () => {
+    const flat = map
+    map = generateTerrain(1, PLANET_TERRAIN)
+    try {
+      const session = new Session()
+      const a = await session.join('sportsCar')
+      expect(session.arena.shape.kind).toBe('planet')
+      a.input.throttle = 1
+      let worst = 0
+      for (let i = 0; i < 5 * TICKS_PER_SECOND; i++) {
+        session.step()
+        worst = Math.max(worst, a.prediction.stats.lastCorrectionMeters)
+      }
+      const seat = session.arena.seats[a.client.welcome!.seat]!
+      expect(seat.vehicle.wrecked).toBe(false)
+      expect(a.prediction.vehicle.speed).toBeGreaterThan(15)
+      const { up, frame } = seat.vehicle
+      expect(up.x * frame.up.x + up.y * frame.up.y + up.z * frame.up.z).toBeGreaterThan(0.9)
+      expect(worst).toBeLessThan(0.5)
+      session.dispose()
+    } finally {
+      map = flat
+    }
+  }, 60_000)
 
   it('keeps the fastest car in line at full speed, snapshot after snapshot', async () => {
     const session = new Session()

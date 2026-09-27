@@ -21,7 +21,8 @@ function seat(x = 0, z = 0): GoalSeat {
     goalsWon: 0,
     score: 0,
     occupied: true,
-    vehicle: { wrecked: false, frame: { position: { x, z } } },
+    vehicle: { wrecked: false },
+    chart: { position: { x, z } },
   }
 }
 
@@ -59,7 +60,7 @@ describe('goals', () => {
     setGoal(player, { kind: 'location', target: 0, x: 100 + GOAL_REACH + 5, z: 100 })
     expect(goalProgress(player, player.goal!)).toBeCloseTo(GOAL_REACH + 5, 5)
     expect(goalMet(player)).toBe(false)
-    player.vehicle.frame.position.x += 10
+    player.chart.position.x += 10
     expect(goalMet(player)).toBe(true)
   })
 

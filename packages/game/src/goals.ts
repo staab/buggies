@@ -46,7 +46,9 @@ export interface GoalSeat {
   goalsWon: number
   score: number
   readonly occupied: boolean
-  readonly vehicle: { readonly wrecked: boolean; readonly frame: { readonly position: { x: number; z: number } } }
+  readonly vehicle: { readonly wrecked: boolean }
+  /** Where its car is on the map. */
+  readonly chart: { readonly position: { x: number; z: number } }
 }
 
 /** A goal as asked for, if it is one that can be played for on a map this wide; `null` otherwise. */
@@ -80,7 +82,7 @@ function countOf(seat: GoalSeat, kind: Exclude<GoalKind, 'location'>): number {
 /** How far a seat has come toward its goal: bananas or wrecks since it was set, or meters still to go to the spot. */
 export function goalProgress(seat: GoalSeat, goal: Goal): number {
   if (goal.kind !== 'location') return countOf(seat, goal.kind) - goal.from
-  const { x, z } = seat.vehicle.frame.position
+  const { x, z } = seat.chart.position
   return hypot(goal.x - x, goal.z - z)
 }
 

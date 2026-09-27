@@ -1,7 +1,7 @@
-import { v3, type Vec3 } from '@buggies/physics'
+import { FLAT, v3, type Vec3, type WorldShape } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 import type { TerrainMap } from '@buggies/terrain'
-import { addMover } from '@buggies/vehicle'
+import { addMover, placeOnShape } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { advancePatrol, patrolPoint, startPatrol, type Patrol } from './patrol.ts'
@@ -48,6 +48,8 @@ export interface Robot extends Patrol {
   heading: number
   /** What the cars run into. */
   readonly body: RAPIER.RigidBody
+  /** The shape of the world its body is in: it rolls on the map, and its body goes where that is in the world. */
+  readonly shape: WorldShape
 }
 
 /** The seed a robot's rounds are picked by. */
@@ -62,8 +64,7 @@ export function placeRobot(map: TerrainMap, robot: Robot): void {
 
 /** Put a robot's body where the robot is: straight there, or moved there over the next step. */
 export function seatRobotBody(robot: Robot, now: boolean): void {
-  const at = { x: robot.position.x, y: robot.position.y + ROBOT_SIZE.halfHeight, z: robot.position.z }
-  const turn = { x: 0, y: sin(robot.heading / 2), z: 0, w: cos(robot.heading / 2) }
+  const { position: at, rotation: turn } = placeOnShape(robot.shape, robot.position.x, robot.position.y + ROBOT_SIZE.halfHeight, robot.position.z, robot.heading)
   if (now) {
     robot.body.setTranslation(at, true)
     robot.body.setRotation(turn, true)
@@ -74,7 +75,7 @@ export function seatRobotBody(robot: Robot, now: boolean): void {
 }
 
 /** The island's robots, each on an arterial of the seed's choosing; none on an island with no arterials. */
-export function createRobots(map: TerrainMap, world: RAPIER.World): Robot[] {
+export function createRobots(map: TerrainMap, world: RAPIER.World, shape: WorldShape = FLAT): Robot[] {
   const robots: Robot[] = []
   for (let id = 0; id < ROBOTS; id++) {
     const patrol = startPatrol(robotSeed(map, id))(map)
@@ -90,6 +91,7 @@ export function createRobots(map: TerrainMap, world: RAPIER.World): Robot[] {
       position: v3(),
       heading: 0,
       body: addMover(world, ROBOT_SIZE.halfWidth, ROBOT_SIZE.halfHeight, ROBOT_SIZE.halfDepth, { x: 0, y: -1000, z: 0 }),
+      shape,
     }
     placeRobot(map, robot)
     seatRobotBody(robot, true)

@@ -373,6 +373,9 @@ export function addTerrain(world: RAPIER.World, map: TerrainMap, shape: WorldSha
   addSidewalks(world, map, shape)
 }
 
+/** How many cells a side a tile of a planet's ground is. */
+const GROUND_TILE_CELLS = 32
+
 /** How far under the sea the ground is laid on a planet: deeper than this, the sea floor is left out. */
 const PLANET_FLOOR_DEPTH = 6
 
@@ -385,39 +388,46 @@ const PLANET_FLOOR_DEPTH = 6
 function addPlanetGround(world: RAPIER.World, map: TerrainMap, heights: Float32Array, shape: WorldShape): void {
   const { width, depth, cellSize } = map.heightfield
   const floor = map.seaLevel - PLANET_FLOOR_DEPTH
-  const used = new Int32Array(width * depth).fill(-1)
-  const positions: number[] = []
-  const indices: number[] = []
-  const corner = (col: number, row: number): number => {
-    const cell = row * width + col
-    const known = used[cell]!
-    if (known >= 0) return known
-    const index = positions.length / 3
-    positions.push(col * cellSize, heights[cell]!, row * cellSize)
-    used[cell] = index
-    return index
-  }
-  for (let row = 0; row + 1 < depth; row++) {
-    for (let col = 0; col + 1 < width; col++) {
-      const a = row * width + col
-      if (Math.max(heights[a]!, heights[a + 1]!, heights[a + width]!, heights[a + width + 1]!) < floor) continue
-      const nw = corner(col, row)
-      const ne = corner(col + 1, row)
-      const sw = corner(col, row + 1)
-      const se = corner(col + 1, row + 1)
-      // Wound to face up, away from the planet's middle, as the chart's ground faces up the y axis.
-      indices.push(nw, sw, ne, ne, sw, se)
-    }
-  }
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
-  if (indices.length > 0) {
-    world.createCollider(
-      RAPIER.ColliderDesc.trimesh(bendPositions(shape, positions), new Uint32Array(indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
-        .setCollisionGroups(GROUND_GROUPS)
-        .setFriction(GROUND_FRICTION)
-        .setRestitution(GROUND_RESTITUTION),
-      body,
-    )
+  // In tiles, a mesh each: what rests on the ground is tested against the few cells round it, not
+  // against one mesh the size of the planet, which costs a prop at rest ten times what it should.
+  for (let tileRow = 0; tileRow + 1 < depth; tileRow += GROUND_TILE_CELLS) {
+    for (let tileCol = 0; tileCol + 1 < width; tileCol += GROUND_TILE_CELLS) {
+      const positions: number[] = []
+      const indices: number[] = []
+      const used = new Map<number, number>()
+      const corner = (col: number, row: number): number => {
+        const cell = row * width + col
+        const known = used.get(cell)
+        if (known !== undefined) return known
+        const index = positions.length / 3
+        positions.push(col * cellSize, heights[cell]!, row * cellSize)
+        used.set(cell, index)
+        return index
+      }
+      for (let row = tileRow; row < Math.min(tileRow + GROUND_TILE_CELLS, depth - 1); row++) {
+        for (let col = tileCol; col < Math.min(tileCol + GROUND_TILE_CELLS, width - 1); col++) {
+          const a = row * width + col
+          if (Math.max(heights[a]!, heights[a + 1]!, heights[a + width]!, heights[a + width + 1]!) < floor) continue
+          const nw = corner(col, row)
+          const ne = corner(col + 1, row)
+          const sw = corner(col, row + 1)
+          const se = corner(col + 1, row + 1)
+          // Wound to face up, away from the planet's middle, as the chart's ground faces up the y axis.
+          indices.push(nw, sw, ne, ne, sw, se)
+        }
+      }
+      if (indices.length === 0) continue
+      // A plain mesh: smoothing its internal edges over treats it as the skin of a solid, which an
+      // open sheet of ground is not, and props resting on it then sink through it.
+      world.createCollider(
+        RAPIER.ColliderDesc.trimesh(bendPositions(shape, positions), new Uint32Array(indices))
+          .setCollisionGroups(GROUND_GROUPS)
+          .setFriction(GROUND_FRICTION)
+          .setRestitution(GROUND_RESTITUTION),
+        body,
+      )
+    }
   }
   if (shape.kind === 'planet') {
     let deepest = floor

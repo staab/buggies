@@ -784,6 +784,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     seed,
     size,
     depth,
+    planet: options.planet ?? false,
     cellSize,
     seaLevel,
     heightfield: field,
@@ -833,4 +834,4 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
  * land kept to a band across the middle, where the map is stretched least
  * over the sphere.
  */
-export const PLANET_TERRAIN = { size: 1281, depth: 641, landBand: 0.28, islandRadius: 160, mountainScale: 0.37 } as const satisfies TerrainOptions
+export const PLANET_TERRAIN = { size: 1281, depth: 641, landBand: 0.28, islandRadius: 160, mountainScale: 0.37, planet: true } as const satisfies TerrainOptions

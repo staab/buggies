@@ -270,6 +270,8 @@ export interface TerrainOptions {
   landBand?: number
   /** How big the mountains are, as a share of their full width: small islands want small mountains. */
   mountainScale?: number
+  /** Whether the map is wrapped round a planet: once round its equator across, and pole to pole down. */
+  planet?: boolean
   cellSize?: number
   seaLevel?: number
   oceanDepth?: number
@@ -331,6 +333,8 @@ export interface TerrainMap {
   /** Cells across the map, west to east, and down it, north to south. */
   size: number
   depth: number
+  /** Whether it is wrapped round a planet, or lies flat. */
+  planet: boolean
   cellSize: number
   seaLevel: number
   heightfield: Heightfield
