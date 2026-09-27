@@ -1,12 +1,14 @@
 import {
   FLAT,
   createChartFrame,
+  createPlanet,
   shapeFrame,
   shapeToChart,
   shapeToWorld,
   shapeUp,
   type WorldShape,
 } from '@buggies/physics'
+import { mapExtent, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 // What is drawn where the map has it, drawn where that is in the world: on
@@ -175,3 +177,10 @@ export const UPRIGHT = new THREE.Quaternion()
 
 /** The flat world, for whatever has no other. */
 export const FLAT_GLOBE = new Globe(FLAT)
+
+/** The shape of the world a map makes, for drawing what is laid out on the map: wrapped round a planet, once round its equator across, or flat. */
+export function shapeOf(map: TerrainMap): WorldShape {
+  if (!map.planet) return FLAT
+  const extent = mapExtent(map)
+  return { kind: 'planet', planet: createPlanet(extent.x, extent.z) }
+}

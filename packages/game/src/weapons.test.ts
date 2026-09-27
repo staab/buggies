@@ -1,4 +1,5 @@
-import { generateTerrain, roadLift, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { vdot, type Vec3 } from '@buggies/physics'
+import { PLANET_TERRAIN, alongGround, atHeight, generateTerrain, groundUnder, heightOver, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -44,6 +45,7 @@ import {
   createArena,
   initPhysics,
   respawn,
+  spawnHere,
   looseGone,
   nosePoint,
   takeSeat,
@@ -75,9 +77,8 @@ import {
   type VehicleProfileId,
 } from './index.ts'
 import { nearestRoadSpotTo } from './spawns.ts'
+import { ahead, angleBetween, apart, lifted } from './test-planet.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
 
 let map: TerrainMap
 const FIRE: VehicleInput = { ...NEUTRAL_INPUT, fire: true }
@@ -85,14 +86,31 @@ const ABILITY: VehicleInput = { ...NEUTRAL_INPUT, ability: true }
 
 /** Run the arena with one seat holding the fire button and everyone else nothing. */
 /**
- * The height of what a car stands on at a point: the road there, where one
- * runs, which may be up on an embankment or a deck; the ground otherwise.
+ * What a car stands on at a point: the road there, where one runs, which
+ * may be up on an embankment or a deck; the ground otherwise.
  */
-function surfaceAt(x: number, z: number): number {
-  const ground = sampleHeight(map.heightfield, x, z)
-  const spot = nearestRoadSpotTo(map, x, z)
-  if (spot === null || Math.hypot(spot.point.x - x, spot.point.z - z) > spot.road.width / 2 + ROAD_POINT_SLACK) return ground
-  return Math.max(ground, spot.point.y + roadLift(spot.road))
+function surfaceAt(point: Vec3): Vec3 {
+  const planet = map.world!
+  const ground = groundUnder(planet, point)
+  const spot = nearestRoadSpotTo(planet, point)
+  const onRoad = spot !== null && apart(spot.point, point) <= (spot.road.widths[spot.index] ?? 0) / 2 + ROAD_POINT_SLACK
+  return atHeight(planet, upOf(point), onRoad ? Math.max(ground, heightOver(planet, spot.point)) : ground)
+}
+
+/** Set a car down on what it would stand on at a point, facing this way, or east. */
+function setDown(seat: Seat, point: Vec3, facing?: Vec3): void {
+  respawn(seat, spawnHere(surfaceAt(point), facing ?? tangentFrame(upOf(point)).east))
+}
+
+/** The point this far ahead of a car and this far to its right. */
+function besides(seat: Seat, forward: number, aside: number): Vec3 {
+  const { position, right } = seat.vehicle.frame
+  return ahead(ahead(position, seat.vehicle.frame.forward, forward), right, aside)
+}
+
+/** How fast a car goes along the ground, and which way. */
+function going(seat: Seat): Vec3 {
+  return alongGround(seat.vehicle.frame.linearVelocity, seat.vehicle.up)
 }
 /** How far past a road's edge a point may be from the nearest of its points, which are spaced out along it, and still be on it. */
 const ROAD_POINT_SLACK = 6
@@ -107,14 +125,11 @@ function fire(arena: Arena, shooter: Seat, ticks: number): number {
 }
 
 /** Two cars: one on its spawn, and another this far ahead of it and this far to its right, facing the same way. */
-function pair(arena: Arena, ahead: number, aside: number): [Seat, Seat] {
+function pair(arena: Arena, forward: number, aside: number): [Seat, Seat] {
   const a = takeSeat(arena, 0, 'sportsCar')
   const b = takeSeat(arena, 1, 'sportsCar')
   advance(arena)
-  const { position, forward, right } = a.vehicle.frame
-  const x = position.x + forward.x * ahead + right.x * aside
-  const z = position.z + forward.z * ahead + right.z * aside
-  respawn(b, { position: { x, y: surfaceAt(x, z), z }, yaw: a.spawn.yaw })
+  setDown(b, besides(a, forward, aside), a.vehicle.frame.forward)
   for (let i = 0; i < 30; i++) advance(arena)
   return [a, b]
 }
@@ -122,7 +137,7 @@ function pair(arena: Arena, ahead: number, aside: number): [Seat, Seat] {
 describe('weapons', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    map = generateTerrain(11, PLANET_TERRAIN)
   }, 60_000)
 
   it('are bought with bananas, the same one everywhere, by a car carrying nothing', () => {
@@ -143,7 +158,7 @@ describe('weapons', () => {
     // One banana short: nothing bought until the next is taken, and then it is spent at once.
     seat.score = BANANAS_PER_WEAPON - 1
     const { position } = arena.pickups[3]!
-    respawn(seat, { position: { x: position.x, y: position.y - PICKUP_HEIGHT, z: position.z }, yaw: 0 })
+    setDown(seat, lifted(position, -PICKUP_HEIGHT))
     for (let i = 0; i < 30; i++) advance(arena)
     expect(seat.score).toBe(0)
     expect(WEAPONS).toContain(seat.weapon)
@@ -153,7 +168,7 @@ describe('weapons', () => {
     const held = seat.weapon
     seat.score = 0
     const next = arena.pickups[4]!.position
-    respawn(seat, { position: { x: next.x, y: next.y - PICKUP_HEIGHT, z: next.z }, yaw: 0 })
+    setDown(seat, lifted(next, -PICKUP_HEIGHT))
     for (let i = 0; i < 30; i++) advance(arena)
     expect(seat.score).toBe(1)
     expect(seat.weapon).toBe(held)
@@ -161,7 +176,7 @@ describe('weapons', () => {
     // Once what is carried is gone, the bananas kept buy the next at once.
     seat.score = BANANAS_PER_WEAPON + 2
     disarm(seat)
-    respawn(seat, { position: { x: 0, y: 200, z: 0 }, yaw: 0 })
+    respawn(seat, spawnHere(lifted(seat.vehicle.frame.position, 200), seat.vehicle.frame.forward))
     advance(arena)
     expect(WEAPONS).toContain(seat.weapon)
     expect(seat.score).toBe(2)
@@ -222,7 +237,8 @@ describe('weapons', () => {
 
   it('a rocket goes after the car ahead, even off to one side, and blows it up, a kill to whoever fired it', () => {
     const arena = createArena(map)
-    const [a, b] = pair(arena, 40, 10)
+    // Off to one side, but still on the road, clear of the banks either side of it.
+    const [a, b] = pair(arena, 40, 4)
     arm(a, 'rocket')
     b.vehicle.damage = 1 - ROCKET_DAMAGE / DURABILITY
     fire(arena, a, 1)
@@ -253,12 +269,11 @@ describe('weapons', () => {
     expect(bomb.kind).toBe('bomb')
     // Behind the car, floating over the ground, and there for good until it goes off.
     const { position, forward } = a.vehicle.frame
-    const behind = { x: position.x - forward.x * BOMB_DROP_BACK, z: position.z - forward.z * BOMB_DROP_BACK }
-    expect(Math.hypot(bomb.position.x - behind.x, bomb.position.z - behind.z)).toBeLessThan(0.5)
-    expect(bomb.position.y).toBeGreaterThan(sampleHeight(map.heightfield, bomb.position.x, bomb.position.z))
+    expect(apart(bomb.position, ahead(position, forward, -BOMB_DROP_BACK))).toBeLessThan(0.5)
+    expect(heightOver(arena.planet, bomb.position)).toBeGreaterThan(groundUnder(arena.planet, bomb.position))
     expect(looseGone(bomb, bomb.bornTick + 60 * 60 * 60)).toBe(false)
     // The car that dropped it is safe while the bomb is still in the air, and no longer once it has landed.
-    respawn(a, { position: { x: bomb.position.x, y: bomb.position.y - PICKUP_HEIGHT, z: bomb.position.z }, yaw: 0 })
+    setDown(a, bomb.position)
     for (let i = 0; i < SPILL_FLIGHT_TICKS - 10; i++) advance(arena)
     expect(a.vehicle.wrecked).toBe(false)
     expect(arena.loose).toHaveLength(1)
@@ -328,10 +343,10 @@ describe('weapons', () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'sportsCar')
     for (let i = 0; i < 30; i++) advance(arena)
-    const ground = a.vehicle.frame.position.y
+    const ground = heightOver(arena.planet, a.vehicle.frame.position)
     arm(a, 'wings')
     fire(arena, a, 180)
-    expect(a.vehicle.frame.position.y - ground).toBeGreaterThan(8)
+    expect(heightOver(arena.planet, a.vehicle.frame.position) - ground).toBeGreaterThan(8)
     expect(a.vehicle.groundedCount).toBe(0)
     expect(a.ammoTicks).toBe(WINGS_FLIGHT_TICKS - 180)
     // The throttle drives it along up there.
@@ -339,32 +354,27 @@ describe('weapons', () => {
     const before = { ...a.vehicle.frame.position }
     for (let i = 0; i < 90; i++) advance(arena, () => drive)
     expect(a.vehicle.groundedCount).toBe(0)
-    expect(Math.hypot(a.vehicle.frame.position.x - before.x, a.vehicle.frame.position.z - before.z)).toBeGreaterThan(3)
+    expect(apart(a.vehicle.frame.position, before)).toBeGreaterThan(3)
     // Steered, it banks into a wide turn: the way it is going comes around gradually, its nose
     // following, and it levels off again once the steering is let go.
-    const heading = (v: { x: number; z: number }): number => Math.atan2(v.x, v.z)
-    const was = heading(a.vehicle.frame.linearVelocity)
+    const was = going(a)
     const from = { ...a.vehicle.frame.position }
     let leaned = 0
     for (let i = 0; i < 120; i++) {
       advance(arena, () => ({ ...drive, steer: 1 }))
-      leaned = Math.max(leaned, Math.abs(a.vehicle.frame.right.y))
+      leaned = Math.max(leaned, Math.abs(vdot(a.vehicle.frame.right, a.vehicle.up)))
     }
-    const { linearVelocity: going, forward, position } = a.vehicle.frame
-    let swung = heading(going) - was
-    if (swung > Math.PI) swung -= Math.PI * 2
-    if (swung < -Math.PI) swung += Math.PI * 2
-    expect(Math.abs(swung)).toBeGreaterThan(0.3)
-    expect(Math.abs(swung)).toBeLessThan(2.5)
+    const swung = angleBetween(going(a), was)
+    expect(swung).toBeGreaterThan(0.3)
+    expect(swung).toBeLessThan(2.5)
     expect(leaned).toBeGreaterThan(0.15)
-    const speed = Math.hypot(going.x, going.z)
     // It faces the way it is going, through the turn.
-    expect((forward.x * going.x + forward.z * going.z) / (Math.hypot(forward.x, forward.z) * speed)).toBeGreaterThan(0.98)
+    expect(angleBetween(alongGround(a.vehicle.frame.forward, a.vehicle.up), going(a))).toBeLessThan(Math.acos(0.98))
     // The arc is a wide one: the chord it has flown around says so.
-    const chord = Math.hypot(position.x - from.x, position.z - from.z)
-    expect(chord / (2 * Math.sin(Math.abs(swung) / 2))).toBeGreaterThan(wingsTurnRadius(a.tuning) * 0.5)
+    const chord = apart(a.vehicle.frame.position, from)
+    expect(chord / (2 * Math.sin(swung / 2))).toBeGreaterThan(wingsTurnRadius(a.tuning) * 0.5)
     for (let i = 0; i < 60; i++) advance(arena, () => drive)
-    expect(a.vehicle.frame.up.y).toBeGreaterThan(0.95)
+    expect(vdot(a.vehicle.frame.up, a.vehicle.up)).toBeGreaterThan(0.95)
     // Let go: down it comes.
     for (let i = 0; i < 60 * 6; i++) advance(arena)
     expect(a.vehicle.groundedCount).toBeGreaterThan(0)
@@ -372,13 +382,6 @@ describe('weapons', () => {
   })
 
   it('a car carrying wings steers by banking whenever it is in the air, key or no key, and without them it does not', () => {
-    const heading = (v: { x: number; z: number }): number => Math.atan2(v.x, v.z)
-    const swing = (from: number, to: number): number => {
-      let swung = to - from
-      if (swung > Math.PI) swung -= Math.PI * 2
-      if (swung < -Math.PI) swung += Math.PI * 2
-      return Math.abs(swung)
-    }
     // Up and along on the key, then the key let go while it is still well up, and the steering held.
     const drive: VehicleInput = { ...NEUTRAL_INPUT, fire: true, throttle: 1 }
     const glide: VehicleInput = { ...NEUTRAL_INPUT, steer: 1 }
@@ -392,24 +395,24 @@ describe('weapons', () => {
       return [arena, a]
     }
     const [arena, a] = aloft()
-    const was = heading(a.vehicle.frame.linearVelocity)
+    const was = going(a)
     for (let i = 0; i < 45; i++) advance(arena, () => glide)
     expect(a.vehicle.lifted).toBe(false)
     expect(a.vehicle.winged).toBe(true)
     expect(a.vehicle.groundedCount).toBe(0)
-    expect(swing(was, heading(a.vehicle.frame.linearVelocity))).toBeGreaterThan(0.15)
+    expect(angleBetween(going(a), was)).toBeGreaterThan(0.15)
     // Held level, banked into the turn, and still falling: nothing lifts it.
-    expect(a.vehicle.frame.up.y).toBeGreaterThan(0.8)
-    expect(a.vehicle.frame.linearVelocity.y).toBeLessThan(0)
+    expect(vdot(a.vehicle.frame.up, a.vehicle.up)).toBeGreaterThan(0.8)
+    expect(vdot(a.vehicle.frame.linearVelocity, a.vehicle.up)).toBeLessThan(0)
     arena.world.free()
     // Its wings gone, the same steering up there swings the way it is going not at all.
     const [bare, b] = aloft()
     disarm(b)
-    const before = heading(b.vehicle.frame.linearVelocity)
+    const before = going(b)
     for (let i = 0; i < 45; i++) advance(bare, () => glide)
     expect(b.vehicle.winged).toBe(false)
     expect(b.vehicle.groundedCount).toBe(0)
-    expect(swing(before, heading(b.vehicle.frame.linearVelocity))).toBeLessThan(0.05)
+    expect(angleBetween(going(b), before)).toBeLessThan(0.05)
     bare.world.free()
   })
 
@@ -418,10 +421,7 @@ describe('weapons', () => {
     const a = takeSeat(arena, 0, 'tank')
     const b = takeSeat(arena, 1, 'sportsCar')
     advance(arena)
-    const { position, forward, right } = a.vehicle.frame
-    const x = position.x + forward.x * 30 + right.x * 4
-    const z = position.z + forward.z * 30 + right.z * 4
-    respawn(b, { position: { x, y: surfaceAt(x, z), z }, yaw: a.spawn.yaw })
+    setDown(b, besides(a, 30, 4), a.vehicle.frame.forward)
     for (let i = 0; i < 30; i++) advance(arena)
     const gun = BUILT_IN_GUNS.tank!
     const expected = (): { x: number; y: number; z: number } => {
@@ -478,31 +478,28 @@ function hold(arena: Arena, driver: Seat, ticks: number, input: VehicleInput = A
 }
 
 /** Two cars of these kinds: one on its spawn, and another this far ahead of it and this far to its right, facing the same way, settled. */
-function twoCars(arena: Arena, first: VehicleProfileId, second: VehicleProfileId, ahead: number, aside = 0): [Seat, Seat] {
+function twoCars(arena: Arena, first: VehicleProfileId, second: VehicleProfileId, forward: number, aside = 0): [Seat, Seat] {
   const a = takeSeat(arena, 0, first)
   const b = takeSeat(arena, 1, second)
   advance(arena)
-  const { position, forward, right } = a.vehicle.frame
-  const x = position.x + forward.x * ahead + right.x * aside
-  const z = position.z + forward.z * ahead + right.z * aside
-  respawn(b, { position: { x, y: surfaceAt(x, z), z }, yaw: a.spawn.yaw })
+  setDown(b, besides(a, forward, aside), a.vehicle.frame.forward)
   for (let i = 0; i < 30; i++) advance(arena)
   return [a, b]
 }
 
 /** Put a car down on a loose thing, to reach it: on whatever it lies on. */
-function onto(seat: Seat, at: { x: number; z: number }): void {
-  respawn(seat, { position: { x: at.x, y: surfaceAt(at.x, at.z), z: at.z }, yaw: 0 })
+function onto(seat: Seat, at: Vec3): void {
+  setDown(seat, at)
 }
 /** Put a car on whatever is underfoot at a point: onto an oil slick, which lies on it. */
-function ontoGround(seat: Seat, at: { x: number; z: number }): void {
-  respawn(seat, { position: { x: at.x, y: surfaceAt(at.x, at.z), z: at.z }, yaw: 0 })
+function ontoGround(seat: Seat, at: Vec3): void {
+  setDown(seat, at)
 }
 
 describe("the car's own key", () => {
   beforeAll(() => {
     initPhysics()
-    map ??= generateTerrain(3, TEST_ISLANDS)
+    map ??= generateTerrain(3, PLANET_TERRAIN)
   }, 60_000)
 
   it('the tank fires a missile from its gun on a press, with the blast of a rocket, and not again until it has cooled down', () => {
@@ -555,13 +552,13 @@ describe("the car's own key", () => {
     advance(arena, () => ABILITY)
     expect(a.actionTicks).toBeGreaterThan(0)
     advance(arena)
-    expect(a.vehicle.frame.linearVelocity.y).toBeGreaterThan(HOP_SPEED * 0.8)
+    expect(vdot(a.vehicle.frame.linearVelocity, a.vehicle.up)).toBeGreaterThan(HOP_SPEED * 0.8)
     // High enough to clear something: most of the height the launch speed buys against the world's gravity.
-    const ground = a.vehicle.frame.position.y
+    const ground = heightOver(arena.planet, a.vehicle.frame.position)
     let top = ground
     for (let i = 0; i < 90; i++) {
       advance(arena)
-      top = Math.max(top, a.vehicle.frame.position.y)
+      top = Math.max(top, heightOver(arena.planet, a.vehicle.frame.position))
     }
     expect(top - ground).toBeGreaterThan(((HOP_SPEED * HOP_SPEED) / (2 * worldGravity(arena.world))) * 0.8)
     for (let i = 0; i < 90; i++) advance(arena)
@@ -570,9 +567,9 @@ describe("the car's own key", () => {
     advance(arena, () => ABILITY)
     advance(arena)
     for (let i = 0; i < 4; i++) advance(arena)
-    const rising = a.vehicle.frame.linearVelocity.y
+    const rising = vdot(a.vehicle.frame.linearVelocity, a.vehicle.up)
     advance(arena, () => ABILITY)
-    expect(a.vehicle.frame.linearVelocity.y).toBeLessThan(rising + 0.05)
+    expect(vdot(a.vehicle.frame.linearVelocity, a.vehicle.up)).toBeLessThan(rising + 0.05)
     arena.world.free()
   })
 
@@ -667,11 +664,11 @@ describe("the car's own key", () => {
     const arena = createArena(map)
     const [a] = twoCars(arena, 'rocketShip', 'sportsCar', 40)
     for (let i = 0; i < 60; i++) advance(arena)
-    const resting = a.vehicle.frame.position.y
+    const resting = heightOver(arena.planet, a.vehicle.frame.position)
     expect(a.vehicle.groundedCount).toBeGreaterThan(0)
     const climb = { ...ABILITY, throttle: 1 }
     hold(arena, a, 120, climb)
-    expect(a.vehicle.frame.position.y).toBeGreaterThan(resting + 5)
+    expect(heightOver(arena.planet, a.vehicle.frame.position)).toBeGreaterThan(resting + 5)
     expect(a.vehicle.wrecked).toBe(false)
     // Let go, it comes back down to hover.
     for (let i = 0; i < 60 * 8; i++) advance(arena)
@@ -715,10 +712,7 @@ describe("the car's own key", () => {
     const arena = createArena(map)
     const [a, near] = twoCars(arena, 'semi', 'sportsCar', HORN_RANGE - 2)
     const far = takeSeat(arena, 2, 'sportsCar')
-    const { position, forward } = a.vehicle.frame
-    const x = position.x + forward.x * (HORN_RANGE + 15)
-    const z = position.z + forward.z * (HORN_RANGE + 15)
-    respawn(far, { position: { x, y: surfaceAt(x, z), z }, yaw: a.spawn.yaw })
+    setDown(far, besides(a, HORN_RANGE + 15, 0), a.vehicle.frame.forward)
     for (let i = 0; i < 30; i++) advance(arena)
     advance(arena, (seat) => (seat === a ? ABILITY : NEUTRAL_INPUT))
     expect(near.stunnedTicks).toBe(HORN_STUN_TICKS)
@@ -881,7 +875,8 @@ describe("the car's own key", () => {
     expect(b.vehicle.grip).toBe(OIL_GRIP)
     // It stays for the next car, and the grip comes back once out of it.
     expect(arena.loose).toContain(slick)
-    ontoGround(b, { x: slick.position.x + 30, z: slick.position.z + 30 })
+    const { east, north } = tangentFrame(upOf(slick.position))
+    ontoGround(b, ahead(ahead(slick.position, east, 30), north, 30))
     for (let i = 0; i < OIL_SLIP_TICKS + 2; i++) advance(arena)
     expect(b.slipTicks).toBe(0)
     expect(b.vehicle.grip).toBe(1)
@@ -920,7 +915,7 @@ describe("the car's own key", () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'sportsCar')
     const slot = arena.pickups[3]!
-    const off = { x: slot.position.x + MAGNET_REACH * 0.6, z: slot.position.z }
+    const off = ahead(slot.position, tangentFrame(upOf(slot.position)).east, MAGNET_REACH * 0.6)
     ontoGround(a, off)
     for (let i = 0; i < 30; i++) advance(arena)
     expect(slot.generation).toBe(0)
@@ -936,10 +931,7 @@ describe("the car's own key", () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 30, 0)
     const c = takeSeat(arena, 2, 'sportsCar')
-    const { position, forward, right } = a.vehicle.frame
-    const x = position.x + forward.x * 50 + right.x * 10
-    const z = position.z + forward.z * 50 + right.z * 10
-    respawn(c, { position: { x, y: surfaceAt(x, z), z }, yaw: a.spawn.yaw })
+    setDown(c, besides(a, 50, 10), a.vehicle.frame.forward)
     for (let i = 0; i < 30; i++) advance(arena)
     arm(a, 'tripleRocket')
     fire(arena, a, 1)
@@ -963,9 +955,9 @@ describe("the car's own key", () => {
       const start = { ...b.vehicle.frame.position }
       const drive: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
       for (let i = 0; i < 150; i++) advance(arena, (seat) => (seat === a ? drive : NEUTRAL_INPUT))
-      const { x, z } = b.vehicle.frame.position
+      const moved = apart(b.vehicle.frame.position, start)
       arena.world.free()
-      return Math.hypot(x - start.x, z - start.z)
+      return moved
     }
     expect(shoved(true)).toBeGreaterThan(shoved(false) * 1.5)
   })
@@ -982,8 +974,7 @@ describe("the car's own key", () => {
     expect(a.vehicle.boosted).toBe(false)
     for (let i = 0; i < GRAPPLE_MISS_TICKS; i++) advance(arena)
     expect(a.grappleTicks).toBe(0)
-    const { x, z } = a.vehicle.frame.position
-    expect(Math.hypot(x - before.x, z - before.z)).toBeLessThan(0.5)
+    expect(apart(a.vehicle.frame.position, before)).toBeLessThan(0.5)
     arena.world.free()
   })
 
@@ -991,13 +982,13 @@ describe("the car's own key", () => {
     const arena = createArena(map)
     const [a, b] = pair(arena, 35, 0)
     arm(a, 'grapple')
-    const apart = (): number => Math.hypot(b.vehicle.frame.position.x - a.vehicle.frame.position.x, b.vehicle.frame.position.z - a.vehicle.frame.position.z)
-    const before = apart()
+    const gap = (): number => apart(b.vehicle.frame.position, a.vehicle.frame.position)
+    const before = gap()
     fire(arena, a, 1)
     expect(a.weapon).toBe('none')
     expect(a.grappleTarget).toBe(b.id)
     for (let i = 0; i < 120; i++) advance(arena)
-    expect(apart()).toBeLessThan(before - 5)
+    expect(gap()).toBeLessThan(before - 5)
     for (let i = 0; i < GRAPPLE_TICKS; i++) advance(arena)
     expect(a.grappleTicks).toBe(0)
     expect(a.grappleTarget).toBe(NO_TARGET)

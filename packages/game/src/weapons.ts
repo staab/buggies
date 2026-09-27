@@ -13,9 +13,8 @@ import {
   vset,
   vsub,
   type Vec3,
-  type WorldShape,
 } from '@buggies/physics'
-import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { atHeight, groundUnder, heightOver, upOf, type World } from '@buggies/terrain'
 import {
   addForceAlong,
   addTorqueAbout,
@@ -27,7 +26,6 @@ import {
   type VehicleTuning,
 } from '@buggies/vehicle'
 
-import { chartPoint, type SeatChart } from './chart.ts'
 import { NPC_FRAGILITY } from './npcs.ts'
 import { SPIDER_BELLY, SPIDER_BODY } from './spiders.ts'
 
@@ -465,8 +463,6 @@ export interface Gunner {
   kills: number
   robotKills: number
   readonly vehicle: Vehicle
-  /** Where its car is on the map, and which way it faces there. */
-  readonly chart: SeatChart
   readonly tuning: VehicleTuning
   readonly profile: VehicleProfileId
   weapon: Weapon
@@ -552,9 +548,7 @@ export function aimPoint(arena: Pick<Battlefield, 'seats' | 'robots' | 'ufos' | 
   if (target >= SPIDER_TARGET) {
     const spider = arena.spiders[target - SPIDER_TARGET]
     if (spider === undefined) return null
-    vcopy(out, spider.position)
-    out.y += SPIDER_MIDDLE
-    return out
+    return vaddScaled(out, spider.position, upOf(spider.position, way), SPIDER_MIDDLE)
   }
   if (target >= UFO_TARGET) {
     const ufo = arena.ufos[target - UFO_TARGET]
@@ -563,14 +557,13 @@ export function aimPoint(arena: Pick<Battlefield, 'seats' | 'robots' | 'ufos' | 
   if (target >= ROBOT_TARGET) {
     const robot = arena.robots[target - ROBOT_TARGET]
     if (robot === undefined) return null
-    vcopy(out, robot.position)
-    out.y += ROBOT_MIDDLE
-    return out
+    return vaddScaled(out, robot.position, upOf(robot.position, way), ROBOT_MIDDLE)
   }
   const seat = arena.seats[target]
   if (seat === undefined || !seat.occupied || seat.vehicle.wrecked) return null
-  return vcopy(out, seat.chart.position)
+  return vcopy(out, seat.vehicle.frame.position)
 }
+const way = v3()
 
 /** Take this much of a target with a weapon: of a car, as `harm` does; of a machine, as much less as it is tougher. */
 export function strike(arena: Battlefield, target: number, damage: number, by?: Gunner): void {
@@ -612,9 +605,7 @@ const aimed = v3()
 
 /** What of an arena the weapons need. */
 export interface Battlefield {
-  readonly map: TerrainMap
-  /** The shape of the world: what lies on the map is where the map has it, and the cars are bodies in the world. */
-  readonly shape: WorldShape
+  readonly planet: World
   readonly seats: readonly Gunner[]
   /** The machines that can be shot at besides the cars: the robots and the saucers. */
   readonly robots: readonly Machine[]
@@ -632,7 +623,7 @@ export interface Battlefield {
 }
 
 // The exact trigonometry, so every copy of the simulation turns the same.
-const { acos, atan2, cos: cosine, hypot, sin: sine } = exact
+const { acos, atan2, cos: cosine, sin: sine } = exact
 
 const muzzle = v3()
 const toward = v3()
@@ -925,12 +916,12 @@ export function mend(seat: Gunner): void {
 
 /** Where a car's weapon rides: over the middle of its roof. */
 export function mountPoint(out: Vec3, seat: Gunner): Vec3 {
-  return offsetOnChart(out, seat, 0, seat.tuning.chassisHalfHeight + MOUNT_HEIGHT)
+  return offsetOnCar(out, seat, 0, seat.tuning.chassisHalfHeight + MOUNT_HEIGHT)
 }
 
 /** The front of a car, a little up from its middle: where what is its own leaves from. */
 export function nosePoint(out: Vec3, seat: Gunner): Vec3 {
-  return offsetOnChart(out, seat, seat.tuning.chassisHalfLength, seat.tuning.chassisHalfHeight * NOSE_UP)
+  return offsetOnCar(out, seat, seat.tuning.chassisHalfLength, seat.tuning.chassisHalfHeight * NOSE_UP)
 }
 
 /**
@@ -941,14 +932,14 @@ export function nosePoint(out: Vec3, seat: Gunner): Vec3 {
 export function muzzlePoint(out: Vec3, seat: Gunner, own = false): Vec3 {
   const gun = BUILT_IN_GUNS[seat.profile]
   if (gun === undefined) return own ? nosePoint(out, seat) : mountPoint(out, seat)
-  return offsetOnChart(out, seat, gun.ahead, gun.up)
+  return offsetOnCar(out, seat, gun.ahead, gun.up)
 }
 
-/** A point on a car, this far ahead of its middle and this far up, on the chart: meters of the car are more of the chart away from the equator. */
-function offsetOnChart(out: Vec3, seat: Gunner, ahead: number, up: number): Vec3 {
-  const { position, forward, up: roof, scale } = seat.chart
-  vaddScaled(out, position, forward, ahead / scale)
-  return vaddScaled(out, out, roof, up / scale)
+/** A point on a car, this far ahead of its middle and this far up. */
+function offsetOnCar(out: Vec3, seat: Gunner, ahead: number, up: number): Vec3 {
+  const { position, forward, up: roof } = seat.vehicle.frame
+  vaddScaled(out, position, forward, ahead)
+  return vaddScaled(out, out, roof, up)
 }
 
 /** Rockets fired by a seat are counted from zero again after this many. */
@@ -967,23 +958,25 @@ export function rocketId(seat: number, fired: number): number {
  * How far along the line from one point to another the ground lets a shot
  * go: all the way, as one, or the share of it before a hill gets in the way.
  */
-export function sightLine(map: TerrainMap, from: Vec3, to: Vec3): number {
+export function sightLine(map: World, from: Vec3, to: Vec3): number {
   const dx = to.x - from.x
   const dy = to.y - from.y
   const dz = to.z - from.z
-  const steps = Math.max(Math.ceil(Math.sqrt(dx * dx + dz * dz) / SIGHT_STEP), 1)
+  const steps = Math.max(Math.ceil(Math.sqrt(dx * dx + dy * dy + dz * dz) / SIGHT_STEP), 1)
   for (let i = 1; i < steps; i++) {
     const t = i / steps
-    const x = from.x + dx * t
-    const z = from.z + dz * t
-    if (sampleHeight(map.heightfield, x, z) > from.y + dy * t - SIGHT_CLEARANCE) return (i - 1) / steps
+    sighted.x = from.x + dx * t
+    sighted.y = from.y + dy * t
+    sighted.z = from.z + dz * t
+    if (groundUnder(map, sighted) > heightOver(map, sighted) - SIGHT_CLEARANCE) return (i - 1) / steps
   }
   return 1
 }
+const sighted = v3()
 
 /** The nearest car within this far and this near dead ahead of the gun, or none. */
 function pickOut(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sweepCos: number): number {
-  const { forward } = seat.chart
+  const { forward } = seat.vehicle.frame
   let target = NO_TARGET
   let nearest = range
   const consider = (id: number, at: Vec3): void => {
@@ -994,7 +987,7 @@ function pickOut(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sw
     target = id
     nearest = distance
   }
-  for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.chart.position)
+  for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.vehicle.frame.position)
   machinesOf(arena, consider)
   return target
 }
@@ -1033,11 +1026,11 @@ function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean, ki
   const to = v3()
   const at = aimPoint(arena, seat.aimTarget, aimed)
   if (at === null) {
-    vaddScaled(to, muzzle, seat.chart.forward, kind === 'laser' ? LASER_RANGE : MACHINE_GUN_RANGE)
+    vaddScaled(to, muzzle, seat.vehicle.frame.forward, kind === 'laser' ? LASER_RANGE : MACHINE_GUN_RANGE)
     arena.shots.push({ owner: seat.id, from, to, hit: NO_TARGET, kind })
     return
   }
-  const clear = sightLine(arena.map, muzzle, at)
+  const clear = sightLine(arena.planet, muzzle, at)
   vsub(toward, at, muzzle)
   vaddScaled(to, muzzle, toward, clear)
   // A police car's armor turns bullets, not light.
@@ -1051,7 +1044,7 @@ function shoot(arena: Battlefield, seat: Gunner, power: number, own: boolean, ki
 function reach(arena: Battlefield, seat: Gunner, range: number, hit: (other: Gunner) => void): void {
   for (const other of arena.seats) {
     if (other === seat || !other.occupied || other.vehicle.wrecked) continue
-    vsub(toward, other.chart.position, seat.chart.position)
+    vsub(toward, other.vehicle.frame.position, seat.vehicle.frame.position)
     if (vlength(toward) <= range) hit(other)
   }
 }
@@ -1080,15 +1073,24 @@ const slow =
  */
 function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: boolean, target?: number, turn = 0): void {
   muzzlePoint(muzzle, seat, own)
-  const { forward } = seat.chart
+  const { forward } = seat.vehicle.frame
+  const { up } = seat.vehicle
+  // Turned about the way up, to the right for a turn more than nothing.
   const c = cosine(turn)
   const s = sine(turn)
+  const along = vdot(up, forward)
+  const aside = vcross(v3(), up, forward)
+  const velocity = v3(
+    forward.x * c - aside.x * s + up.x * along * (1 - c),
+    forward.y * c - aside.y * s + up.y * along * (1 - c),
+    forward.z * c - aside.z * s + up.z * along * (1 - c),
+  )
   arena.rockets.push({
     id: rocketId(seat.id, seat.rocketsFired),
     owner: seat.id,
     target: target ?? pickOut(arena, seat, muzzle, ROCKET_LOCK_RANGE, ROCKET_LOCK_COS),
     position: vcopy(v3(), muzzle),
-    velocity: vscale(v3(), v3(forward.x * c - forward.z * s, forward.y, forward.x * s + forward.z * c), ROCKET_SPEED),
+    velocity: vscale(velocity, velocity, ROCKET_SPEED),
     bornTick: arena.tick,
     power,
   })
@@ -1097,7 +1099,7 @@ function launchRocket(arena: Battlefield, seat: Gunner, power: number, own: bool
 
 /** Every car within this far and this near dead ahead of a point, nearest first. */
 function pickAll(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sweepCos: number): number[] {
-  const { forward } = seat.chart
+  const { forward } = seat.vehicle.frame
   const found: { id: number; distance: number }[] = []
   const consider = (id: number, at: Vec3): void => {
     vsub(toward, at, from)
@@ -1105,7 +1107,7 @@ function pickAll(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sw
     if (distance === 0 || distance > range || vdot(toward, forward) / distance < sweepCos) return
     found.push({ id, distance })
   }
-  for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.chart.position)
+  for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.vehicle.frame.position)
   machinesOf(arena, consider)
   return found.sort((a, b) => a.distance - b.distance || a.id - b.id).map((one) => one.id)
 }
@@ -1137,17 +1139,17 @@ const DROP_HEIGHT: Readonly<Record<LooseKind, number>> = { banana: PICKUP_HEIGHT
  * clear; after that it goes off on anyone, or oils anyone, that car too.
  */
 function drop(arena: Battlefield, seat: Gunner, kind: LooseKind, power: number, back = BOMB_DROP_BACK, aside = 0): void {
-  const { position, forward, right, scale } = seat.chart
-  const x = position.x - (forward.x * back) / scale + (right.x * aside) / scale
-  const z = position.z - (forward.z * back) / scale + (right.z * aside) / scale
-  const level = Math.max(sampleHeight(arena.map.heightfield, x, z), position.y - seat.tuning.chassisHalfHeight)
+  const { position, forward, right } = seat.vehicle.frame
+  const behind = vaddScaled(v3(), position, forward, -back)
+  vaddScaled(behind, behind, right, aside)
+  const level = Math.max(groundUnder(arena.planet, behind), heightOver(arena.planet, position) - seat.tuning.chassisHalfHeight)
   arena.loose.push({
     id: arena.looseNext,
     kind,
     owner: seat.id,
     power,
     from: vcopy(v3(), position),
-    position: v3(x, level + DROP_HEIGHT[kind], z),
+    position: atHeight(arena.planet, upOf(behind), level + DROP_HEIGHT[kind]),
     bornTick: arena.tick,
   })
   arena.looseNext = (arena.looseNext + 1) % LOOSE_IDS
@@ -1206,12 +1208,11 @@ function plow(arena: Battlefield, seat: Gunner): void {
     if (closing > 0) body.applyImpulse(vscale(heading, shove, body.mass() * closing * PLOW_SHOVE), true)
   }
   for (const robot of arena.robots) {
-    const closing = thrown(chartPoint(arena.shape, robot.position, robotAt), STILL, ROBOT_HALF_DEPTH, ROBOT_HALF_WIDTH)
+    const closing = thrown(robot.position, STILL, ROBOT_HALF_DEPTH, ROBOT_HALF_WIDTH)
     if (closing > 0) strike(arena, ROBOT_TARGET + robot.id, closing * PLOW_MACHINE_BITE, seat)
   }
 }
 const STILL = v3()
-const robotAt = v3()
 
 /** Let go of whatever the grappling hook has caught. */
 function unhook(seat: Gunner): void {
@@ -1409,7 +1410,7 @@ function useAtOnce(arena: Battlefield, seat: Gunner): boolean {
       break
     case 'grapple': {
       // With nothing ahead to catch, the line shoots out and back, and the hook is spent all the same.
-      const target = pickOut(arena, seat, seat.chart.position, GRAPPLE_RANGE, GRAPPLE_COS)
+      const target = pickOut(arena, seat, seat.vehicle.frame.position, GRAPPLE_RANGE, GRAPPLE_COS)
       seat.grappleTarget = target
       seat.grappleTicks = target === NO_TARGET ? GRAPPLE_MISS_TICKS : GRAPPLE_TICKS
       break
@@ -1424,12 +1425,10 @@ function useAtOnce(arena: Battlefield, seat: Gunner): boolean {
 /**
  * Every rocket in the air flies on: turning after its target if it still
  * has one, going off on any car it reaches, with whatever it has of a
- * full blast, and gone when it meets the ground, leaves the map or runs
- * out of time.
+ * full blast, and gone when it meets the ground or runs out of time.
  */
 export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
-  const { map, rockets, seats, tick } = arena
-  const extent = mapExtent(map)
+  const { planet, rockets, seats, tick } = arena
   for (let i = rockets.length - 1; i >= 0; i--) {
     const rocket = rockets[i]
     if (rocket === undefined) continue
@@ -1437,7 +1436,7 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
     if (at !== null) {
       // Turn toward the middle of it, a little high, so it is the body that is met and not the wheels.
       vsub(desired, at, rocket.position)
-      desired.y += 0.5
+      vaddScaled(desired, desired, upOf(at, way), 0.5)
       vnormalize(desired, desired)
       vnormalize(heading, rocket.velocity)
       vaddScaled(desired, heading, desired, ROCKET_TURN)
@@ -1456,13 +1455,12 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
       rocket.target = NO_TARGET
     }
     vaddScaled(rocket.position, rocket.position, rocket.velocity, dt)
-    const { x, y, z } = rocket.position
     let spent = tick - rocket.bornTick >= ROCKET_LIFE_TICKS
-    spent ||= x < 0 || z < 0 || x > extent.x || z > extent.z || y <= sampleHeight(map.heightfield, x, z)
+    spent ||= heightOver(planet, rocket.position) <= groundUnder(planet, rocket.position)
     if (!spent) {
       for (const other of seats) {
         if (other.id === rocket.owner || !other.occupied || other.vehicle.wrecked) continue
-        vsub(toward, other.chart.position, rocket.position)
+        vsub(toward, other.vehicle.frame.position, rocket.position)
         if (vlength(toward) > ROCKET_REACH) continue
         harm(other, ROCKET_DAMAGE * rocket.power, seats[rocket.owner])
         spent = true

@@ -4,7 +4,7 @@ import * as THREE from 'three'
 import type { PresenceEffects } from './car-presence.ts'
 import { disposeObject } from './dispose.ts'
 import { distanceFrom, type Ear } from './ear.ts'
-import { FLAT_GLOBE, type Globe } from './globe.ts'
+import { upAt } from './stand.ts'
 import { buildRocket } from './weapon-models.ts'
 
 /** How much smoke a rocket leaves behind it, as a share of a burning car's. */
@@ -40,13 +40,11 @@ export class RocketsView {
   private readonly ear: Ear
   private readonly flights = new Map<number, Flight>()
 
-  private readonly globe: Globe
 
-  constructor(source: RocketSource, effects: PresenceEffects, ear: Ear, globe: Globe = FLAT_GLOBE) {
+  constructor(source: RocketSource, effects: PresenceEffects, ear: Ear) {
     this.source = source
     this.effects = effects
     this.ear = ear
-    this.globe = globe
   }
 
   get flying(): number {
@@ -62,15 +60,15 @@ export class RocketsView {
         flight = { model: buildRocket(), last: new THREE.Vector3(), bornTick: rocket.bornTick }
         this.object.add(flight.model)
         this.flights.set(rocket.id, flight)
-        sound?.whoosh(distanceFrom(this.ear, this.globe.toWorld(rocket.position.x, rocket.position.y, rocket.position.z, ahead)))
+        sound?.whoosh(distanceFrom(this.ear, ahead.set(rocket.position.x, rocket.position.y, rocket.position.z)))
       }
       const { position, velocity } = rocket
-      this.globe.toWorld(position.x, position.y, position.z, flight.model.position)
-      // Where it was a moment ago, in the world, and so which way it is going there.
-      this.globe.toWorld(position.x - velocity.x * GLANCE, position.y - velocity.y * GLANCE, position.z - velocity.z * GLANCE, ahead)
-      moving.subVectors(flight.model.position, ahead).divideScalar(GLANCE)
+      flight.model.position.set(position.x, position.y, position.z)
+      // Where it was a moment ago, and so which way it is going.
+      ahead.set(position.x - velocity.x * GLANCE, position.y - velocity.y * GLANCE, position.z - velocity.z * GLANCE)
+      moving.set(velocity.x, velocity.y, velocity.z)
       // The model's nose is along -Z, and lookAt turns +Z to what it is given; stood up the way up there.
-      this.globe.upAt(flight.model.position, flight.model.up)
+      upAt(flight.model.position, flight.model.up)
       flight.model.lookAt(ahead)
       flight.last.copy(flight.model.position)
       smoke.trail(flight.model.position, moving, TRAIL, dt)

@@ -1,6 +1,8 @@
 import { GOAL_KINDS, GOAL_LABELS, GOAL_TARGET_MOST, type Goal, type GoalKind, type GoalRequest } from '@buggies/game'
 import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import * as THREE from 'three'
 
+import { Globe, shapeOf } from './globe.ts'
 import { drawIsland } from './island-picture.ts'
 
 /** How many pixels a side the island is drawn at to pick a spot on. */
@@ -192,11 +194,15 @@ export class GoalMenu {
   private confirm(): void {
     if (this.kind === 'location') {
       if (this.picked === null) return
-      this.host.setGoal({ kind: 'location', target: 0, x: this.picked.x, z: this.picked.z })
+      // The way out from the planet's middle through the spot picked on the map.
+      const map = this.host.map()
+      if (map === null) return
+      const spot = new Globe(shapeOf(map)).toWorld(this.picked.x, 0, this.picked.z, new THREE.Vector3()).normalize()
+      this.host.setGoal({ kind: 'location', target: 0, x: spot.x, y: spot.y, z: spot.z })
     } else {
       const target = this.target()
       if (target === null) return
-      this.host.setGoal({ kind: this.kind, target, x: 0, z: 0 })
+      this.host.setGoal({ kind: this.kind, target, x: 0, y: 0, z: 0 })
     }
     this.hide()
   }

@@ -1,4 +1,3 @@
-import { mapExtent } from '@buggies/terrain'
 import {
   NEUTRAL_INPUT,
   NPC_CARS,
@@ -233,7 +232,7 @@ export class GameServer implements TransportHandlers {
         seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? NEUTRAL_INPUT),
       )
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
-      for (const seat of awardGoals(room.arena.seats)) this.events.onGoalReached?.(seat)
+      for (const seat of awardGoals(room.arena.seats, room.arena.planet.radius)) this.events.onGoalReached?.(seat)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
     this.expireHandshakes()
@@ -285,8 +284,7 @@ export class GameServer implements TransportHandlers {
 
     if (messageTypeOf(payload) === CLIENT_GOAL) {
       const request = decodeGoal(payload)
-      const extent = mapExtent(arena.map)
-      const goal = request === null ? null : request === undefined ? undefined : validGoal(request, extent)
+      const goal = request === null ? null : request === undefined ? undefined : validGoal(request)
       if (goal === undefined || (request !== null && goal === null)) {
         this.reject(connection, REJECT_MALFORMED_MESSAGE)
         return

@@ -64,7 +64,7 @@ const snapshot: SnapshotMessage = {
       collected: 1234,
       robotKills: 1,
     kills: 7,
-      goal: { kind: 'location', target: 0, from: 0, x: 1500.5, z: 2400.25 },
+      goal: { kind: 'location', target: 0, from: 0, x: 0.5, y: 0, z: 0.75 },
       goalsWon: 3,
       weapon: 'machineGun',
       wins: 255,
@@ -100,7 +100,7 @@ const snapshot: SnapshotMessage = {
       collected: 3,
       robotKills: 1,
     kills: 0,
-      goal: { kind: 'kills', target: 5, from: 2, x: 0, z: 0 },
+      goal: { kind: 'kills', target: 5, from: 2, x: 0, y: 0, z: 0 },
       goalsWon: 0,
       weapon: 'none',
       wins: 0,
@@ -166,7 +166,7 @@ const snapshot: SnapshotMessage = {
       deaths: 1,
     },
   ],
-  spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, heading: 1.5, legs: 4, target: { x: 1000.5, z: 700.25 }, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],
+  spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, forward: { x: 0, y: 0.5, z: -0.75 }, legs: 4, target: { x: 1000.5, y: -2.5, z: 700.25 }, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],
 }
 
 describe('wire', () => {
@@ -192,12 +192,13 @@ describe('wire', () => {
   })
 
   it('round-trips a goal, a count or a spot, and the clearing of one', () => {
-    expect(decodeGoal(encodeGoal({ kind: 'score', target: 20, x: 0, z: 0 }))).toEqual({ kind: 'score', target: 20, x: 0, z: 0 })
-    expect(decodeGoal(encodeGoal({ kind: 'location', target: 0, x: 1500.5, z: 2400.25 }))).toEqual({
+    expect(decodeGoal(encodeGoal({ kind: 'score', target: 20, x: 0, y: 0, z: 0 }))).toEqual({ kind: 'score', target: 20, x: 0, y: 0, z: 0 })
+    expect(decodeGoal(encodeGoal({ kind: 'location', target: 0, x: 0.625, y: -0.5, z: 0.25 }))).toEqual({
       kind: 'location',
       target: 0,
-      x: 1500.5,
-      z: 2400.25,
+      x: 0.625,
+      y: -0.5,
+      z: 0.25,
     })
     expect(decodeGoal(encodeGoal(null))).toBeNull()
     // Not a goal at all: the wrong length, or a kind that is none of them.

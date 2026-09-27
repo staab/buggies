@@ -426,7 +426,7 @@ export class LocalPrediction {
       robot.cooldownTicks = known.cooldownTicks
       robot.damage = known.damage
       robot.deaths = known.deaths
-      placeRobot(this.mirror.map, robot)
+      placeRobot(this.mirror.planet, robot)
       seatRobotBody(robot, true)
     }
     for (const known of snapshot.ufos) {
@@ -446,10 +446,9 @@ export class LocalPrediction {
       const spider = this.mirror.spiders[known.id]
       if (spider === undefined) continue
       vcopy(spider.position, known.position)
-      spider.heading = known.heading
+      vcopy(spider.forward, known.forward)
       spider.legs = known.legs
-      spider.target.x = known.target.x
-      spider.target.z = known.target.z
+      vcopy(spider.target, known.target)
       spider.stride = known.stride
       spider.bombTicks = known.bombTicks
       spider.damage = known.damage
@@ -468,10 +467,10 @@ export class LocalPrediction {
     // The bananas are the server's word alone: whatever the mirror took or
     // spilled since is put back as the server has it, to be taken again in
     // the replay if it was right.
-    const { map, water } = this.mirror
+    const { planet } = this.mirror
     this.bananas.pickups.forEach((known, slot) => {
       const mine = this.mirror.pickups[slot]
-      if (mine !== undefined) setPickup(map, water, mine, slot, known.generation, known.spawnTick)
+      if (mine !== undefined) setPickup(planet, mine, slot, known.generation, known.spawnTick)
     })
     this.mirror.loose = this.bananas.loose.slice()
     // Numbered on from where the server is, so a replay's drops get the numbers the server's will.

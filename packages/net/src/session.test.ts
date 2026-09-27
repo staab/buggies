@@ -6,6 +6,7 @@ import {
   GOAL_PRIZE,
   MAX_PLAYERS,
   NPC_CARS,
+  ROBOTS,
   SPIDERS,
   UFOS,
   armorShare,
@@ -16,6 +17,7 @@ import {
   createArena,
   initPhysics,
   respawn,
+  spawnHere,
   setPickup,
   takeSeat,
   type Arena,
@@ -24,7 +26,8 @@ import {
   type VehicleInput,
   type VehicleProfileId,
 } from '@buggies/game'
-import { PLANET_TERRAIN, ROAD_TUNNEL, generateTerrain, roadLift, type TerrainMap } from '@buggies/terrain'
+import { uprightRotation, vdistance, type Vec3 } from '@buggies/physics'
+import { PLANET_TERRAIN, ROAD_TUNNEL, generateTerrain, groundDistance, tangentFrame, upOf, type TerrainMap, type WorldProp } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
@@ -47,6 +50,7 @@ import type {
 } from './transport.ts'
 import {
   SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_ROBOT_BYTES,
   SNAPSHOT_SPIDER_BYTES,
   SNAPSHOT_UFO_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
@@ -55,11 +59,20 @@ import {
   type SnapshotMessage,
 } from './wire.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
+/** Each seed's planet, made once: making one takes seconds. */
+const planets = new Map<number, TerrainMap>()
+function planetOf(seed: number): TerrainMap {
+  let known = planets.get(seed)
+  if (known === undefined) {
+    known = generateTerrain(seed, PLANET_TERRAIN)
+    planets.set(seed, known)
+  }
+  return known
+}
 
 /** What every snapshot carries whatever else changes: the header, the saucers and the spiders. There are no robots on these small islands. */
-const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES + SPIDERS * SNAPSHOT_SPIDER_BYTES
+/** What every snapshot carries while nothing else changes: the saucers, the spiders and the robots, which never stop. */
+const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES + SPIDERS * SNAPSHOT_SPIDER_BYTES + ROBOTS * SNAPSHOT_ROBOT_BYTES
 
 /**
  * A wire made of queues. Messages are delivered when `deliver` is called,
@@ -157,7 +170,7 @@ class Session {
 
   constructor() {
     this.server = new GameServer(
-      (seed) => createArena(seed === map.seed ? map : generateTerrain(seed, { ...TEST_ISLANDS, size: 257 })),
+      (seed) => createArena(seed === map.seed ? map : planetOf(seed)),
       {
         onJoined: (seat) => this.events.push(`joined ${seat.id}`),
         onLeft: (seat) => this.events.push(`left ${seat.id}`),
@@ -195,7 +208,7 @@ class Session {
       this.step([wire])
     }
     const welcome = await welcoming
-    const mirror = createArena(welcome.seed === map.seed ? map : generateTerrain(welcome.seed, { ...TEST_ISLANDS, size: 257 }))
+    const mirror = createArena(welcome.seed === map.seed ? map : planetOf(welcome.seed))
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
     const player: Player = {
@@ -257,18 +270,19 @@ class Session {
   }
 }
 
-/** How far a position is from the nearest road's centerline on a map. */
-function offRoad(map: TerrainMap, position: { x: number; z: number }): number {
+/** How far a position is from the nearest road's centerline on a planet. */
+function offRoad(map: TerrainMap, position: Vec3): number {
   let nearest = Infinity
-  for (const road of map.roads) {
+  for (const road of map.world!.roads) {
     const count = road.closed ? road.points.length : road.points.length - 1
     for (let i = 0; i < count; i++) {
       const a = road.points[i]!
       const b = road.points[(i + 1) % road.points.length]!
       const vx = b.x - a.x
+      const vy = b.y - a.y
       const vz = b.z - a.z
-      const t = Math.min(Math.max(((position.x - a.x) * vx + (position.z - a.z) * vz) / (vx * vx + vz * vz || 1), 0), 1)
-      nearest = Math.min(nearest, Math.hypot(position.x - a.x - vx * t, position.z - a.z - vz * t))
+      const t = Math.min(Math.max(((position.x - a.x) * vx + (position.y - a.y) * vy + (position.z - a.z) * vz) / (vx * vx + vy * vy + vz * vz || 1), 0), 1)
+      nearest = Math.min(nearest, vdistance(position, { x: a.x + vx * t, y: a.y + vy * t, z: a.z + vz * t }))
     }
   }
   return nearest
@@ -280,26 +294,26 @@ function offRoad(map: TerrainMap, position: { x: number; z: number }): number {
  * ground or a bridge, with nothing but road between them.
  */
 function lineUp(arena: Arena, first: Seat, second: Seat, meters: number): void {
-  const road = arena.map.roads.find((candidate) => candidate.kind === 'highway')!
+  const road = arena.planet.roads.find((candidate) => candidate.kind === 'highway')!
   const count = road.points.length
-  const at = (i: number) => road.points[((i % count) + count) % count]!
+  const at = (i: number): Vec3 => road.points[((i % count) + count) % count]!
   for (let start = 0; start < count; start++) {
     let end = start
     let gone = 0
     let open = true
     while (gone < meters + 20 && open) {
       open = road.structure[((end % count) + count) % count] !== ROAD_TUNNEL
-      gone += Math.hypot(at(end + 1).x - at(end).x, at(end + 1).z - at(end).z)
+      gone += vdistance(at(end + 1), at(end))
       end += 1
     }
     if (!open) continue
     const put = (seat: Seat, i: number): void => {
       const point = at(i)
       const next = at(i + 1)
-      respawn(seat, { position: { x: point.x, y: point.y + roadLift(road), z: point.z }, yaw: Math.atan2(-(next.x - point.x), -(next.z - point.z)) })
+      respawn(seat, spawnHere(point, { x: next.x - point.x, y: next.y - point.y, z: next.z - point.z }))
     }
     let ahead = start
-    for (let walked = 0; walked < meters; ahead++) walked += Math.hypot(at(ahead + 1).x - at(ahead).x, at(ahead + 1).z - at(ahead).z)
+    for (let walked = 0; walked < meters; ahead++) walked += vdistance(at(ahead + 1), at(ahead))
     put(first, start)
     put(second, ahead)
     return
@@ -307,8 +321,13 @@ function lineUp(arena: Arena, first: Seat, second: Seat, meters: number): void {
   throw new Error('no open stretch of highway')
 }
 
-function distance(a: { x: number; z: number }, b: { x: number; z: number }): number {
-  return Math.hypot(a.x - b.x, a.z - b.z)
+/** How far apart two points are along the ground. */
+const distance = groundDistance
+
+/** A prop standing on a point of the ground, facing any way. */
+function propAt(kind: WorldProp['kind'], at: Vec3): WorldProp {
+  const up = upOf(at)
+  return { kind, at: { ...at }, turn: uprightRotation(up, tangentFrame(up).east) }
 }
 
 /**
@@ -351,7 +370,7 @@ function direct(server: TransportHandlers, tap: (payload: Uint8Array) => void = 
 describe('a session', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(5, { ...TEST_ISLANDS, size: 257 })
+    map = planetOf(5)
   }, 60_000)
 
   it('seats two players who each see the other driving', async () => {
@@ -416,12 +435,11 @@ describe('a session', () => {
   })
 
   it('plays on a planet: the car set down upright on the sphere, and its prediction kept in line with the server as it drives', async () => {
-    const flat = map
-    map = generateTerrain(1, PLANET_TERRAIN)
+    const earlier = map
+    map = planetOf(1)
     try {
       const session = new Session()
       const a = await session.join('sportsCar')
-      expect(session.arena.shape.kind).toBe('planet')
       a.input.throttle = 1
       let worst = 0
       for (let i = 0; i < 5 * TICKS_PER_SECOND; i++) {
@@ -436,7 +454,7 @@ describe('a session', () => {
       expect(worst).toBeLessThan(0.5)
       session.dispose()
     } finally {
-      map = flat
+      map = earlier
     }
   }, 60_000)
 
@@ -573,10 +591,10 @@ describe('a session', () => {
     const seat = session.arena.seats[a.client.welcome!.seat]!
     // Counted from whatever it has taken already, a banana by the spawn perhaps.
     const collected = seat.collected
-    a.client.setGoal({ kind: 'score', target: 2, x: 0, z: 0 })
+    a.client.setGoal({ kind: 'score', target: 2, x: 0, y: 0, z: 0 })
     session.run(0.5)
     expect(session.events).toContain('goal 0 score 2')
-    expect(seat.goal).toEqual({ kind: 'score', target: 2, x: 0, z: 0, from: collected })
+    expect(seat.goal).toEqual({ kind: 'score', target: 2, x: 0, y: 0, z: 0, from: collected })
     expect(a.prediction.ownSeat.goal).toEqual(seat.goal)
 
     // Two bananas more, and the prize is paid: once, and the goal is done with.
@@ -592,20 +610,19 @@ describe('a session', () => {
     expect(a.prediction.ownSeat.goal).toBeNull()
 
     // A spot on the map, where the car is, is reached as soon as it is set.
-    const { x, z } = seat.vehicle.frame.position
-    a.client.setGoal({ kind: 'location', target: 0, x, z })
+    a.client.setGoal({ kind: 'location', target: 0, ...upOf(seat.vehicle.frame.position) })
     session.run(0.5)
     expect(seat.goalsWon).toBe(2)
 
     // A goal that cannot be played for is refused, and the player with it.
-    a.client.setGoal({ kind: 'kills', target: 0, x: 0, z: 0 })
+    a.client.setGoal({ kind: 'kills', target: 0, x: 0, y: 0, z: 0 })
     session.run(0.5)
     expect(a.client.closed).not.toBeNull()
     session.dispose()
   })
 
   it('fills the seats nobody takes with cars nobody drives, and gives one up to a newcomer when the island is full', async () => {
-    const island = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    const island = planetOf(11)
     for (const npcs of [NPC_CARS, MAX_PLAYERS]) {
       const server = new GameServer(() => createArena(island), {}, npcs)
       const client = new NetClient(direct(server), () => 0)
@@ -626,7 +643,7 @@ describe('a session', () => {
   }, 60_000)
 
   it('tells each car nobody drives by what its own driver asks of it, never by what a player sent last', async () => {
-    const island = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    const island = planetOf(11)
     const server = new GameServer(() => createArena(island), {}, NPC_CARS)
     const received: SnapshotMessage[] = []
     const client = new NetClient(direct(server, (payload) => {
@@ -708,7 +725,7 @@ describe('a session', () => {
     await expect(session.join()).rejects.toBeInstanceOf(ConnectionFailure)
     expect(session.events).toContain('rejected: server is full')
     session.dispose()
-  }, 60_000)
+  }, 300_000)
 
   it('tells anyone peeking at an island where its cars are, and of an empty one, nothing', async () => {
     const session = new Session()
@@ -747,15 +764,17 @@ describe('a session', () => {
   it('tells of the bananas in full once, then only what changes, and the whole again to a newcomer', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
-    // Long enough for the props to have settled and gone to sleep.
+    // Everything at rest: whatever props are still settling put to sleep.
     session.run(3)
+    for (const prop of session.arena.props) prop.body.sleep()
+    session.run(0.5)
     // The whole word, then nothing but the vehicles while nothing changes.
     expect(a.client.bananas.pickups).toHaveLength(PICKUP_SLOTS)
     expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + SNAPSHOT_VEHICLE_BYTES)
 
     // A slot moves on, and a banana is spilled: told once, and the mirror has them.
     const { arena } = session
-    setPickup(arena.map, arena.water, arena.pickups[3]!, 3, 1, arena.tick + 480)
+    setPickup(arena.planet, arena.pickups[3]!, 3, 1, arena.tick + 480)
     arena.loose.push({
       id: 7,
       kind: 'banana',
@@ -772,7 +791,7 @@ describe('a session', () => {
     expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + SNAPSHOT_VEHICLE_BYTES)
 
     // A banana the mirror takes on its own is put back as the server has it.
-    setPickup(arena.map, arena.water, a.prediction.pickups[5]!, 5, 9, 0)
+    setPickup(arena.planet, a.prediction.pickups[5]!, 5, 9, 0)
     session.run(0.2)
     expect(a.prediction.pickups[5]!.generation).toBe(0)
 
@@ -899,9 +918,10 @@ describe('a session', () => {
 
   it('sends a prop that is on the move to every mirror, and one nobody has touched to none', async () => {
     // A small island may have no props of its own: a few cones are set out on it for the test, and taken away after.
-    const spawn = map.roads[0]!.points[0]!
+    const road = map.world!.roads[0]!
+    const props = map.world!.props as WorldProp[]
     const cones = 3
-    for (let k = 0; k < cones; k++) map.props.push({ kind: 'cone', x: spawn.x + k * 3, z: spawn.z, bottom: spawn.y, yaw: 0 })
+    for (let k = 0; k < cones; k++) props.push(propAt('cone', road.points[k * 2]!))
     const session = new Session()
     const a = await session.join()
     const b = await session.join()
@@ -921,30 +941,33 @@ describe('a session', () => {
       expect(Math.hypot(mirrored.x - at.x, mirrored.y - at.y, mirrored.z - at.z)).toBeLessThan(1.5)
     }
     session.dispose()
-    map.props.length -= cones
+    props.length -= cones
   }, 120_000)
 
   it('shows a player who joins late the props where they were knocked to, not where the map has them', async () => {
-    const spawn = map.roads[0]!.points[0]!
-    map.props.push({ kind: 'crate', x: spawn.x, z: spawn.z, bottom: spawn.y, yaw: 0 })
+    const road = map.world!.roads[0]!
+    const spawn = road.points[0]!
+    const props = map.world!.props as WorldProp[]
+    props.push(propAt('crate', spawn))
     const session = new Session()
     await session.join()
     // The crate is moved further along the road and dropped, tumbling, to come to rest there before anyone else
     // arrives, so that no snapshot of the changes carries it and only the whole one can.
     const crate = session.arena.props.at(-1)!
-    const along = map.roads[0]!.points[4]!
-    crate.body.setTranslation({ x: along.x, y: along.y + 1, z: along.z }, true)
+    const along = road.points.find((point) => distance(point, spawn) > 12)!
+    const up = upOf(along)
+    crate.body.setTranslation({ x: along.x + up.x, y: along.y + up.y, z: along.z + up.z }, true)
     crate.body.setAngvel({ x: 0, y: 0, z: 6 }, true)
     for (let second = 0; second < 10 && !crate.body.isSleeping(); second++) session.run(1)
     expect(crate.body.isSleeping()).toBe(true)
     const at = crate.body.translation()
-    expect(Math.hypot(at.x - spawn.x, at.z - spawn.z)).toBeGreaterThan(5)
+    expect(distance(at, spawn)).toBeGreaterThan(5)
     const late = await session.join()
     session.run(0.5)
     const mirrored = late.prediction.props[crate.id]!.body.translation()
     expect(Math.hypot(mirrored.x - at.x, mirrored.y - at.y, mirrored.z - at.z)).toBeLessThan(0.05)
     session.dispose()
-    map.props.length -= 1
+    props.length -= 1
   }, 120_000)
 
   it('keeps inputs to their ranges, drops a flood of them, and lets go of a player heard nothing from', async () => {

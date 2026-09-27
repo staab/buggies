@@ -1,4 +1,4 @@
-import { shapeOf } from '@buggies/game'
+import { shapeOf } from './globe.ts'
 import { PLANET_TERRAIN, ROAD_SKIRT, WORLD_SCALE, generateTerrain } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'

@@ -14,17 +14,16 @@ import {
   type Spider,
   type Ufo,
   type VehicleProfileId,
-  shapeOf,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { alongGround, groundDistance, mapExtent, overSurface, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
 import { aimPointOf, hookPointOf } from './car-presence.ts'
-import { Globe, UPRIGHT } from './globe.ts'
+import { Globe, shapeOf } from './globe.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
@@ -34,6 +33,7 @@ import type { DriverKeys } from './keys.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import { PredictedCar } from './predicted-car.ts'
 import type { RadarBlip, RadarState } from './radar.ts'
+import { standOn } from './stand.ts'
 import { SUN_DISTANCE } from './sun.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -57,24 +57,40 @@ const NPC_COLOR = 0x9aa0a6
 const UFO_COLOR = 0x5cff8a
 const SPIDER_COLOR = 0xc15cff
 
-/** The mini-map from a seat: where it is and faces, every other occupied seat, the robots, and the spot it is playing for. */
-function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[]): RadarState {
+/**
+ * The mini-map from a seat: where it is and faces, every other occupied
+ * seat, the robots, and the spot it is playing for, laid out on the ground
+ * round the car, east across and south down, as a map is.
+ */
+function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[], radius: number): RadarState {
+  const { position, forward } = own.vehicle.frame
+  const { east, north } = tangentFrame(upOf(position))
+  /** A point on the ground round the car, as far from it and the same way as it is round the planet. */
+  const onRadar = (at: Vec3, color: number): RadarBlip => {
+    const toward = alongGround({ x: at.x - position.x, y: at.y - position.y, z: at.z - position.z }, upOf(position))
+    const length = Math.sqrt(toward.x * toward.x + toward.y * toward.y + toward.z * toward.z) || 1
+    const distance = groundDistance(at, position)
+    return { x: ((toward.x * east.x + toward.y * east.y + toward.z * east.z) / length) * distance, z: (-(toward.x * north.x + toward.y * north.y + toward.z * north.z) / length) * distance, color }
+  }
   const others: RadarBlip[] = []
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
-    const { x, z } = seat.chart.position
-    others.push({ x, z, color: seat.npc ? NPC_COLOR : seatColor(seat.id) })
+    others.push(onRadar(seat.vehicle.frame.position, seat.npc ? NPC_COLOR : seatColor(seat.id)))
   }
-  for (const robot of robots) others.push({ x: robot.position.x, z: robot.position.z, color: ROBOT_COLOR })
-  for (const ufo of ufos) others.push({ x: ufo.position.x, z: ufo.position.z, color: UFO_COLOR })
-  for (const spider of spiders) others.push({ x: spider.position.x, z: spider.position.z, color: SPIDER_COLOR })
-  if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })
-  return { position: own.chart.position, forward: own.chart.forward, others }
+  for (const robot of robots) others.push(onRadar(robot.position, ROBOT_COLOR))
+  for (const ufo of ufos) others.push(onRadar(ufo.position, UFO_COLOR))
+  for (const spider of spiders) others.push(onRadar(spider.position, SPIDER_COLOR))
+  if (own.goal?.kind === 'location') others.push(onRadar({ x: own.goal.x * radius, y: own.goal.y * radius, z: own.goal.z * radius }, GOAL_COLOR))
+  return {
+    position: { x: 0, z: 0 },
+    forward: { x: forward.x * east.x + forward.y * east.y + forward.z * east.z, z: -(forward.x * north.x + forward.y * north.y + forward.z * north.z) },
+    others,
+  }
 }
 
 /** How a goal is coming along, in a line. */
-function goalLine(seat: Seat, goal: Goal): string {
-  const progress = goalProgress(seat, goal)
+function goalLine(seat: Seat, goal: Goal, radius: number): string {
+  const progress = goalProgress(seat, goal, radius)
   if (goal.kind === 'location') return `Goal: ${Math.round(progress)} m to the spot`
   const done = Math.min(Math.max(progress, 0), goal.target)
   return `Goal: ${done} / ${goal.target} ${goal.kind === 'score' ? 'bananas' : goal.kind === 'kills' ? 'wrecks' : 'robots'}`
@@ -150,7 +166,6 @@ export async function joinOnline(
   const map = await mapFor(welcome.seed)
   // What lies on the map drawn where that is in the world: round a planet, if the map is one's.
   const globe = new Globe(shapeOf(map))
-  const spot = new THREE.Vector3()
 
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.
@@ -162,7 +177,7 @@ export async function joinOnline(
   scene.add(root)
   const keyboard = new Keyboard(player.keys.bindings)
   // The island around the cars, heard from the local car.
-  const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position, map)
+  const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position, mirror.planet)
   root.add(arena.object)
   const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), arena.effects)
   root.add(car.object)
@@ -198,7 +213,7 @@ export async function joinOnline(
       return prediction.vehicle.frame.position
     },
     get place() {
-      return prediction.ownSeat.chart.position
+      return globe.toMap(prediction.vehicle.frame.position, new THREE.Vector3())
     },
     get up() {
       return prediction.vehicle.up
@@ -236,8 +251,7 @@ export async function joinOnline(
       wonFor = Math.max(wonFor - dt, 0)
       beacon.visible = own.goal?.kind === 'location'
       if (own.goal?.kind === 'location') {
-        spot.set(own.goal.x, sampleHeight(map.heightfield, own.goal.x, own.goal.z), own.goal.z)
-        globe.place(beacon, spot, UPRIGHT)
+        standOn(beacon, overSurface(mirror.planet, own.goal, 0))
       }
       car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
@@ -259,10 +273,10 @@ export async function joinOnline(
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
       const own = prediction.ownSeat
-      const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal)
+      const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal, mirror.planet.radius)
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders),
+        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, mirror.planet.radius),
         ...(goal === null ? {} : { goal, goalWon: wonFor > 0 }),
       }
     },

@@ -1,4 +1,4 @@
-import { generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { PLANET_TERRAIN, generateTerrain, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -8,23 +8,24 @@ import {
   ROBOT_DAMAGE,
   ROBOT_SPEED,
   ROBOTS,
+  ROBOT_SIZE,
   advance,
   createArena,
   initPhysics,
   respawn,
   robotEyes,
+  spawnHere,
   takeSeat,
 } from './index.ts'
+import { apart, between, lifted, over } from './test-planet.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
 
 let map: TerrainMap
 
 describe('robots', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    map = generateTerrain(11, PLANET_TERRAIN)
   }, 60_000)
 
   it('roll slowly along the arterials, turning off at the junctions', () => {
@@ -37,17 +38,16 @@ describe('robots', () => {
       advance(arena)
       roads.add(robot!.road)
       // Always on an arterial, its feet on the road.
-      const road = arena.map.roads[robot!.road]!
+      const road = arena.planet.roads[robot!.road]!
       expect(road.kind).toBe('arterial')
-      const nearest = Math.min(...road.points.map((point) => Math.hypot(point.x - robot!.position.x, point.z - robot!.position.z)))
+      const nearest = Math.min(...road.points.map((point) => between(point, robot!.position)))
       expect(nearest).toBeLessThan(5)
     }
     // A minute on, it has come no further than it could at its speed, and has turned onto other roads.
-    expect(Math.hypot(robot!.position.x - start.x, robot!.position.z - start.z)).toBeLessThanOrEqual(ROBOT_SPEED * 60 + 1)
+    expect(apart(robot!.position, start)).toBeLessThanOrEqual(ROBOT_SPEED * 60 + 1)
     expect(roads.size).toBeGreaterThan(1)
-    // Its body goes with it, for the cars to hit.
-    const body = robot!.body.translation()
-    expect(Math.hypot(body.x - robot!.position.x, body.z - robot!.position.z)).toBeLessThan(0.5)
+    // Its body goes with it, standing up from its feet, for the cars to hit.
+    expect(between(robot!.body.translation(), lifted(robot!.position, ROBOT_SIZE.halfHeight))).toBeLessThan(0.5)
     arena.world.free()
   }, 60_000)
 
@@ -57,13 +57,13 @@ describe('robots', () => {
     const [robot] = arena.robots
     advance(arena)
     // Put the car on the robot's road a little way ahead of it.
-    const road = arena.map.roads[robot!.road]!
+    const road = arena.planet.roads[robot!.road]!
     const near = road.points.find((point) => {
-      const away = Math.hypot(point.x - robot!.position.x, point.z - robot!.position.z)
+      const away = apart(point, robot!.position)
       return away > 20 && away < 30
     })
     expect(near).toBeDefined()
-    respawn(seat, { position: { x: near!.x, y: near!.y + 1, z: near!.z }, yaw: 0 })
+    respawn(seat, spawnHere(lifted(near!, 1), tangentFrame(upOf(near!)).east))
     let burned = 0
     for (let i = 0; i < ROBOT_BEAM_TICKS * 2; i++) {
       advance(arena)
@@ -76,7 +76,7 @@ describe('robots', () => {
     expect(robot!.beamTicks).toBe(0)
     expect(robot!.cooldownTicks).toBeGreaterThan(0)
     const eyes = robotEyes({ x: 0, y: 0, z: 0 }, robot!)
-    expect(eyes.y).toBeGreaterThan(robot!.position.y + 4)
+    expect(over(eyes, robot!.position)).toBeGreaterThan(4)
     arena.world.free()
   }, 60_000)
 })

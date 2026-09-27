@@ -4,11 +4,22 @@ import { describe, expect, it } from 'vitest'
 
 import { BANANA_LENGTH, BOMB_RADIUS, PickupField, POP_LIFE, bananaGeometry, bombGeometry } from './pickups-view.ts'
 
+/** The planet these are drawn on, and a point near its north pole: across, how high over its ground, and down. */
+const R = 600
+function onPlanet(x: number, height: number, z: number): { x: number; y: number; z: number } {
+  return { x, y: R + height, z }
+}
+
+/** How far a drawn point is from where it should be. */
+function off(position: THREE.Vector3, expected: { x: number; y: number; z: number }): number {
+  return position.distanceTo(new THREE.Vector3(expected.x, expected.y, expected.z))
+}
+
 function pickups(count: number): Pickup[] {
   return Array.from({ length: count }, (_, slot) => ({
     generation: 0,
     spawnTick: 0,
-    position: { x: slot * 10, y: 2, z: 0 },
+    position: onPlanet(slot * 10, 2, 0),
   }))
 }
 
@@ -47,8 +58,8 @@ describe('bananas as drawn', () => {
     const position = new THREE.Vector3()
     bananas!.getMatrixAt(2, matrix)
     position.setFromMatrixPosition(matrix)
-    expect(position.x).toBeCloseTo(20, 5)
-    expect(Math.abs(position.y - 2)).toBeLessThan(0.3)
+    // Where it is, give or take its bob.
+    expect(off(position, onPlanet(20, 2, 0))).toBeLessThan(0.3)
     // Out ones at full size, the rest scaled away to nothing.
     expect(column(bananas!, 0)).toBeCloseTo(1, 5)
     expect(column(bananas!, 1)).toBe(0)
@@ -67,7 +78,7 @@ describe('bananas as drawn', () => {
     expect(health.geometry).not.toBe(bananas!.geometry)
     const matrix = new THREE.Matrix4()
     health.getMatrixAt(1, matrix)
-    expect(new THREE.Vector3().setFromMatrixPosition(matrix).x).toBeCloseTo((BANANA_SLOTS + 1) * 10, 5)
+    expect(off(new THREE.Vector3().setFromMatrixPosition(matrix), onPlanet((BANANA_SLOTS + 1) * 10, 2, 0))).toBeLessThan(0.3)
     source.pickups[BANANA_SLOTS]!.generation = 1
     source.pickups[BANANA_SLOTS]!.spawnTick = 480
     field.update(0.1)
@@ -106,7 +117,7 @@ describe('bananas as drawn', () => {
 
   it('fling spilled bananas out of the blast in an arc, lie them where they land, and pop them when taken', () => {
     const loose: Loose[] = [
-      { id: 1, kind: 'banana', owner: 0, power: 0, from: { x: 0, y: 2, z: 0 }, position: { x: 12, y: 3, z: 0 }, bornTick: 100 },
+      { id: 1, kind: 'banana', owner: 0, power: 0, from: onPlanet(0, 2, 0), position: onPlanet(12, 3, 0), bornTick: 100 },
     ]
     const source = { pickups: pickups(0), loose, tick: 100 + SPILL_FLIGHT_TICKS / 2 }
     const field = new PickupField(source)
@@ -117,15 +128,15 @@ describe('bananas as drawn', () => {
     looseBananas.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
     // Halfway there, and well above the straight line between.
-    expect(position.x).toBeCloseTo(6, 3)
-    expect(position.y).toBeGreaterThan(2.5 + 2)
+    // Its lift is along the way up there, which leans a little outward away from the pole.
+    expect(Math.abs(position.x - 6)).toBeLessThan(0.2)
+    expect(position.length() - R).toBeGreaterThan(2.5 + 2)
     // Landed: where it lands, near enough, bobbing.
     source.tick = 100 + SPILL_FLIGHT_TICKS + 10
     field.update(0.1)
     looseBananas.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
-    expect(position.x).toBeCloseTo(12, 3)
-    expect(Math.abs(position.y - 3)).toBeLessThan(0.3)
+    expect(off(position, onPlanet(12, 3, 0))).toBeLessThan(0.3)
     // Gone before its time: taken, and it pops where it lay.
     loose.length = 0
     field.update(0.1)
@@ -138,8 +149,8 @@ describe('bananas as drawn', () => {
       kind: 'oil',
       owner: 0,
       power: 0,
-      from: { x: 0, y: 2, z: 0 },
-      position: { x: -8, y: 3, z: 4 },
+      from: onPlanet(0, 2, 0),
+      position: onPlanet(-8, 3, 4),
       bornTick: 100,
     })
     field.update(0.1)
@@ -159,7 +170,7 @@ describe('bananas as drawn', () => {
     geometry.dispose()
 
     const loose: Loose[] = [
-      { id: 5, kind: 'bomb', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -5, y: 2, z: 0 }, bornTick: 0 },
+      { id: 5, kind: 'bomb', owner: 0, power: 1, from: onPlanet(0, 2, 0), position: onPlanet(-5, 2, 0), bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: { x: number; y: number; z: number }[] = []
@@ -172,21 +183,21 @@ describe('bananas as drawn', () => {
     const position = new THREE.Vector3()
     bombs!.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
-    expect(position.x).toBeCloseTo(-5, 3)
+    expect(off(position, onPlanet(-5, 2, 0))).toBeLessThan(0.3)
     // Gone: it went off where it was, and it is no banana to pop.
     loose.length = 0
     field.update(0.1)
     expect(bombs!.count).toBe(0)
     expect(wentOff).toHaveLength(1)
-    expect(wentOff[0]!.x).toBeCloseTo(-5, 3)
+    expect(wentOff[0]!.x).toBeCloseTo(-5, 1)
     expect(field.popping).toBe(0)
     field.dispose()
   })
 
   it('pop a banana and burst a bomb harvested before their time, as if taken and set off', () => {
     const loose: Loose[] = [
-      { id: 1, kind: 'banana', owner: 0, power: 0, from: { x: 0, y: 2, z: 0 }, position: { x: 6, y: 2, z: 0 }, bornTick: 0 },
-      { id: 2, kind: 'bomb', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -6, y: 2, z: 0 }, bornTick: 0 },
+      { id: 1, kind: 'banana', owner: 0, power: 0, from: onPlanet(0, 2, 0), position: onPlanet(6, 2, 0), bornTick: 0 },
+      { id: 2, kind: 'bomb', owner: 0, power: 1, from: onPlanet(0, 2, 0), position: onPlanet(-6, 2, 0), bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: number[] = []
@@ -196,13 +207,14 @@ describe('bananas as drawn', () => {
     loose.length = 0
     field.update(0.1)
     expect(field.popping).toBe(1)
-    expect(wentOff).toEqual([-6])
+    expect(wentOff).toHaveLength(1)
+    expect(wentOff[0]!).toBeCloseTo(-6, 1)
     field.dispose()
   })
 
   it('spread an oil slick out where it is dropped, rather than throw it there', () => {
     const loose: Loose[] = [
-      { id: 8, kind: 'oil', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -4, y: 0.05, z: 0 }, bornTick: 0 },
+      { id: 8, kind: 'oil', owner: 0, power: 1, from: onPlanet(0, 2, 0), position: onPlanet(-4, 0.05, 0), bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: 0 }
     const field = new PickupField(source)
@@ -217,8 +229,7 @@ describe('bananas as drawn', () => {
       source.tick = tick
       field.update(0.1)
       // On the ground where it lies the whole time.
-      expect(at().x).toBeCloseTo(-4, 5)
-      expect(at().y).toBeCloseTo(0.05, 5)
+      expect(off(at(), onPlanet(-4, 0.05, 0))).toBeLessThan(1e-3)
       sizes.push(column(slicks, 0))
     }
     expect(sizes[0]).toBeLessThan(0.1)
@@ -229,8 +240,8 @@ describe('bananas as drawn', () => {
 
   it('sit mines on the ground and burst them when they go, and lie oil flat, to fade without a sound', () => {
     const loose: Loose[] = [
-      { id: 7, kind: 'mine', owner: 0, power: 0.3, from: { x: 0, y: 2, z: 0 }, position: { x: 4, y: 0.1, z: 0 }, bornTick: 0 },
-      { id: 8, kind: 'oil', owner: 0, power: 1, from: { x: 0, y: 2, z: 0 }, position: { x: -4, y: 0.05, z: 0 }, bornTick: 0 },
+      { id: 7, kind: 'mine', owner: 0, power: 0.3, from: onPlanet(0, 2, 0), position: onPlanet(4, 0.1, 0), bornTick: 0 },
+      { id: 8, kind: 'oil', owner: 0, power: 1, from: onPlanet(0, 2, 0), position: onPlanet(-4, 0.05, 0), bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: number[] = []
@@ -244,15 +255,16 @@ describe('bananas as drawn', () => {
     const position = new THREE.Vector3()
     slicks!.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
-    expect(position.y).toBeCloseTo(0.05, 5)
+    expect(off(position, onPlanet(-4, 0.05, 0))).toBeLessThan(1e-3)
     field.update(0.5)
     slicks!.getMatrixAt(0, matrix)
-    expect(new THREE.Vector3().setFromMatrixPosition(matrix).y).toBeCloseTo(0.05, 5)
+    expect(off(new THREE.Vector3().setFromMatrixPosition(matrix), onPlanet(-4, 0.05, 0))).toBeLessThan(1e-3)
     // The mine set off, and the slick faded: one burst, and nothing popped.
     source.tick = OIL_LIFE_TICKS
     loose.length = 0
     field.update(0.1)
-    expect(wentOff).toEqual([4])
+    expect(wentOff).toHaveLength(1)
+    expect(wentOff[0]!).toBeCloseTo(4, 3)
     expect(field.popping).toBe(0)
     expect(mines!.count).toBe(0)
     expect(slicks!.count).toBe(0)

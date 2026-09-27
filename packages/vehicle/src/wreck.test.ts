@@ -6,7 +6,7 @@ import { NEUTRAL_INPUT } from './input.ts'
 import { addHeightfield } from './terrain.ts'
 import { createVehicleTuning } from './tuning.ts'
 import { DAMAGE_SMOKING, DURABILITY, stepVehicle } from './vehicle.ts'
-import { createVehicle, type Vehicle } from './vehicleBody.ts'
+import { createVehicle, levelSpawn, type Vehicle } from './vehicleBody.ts'
 import { FIXED_TIMESTEP, addStaticWall, createPhysicsWorld, initPhysics } from './world.ts'
 
 const CELL = 3
@@ -30,7 +30,7 @@ function range(): Range {
     position: { x: (WIDTH * CELL) / 2, y: 3, z: WALL_Z },
   })
   const tuning = createVehicleTuning('raceCar')
-  const vehicle = createVehicle(world, tuning, { position: START, yaw: 0 })
+  const vehicle = createVehicle(world, tuning, levelSpawn(START, 0))
   world.step()
   return { world, vehicle, tuning }
 }

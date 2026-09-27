@@ -3,8 +3,8 @@ import * as THREE from 'three'
 
 import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
-import { FLAT_GLOBE, type Globe } from './globe.ts'
-import { MACHINE_SMOKING, Y } from './robots-view.ts'
+import { lifted, standOn } from './stand.ts'
+import { MACHINE_SMOKING } from './robots-view.ts'
 
 /** Where the spiders are: an arena, or a mirror of one. */
 export interface SpiderSource {
@@ -34,8 +34,6 @@ interface Shown {
 }
 
 const UP = new THREE.Vector3(0, 1, 0)
-const at = new THREE.Vector3()
-const turn = new THREE.Quaternion()
 const foot = new THREE.Vector3()
 const knee = new THREE.Vector3()
 const out = new THREE.Vector3()
@@ -131,12 +129,10 @@ export class SpidersView {
   private readonly source: SpiderSource
   private readonly effects: PresenceEffects | null
   private readonly ear: Ear | null
-  private readonly globe: Globe
   private readonly shown = new Map<number, Shown>()
 
-  constructor(source: SpiderSource, effects: PresenceEffects | null = null, ear: Ear | null = null, globe: Globe = FLAT_GLOBE) {
+  constructor(source: SpiderSource, effects: PresenceEffects | null = null, ear: Ear | null = null) {
     this.source = source
-    this.globe = globe
     this.effects = effects
     this.ear = ear
     this.update(0)
@@ -158,11 +154,10 @@ export class SpidersView {
         if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
       }
       if (spider.damage > MACHINE_SMOKING) {
-        const back = this.globe.toWorld(spider.position.x, spider.position.y + SPIDER_BELLY + SPIDER_BODY.halfHeight * 2, spider.position.z, new THREE.Vector3())
+        const back = lifted(spider.position, SPIDER_BELLY + SPIDER_BODY.halfHeight * 2, new THREE.Vector3())
         this.effects?.smoke.trail(back, STILL, (spider.damage - MACHINE_SMOKING) * 2, dt)
       }
-      at.set(spider.position.x, spider.position.y, spider.position.z)
-      this.globe.place(view.model, at, turn.setFromAxisAngle(Y, spider.heading))
+      standOn(view.model, spider.position, spider.forward)
       view.model.updateMatrixWorld()
       pose(view.legs, spider.stride)
     }

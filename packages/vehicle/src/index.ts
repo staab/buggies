@@ -50,6 +50,7 @@ export {
   wheelMountLocal,
   type Axle,
   type Vehicle,
+  levelSpawn,
   type VehicleSpawn,
   type WheelState,
 } from './vehicleBody.ts'
@@ -71,10 +72,10 @@ export {
   DEFAULT_WORLD_TUNING,
   FIXED_TIMESTEP,
   initPhysics,
+  pullBody,
   resetWorldTuning,
   type WorldTuning,
   WORLD_UP,
   worldGravity,
 } from './world.ts'
 export { CONE_SIDES, PROP_SHAPES, addMover, addProp, propPlacement, propRise, propRotation, type PropShape } from './props.ts'
-export { bendPositions, placeOnShape, type Placement } from './placement.ts'

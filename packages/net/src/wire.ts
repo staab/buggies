@@ -48,7 +48,7 @@ export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
 export const CHANGE_VEHICLE_BYTES = 2
-export const GOAL_BYTES = 12
+export const GOAL_BYTES = 16
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
@@ -56,7 +56,7 @@ export const PEEK_REQUEST_BYTES = 5
 export const PEEK_HEADER_BYTES = 3
 export const PEEK_MARK_BYTES = 14
 export const SNAPSHOT_HEADER_BYTES = 24
-export const SNAPSHOT_VEHICLE_BYTES = 118
+export const SNAPSHOT_VEHICLE_BYTES = 122
 export const SNAPSHOT_PICKUP_BYTES = 6
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
@@ -64,7 +64,7 @@ export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
 export const SNAPSHOT_ROBOT_BYTES = 16
 export const SNAPSHOT_UFO_BYTES = 25
-export const SNAPSHOT_SPIDER_BYTES = 35
+export const SNAPSHOT_SPIDER_BYTES = 47
 
 /** What a goal is, by the byte that says so: none first. */
 const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
@@ -185,9 +185,9 @@ export interface UfoSnapshot {
 export interface SpiderSnapshot {
   id: number
   position: Vec3
-  heading: number
+  forward: Vec3
   legs: number
-  target: { x: number; z: number }
+  target: Vec3
   stride: number
   bombTicks: number
   damage: number
@@ -504,6 +504,7 @@ export function encodeGoal(goal: GoalRequest | null): Uint8Array {
   writer.u8(goal === null ? 0 : GOAL_CODES.indexOf(goal.kind))
   writer.u16(goal === null ? 0 : Math.min(Math.max(goal.target, 0), 0xffff))
   writer.f32(goal?.x ?? 0)
+  writer.f32(goal?.y ?? 0)
   writer.f32(goal?.z ?? 0)
   return writer.bytes
 }
@@ -516,9 +517,10 @@ export function decodeGoal(payload: Uint8Array): GoalRequest | null | undefined 
   const kind = GOAL_CODES[reader.u8()]
   const target = reader.u16()
   const x = reader.f32()
+  const y = reader.f32()
   const z = reader.f32()
   if (kind === undefined) return undefined
-  return kind === 'none' ? null : { kind, target, x, z }
+  return kind === 'none' ? null : { kind, target, x, y, z }
 }
 
 export function encodeRoomsRequest(): Uint8Array {
@@ -597,6 +599,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(vehicle.goal?.target ?? 0, 0xffff))
     writer.u16(Math.min(Math.max(vehicle.goal?.from ?? 0, 0), 0xffff))
     writer.f32(vehicle.goal?.x ?? 0)
+    writer.f32(vehicle.goal?.y ?? 0)
     writer.f32(vehicle.goal?.z ?? 0)
     writer.u8(vehicle.goalsWon & 0xff)
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
@@ -672,10 +675,9 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   for (const spider of message.spiders) {
     writer.u8(spider.id)
     writer.vec3(spider.position)
-    writer.f32(spider.heading)
+    writer.vec3(spider.forward)
     writer.u16(spider.legs & 0xffff)
-    writer.f32(spider.target.x)
-    writer.f32(spider.target.z)
+    writer.vec3(spider.target)
     writer.f32(spider.stride)
     writer.u16(Math.min(Math.max(spider.bombTicks, 0), 0xffff))
     writer.u8(Math.round(Math.min(Math.max(spider.damage, 0), 1) * 255))
@@ -747,6 +749,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const target = reader.u16()
     const from = reader.u16()
     const x = reader.f32()
+    const y = reader.f32()
     const z = reader.f32()
     const goalsWon = reader.u8()
     if (goalKind === undefined) return null
@@ -784,7 +787,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       collected,
       kills,
       robotKills,
-      goal: goalKind === 'none' ? null : { kind: goalKind, target, from, x, z },
+      goal: goalKind === 'none' ? null : { kind: goalKind, target, from, x, y, z },
       goalsWon,
       weapon,
       wins,
@@ -900,9 +903,9 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     spiders.push({
       id: reader.u8(),
       position: reader.vec3(),
-      heading: reader.f32(),
+      forward: reader.vec3(),
       legs: reader.u16(),
-      target: { x: reader.f32(), z: reader.f32() },
+      target: reader.vec3(),
       stride: reader.f32(),
       bombTicks: reader.u16(),
       damage: reader.u8() / 255,

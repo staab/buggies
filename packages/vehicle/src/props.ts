@@ -1,8 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
-import { FLAT, qmultiply, qrotate, v3, type Quat, type Vec3, type WorldShape } from '@buggies/physics'
-import type { Prop, PropKind } from '@buggies/terrain'
-
-import { placeOnShape } from './placement.ts'
+import { qmultiply, qrotate, v3, type Quat, type Vec3 } from '@buggies/physics'
+import type { PropKind, WorldProp } from '@buggies/terrain'
 
 /**
  * The props a car can knock about: what each is to the physics. Cones are
@@ -45,7 +43,7 @@ function conePoints(halfHeight: number, radius: number): Float32Array {
   return new Float32Array(points)
 }
 
-/** How many sides the prism a drum is drawn round on a planet has. */
+/** How many sides the prism round a drum has. */
 const DRUM_SIDES = 12
 
 /** The corners of a many-sided prism round a drum: its ends, top and bottom, each a ring of them. */
@@ -80,8 +78,8 @@ export function propRotation(kind: PropKind, yaw: number): RAPIER.Rotation {
  * Put a prop into a world as a dynamic body that sleeps when it comes to
  * rest, standing where the map has it.
  */
-export function addProp(world: RAPIER.World, prop: Prop, shape: WorldShape = FLAT): RAPIER.RigidBody {
-  const { position, rotation } = propPlacement(shape, prop)
+export function addProp(world: RAPIER.World, prop: WorldProp): RAPIER.RigidBody {
+  const { position, rotation } = propPlacement(prop)
   const form = PROP_SHAPES[prop.kind]
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
@@ -95,36 +93,28 @@ export function addProp(world: RAPIER.World, prop: Prop, shape: WorldShape = FLA
     form.shape === 'box'
       ? RAPIER.ColliderDesc.cuboid(form.halfWidth, form.halfHeight, form.halfDepth)
       : form.shape === 'drum'
-        ? // On a planet the ground is a mesh, and a true cylinder rolling on a mesh costs ten times what
-          // a prism round it does; on the flat it rolls on the ground's heightfield, which is cheap.
-          shape.kind === 'planet'
-          ? RAPIER.ColliderDesc.convexHull(drumPoints(form.halfHeight, form.halfWidth))!
-          : RAPIER.ColliderDesc.cylinder(form.halfHeight, form.halfWidth)
+        ? // The ground is a mesh, and a true cylinder rolling on a mesh costs ten times what a prism round it does.
+          RAPIER.ColliderDesc.convexHull(drumPoints(form.halfHeight, form.halfWidth))!
         : // A hull of distinct points always makes a collider.
           RAPIER.ColliderDesc.convexHull(conePoints(form.halfHeight, form.halfWidth))!
   world.createCollider(desc.setDensity(0).setMass(form.mass).setFriction(form.friction).setRestitution(form.restitution), body)
   return body
 }
 
-/** How far over the ground a prop is set down on a planet, to drop onto it. */
-const PLANET_PROP_CLEARANCE = 0.05
+/** How far over the ground a prop is set down, to drop onto it. */
+const PROP_CLEARANCE = 0.05
 
 /**
- * Where a prop stands at home, and how it is turned: as the map has it on
- * the flat, and on a planet carried round and stood upright on it, at its
- * own size whatever the chart's scale there.
+ * Where a prop stands at home, and how it is turned: lifted along its way
+ * up by its own rise, and a little more to settle from, since the ground is
+ * a mesh, which a prop set down a hair into is pushed out the wrong side of.
  */
-export function propPlacement(shape: WorldShape, prop: Prop): { position: Vec3; rotation: Quat } {
-  if (shape.kind === 'flat') return { position: { x: prop.x, y: prop.bottom + propRise(prop.kind), z: prop.z }, rotation: propRotation(prop.kind, prop.yaw) }
-  const { position, rotation } = placeOnShape(shape, prop.x, prop.bottom, prop.z, 0)
-  // Lifted along the way up there by its own rise, and a little more to settle from: the ground is a
-  // mesh on a planet, which a prop set down a hair into is pushed out the wrong side of; and turned as
-  // it stands on the flat, only upright here.
-  const up = qrotate(v3(), rotation, { x: 0, y: 1, z: 0 })
-  const rise = propRise(prop.kind) + PLANET_PROP_CLEARANCE
+export function propPlacement(prop: WorldProp): { position: Vec3; rotation: Quat } {
+  const up = qrotate(v3(), prop.turn, { x: 0, y: 1, z: 0 })
+  const rise = propRise(prop.kind) + PROP_CLEARANCE
   return {
-    position: { x: position.x + up.x * rise, y: position.y + up.y * rise, z: position.z + up.z * rise },
-    rotation: qmultiply(rotation, propRotation(prop.kind, prop.yaw)),
+    position: { x: prop.at.x + up.x * rise, y: prop.at.y + up.y * rise, z: prop.at.z + up.z * rise },
+    rotation: qmultiply(prop.turn, propRotation(prop.kind, 0)),
   }
 }
 

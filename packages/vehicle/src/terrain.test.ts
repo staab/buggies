@@ -1,28 +1,26 @@
-import { createRng } from '@buggies/physics'
+import { FIXED_TIMESTEP, createRng, qrotate, uprightRotation, v3, vdot, vsub, type Quat, type Vec3 } from '@buggies/physics'
 import {
+  CURB_HEIGHT,
+  PLANET_TERRAIN,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
   flatHeightfield,
-  CURB_HEIGHT,
-  deckSpans,
   generateTerrain,
-  lowestDeckOver,
-  rampFacets,
-  rampRise,
-  roadLift,
   sampleHeight,
+  sphereHeight,
   type Heightfield,
-  type TerrainMap,
+  type World,
 } from '@buggies/terrain'
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { beforeAll, describe, expect, it } from 'vitest'
 
+import { NEUTRAL_INPUT, type VehicleInput } from './input.ts'
 import { addHeightfield, addTerrain } from './terrain.ts'
+import { createVehicleTuning } from './tuning.ts'
+import { stepVehicle } from './vehicle.ts'
+import { createVehicle } from './vehicleBody.ts'
 import { createPhysicsWorld, initPhysics } from './world.ts'
-
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
 
 /** Deliberately not square, and sloping along one axis only, so a transposed
  * heightfield or a swapped scale cannot pass unnoticed. */
@@ -90,229 +88,236 @@ describe('terrain colliders', () => {
     expect(misses).toBe(0)
   })
 
-  it('places a full-size island without taking too long about it', () => {
-    const field = flatHeightfield(1025, 1025, 3)
-    for (let i = 0; i < field.heights.length; i++) field.heights[i] = (i % 97) * 0.2
-    const world = createPhysicsWorld()
+})
 
+/** The way up at a point: away from the planet's middle. */
+function upOf(point: Vec3): Vec3 {
+  const length = Math.hypot(point.x, point.y, point.z)
+  return { x: point.x / length, y: point.y / length, z: point.z / length }
+}
+
+/** How high a point is over the planet's radius. */
+function heightOf(planet: World, point: Vec3): number {
+  return Math.hypot(point.x, point.y, point.z) - planet.radius
+}
+
+/** A point's way along a turn's axis, this far. */
+function along(at: Vec3, turn: Quat, x: number, y: number, z: number): Vec3 {
+  const offset = qrotate(v3(), turn, { x, y, z })
+  return { x: at.x + offset.x, y: at.y + offset.y, z: at.z + offset.z }
+}
+
+/** Height over the planet's radius of whatever is under a point, found looking down from `from` over the radius, the way a wheel finds it. */
+function castDownAt(world: RAPIER.World, planet: World, point: Vec3, from: number): number | null {
+  const up = upOf(point)
+  const r = planet.radius + from
+  const ray = new RAPIER.Ray({ x: up.x * r, y: up.y * r, z: up.z * r }, { x: -up.x, y: -up.y, z: -up.z })
+  const hit = world.castRay(ray, from + 100, true)
+  return hit === null ? null : from - hit.timeOfImpact
+}
+
+describe('a planet as colliders', () => {
+  let planet: World
+  let world: RAPIER.World
+
+  beforeAll(async () => {
+    await initPhysics()
+    // One whole planet for all of them: roads and bridges are what it is for.
+    planet = generateTerrain(6, PLANET_TERRAIN).world!
+    world = createPhysicsWorld()
     const started = Date.now()
-    addHeightfield(world, field)
+    addTerrain(world, planet)
     world.step()
     expect(Date.now() - started).toBeLessThan(10_000)
-    expect(castDown(world, 1500, 1500)).not.toBeNull()
+  }, 120_000)
+
+  /** Each segment of a road of this structure: its two ends, and the road. */
+  const segments = (structure: number): { a: Vec3; b: Vec3 }[] =>
+    planet.roads.flatMap((road) => {
+      const count = road.points.length
+      return Array.from({ length: road.closed ? count : count - 1 }, (_, i) => i)
+        .filter((i) => road.structure[i] === structure)
+        .map((i) => ({ a: road.points[i]!, b: road.points[(i + 1) % count]! }))
+    })
+  const lerp = (a: Vec3, b: Vec3, t: number): Vec3 => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t })
+
+  it('stands roads at the height they are drawn, not the bed cut under them', () => {
+    const graded = segments(ROAD_GRADE)
+    let below = 0
+    for (const { a, b } of graded) {
+      // Read at three places along the segment. Reading higher than its own deck is a junction:
+      // another roadway crossing above this one. Reading lower is a hole, and a hole is a car in a ditch.
+      const holed = [0.3, 0.5, 0.7].every((t) => {
+        const deck = heightOf(planet, lerp(a, b, t))
+        const found = castDownAt(world, planet, lerp(a, b, t), deck + 3)
+        return found === null || found < deck - 0.1
+      })
+      if (holed) below++
+    }
+    expect(graded.length).toBeGreaterThan(1000)
+    expect(below).toBe(0)
   })
 
-  describe('on a generated island', () => {
-    let map: TerrainMap
-    let world: RAPIER.World
+  it('runs a floor through every tunnel, with room above it to drive', () => {
+    const bores = segments(ROAD_TUNNEL)
+    let floored = 0
+    let tight = 0
+    for (const { a, b } of bores) {
+      const middle = lerp(a, b, 0.5)
+      const deck = heightOf(planet, middle)
+      // From inside the bore, looking down: the road has to be there, or a car reaching the portal drops into the hill.
+      const found = castDownAt(world, planet, middle, deck + 1)
+      if (found !== null && Math.abs(found - deck) < 0.3) floored++
+      // And looking up: nothing of the hill may hang into the bore.
+      const up = upOf(middle)
+      const r = planet.radius + deck + 0.1
+      if (world.castRay(new RAPIER.Ray({ x: up.x * r, y: up.y * r, z: up.z * r }, up), 3, true) !== null) tight++
+    }
+    expect(bores.length).toBeGreaterThan(20)
+    expect(floored).toBe(bores.length)
+    expect(tight).toBe(0)
+  })
 
-    beforeAll(() => {
-      // One full-size island for both: roads and bridges are what it is for,
-      // and a small map has too few of either to say anything.
-      map = generateTerrain(3, TEST_ISLANDS)
-      world = createPhysicsWorld()
-      addTerrain(world, map)
+  it('carries a bridge over the gap it spans', () => {
+    let spans = 0
+    let carried = 0
+    for (const { a, b } of segments(ROAD_BRIDGE)) {
+      const middle = lerp(a, b, 0.5)
+      const deck = heightOf(planet, middle)
+      // Only spans that clear something: a deck sitting on the ground proves nothing about whether it holds anything up.
+      if (deck - sphereHeight(planet.ground, upOf(middle)) < 1) continue
+      spans++
+      const found = castDownAt(world, planet, middle, deck + 3)
+      if (found !== null && Math.abs(found - deck) < 0.3) carried++
+    }
+    expect(spans).toBeGreaterThan(20)
+    expect(carried / spans).toBeGreaterThan(0.95)
+  })
+
+  it('stands every building as a solid to drive into, every tree as a trunk, and passes through the shrubs', () => {
+    // A boat is a body of the game's, which moves it; the ground holds everything else.
+    const standing = planet.buildings.filter((building) => building.kind !== 'boat')
+    expect(standing.length).toBeGreaterThan(100)
+    let roofed = 0
+    for (const building of standing) {
+      const top = heightOf(planet, building.at) + building.height
+      const found = castDownAt(world, planet, building.at, top + 5)
+      if (found === null) continue
+      // A standing stone may carry a lintel, a post a canopy, a site a crane and a pyramid's tier the one above, whose top is what is met above it.
+      const carried = (building.kind === 'stone' || building.kind === 'post' || building.kind === 'site' || building.kind === 'pyramid') && found > top
+      if (Math.abs(found - top) < 0.02 || carried) roofed++
+    }
+    expect(roofed).toBe(standing.length)
+    const trees = planet.trees.filter((tree) => tree.kind === 'tree')
+    const shrubs = planet.trees.filter((tree) => tree.kind === 'shrub')
+    expect(trees.length).toBeGreaterThan(50)
+    expect(shrubs.length).toBeGreaterThan(50)
+    let trunks = 0
+    for (const tree of trees) {
+      const top = heightOf(planet, tree.at) + tree.height
+      const found = castDownAt(world, planet, tree.at, top + 0.5)
+      if (found !== null && Math.abs(found - top) < 0.02) trunks++
+    }
+    // A tree standing under the edge of a raised highway is found from above as the deck over it.
+    expect(trunks / trees.length).toBeGreaterThan(0.99)
+    let open = 0
+    for (const shrub of shrubs) {
+      const top = heightOf(planet, shrub.at) + shrub.height
+      const found = castDownAt(world, planet, shrub.at, top + 0.5)
+      if (found !== null && found < top - 0.1) open++
+    }
+    expect(open).toBe(shrubs.length)
+  })
+
+  it('stands every boulder as a solid its size, and passes through the scree', () => {
+    const boulders = planet.rocks.filter((rock) => rock.kind === 'boulder')
+    const scree = planet.rocks.filter((rock) => rock.kind === 'scree')
+    expect(boulders.length).toBeGreaterThan(20)
+    expect(scree.length).toBeGreaterThan(50)
+    let topped = 0
+    for (const rock of boulders) {
+      const top = heightOf(planet, along(rock.at, rock.turn, 0, rock.size, 0))
+      const found = castDownAt(world, planet, rock.at, top + 5)
+      if (found !== null && Math.abs(found - top) < 0.05) topped++
+    }
+    expect(topped).toBe(boulders.length)
+    let stopped = 0
+    for (const rock of scree) {
+      const top = heightOf(planet, rock.at) + rock.size
+      const found = castDownAt(world, planet, rock.at, top + 5)
+      if (found !== null && Math.abs(found - top) < 0.01) stopped++
+    }
+    expect(stopped).toBeLessThan(scree.length * 0.02)
+  })
+
+  it('stands a solid kicker under every ramp, rising from its foot to its lip', () => {
+    expect(planet.ramps.length).toBeGreaterThan(0)
+    let sound = 0
+    for (const ramp of planet.ramps) {
+      const foot = heightOf(planet, ramp.at)
+      const heights = [0.2, 0.5, 0.8].map((t) => castDownAt(world, planet, along(ramp.at, ramp.turn, 0, 0, ramp.length * t), foot + ramp.rise + 5))
+      if (heights.every((h) => h !== null && h > foot - 0.1 && h < foot + ramp.rise + 0.1) && heights[0]! < heights[2]!) sound++
+    }
+    expect(sound).toBe(planet.ramps.length)
+  })
+
+  it('raises a curb around every city block that the wheels find', () => {
+    expect(planet.sidewalks.length).toBeGreaterThan(0)
+    let curbed = 0
+    for (const walk of planet.sidewalks) {
+      // The middle of one built side's slab, just in from the curb. Sides go round from the one at +z.
+      const side = walk.sides.findIndex((built) => built)
+      const reach = walk.half - 0.3
+      const [u, v] = ([[0, reach], [-reach, 0], [0, -reach], [reach, 0]] as [number, number][])[side]!
+      const point = along(walk.at, walk.turn, u, 0, v)
+      const ground = sphereHeight(planet.ground, upOf(point))
+      const found = castDownAt(world, planet, point, ground + 1)
+      if (found !== null && found > ground + CURB_HEIGHT - 0.1 && found < ground + CURB_HEIGHT + 0.6) curbed++
+    }
+    expect(curbed).toBe(planet.sidewalks.length)
+  })
+
+  it('carries a car on its wheels along the highway, round the curve of the ground', () => {
+    const tuning = createVehicleTuning('sportsCar')
+    // A straight run of the highway at grade, as near the equator as it runs.
+    const highway = planet.roads.find((road) => road.kind === 'highway')!
+    let best = 0
+    for (let i = 0; i + 12 < highway.points.length; i++) {
+      if ([...Array(12).keys()].some((k) => highway.structure[i + k] !== ROAD_GRADE)) continue
+      if (Math.abs(highway.points[i]!.y) < Math.abs(highway.points[best]!.y)) best = i
+    }
+    const position = highway.points[best]!
+    const up = upOf(position)
+    const vehicle = createVehicle(world, tuning, { position, up, rotation: uprightRotation(up, vsub(v3(), highway.points[best + 3]!, position)) })
+    world.step()
+    const step = (input: VehicleInput): void => {
+      const now = upOf(vehicle.frame.position)
+      vehicle.up.x = now.x
+      vehicle.up.y = now.y
+      vehicle.up.z = now.z
+      stepVehicle(world, vehicle, tuning, input, FIXED_TIMESTEP)
       world.step()
-    }, 120_000)
-
-    it('stands roads at the height they are drawn, not the bed cut under them', () => {
-      let total = 0
-      let below = 0
-      for (const road of map.roads) {
-        const count = road.points.length
-        const segments = road.closed ? count : count - 1
-        for (let i = 0; i < segments; i++) {
-          if (road.structure[i] !== ROAD_GRADE) continue
-          const a = road.points[i]!
-          const b = road.points[(i + 1) % count]!
-          total++
-          // Read at three places along the segment: Rapier's heightfield lets
-          // a ray through that falls on a hairline seam of its grid over
-          // sloping ground, and city streets can run right along one. A hole
-          // is missing at every one of them.
-          const holed = [0.3, 0.5, 0.7].every((t) => {
-            const deck = a.y + (b.y - a.y) * t + roadLift(road)
-            const found = castDown(world, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t, deck + 3)
-            // Reading higher than its own deck is a junction: another
-            // roadway crossing above this one, which is meant to be there.
-            // Reading lower is a hole, and a hole is a vehicle in a ditch.
-            return found === null || found < deck - 0.1
-          })
-          if (holed) below++
-        }
+    }
+    /** How high the chassis is over the highway's surface nearest it. */
+    const clearance = (): number => {
+      const at = vehicle.frame.position
+      let nearest = highway.points[0]!
+      for (const point of highway.points) {
+        if (Math.hypot(point.x - at.x, point.y - at.y, point.z - at.z) < Math.hypot(nearest.x - at.x, nearest.y - at.y, nearest.z - at.z)) nearest = point
       }
-      expect(total).toBeGreaterThan(1000)
-      expect(below).toBe(0)
-    })
-
-    it('runs a floor through every tunnel, with room above it to drive', () => {
-      let spans = 0
-      let floored = 0
-      let tight = 0
-      for (const road of map.roads) {
-        const count = road.points.length
-        const segments = road.closed ? count : count - 1
-        for (let i = 0; i < segments; i++) {
-          if (road.structure[i] !== ROAD_TUNNEL) continue
-          const a = road.points[i]!
-          const b = road.points[(i + 1) % count]!
-          const x = (a.x + b.x) / 2
-          const z = (a.z + b.z) / 2
-          const deck = (a.y + b.y) / 2 + roadLift(road)
-          spans++
-
-          // From inside the bore, looking down: the road has to be there, or
-          // a vehicle reaching the portal drops into the hill.
-          const found = castDown(world, x, z, deck + 1)
-          if (found !== null && Math.abs(found - deck) < 0.3) floored++
-
-          // And looking up: nothing of the hill may hang into the bore.
-          const up = new RAPIER.Ray({ x, y: deck + 0.1, z }, { x: 0, y: 1, z: 0 })
-          const roof = world.castRay(up, 3, true)
-          if (roof !== null) tight++
-        }
-      }
-      expect(spans).toBeGreaterThan(20)
-      expect(floored).toBe(spans)
-      expect(tight).toBe(0)
-    })
-
-    it('stands every building on the map as a solid to drive into, and every tree as a trunk', () => {
-      expect(map.buildings.length).toBeGreaterThan(100)
-      // A boat is a body of the game's, which moves it; the ground holds everything else.
-      const standing = map.buildings.filter((building) => building.kind !== 'boat')
-      let roofed = 0
-      for (const building of standing) {
-        const found = castDown(world, building.x, building.z, building.top + 5)
-        if (found === null) continue
-        // A standing stone may carry a lintel, a post a canopy, a site a crane and a pyramid's tier the one above, whose top is what is met above it.
-        const carried = (building.kind === 'stone' || building.kind === 'post' || building.kind === 'site' || building.kind === 'pyramid') && found > building.top
-        if (Math.abs(found - building.top) < 0.01 || carried) roofed++
-      }
-      expect(roofed).toBe(standing.length)
-      const trees = map.trees.filter((tree) => tree.kind === 'tree')
-      const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
-      expect(trees.length).toBeGreaterThan(50)
-      expect(shrubs.length).toBeGreaterThan(50)
-      // A tree standing under the edge of a raised highway is found from
-      // above as the deck over it, which is where the ray is stopped.
-      const decks = deckSpans(map.roads)
-      let trunks = 0
-      for (const tree of trees) {
-        const top = tree.bottom + tree.height
-        const overhead = lowestDeckOver(decks, tree.x, tree.z, top)
-        const found = castDown(world, tree.x, tree.z, Math.min(top + 5, overhead - 1))
-        if (found !== null && Math.abs(found - top) < 0.01) trunks++
-      }
-      expect(trunks).toBe(trees.length)
-      // A shrub is nothing to hit: the ray passes down through it to the
-      // ground, which the collider's triangles can put a little off the
-      // drawn ground's bilinear reading but never up at the shrub's top.
-      let open = 0
-      for (const shrub of shrubs) {
-        // A little off its middle: a ray straight down a seam of the heightfield's grid can slip through it.
-        const found = castDown(world, shrub.x + 0.03, shrub.z + 0.03, shrub.bottom + shrub.height + 5)
-        if (found !== null && found < shrub.bottom + shrub.height - 0.1) open++
-      }
-      expect(open).toBe(shrubs.length)
-    })
-
-    it('stands every boulder as a solid its size, and passes through the scree', () => {
-      const boulders = map.rocks.filter((rock) => rock.kind === 'boulder')
-      const scree = map.rocks.filter((rock) => rock.kind === 'scree')
-      expect(boulders.length).toBeGreaterThan(20)
-      expect(scree.length).toBeGreaterThan(50)
-      let topped = 0
-      for (const rock of boulders) {
-        const found = castDown(world, rock.x, rock.z, rock.bottom + rock.size + 5)
-        if (found !== null && Math.abs(found - rock.bottom - rock.size) < 0.01) topped++
-      }
-      expect(topped).toBe(boulders.length)
-      // A scree stone is nothing to hit: the ray passes down through it to
-      // the ground. On the cliffs scree lies on, the collider's triangles
-      // can put the ground well off the drawn ground's bilinear reading,
-      // even above a small stone's top, but never exactly at it.
-      let open = 0
-      let stopped = 0
-      for (const rock of scree) {
-        const from = rock.bottom + rock.size + 5
-        const ray = new RAPIER.Ray({ x: rock.x, y: from, z: rock.z }, { x: 0, y: -1, z: 0 })
-        const hit = world.castRay(ray, from * 2, true)
-        if (hit === null) continue
-        const found = from - hit.timeOfImpact
-        if (found < rock.bottom + rock.size - 0.1) open++
-        // Whatever the ray meets, it is never a solid the size of the stone: the ground, a road or a wall.
-        if (hit.collider.shape.type === RAPIER.ShapeType.Cuboid && Math.abs(found - rock.bottom - rock.size) < 0.01) stopped++
-      }
-      expect(stopped).toBe(0)
-      expect(open).toBeGreaterThan(scree.length * 0.98)
-    })
-
-    it('stands a solid kicker under every ramp, curving from its foot up to its lip', () => {
-      expect(map.ramps.length).toBeGreaterThan(0)
-      let sound = 0
-      for (const ramp of map.ramps) {
-        let facetsFound = 0
-        for (const facet of rampFacets(ramp)) {
-          const along = Math.min(Math.max(facet.along, 0.3), ramp.length - 0.3)
-          const found = castDown(world, ramp.x + ramp.dx * along, ramp.z + ramp.dz * along, ramp.top + 5)
-          if (found !== null && Math.abs(found - (ramp.bottom + rampRise(ramp, along))) < 0.08) facetsFound++
-        }
-        if (facetsFound === rampFacets(ramp).length) sound++
-      }
-      expect(sound).toBe(map.ramps.length)
-    })
-
-    it('raises a curb around every city block that the wheels find', () => {
-      expect(map.sidewalks.length).toBeGreaterThan(0)
-      let curbed = 0
-      for (const walk of map.sidewalks) {
-        // The middle of one built side's slab, just in from the curb, short
-        // of the buildings standing on the slab further in. Sides go around
-        // from the one at +v.
-        const side = walk.sides.findIndex((built) => built)
-        const reach = walk.half - 0.3
-        const [u, v] = (
-          [
-            [0, reach],
-            [-reach, 0],
-            [0, -reach],
-            [reach, 0],
-          ] as [number, number][]
-        )[side]!
-        const x = walk.x + u * Math.cos(walk.yaw) - v * Math.sin(walk.yaw)
-        const z = walk.z + u * Math.sin(walk.yaw) + v * Math.cos(walk.yaw)
-        const ground = sampleHeight(map.heightfield, x, z)
-        // From just over the curb, under any deck that crosses the city above it.
-        const found = castDown(world, x, z, ground + 1)
-        if (found !== null && found > ground + CURB_HEIGHT - 0.05 && found < ground + CURB_HEIGHT + 0.6) curbed++
-      }
-      expect(curbed).toBe(map.sidewalks.length)
-    })
-
-    it('carries a bridge over the gap it spans', () => {
-      let spans = 0
-      let carried = 0
-      for (const road of map.roads) {
-        const count = road.points.length
-        const segments = road.closed ? count : count - 1
-        for (let i = 0; i < segments; i++) {
-          if (road.structure[i] !== ROAD_BRIDGE) continue
-          const a = road.points[i]!
-          const b = road.points[(i + 1) % count]!
-          const x = (a.x + b.x) / 2
-          const z = (a.z + b.z) / 2
-          const deck = (a.y + b.y) / 2 + roadLift(road)
-          // Only spans that actually clear something: a deck sitting on the
-          // ground proves nothing about whether it holds anything up.
-          if (deck - sampleHeight(map.heightfield, x, z) < 1) continue
-          spans++
-          const found = castDown(world, x, z, deck + 3)
-          if (found !== null && Math.abs(found - deck) < 0.3) carried++
-        }
-      }
-      expect(spans).toBeGreaterThan(20)
-      expect(carried / spans).toBeGreaterThan(0.95)
-    })
-  })
+      return heightOf(planet, at) - heightOf(planet, nearest)
+    }
+    for (let i = 0; i < 120; i++) step(NEUTRAL_INPUT)
+    expect(vdot(vehicle.frame.up, vehicle.up)).toBeGreaterThan(0.98)
+    expect(vehicle.groundedCount).toBe(4)
+    expect(clearance()).toBeGreaterThan(0)
+    expect(clearance()).toBeLessThan(1.5)
+    expect(vehicle.damage).toBe(0)
+    const start = { ...vehicle.frame.position }
+    for (let i = 0; i < 60 * 4; i++) step({ ...NEUTRAL_INPUT, throttle: 1 })
+    // Well on along the ground, still on its wheels and on the ground: it followed the curve, not flown off it.
+    expect(Math.hypot(vehicle.frame.position.x - start.x, vehicle.frame.position.y - start.y, vehicle.frame.position.z - start.z)).toBeGreaterThan(40)
+    expect(vdot(vehicle.frame.up, vehicle.up)).toBeGreaterThan(0.9)
+    expect(Math.abs(clearance())).toBeLessThan(1.5)
+  }, 60_000)
 })

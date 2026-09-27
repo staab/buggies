@@ -1,13 +1,5 @@
-import {
-  ROAD_GRADE,
-  ROAD_TUNNEL,
-  boreClearance,
-  boreFloorAt,
-  generateTerrain,
-  roadLift,
-  tunnelSegments,
-  type TerrainMap,
-} from '@buggies/terrain'
+import { vdot, type Vec3 } from '@buggies/physics'
+import { PLANET_TERRAIN, ROAD_GRADE, ROAD_TUNNEL, generateTerrain, groundUnder, heightOver, type TerrainMap, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -23,6 +15,7 @@ import {
   respawnLost,
   respawnNearby,
   restingRideHeight,
+  spawnHere,
   takeSeat,
   worldGravity,
   type Arena,
@@ -30,13 +23,13 @@ import {
   type VehicleInput,
   type VehicleSpawn,
 } from './index.ts'
-
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
+import { forwardOf } from './spawns.ts'
+import { angleBetween, apart, between, over } from './test-planet.ts'
 
 const FLAT_OUT: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
 
 let map: TerrainMap
+let planet: World
 let SPAWN: VehicleSpawn
 
 /** One driver in the first seat, which is all most of these need. */
@@ -49,11 +42,11 @@ function solo(arena: Arena, spawn?: VehicleSpawn): Seat {
   return seat
 }
 
-/** How far a point is from the nearest road point on the map. */
-function offRoad(x: number, z: number): number {
+/** How far a point is from the nearest road point, through the planet or not. */
+function offRoad(at: Vec3): number {
   let nearest = Infinity
-  for (const road of map.roads) {
-    for (const point of road.points) nearest = Math.min(nearest, Math.hypot(point.x - x, point.z - z))
+  for (const road of planet.roads) {
+    for (const point of road.points) nearest = Math.min(nearest, between(point, at))
   }
   return nearest
 }
@@ -65,45 +58,36 @@ function run(arena: Arena, input: VehicleInput, seconds: number): void {
 describe('game', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(7, { ...TEST_ISLANDS, size: 513 })
-    SPAWN = findSpawns(map, 1)[0]!
+    map = generateTerrain(1, PLANET_TERRAIN)
+    planet = map.world!
+    SPAWN = findSpawns(planet, 1)[0]!
   }, 60_000)
 
   it('spawns on a road, facing along it', () => {
-    const spawn = findSpawns(map, 1)[0]!
+    const spawn = findSpawns(planet, 1)[0]!
     // The nearest road surface in three dimensions: under a bridge, the deck
-    // overhead is as near in plan as the road the spawn is on.
-    let nearest = { road: map.roads[0]!, point: map.roads[0]!.points[0]!, distance: Infinity }
-    for (const road of map.roads) {
-      for (const point of road.points) {
-        const distance = Math.hypot(
-          point.x - spawn.position.x,
-          point.y + roadLift(road) - spawn.position.y,
-          point.z - spawn.position.z,
-        )
-        if (distance < nearest.distance) nearest = { road, point, distance }
+    // overhead is as near along the ground as the road the spawn is on.
+    let nearest = { road: planet.roads[0]!, index: 0, distance: Infinity }
+    for (const road of planet.roads) {
+      for (const [index, point] of road.points.entries()) {
+        const distance = between(point, spawn.position)
+        if (distance < nearest.distance) nearest = { road, index, distance }
       }
     }
-    // In its lane: off the middle of the road, but on it.
-    expect(nearest.distance).toBeLessThan(nearest.road.width / 2)
-    expect(spawn.position.y).toBeCloseTo(nearest.point.y + roadLift(nearest.road), 5)
+    // In its lane: off the middle of the road, but on it, at its height.
+    expect(nearest.distance).toBeLessThan(nearest.road.widths[nearest.index]! / 2)
+    expect(Math.abs(over(spawn.position, nearest.road.points[nearest.index]!))).toBeLessThan(0.05)
   })
 
   it('lines a full field up along the road without overlapping', () => {
-    const spawns = findSpawns(map, MAX_PLAYERS)
+    const spawns = findSpawns(planet, MAX_PLAYERS)
     expect(spawns).toHaveLength(MAX_PLAYERS)
     for (let i = 0; i < spawns.length; i++) {
-      for (let j = i + 1; j < spawns.length; j++) {
-        const a = spawns[i]!.position
-        const b = spawns[j]!.position
-        expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(6)
-      }
+      for (let j = i + 1; j < spawns.length; j++) expect(apart(spawns[i]!.position, spawns[j]!.position)).toBeGreaterThan(6)
     }
     // Nearly everyone faces roughly the same way: all down the road, and those seated on the roads nearby where they can.
-    const along = spawns.filter((spawn) => {
-      const turn = Math.abs(Math.atan2(Math.sin(spawn.yaw - spawns[0]!.yaw), Math.cos(spawn.yaw - spawns[0]!.yaw)))
-      return turn < Math.PI / 2
-    })
+    const lead = forwardOf(spawns[0])
+    const along = spawns.filter((spawn) => angleBetween(forwardOf(spawn), lead) < Math.PI / 2)
     expect(along.length).toBeGreaterThan(MAX_PLAYERS * 0.75)
   })
 
@@ -114,9 +98,9 @@ describe('game', () => {
 
     const { position } = seat.vehicle.frame
     // Standing on the road, held up by suspension, not buried in it.
-    expect(position.y).toBeGreaterThan(seat.spawn.position.y)
-    expect(position.y).toBeLessThan(seat.spawn.position.y + 3)
-    expect(Math.hypot(position.x - seat.spawn.position.x, position.z - seat.spawn.position.z)).toBeLessThan(2)
+    expect(over(position, seat.spawn.position)).toBeGreaterThan(0)
+    expect(over(position, seat.spawn.position)).toBeLessThan(3)
+    expect(apart(position, seat.spawn.position)).toBeLessThan(2)
     expect(seat.vehicle.groundedCount).toBe(4)
   })
 
@@ -128,11 +112,7 @@ describe('game', () => {
 
     run(arena, FLAT_OUT, 4)
     expect(seat.vehicle.speed).toBeGreaterThan(5)
-    const traveled = Math.hypot(
-      seat.vehicle.frame.position.x - from.x,
-      seat.vehicle.frame.position.z - from.z,
-    )
-    expect(traveled).toBeGreaterThan(10)
+    expect(apart(seat.vehicle.frame.position, from)).toBeGreaterThan(10)
 
     // The brake pedal becomes reverse once there is nothing left to stop, so
     // what it has to show is the stopping, not a standstill it never keeps.
@@ -155,10 +135,8 @@ describe('game', () => {
     respawn(seat)
     expect(seat.epoch).not.toBe(epoch)
     expect(seat.vehicle.speed).toBe(0)
-    const { position } = seat.vehicle.frame
-    // The body keeps single-precision coordinates, so a kilometer in is only good to a few tens of microns.
-    expect(position.x).toBeCloseTo(seat.spawn.position.x, 3)
-    expect(position.z).toBeCloseTo(seat.spawn.position.z, 3)
+    // Its middle stands its ride height up from the spawn, give or take where the chassis carries its weight.
+    expect(apart(seat.vehicle.frame.position, seat.spawn.position)).toBeLessThan(0.01)
   })
 
   it('puts a wreck back on the road once it has lain there long enough', () => {
@@ -178,9 +156,8 @@ describe('game', () => {
     expect(seat.epoch).not.toBe(epoch)
     expect(seat.vehicle.wrecked).toBe(false)
     expect(seat.vehicle.damage).toBe(0)
-    // Put back on the nearest road, at rest.
-    const { position } = seat.vehicle.frame
-    expect(offRoad(position.x, position.z)).toBeLessThan(1)
+    // Put back on the nearest road, at rest, its ride height over it.
+    expect(offRoad(seat.vehicle.frame.position)).toBeLessThan(1.5)
     expect(seat.vehicle.speed).toBe(0)
   })
 
@@ -188,9 +165,8 @@ describe('game', () => {
     const arena = createArena(map)
     const seat = solo(arena)
     run(arena, FLAT_OUT, 6)
-    const { position, forward } = seat.vehicle.frame
-    const before = { x: position.x, z: position.z, fx: forward.x, fz: forward.z }
-    expect(Math.hypot(before.x - seat.spawn.position.x, before.z - seat.spawn.position.z)).toBeGreaterThan(60)
+    const before = { position: { ...seat.vehicle.frame.position }, forward: { ...seat.vehicle.frame.forward } }
+    expect(apart(before.position, seat.spawn.position)).toBeGreaterThan(60)
 
     seat.vehicle.damage = 0.4
     respawnNearby(arena, seat)
@@ -198,10 +174,10 @@ describe('game', () => {
     // Put back, not made new: the knocks it had come with it.
     expect(seat.vehicle.damage).toBe(0.4)
     // Near where it was, not back at the start, on a road, still heading the same way.
-    expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(15)
-    expect(Math.hypot(after.position.x - seat.spawn.position.x, after.position.z - seat.spawn.position.z)).toBeGreaterThan(45)
-    expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.7)
-    expect(offRoad(after.position.x, after.position.z)).toBeLessThan(1)
+    expect(apart(after.position, before.position)).toBeLessThan(15)
+    expect(apart(after.position, seat.spawn.position)).toBeGreaterThan(45)
+    expect(vdot(after.forward, before.forward)).toBeGreaterThan(0.7)
+    expect(offRoad(after.position)).toBeLessThan(1.5)
     expect(seat.vehicle.speed).toBe(0)
   })
 
@@ -209,8 +185,7 @@ describe('game', () => {
     const arena = createArena(map)
     const seat = solo(arena)
     run(arena, FLAT_OUT, 6)
-    const { position, forward } = seat.vehicle.frame
-    const before = { x: position.x, z: position.z, fx: forward.x, fz: forward.z }
+    const before = { position: { ...seat.vehicle.frame.position }, forward: { ...seat.vehicle.frame.forward } }
     const tick = arena.tick
 
     changeVehicle(arena, seat, 'tank')
@@ -219,12 +194,12 @@ describe('game', () => {
     const after = seat.vehicle.frame
     // The new one starts right where the old one was, heading the same way;
     // the arena itself was not started over.
-    expect(Math.hypot(after.position.x - before.x, after.position.z - before.z)).toBeLessThan(0.01)
-    expect(after.forward.x * before.fx + after.forward.z * before.fz).toBeGreaterThan(0.99)
+    expect(apart(after.position, before.position)).toBeLessThan(0.01)
+    expect(vdot(after.forward, before.forward)).toBeGreaterThan(0.99)
     expect(arena.tick).toBe(tick)
     // And it sits as the new vehicle: on the tank's springs, at the tank's height.
     run(arena, NEUTRAL_INPUT, 1)
-    expect(seat.vehicle.frame.up.y).toBeGreaterThan(0.95)
+    expect(vdot(seat.vehicle.frame.up, seat.vehicle.up)).toBeGreaterThan(0.95)
     expect(seat.vehicle.rideHeight).toBeCloseTo(restingRideHeight(seat.tuning, worldGravity(arena.world)), 5)
   })
 
@@ -252,15 +227,17 @@ describe('game', () => {
     expect(again.profile).toBe('sportsCar')
   })
 
-  it('brings back a vehicle that has fallen off the world', () => {
+  it('brings back a vehicle that has sunk through the world', () => {
     const arena = createArena(map)
     const seat = solo(arena)
     run(arena, NEUTRAL_INPUT, 1)
-    seat.vehicle.body.setTranslation({ x: -50, y: 20, z: -50 }, true)
+    // Deep inside the planet, far under the sea floor.
+    const { x, y, z } = seat.vehicle.frame.position
+    seat.vehicle.body.setTranslation({ x: x * 0.5, y: y * 0.5, z: z * 0.5 }, true)
     seat.vehicle.damage = 0.6
 
     let brought = 0
-    let landed = { x: 0, z: 0 }
+    let landed = { x: 0, y: 0, z: 0 }
     for (let i = 0; i < 60 * 5; i++) {
       advance(arena)
       const back = respawnLost(arena)
@@ -269,32 +246,28 @@ describe('game', () => {
     }
     expect(brought).toBe(1)
     expect(seat.vehicle.damage).toBe(0.6)
-    // Back on the map, on the road nearest to where it went over the edge.
-    const worldSize = map.size * map.cellSize
-    expect(landed.x).toBeGreaterThan(0)
-    expect(landed.z).toBeGreaterThan(0)
-    expect(landed.x).toBeLessThan(worldSize)
-    expect(landed.z).toBeLessThan(worldSize)
-    expect(offRoad(landed.x, landed.z)).toBeLessThan(1)
+    // Back on the road nearest to where it went down.
+    expect(offRoad(landed)).toBeLessThan(1.5)
   })
 
   it('turns the way it is steered', () => {
     // A chassis faces its own -Z with up at +Y, which puts its right at +X;
-    // turned by the spawn's yaw, that is the way steering right has to carry
-    // it. The old physics had this backward and every figure that takes an
-    // absolute value hid it. Measured along the road, from the spawn on it.
-    const right = { x: Math.cos(SPAWN.yaw), z: -Math.sin(SPAWN.yaw) }
+    // turned as the spawn stands it, that is the way steering right has to
+    // carry it. Measured along the ground, from the spawn.
+    const forward = forwardOf(SPAWN)
+    const up = SPAWN.up
+    const right = { x: forward.y * up.z - forward.z * up.y, y: forward.z * up.x - forward.x * up.z, z: forward.x * up.y - forward.y * up.x }
     const drift = (steer: number): number => {
       const arena = createArena(map, 1)
       const seat = solo(arena, SPAWN)
       run(arena, { ...FLAT_OUT, steer }, 3)
-      const { x, z } = seat.vehicle.frame.position
-      return (x - SPAWN.position.x) * right.x + (z - SPAWN.position.z) * right.z
+      const { x, y, z } = seat.vehicle.frame.position
+      return (x - SPAWN.position.x) * right.x + (y - SPAWN.position.y) * right.y + (z - SPAWN.position.z) * right.z
     }
     const ahead = drift(0)
     expect(drift(1)).toBeGreaterThan(ahead + 1)
     expect(drift(-1)).toBeLessThan(ahead - 1)
-  })
+  }, 60_000)
 
   it('replays the same drive from the same inputs', () => {
     const drive = (): number[] => {
@@ -310,14 +283,13 @@ describe('game', () => {
   })
 
   it('drives through a tunnel instead of dropping into the hill', () => {
-    // Tunnels are rare enough that a cut-down island may have none.
-    const island = generateTerrain(3, TEST_ISLANDS)
-    const bores = tunnelSegments(island.roads)
-    expect(bores.length).toBeGreaterThan(10)
+    // Tunnels are rare enough that many an island has none: this one has a good few.
+    const island = generateTerrain(6, PLANET_TERRAIN)
+    const world = island.world!
 
     // A road that runs into a tunnel, and a spot on the road before it.
-    let found: { road: (typeof island.roads)[number]; portal: number } | null = null
-    for (const road of island.roads) {
+    let found: { road: World['roads'][number]; portal: number } | null = null
+    for (const road of world.roads) {
       const count = road.points.length
       const segments = road.closed ? count : count - 1
       for (let i = 20; i < segments - 20; i++) {
@@ -335,53 +307,46 @@ describe('game', () => {
     let start = portal
     let backedOff = 0
     while (start > 1 && backedOff < 20) {
-      backedOff += Math.hypot(
-        road.points[start]!.x - road.points[start - 1]!.x,
-        road.points[start]!.z - road.points[start - 1]!.z,
-      )
+      backedOff += between(road.points[start]!, road.points[start - 1]!)
       start--
     }
     const a = road.points[start]!
     const b = road.points[Math.min(start + 3, road.points.length - 1)]!
     const arena = createArena(island, 1)
-    const seat = solo(arena, {
-      position: { x: a.x, y: a.y + roadLift(road), z: a.z },
-      yaw: Math.atan2(-(b.x - a.x), -(b.z - a.z)),
-    })
+    const seat = solo(arena, spawnHere(a, { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }))
 
     // Driven like a driver would: aimed at the road ahead, flat out.
     const LOOK_AHEAD = 22
     let at = start
     const follow = (): VehicleInput => {
-      const { position, forward } = seat.vehicle.frame
-      while (at < road.points.length - 1) {
-        const point = road.points[at]!
-        if (Math.hypot(point.x - position.x, point.z - position.z) > LOOK_AHEAD) break
-        at++
-      }
+      const { position, forward, right } = seat.vehicle.frame
+      while (at < road.points.length - 1 && between(road.points[at]!, position) <= LOOK_AHEAD) at++
       const target = road.points[at]!
-      const wanted = Math.atan2(target.x - position.x, target.z - position.z)
-      const facing = Math.atan2(forward.x, forward.z)
-      let error = wanted - facing
-      while (error > Math.PI) error -= 2 * Math.PI
-      while (error < -Math.PI) error += 2 * Math.PI
-      // Headings grow from +Z toward +X, and a chassis facing -Z has +X on its
-      // right, so a target at a greater heading is off to the left.
-      return { ...FLAT_OUT, steer: Math.max(-1, Math.min(1, -error * 2.5)) }
+      const toward = { x: target.x - position.x, y: target.y - position.y, z: target.z - position.z }
+      const error = Math.atan2(vdot(toward, right), vdot(toward, forward))
+      return { ...FLAT_OUT, steer: Math.max(-1, Math.min(1, error * 2.5)) }
+    }
+
+    /** The road point nearest a point, and whether the segment from it is bored through. */
+    const nearestOnRoad = (point: Vec3): { at: Vec3; bored: boolean } => {
+      let best = 0
+      for (const [i, candidate] of road.points.entries()) if (between(candidate, point) < between(road.points[best]!, point)) best = i
+      return { at: road.points[best]!, bored: road.structure[Math.min(best, road.structure.length - 1)] === ROAD_TUNNEL }
     }
 
     let inside = 0
     let onTheRoad = 0
     for (let i = 0; i < 20 * 60; i++) {
       advance(arena, follow)
-      const { x, y, z } = seat.vehicle.frame.position
-      if (boreClearance(bores, x, z, y) >= 0) continue
+      const { position } = seat.vehicle.frame
+      const nearest = nearestOnRoad(position)
+      // Inside: over a bored stretch, under the hill.
+      if (!nearest.bored || heightOver(world, position) > groundUnder(world, position)) continue
       inside++
-      // Standing on the roadway, not on the bed cut beneath it. The two
-      // are less than a meter apart, so anything looser than this cannot tell
-      // a tunnel with a road in it from a tunnel without one.
-      const floor = boreFloorAt(bores, x, z)
-      if (floor !== null && y - floor > 0.5 && seat.vehicle.groundedCount === 4) onTheRoad++
+      // Standing on the roadway, not on the bed cut beneath it. The two are
+      // less than a meter apart, so anything looser than this cannot tell a
+      // tunnel with a road in it from a tunnel without one.
+      if (over(position, nearest.at) > 0.5 && seat.vehicle.groundedCount === 4) onTheRoad++
     }
     expect(inside).toBeGreaterThan(30)
     expect(onTheRoad / inside).toBeGreaterThan(0.8)

@@ -5,7 +5,7 @@ import { NEUTRAL_INPUT, type VehicleInput } from './input.ts'
 import { addHeightfield } from './terrain.ts'
 import { VEHICLE_PROFILE_IDS, createVehicleTuning, type VehicleTuning } from './tuning.ts'
 import { stepVehicle } from './vehicle.ts'
-import { createVehicle, restingRideHeight, type Vehicle } from './vehicleBody.ts'
+import { createVehicle, levelSpawn, restingRideHeight, type Vehicle } from './vehicleBody.ts'
 import { FIXED_TIMESTEP, createPhysicsWorld, initPhysics, worldGravity } from './world.ts'
 
 const CELL = 3
@@ -43,7 +43,7 @@ interface Run {
 function start(tuning: VehicleTuning, field = runway(), at = { x: (WIDTH * CELL) / 2, z: START_Z }): Run {
   const world = createPhysicsWorld()
   addHeightfield(world, field)
-  const vehicle = createVehicle(world, tuning, { position: { x: at.x, y: 0, z: at.z }, yaw: 0 })
+  const vehicle = createVehicle(world, tuning, levelSpawn({ x: at.x, y: 0, z: at.z }, 0))
   world.step()
   return { world, vehicle, tuning }
 }

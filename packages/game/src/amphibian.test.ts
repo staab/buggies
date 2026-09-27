@@ -1,37 +1,38 @@
-import { generateTerrain, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { vdot, type Vec3 } from '@buggies/physics'
+import { PLANET_TERRAIN, atHeight, generateTerrain, groundUnder, heightOver, tangentFrame, type TerrainMap, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { NEUTRAL_INPUT, advance, createArena, initPhysics, isLost, respawn, takeSeat, type Arena, type Seat } from './index.ts'
-
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
+import { NEUTRAL_INPUT, advance, createArena, initPhysics, isLost, respawn, spawnHere, takeSeat, type Arena, type Seat } from './index.ts'
+import { ahead, angleBetween, apart } from './test-planet.ts'
 
 let map: TerrainMap
 
-/** Somewhere out at sea, deep, with open water all around. */
-function openSea(island: TerrainMap): { x: number; z: number } {
-  const extent = island.size * island.cellSize
-  for (let x = 60; x < extent - 60; x += 20) {
-    for (let z = 60; z < extent - 60; z += 20) {
+/** Somewhere out at sea, deep, with open water all around: a way out from the middle, and the east there. */
+function openSea(planet: World): { point: Vec3; east: Vec3 } {
+  for (let latitude = -0.3; latitude <= 0.3; latitude += 0.05) {
+    for (let longitude = 0; longitude < 2 * Math.PI; longitude += 0.05) {
+      const out = { x: Math.cos(latitude) * Math.sin(longitude), y: Math.sin(latitude), z: Math.cos(latitude) * Math.cos(longitude) }
+      const point = atHeight(planet, out, planet.seaLevel + 1)
+      const { east, north } = tangentFrame(out)
       let open = true
       for (let dx = -60; dx <= 60 && open; dx += 20) {
-        for (let dz = -60; dz <= 60 && open; dz += 20) open = sampleHeight(island.heightfield, x + dx, z + dz) < island.seaLevel - 6
+        for (let dz = -60; dz <= 60 && open; dz += 20) open = groundUnder(planet, ahead(ahead(point, east, dx), north, dz)) < planet.seaLevel - 6
       }
-      if (open) return { x, z }
+      if (open) return { point, east }
     }
   }
   throw new Error('no open sea')
 }
 
 function putToSea(arena: Arena, seat: Seat): void {
-  const { x, z } = openSea(arena.map)
-  respawn(seat, { position: { x, y: arena.map.seaLevel + 1, z }, yaw: 0 })
+  const { point, east } = openSea(arena.planet)
+  respawn(seat, spawnHere(point, east))
 }
 
 describe('the amphibian', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    map = generateTerrain(11, PLANET_TERRAIN)
   }, 60_000)
 
   it('floats at sea, is driven along the water by its throttle, and is never taken for lost there, where a car sinks', () => {
@@ -41,24 +42,24 @@ describe('the amphibian', () => {
     advance(arena)
     putToSea(arena, boat)
     putToSea(arena, car)
-    car.vehicle.body.setTranslation({ ...car.vehicle.frame.position, x: car.vehicle.frame.position.x + 30 }, true)
+    car.vehicle.body.setTranslation(ahead(car.vehicle.frame.position, car.vehicle.frame.right, 30), true)
     for (let i = 0; i < 60 * 4; i++) advance(arena)
     // Afloat: riding high in the water, upright, and not lost.
-    expect(boat.vehicle.frame.position.y).toBeGreaterThan(map.seaLevel - 0.5)
-    expect(boat.vehicle.frame.position.y).toBeLessThan(map.seaLevel + 1.5)
-    expect(boat.vehicle.frame.up.y).toBeGreaterThan(0.95)
+    const planet = arena.planet
+    expect(heightOver(planet, boat.vehicle.frame.position)).toBeGreaterThan(planet.seaLevel - 0.5)
+    expect(heightOver(planet, boat.vehicle.frame.position)).toBeLessThan(planet.seaLevel + 1.5)
+    expect(vdot(boat.vehicle.frame.up, boat.vehicle.up)).toBeGreaterThan(0.95)
     expect(isLost(arena, boat)).toBe(false)
     expect(isLost(arena, car)).toBe(true)
     // Under way on the water.
     const start = { ...boat.vehicle.frame.position }
     for (let i = 0; i < 60 * 5; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, throttle: 1 } : NEUTRAL_INPUT))
-    expect(Math.hypot(boat.vehicle.frame.position.x - start.x, boat.vehicle.frame.position.z - start.z)).toBeGreaterThan(25)
+    expect(apart(boat.vehicle.frame.position, start)).toBeGreaterThan(25)
     // And turned by its steering, briskly: a good way round in a second and a half.
-    const heading = Math.atan2(boat.vehicle.frame.forward.x, boat.vehicle.frame.forward.z)
+    const heading = { ...boat.vehicle.frame.forward }
     for (let i = 0; i < 90; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, throttle: 1, steer: 1 } : NEUTRAL_INPUT))
-    const turned = Math.atan2(boat.vehicle.frame.forward.x, boat.vehicle.frame.forward.z)
-    expect(Math.abs(Math.atan2(Math.sin(turned - heading), Math.cos(turned - heading)))).toBeGreaterThan(1.2)
-    expect(boat.vehicle.frame.up.y).toBeGreaterThan(0.9)
+    expect(angleBetween(boat.vehicle.frame.forward, heading)).toBeGreaterThan(1.2)
+    expect(vdot(boat.vehicle.frame.up, boat.vehicle.up)).toBeGreaterThan(0.9)
     arena.world.free()
   })
 
@@ -68,7 +69,7 @@ describe('the amphibian', () => {
     const car = takeSeat(arena, 1, 'sportsCar')
     advance(arena)
     const { position, forward } = boat.vehicle.frame
-    respawn(car, { position: { x: position.x + forward.x * 20, y: position.y + 0.5, z: position.z + forward.z * 20 }, yaw: 0 })
+    respawn(car, spawnHere(ahead(position, forward, 20), forward))
     for (let i = 0; i < 20; i++) advance(arena)
     for (let i = 0; i < 60; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, ability: true } : NEUTRAL_INPUT))
     expect(car.vehicle.damage).toBeGreaterThan(0)

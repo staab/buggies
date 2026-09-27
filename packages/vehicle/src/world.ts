@@ -53,30 +53,35 @@ export async function initPhysics(): Promise<void> {
   wasmReady = true
 }
 
-/** How strong each world's gravity is, and the worlds whose gravity pulls toward their middle, on each body by its owner, rather than down their y axis. */
+/**
+ * How strong each world's gravity is. Its own gravity pulls nothing: every
+ * body is pulled by its owner, down its own way up, toward a planet's middle.
+ */
 const strengths = new WeakMap<RAPIER.World, number>()
-const radial = new WeakSet<RAPIER.World>()
 
 export function applyWorldTuning(world: RAPIER.World, tuning: WorldTuning): void {
   strengths.set(world, tuning.gravity)
-  world.gravity.x = 0
-  world.gravity.y = radial.has(world) ? 0 : -tuning.gravity
-  world.gravity.z = 0
 }
 
-/** How strong a world's gravity is, whichever way it pulls. */
+/** How strong a world's gravity is. */
 export function worldGravity(world: RAPIER.World): number {
-  return strengths.get(world) ?? -world.gravity.y
+  return strengths.get(world) ?? DEFAULT_WORLD_TUNING.gravity
 }
 
-/** Whether a world's gravity pulls toward its middle, the owner pulling each body there, rather than down its y axis. */
-export function radialGravity(world: RAPIER.World): boolean {
-  return radial.has(world)
+/**
+ * Pull a body down its way up by its weight, in place of whatever pulled it
+ * last tick: a force stays on a body until it is taken off. One at rest is
+ * left asleep.
+ */
+export function pullBody(body: RAPIER.RigidBody, up: Vec3, gravity: number): void {
+  if (!body.isEnabled() || !body.isDynamic() || body.isSleeping()) return
+  const weight = -body.mass() * gravity
+  body.resetForces(false)
+  body.addForce({ x: up.x * weight, y: up.y * weight, z: up.z * weight }, false)
 }
 
-export function createPhysicsWorld(tuning: WorldTuning = DEFAULT_WORLD_TUNING, pullsToMiddle = false): RAPIER.World {
+export function createPhysicsWorld(tuning: WorldTuning = DEFAULT_WORLD_TUNING): RAPIER.World {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
-  if (pullsToMiddle) radial.add(world)
 
   applyWorldTuning(world, tuning)
 

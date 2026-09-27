@@ -314,13 +314,12 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
 function gatherSpiders(arena: Arena, out: RoomSnapshots): SpiderSnapshot[] {
   const { spiders } = out
   arena.spiders.forEach((spider, index) => {
-    const entry = (spiders[index] ??= { id: 0, position: v3(), heading: 0, legs: 0, target: { x: 0, z: 0 }, stride: 0, bombTicks: 0, damage: 0, deaths: 0 })
+    const entry = (spiders[index] ??= { id: 0, position: v3(), forward: v3(), legs: 0, target: v3(), stride: 0, bombTicks: 0, damage: 0, deaths: 0 })
     entry.id = spider.id
     vcopy(entry.position, spider.position)
-    entry.heading = spider.heading
+    vcopy(entry.forward, spider.forward)
     entry.legs = spider.legs
-    entry.target.x = spider.target.x
-    entry.target.z = spider.target.z
+    vcopy(entry.target, spider.target)
     entry.stride = spider.stride
     entry.bombTicks = spider.bombTicks
     entry.damage = spider.damage

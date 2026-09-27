@@ -1,4 +1,5 @@
-import { generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { vdot, type Vec3 } from '@buggies/physics'
+import { PLANET_TERRAIN, atHeight, generateTerrain, heightOver, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -21,25 +22,26 @@ import {
   advance,
   createArena,
   initPhysics,
+  spawnHere,
   takeSeat,
   type Arena,
   type LooseKind,
   type Seat,
 } from './index.ts'
+import { ahead, apart, lifted } from './test-planet.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
 
 let map: TerrainMap
 
-/** A rocket of this seat's set going right past a machine, after it. */
-function rocketAt(arena: Arena, target: number, at: { x: number; y: number; z: number }): void {
+/** A rocket of this seat's set going right past a machine, after it: coming from two meters west of it, eastward. */
+function rocketAt(arena: Arena, target: number, at: Vec3): void {
+  const { east } = tangentFrame(upOf(at))
   arena.rockets.push({
     id: 1,
     owner: 0,
     target,
-    position: { x: at.x - 2, y: at.y, z: at.z },
-    velocity: { x: 30, y: 0, z: 0 },
+    position: ahead(at, east, -2),
+    velocity: { x: east.x * 30, y: east.y * 30, z: east.z * 30 },
     bornTick: arena.tick,
     power: 1,
   })
@@ -48,7 +50,7 @@ function rocketAt(arena: Arena, target: number, at: { x: number; y: number; z: n
 describe('the robots and the saucers', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    map = generateTerrain(11, PLANET_TERRAIN)
   }, 60_000)
 
   it('a robot takes a rocket as a car ten times tougher would, and once brought down comes back whole on another arterial', () => {
@@ -56,7 +58,7 @@ describe('the robots and the saucers', () => {
     takeSeat(arena, 0, 'sportsCar')
     advance(arena)
     const [robot] = arena.robots
-    rocketAt(arena, ROBOT_TARGET + robot!.id, { x: robot!.position.x, y: robot!.position.y + 3, z: robot!.position.z })
+    rocketAt(arena, ROBOT_TARGET + robot!.id, lifted(robot!.position, 3))
     advance(arena)
     expect(arena.rockets).toHaveLength(0)
     expect(robot!.damage).toBeCloseTo(ROCKET_DAMAGE / MACHINE_TOUGHNESS, 5)
@@ -64,15 +66,14 @@ describe('the robots and the saucers', () => {
 
     robot!.damage = 1 - 1e-6
     const before = { ...robot!.position }
-    rocketAt(arena, ROBOT_TARGET + robot!.id, { x: robot!.position.x, y: robot!.position.y + 3, z: robot!.position.z })
+    rocketAt(arena, ROBOT_TARGET + robot!.id, lifted(robot!.position, 3))
     advance(arena)
     expect(robot!.deaths).toBe(1)
     expect(robot!.damage).toBe(0)
     expect(arena.seats[0]!.robotKills).toBe(1)
-    expect(Math.hypot(robot!.position.x - before.x, robot!.position.z - before.z)).toBeGreaterThan(20)
-    expect(arena.map.roads[robot!.road]!.kind).toBe('arterial')
-    const body = robot!.body.translation()
-    expect(Math.hypot(body.x - robot!.position.x, body.z - robot!.position.z)).toBeLessThan(0.5)
+    expect(apart(robot!.position, before)).toBeGreaterThan(20)
+    expect(arena.planet.roads[robot!.road]!.kind).toBe('arterial')
+    expect(apart(robot!.body.translation(), robot!.position)).toBeLessThan(0.5)
     arena.world.free()
   })
 
@@ -92,18 +93,17 @@ describe('the robots and the saucers', () => {
     expect(ufo!.deaths).toBe(1)
     expect(ufo!.damage).toBe(0)
     expect(ufo!.state).toBe('roam')
-    expect(Math.hypot(ufo!.position.x - before.x, ufo!.position.z - before.z)).toBeGreaterThan(20)
-    expect(ufo!.position.y).toBeGreaterThan(map.seaLevel + UFO_CRUISE - 1)
+    expect(apart(ufo!.position, before)).toBeGreaterThan(20)
+    expect(heightOver(arena.planet, ufo!.position)).toBeGreaterThan(map.seaLevel + UFO_CRUISE - 1)
     arena.world.free()
   })
 
   /** A car set down on a robot's road this far from it, facing it. */
   function facing(arena: Arena, seat: Seat, away: number): void {
     const [robot] = arena.robots
-    const road = arena.map.roads[robot!.road]!
-    const near = road.points.find((point) => Math.abs(Math.hypot(point.x - robot!.position.x, point.z - robot!.position.z) - away) < 2)!
-    const yaw = Math.atan2(-(robot!.position.x - near.x), -(robot!.position.z - near.z))
-    respawn(seat, { position: { x: near.x, y: near.y + 1, z: near.z }, yaw })
+    const road = arena.planet.roads[robot!.road]!
+    const near = road.points.find((point) => Math.abs(apart(point, robot!.position) - away) < 2)!
+    respawn(seat, spawnHere(lifted(near, 1), { x: robot!.position.x - near.x, y: robot!.position.y - near.y, z: robot!.position.z - near.z }))
   }
 
   for (const weapon of ['machineGun', 'laser'] as const) {
@@ -130,7 +130,7 @@ describe('the robots and the saucers', () => {
     const [robot] = arena.robots
     const chase = (): typeof NEUTRAL_INPUT => {
       const { position, right } = seat.vehicle.frame
-      const across = (robot!.position.x - position.x) * right.x + (robot!.position.z - position.z) * right.z
+      const across = vdot({ x: robot!.position.x - position.x, y: robot!.position.y - position.y, z: robot!.position.z - position.z }, right)
       return { ...NEUTRAL_INPUT, throttle: 1, steer: Math.max(Math.min(across * 0.3, 1), -1) }
     }
     for (let i = 0; i < 60 * 4 && robot!.damage === 0; i++) advance(arena, (one) => (one === seat ? chase() : NEUTRAL_INPUT))
@@ -164,7 +164,7 @@ describe('the spider', () => {
   let island: TerrainMap
   beforeAll(async () => {
     await initPhysics()
-    island = generateTerrain(3, TEST_ISLANDS)
+    island = generateTerrain(3, PLANET_TERRAIN)
   }, 120_000)
 
   it('a spider strides across the island and lets a bomb fall every thirty seconds, but not in a mirror', () => {
@@ -175,7 +175,7 @@ describe('the spider', () => {
       const [spider] = arena.spiders
       const start = { ...spider!.position }
       for (let i = 0; i < SPIDER_BOMB_TICKS + 5; i++) advance(arena)
-      const walked = Math.hypot(spider!.position.x - start.x, spider!.position.z - start.z)
+      const walked = apart(spider!.position, start)
       expect(walked).toBeGreaterThan(SPIDER_SPEED * 5)
       expect(walked).toBeLessThanOrEqual((SPIDER_SPEED * SPIDER_BOMB_TICKS) / 60 + 1)
       const bombs = arena.loose.filter((loose) => loose.kind === 'bomb')
@@ -189,30 +189,30 @@ describe('the spider', () => {
     takeSeat(arena, 0, 'sportsCar')
     advance(arena)
     const [spider] = arena.spiders
-    const middle = { x: spider!.position.x, y: spider!.position.y + SPIDER_BELLY + SPIDER_BODY.halfHeight, z: spider!.position.z }
-    rocketAt(arena, SPIDER_TARGET + spider!.id, middle)
+    rocketAt(arena, SPIDER_TARGET + spider!.id, lifted(spider!.position, SPIDER_BELLY + SPIDER_BODY.halfHeight))
     advance(arena)
     expect(spider!.damage).toBeCloseTo(ROCKET_DAMAGE / MACHINE_TOUGHNESS, 5)
     spider!.damage = 1 - 1e-6
     const before = { ...spider!.position }
-    rocketAt(arena, SPIDER_TARGET + spider!.id, { x: spider!.position.x, y: spider!.position.y + SPIDER_BELLY + SPIDER_BODY.halfHeight, z: spider!.position.z })
+    rocketAt(arena, SPIDER_TARGET + spider!.id, lifted(spider!.position, SPIDER_BELLY + SPIDER_BODY.halfHeight))
     advance(arena)
     expect(spider!.deaths).toBe(1)
     expect(spider!.damage).toBe(0)
-    expect(Math.hypot(spider!.position.x - before.x, spider!.position.z - before.z)).toBeGreaterThan(20)
+    expect(apart(spider!.position, before)).toBeGreaterThan(20)
     arena.world.free()
   }, 60_000)
 
   it('a spider keeps out of the cities', () => {
     const arena = createArena(island)
     const [spider] = arena.spiders
-    expect(island.districts.length).toBeGreaterThan(0)
+    const { districts } = arena.planet
+    expect(districts.length).toBeGreaterThan(0)
     let nearest = Infinity
     for (let i = 0; i < 60 * 60 * 10; i++) {
       advance(arena)
       if (i % 30 !== 0) continue
-      for (const city of island.districts) {
-        nearest = Math.min(nearest, Math.hypot(spider!.position.x - city.cx, spider!.position.z - city.cz) - city.radius - city.suburbWidth)
+      for (const city of districts) {
+        nearest = Math.min(nearest, apart(spider!.position, atHeight(arena.planet, city.center, 0)) - city.radius - city.suburbWidth)
       }
     }
     expect(nearest).toBeGreaterThan(0)

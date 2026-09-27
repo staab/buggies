@@ -1,10 +1,10 @@
 import { type Ufo } from '@buggies/game'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { overGround, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
-import { FLAT_GLOBE, type Globe } from './globe.ts'
+import { standOn } from './stand.ts'
 import { MACHINE_SMOKING, Y } from './robots-view.ts'
 
 /** Where the saucers are: an arena, or a mirror of one. */
@@ -66,7 +66,6 @@ interface Shown {
 }
 
 const STILL = { x: 0, y: 0, z: 0 }
-const at = new THREE.Vector3()
 const turn = new THREE.Quaternion()
 
 /** The saucers, each where the simulation has it, its lights chasing round, and its beam down while it lifts a car. */
@@ -74,17 +73,15 @@ export class UfosView {
   readonly object = new THREE.Group()
 
   private readonly source: UfoSource
-  private readonly map: TerrainMap | null
+  private readonly planet: World | null
   private readonly effects: PresenceEffects | null
   private readonly ear: Ear | null
-  private readonly globe: Globe
   private readonly shown = new Map<number, Shown>()
   private time = 0
 
-  constructor(source: UfoSource, map: TerrainMap | null = null, effects: PresenceEffects | null = null, ear: Ear | null = null, globe: Globe = FLAT_GLOBE) {
+  constructor(source: UfoSource, planet: World | null = null, effects: PresenceEffects | null = null, ear: Ear | null = null) {
     this.source = source
-    this.globe = globe
-    this.map = map
+    this.planet = planet
     this.effects = effects
     this.ear = ear
     this.update(0)
@@ -106,15 +103,15 @@ export class UfosView {
         this.effects?.explosions.burst(where)
         if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
       }
-      at.set(ufo.position.x, ufo.position.y, ufo.position.z)
-      this.globe.place(view.model, at, turn.setFromAxisAngle(Y, this.time * 0.6))
+      // Spinning slowly about its way up.
+      standOn(view.model, ufo.position)
+      view.model.quaternion.multiply(turn.setFromAxisAngle(Y, this.time * 0.6))
       if (ufo.damage > MACHINE_SMOKING) this.effects?.smoke.trail(view.model.position, STILL, (ufo.damage - MACHINE_SMOKING) * 2, dt)
       const lit = Math.floor(this.time * BLINK_RATE) % view.lights.length
       view.lights.forEach((light, k) => light.color.set(k === lit || (k + view.lights.length / 2) % view.lights.length === lit ? '#ffffff' : '#ffb020'))
       view.beam.visible = ufo.state === 'lift' || ufo.state === 'carry' || ufo.state === 'lower'
       if (view.beam.visible) {
-        const ground = this.map === null ? ufo.position.y - 20 : sampleHeight(this.map.heightfield, ufo.position.x, ufo.position.z)
-        view.beam.scale.set(1, Math.max(ufo.position.y - ground, 1), 1)
+        view.beam.scale.set(1, this.planet === null ? 20 : Math.max(overGround(this.planet, ufo.position), 1), 1)
       }
     }
   }

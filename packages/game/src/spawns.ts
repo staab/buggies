@@ -1,10 +1,6 @@
-import * as exact from '@buggies/physics'
-import { ROAD_GRADE, ROAD_TUNNEL, mapExtent, roadLift, type Road, type RoadPoint, type TerrainMap } from '@buggies/terrain'
+import { uprightRotation, v3, vdistance, vlength, type Vec3 } from '@buggies/physics'
+import { ROAD_GRADE, ROAD_TUNNEL, atHeight, upOf, type World, type WorldRoad } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
-
-// The exact trigonometry, copied into this module: called through the import binding it
-// is several times slower under the test runner's module loader, and these run hot.
-const { atan2, hypot } = exact
 
 /** Nose to tail along the road, with room to pull out, and side to side, two abreast. */
 const SPAWN_SPACING = 9
@@ -15,55 +11,51 @@ const FACING_REACH = 3
 
 /** A sample of a road: the point, and where along the road it is. */
 export interface RoadSpot {
-  road: Road
+  road: WorldRoad
   index: number
-  point: RoadPoint
+  point: Vec3
+}
+
+
+/** A spawn at a point, standing upright there and facing along this way. */
+export function spawnHere(position: Vec3, forward: Vec3): VehicleSpawn {
+  const up = upOf(position)
+  return { position: v3(position.x, position.y, position.z), up, rotation: uprightRotation(up, forward) }
+}
+
+/** A road's point, wrapped around a loop or held at an end. */
+function pointOf(road: WorldRoad, i: number): Vec3 {
+  const count = road.points.length
+  return road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
 }
 
 function spawnAt(spot: RoadSpot): VehicleSpawn {
   const { road, index, point } = spot
-  const count = road.points.length
-  const ahead = road.points[Math.min(index + FACING_REACH, count - 1)] ?? point
-  return {
-    position: { x: point.x, y: point.y + roadLift(road), z: point.z },
-    // A chassis faces its own -Z, so a yaw of zero looks down -Z too.
-    yaw: atan2(-(ahead.x - point.x), -(ahead.z - point.z)),
-  }
+  const ahead = pointOf(road, index + FACING_REACH)
+  return spawnHere(point, v3(ahead.x - point.x, ahead.y - point.y, ahead.z - point.z))
 }
 
 /** A spawn at a spot, facing whichever way along the road is nearer to `forward`. */
-export function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): VehicleSpawn {
+export function spawnFacing(spot: RoadSpot, forward: Vec3): VehicleSpawn {
   const { road, index, point } = spot
-  const count = road.points.length
-  // Wrapped around a loop or held at an end, so always one of the road's points.
-  const at = (i: number): RoadPoint =>
-    road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
-  const ahead = at(index + FACING_REACH)
-  const behind = at(index - FACING_REACH)
-  let dx = ahead.x - point.x
-  let dz = ahead.z - point.z
-  if (dx * forward.x + dz * forward.z < 0) {
-    dx = point.x - behind.x
-    dz = point.z - behind.z
-  }
-  if (hypot(dx, dz) < 1e-6) return spawnAt(spot)
-  return {
-    position: { x: point.x, y: point.y + roadLift(road), z: point.z },
-    yaw: atan2(-dx, -dz),
-  }
+  const ahead = pointOf(road, index + FACING_REACH)
+  const behind = pointOf(road, index - FACING_REACH)
+  let way = v3(ahead.x - point.x, ahead.y - point.y, ahead.z - point.z)
+  if (way.x * forward.x + way.y * forward.y + way.z * forward.z < 0) way = v3(point.x - behind.x, point.y - behind.y, point.z - behind.z)
+  if (vlength(way) < 1e-6) return spawnAt(spot)
+  return spawnHere(point, way)
 }
 
 /** The road point nearest a position, on any road that is not a tunnel. */
-export function nearestRoadSpotTo(map: TerrainMap, x: number, z: number): RoadSpot | null {
+export function nearestRoadSpotTo(planet: World, at: Vec3): RoadSpot | null {
   let best: RoadSpot | null = null
   let bestDistance = Infinity
-  for (const road of map.roads) {
-    const count = road.points.length
-    const segmentCount = road.closed ? count : count - 1
+  for (const road of planet.roads) {
+    const segmentCount = road.closed ? road.points.length : road.points.length - 1
     for (const [i, point] of road.points.entries()) {
       if (i >= segmentCount) break
       if (road.structure[i] === ROAD_TUNNEL) continue
-      const distance = hypot(point.x - x, point.z - z)
+      const distance = vdistance(point, at)
       if (distance >= bestDistance) continue
       bestDistance = distance
       best = { road, index: i, point }
@@ -77,26 +69,21 @@ export function nearestRoadSpotTo(map: TerrainMap, x: number, z: number): RoadSp
  * highway for preference, which loops and so never runs out ahead of a car
  * setting off, and on any road only where there is no highway to be had.
  */
-function nearestGradeSpot(map: TerrainMap): RoadSpot | null {
-  const highways = map.roads.filter((road) => road.kind === 'highway')
-  return nearestGradeSpotOn(map, highways) ?? nearestGradeSpotOn(map, map.roads)
+function nearestGradeSpot(planet: World): RoadSpot | null {
+  const highways = planet.roads.filter((road) => road.kind === 'highway')
+  return nearestGradeSpotOn(planet, highways) ?? nearestGradeSpotOn(planet, planet.roads)
 }
 
-function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
-  const extent = mapExtent(map)
-  const district = map.districts[0]
-  const targetX = district?.cx ?? extent.x / 2
-  const targetZ = district?.cz ?? extent.z / 2
-
+function nearestGradeSpotOn(planet: World, roads: readonly WorldRoad[]): RoadSpot | null {
+  const target = atHeight(planet, planet.districts[0]?.center ?? { x: 0, y: 0, z: 1 }, 0)
   let best: RoadSpot | null = null
   let bestDistance = Infinity
   for (const road of roads) {
-    const count = road.points.length
-    const segmentCount = road.closed ? count : count - 1
+    const segmentCount = road.closed ? road.points.length : road.points.length - 1
     for (const [i, point] of road.points.entries()) {
       if (i >= segmentCount) break
       if (road.structure[i] !== ROAD_GRADE) continue
-      const distance = hypot(point.x - targetX, point.z - targetZ)
+      const distance = vdistance(point, target)
       if (distance >= bestDistance) continue
       bestDistance = distance
       best = { road, index: i, point }
@@ -123,7 +110,7 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
     if (road.structure[Math.min(index, next)] !== ROAD_GRADE) break
     const ahead = road.points[next]
     if (ahead === undefined) break
-    traveled += hypot(ahead.x - point.x, ahead.z - point.z)
+    traveled += vdistance(ahead, point)
     index = next
     point = ahead
     if (traveled < spacing) continue
@@ -139,15 +126,12 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
  * behind the other. Cities are where the map is densest, so that is the most
  * interesting place to be dropped.
  */
-export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
-  const first = nearestGradeSpot(map)
+export function findSpawns(planet: World, count: number): VehicleSpawn[] {
+  const first = nearestGradeSpot(planet)
   if (first === null) {
-    const extent = mapExtent(map)
-    const middle = { x: extent.x / 2, y: 0, z: extent.z / 2 }
-    return Array.from({ length: count }, (_, i) => ({
-      position: { ...middle, z: middle.z + i * SPAWN_SPACING },
-      yaw: 0,
-    }))
+    // No road at all: side by side on the ground over the middle of the first city.
+    const middle = planet.districts[0]?.center ?? { x: 0, y: 0, z: 1 }
+    return Array.from({ length: count }, () => spawnHere(atHeight(planet, middle, planet.seaLevel + 1), { x: 1, y: 0, z: 0 }))
   }
 
   // Two abreast, staggered a half length apart, behind the first spot for
@@ -162,48 +146,58 @@ export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
     ...ahead.map((spot, i) => spawnAside(spot, i + 1)),
   ]
   // A road too short for the field seats the rest on the nearest road spots clear of everyone.
-  if (lined.length < count) lined.push(...clearSpots(map, first, lined, count - lined.length))
+  if (lined.length < count) lined.push(...clearSpots(planet, first, lined, count - lined.length))
   while (lined.length < count) lined.push(lined.at(-1) ?? spawnAt(first))
   return lined
 }
 
-/** A spawn at a spot, in the lane its place in the line puts it in: the left for even places, the right for odd. */
+/** A spawn at a spot, in the lane its place in the line puts it in: the right for even places, the left for odd. */
 function spawnAside(spot: RoadSpot, place: number): VehicleSpawn {
   const spawn = spawnAt(spot)
-  const { road, index } = spot
+  const { road, index, point } = spot
   const next = road.points[Math.min(index + 1, road.points.length - 1)]!
   const prev = road.points[Math.max(index - 1, 0)]!
-  const dx = next.x - prev.x
-  const dz = next.z - prev.z
-  const length = hypot(dx, dz) || 1
-  const aside = Math.min(road.width / 4, SPAWN_ABREAST / 2) * (place % 2 === 0 ? 1 : -1)
-  spawn.position.x += (-dz / length) * aside
-  spawn.position.z += (dx / length) * aside
-  return spawn
+  const up = spawn.up
+  // Across the road: its run crossed with the way up.
+  const tx = next.x - prev.x
+  const ty = next.y - prev.y
+  const tz = next.z - prev.z
+  const ax = ty * up.z - tz * up.y
+  const ay = tz * up.x - tx * up.z
+  const az = tx * up.y - ty * up.x
+  const length = Math.sqrt(ax * ax + ay * ay + az * az) || 1
+  const aside = Math.min((road.widths[index] ?? SPAWN_ABREAST) / 4, SPAWN_ABREAST / 2) * (place % 2 === 0 ? 1 : -1)
+  return { ...spawn, position: v3(point.x + (ax / length) * aside, point.y + (ay / length) * aside, point.z + (az / length) * aside) }
 }
 
 /** Spots at grade on any road, nearest the first, each a spawn's length clear of the others and of those already had. */
-function clearSpots(map: TerrainMap, first: RoadSpot, had: VehicleSpawn[], wanted: number): VehicleSpawn[] {
+function clearSpots(planet: World, first: RoadSpot, had: VehicleSpawn[], wanted: number): VehicleSpawn[] {
   const candidates: { spot: RoadSpot; distance: number }[] = []
-  for (const road of map.roads) {
+  for (const road of planet.roads) {
     const segmentCount = road.closed ? road.points.length : road.points.length - 1
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
       const point = road.points[i]!
-      candidates.push({ spot: { road, index: i, point }, distance: hypot(point.x - first.point.x, point.z - first.point.z) })
+      candidates.push({ spot: { road, index: i, point }, distance: vdistance(point, first.point) })
     }
   }
   candidates.sort((a, b) => a.distance - b.distance)
-  const lead = had[0]?.yaw ?? 0
-  const forward = { x: -Math.sin(lead), z: -Math.cos(lead) }
+  const forward = forwardOf(had[0])
   const found: VehicleSpawn[] = []
   const taken = [...had]
   for (const { spot } of candidates) {
     if (found.length >= wanted) break
-    if (taken.some(({ position }) => hypot(position.x - spot.point.x, position.z - spot.point.z) < SPAWN_SPACING)) continue
+    if (taken.some(({ position }) => vdistance(position, spot.point) < SPAWN_SPACING)) continue
     const spawn = spawnFacing(spot, forward)
     found.push(spawn)
     taken.push(spawn)
   }
   return found
+}
+
+/** The way a spawn faces: its turn's -z, as a car faces its own -z. */
+export function forwardOf(spawn: VehicleSpawn | undefined): Vec3 {
+  if (spawn === undefined) return v3(0, 0, -1)
+  const { x, y, z, w } = spawn.rotation
+  return v3(-2 * (x * z + w * y), -2 * (y * z - w * x), -(1 - 2 * (x * x + y * y)))
 }

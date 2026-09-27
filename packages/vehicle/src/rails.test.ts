@@ -5,7 +5,7 @@ import { NEUTRAL_INPUT } from './input.ts'
 import { addHeightfield, addRailRuns } from './terrain.ts'
 import { createVehicleTuning } from './tuning.ts'
 import { stepVehicle } from './vehicle.ts'
-import { createVehicle } from './vehicleBody.ts'
+import { createVehicle, levelSpawn } from './vehicleBody.ts'
 import { FIXED_TIMESTEP, createPhysicsWorld, initPhysics } from './world.ts'
 
 const CELL = 3
@@ -36,7 +36,7 @@ describe('guardrails', () => {
     }
     addRailRuns(world, [{ road, points, side: -1, flaredStart: false, flaredEnd: false }])
     const tuning = createVehicleTuning('sportsCar')
-    const vehicle = createVehicle(world, tuning, { position: { x: MIDDLE, y: 0, z: 800 }, yaw: 0 })
+    const vehicle = createVehicle(world, tuning, levelSpawn({ x: MIDDLE, y: 0, z: 800 }, 0))
     world.step()
 
     // Up to speed, then held gently toward the rail: it should be met at a
@@ -107,7 +107,7 @@ describe('guardrails', () => {
       return Number.POSITIVE_INFINITY
     }
     const tuning = createVehicleTuning('sportsCar')
-    const vehicle = createVehicle(world, tuning, { position: { x: middle, y: 0, z: 800 }, yaw: 0 })
+    const vehicle = createVehicle(world, tuning, levelSpawn({ x: middle, y: 0, z: 800 }, 0))
     world.step()
 
     let touched = false

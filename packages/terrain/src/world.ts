@@ -53,7 +53,7 @@ export interface WorldLot extends Stand {
 }
 
 /**
- * A road: the middle of its surface at every point along it, and how wide
+ * A road: the middle of its surface as it is driven on at every point along it, and how wide
  * it is there. `structure` holds a `ROAD_*` code for each segment, from a
  * point to the next, round again to the first on a closed road.
  */
@@ -116,11 +116,20 @@ export interface WorldField extends Stand {
   readonly tone: number
 }
 
+/** A solid built on the ground, as triangles in the world. */
+export interface WorldMesh {
+  readonly positions: Float32Array
+  readonly indices: Uint32Array
+}
+
 /** A planet's map, every part of it where it is on the planet. */
 export interface World {
+  readonly seed: number
   readonly radius: number
   readonly seaLevel: number
   readonly ground: SphereGround
+  /** The ground's heights with every tunnel bored out of it: what is driven on, where the drawn hill runs on over the bore. */
+  readonly bored: Float32Array
   /** The water's surface over every grid point of the ground, or `DRY`. */
   readonly water: Float32Array
   /** Which district (`DISTRICT_*`) every grid point of the ground lies in. */
@@ -137,4 +146,14 @@ export interface World {
   readonly ramps: readonly WorldRamp[]
   readonly sidewalks: readonly WorldSidewalk[]
   readonly fields: readonly WorldField[]
+  /** The built roadways, the decks of the highway and every bridge, with their shoulders. */
+  readonly decks: WorldMesh
+  /** The walls and roof round each tunnel. */
+  readonly shells: readonly WorldMesh[]
+  /** Every guardrail, as one wall. */
+  readonly rails: WorldMesh
+  /** The sidewalks round the blocks, a curb's step up off the street. */
+  readonly curbs: WorldMesh
+  /** Each ramp's facets, slice by slice from its foot to its lip, as the eight corners of a solid. */
+  readonly kickers: readonly Float32Array[]
 }

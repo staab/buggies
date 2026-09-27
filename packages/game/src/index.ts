@@ -1,25 +1,19 @@
-import * as exact from '@buggies/physics'
-import { FIXED_TIMESTEP, FLAT, shapeToChart, shapeUp, v3, type WorldShape } from '@buggies/physics'
-import { buildWaterLevels, DRY, mapExtent, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
+import { FIXED_TIMESTEP, uprightRotation, v3, vaddScaled, vdistance, vdot } from '@buggies/physics'
+import { DRY, alongGround, heightOver, upOf, waterUnder, type PropKind, type TerrainMap, type World, type WorldProp } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
-  CONE_SIDES,
-  PROP_SHAPES,
-  addForceAlong,
   addProp,
   addTerrain,
   propPlacement,
-  propRise,
-  propRotation,
   applyChassisMassProperties,
   applyWaterResponse,
   applyWorldTuning,
   createPhysicsWorld,
+  pullBody,
   createVehicle,
   createVehicleTuning,
   createWorldTuning,
-  hurtVehicle,
   resetVehicle,
   restingRideHeight,
   stepVehicle,
@@ -35,7 +29,6 @@ import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import type { Goal } from './goals.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
-import { createSeatChart, shapeOf, updateSeatChart, worldSpawn, type SeatChart } from './chart.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
 import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, UNSTUCK_AHEAD, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
@@ -51,11 +44,9 @@ import {
   walkRobot,
   type Robot,
 } from './robots.ts'
-import { findSpawns, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
+import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
-const { atan2, hypot } = exact
-
-export { FIXED_TIMESTEP, FLAT, createPlanet, type WorldShape } from '@buggies/physics'
+export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
   CHASSIS_FORWARD,
   copyVehicleInput,
@@ -69,6 +60,7 @@ export {
   PROP_SHAPES,
   addHeightfield,
   addProp,
+  levelSpawn,
   propRise,
   propRotation,
   type PropShape,
@@ -114,7 +106,7 @@ export {
   type UfoState,
 } from './ufos.ts'
 export { moveBoat, type Boat } from './boats.ts'
-export { chartPoint, createSeatChart, shapeOf, updateSeatChart, worldSpawn, type SeatChart } from './chart.ts'
+export { spawnHere } from './spawns.ts'
 export { SPIDER_TARGET } from './weapons.ts'
 export {
   SPIDER_BELLY,
@@ -380,24 +372,9 @@ import {
 
 const pulled = v3()
 
-/**
- * On a planet, the world's own gravity is none, and every prop is pulled
- * toward its middle here instead, by its own weight; a car pulls itself, as
- * it is stepped. On the flat, the world's gravity pulls everything down its
- * y axis, and this does nothing.
- */
+/** Pull every prop down its way up by its weight; a car pulls itself, as it is stepped. */
 function pullToMiddle(arena: Arena, gravity: number): void {
-  if (arena.shape.kind === 'flat') return
-  // A prop at rest is left asleep, as the world's own gravity leaves it.
-  const pull = (body: RAPIER.RigidBody): void => {
-    if (!body.isEnabled() || !body.isDynamic() || body.isSleeping()) return
-    shapeUp(arena.shape, body.translation(), pulled)
-    const weight = -body.mass() * gravity
-    // A force stays on a body until it is taken off: this tick's weight in place of the last's.
-    body.resetForces(false)
-    body.addForce({ x: pulled.x * weight, y: pulled.y * weight, z: pulled.z * weight }, false)
-  }
-  for (const prop of arena.props) pull(prop.body)
+  for (const prop of arena.props) pullBody(prop.body, upOf(prop.body.translation(), pulled), gravity)
 }
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
@@ -411,12 +388,9 @@ export const MAX_PLAYERS = 32
  */
 export interface Seat {
   readonly id: number
-  /** Where it starts, on the chart. */
+  /** Where it starts. */
   readonly spawn: VehicleSpawn
   readonly vehicle: Vehicle
-  /** The shape of the world it is in, and where its car is on the chart, as of its last step. */
-  readonly shape: WorldShape
-  readonly chart: SeatChart
   tuning: VehicleTuning
   profile: VehicleProfileId
   occupied: boolean
@@ -475,7 +449,7 @@ export interface ArenaProp {
   readonly id: number
   readonly kind: PropKind
   readonly body: RAPIER.RigidBody
-  readonly home: Prop
+  readonly home: WorldProp
 }
 
 /**
@@ -485,11 +459,11 @@ export interface ArenaProp {
  */
 export interface Arena {
   readonly map: TerrainMap
+  /** The planet the map makes, everything on it where it is. */
+  readonly planet: World
   readonly world: RAPIER.World
   readonly worldTuning: WorldTuning
   readonly seats: readonly Seat[]
-  /** Water surface per terrain cell, for whatever a vehicle is sitting in. */
-  readonly water: Float32Array
   /** The map's bananas, a slot each, for the taking. */
   readonly pickups: readonly Pickup[]
   /** What lies loose: bananas spilled from wrecks, until taken, and bombs dropped from cars, until set off. */
@@ -513,19 +487,19 @@ export interface Arena {
   tick: number
   /** A client's copy of the server's arena: nothing in it is wrecked or brought down but on the server's word. */
   mirror: boolean
-  /** What shape the world is: flat, or the map wrapped round a planet. */
-  readonly shape: WorldShape
 }
 
-export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS, shape: WorldShape = shapeOf(map)): Arena {
+export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
   const worldTuning = createWorldTuning()
-  const world = createPhysicsWorld(worldTuning, shape.kind === 'planet')
-  addTerrain(world, map, shape)
-  const props: ArenaProp[] = map.props.map((home, id) => ({ id, kind: home.kind, body: addProp(world, home, shape), home }))
+  const world = createPhysicsWorld(worldTuning)
+  const planet = map.world
+  if (planet === undefined) throw new Error('an arena is made on a planet')
+  addTerrain(world, planet)
+  const props: ArenaProp[] = planet.props.map((home, id) => ({ id, kind: home.kind, body: addProp(world, home), home }))
 
-  const seats: Seat[] = findSpawns(map, seatCount).map((spawn, id) => {
+  const seats: Seat[] = findSpawns(planet, seatCount).map((spawn, id) => {
     const tuning = createVehicleTuning()
-    const vehicle = createVehicle(world, tuning, worldSpawn(shape, spawn))
+    const vehicle = createVehicle(world, tuning, spawn)
     // An empty seat's vehicle is out of the world entirely, not parked on the
     // road for everyone else to hit.
     vehicle.body.setEnabled(false)
@@ -533,8 +507,6 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS, shape: Wor
       id,
       spawn,
       vehicle,
-      shape,
-      chart: updateSeatChart(shape, vehicle, createSeatChart()),
       tuning,
       profile: DEFAULT_VEHICLE_PROFILE,
       occupied: false,
@@ -575,26 +547,24 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS, shape: Wor
   // with every ray missing and drop the vehicle through the road.
   world.step()
 
-  const water = buildWaterLevels(map)
   return {
     props,
     map,
+    planet,
     world,
     worldTuning,
     seats,
-    water,
-    pickups: createPickups(map, water),
+    pickups: createPickups(planet),
     loose: [],
     looseNext: 0,
     rockets: [],
     shots: [],
-    robots: createRobots(map, world, shape),
-    boats: createBoats(map, world, shape),
-    spiders: createSpiders(map, world, shape),
-    ufos: createUfos(map),
+    robots: createRobots(planet, world),
+    boats: createBoats(planet, world),
+    spiders: createSpiders(planet, world),
+    ufos: createUfos(planet),
     tick: 0,
     mirror: false,
-    shape,
   }
 }
 
@@ -619,8 +589,7 @@ export function respawn(seat: Seat, spawn: VehicleSpawn = seat.spawn): void {
   // A wreck comes back whole; a car only put back, out of the water or
   // onto the road, keeps the knocks it had.
   const { damage, wrecked } = seat.vehicle
-  resetVehicle(seat.vehicle, worldSpawn(seat.shape, spawn))
-  updateSeatChart(seat.shape, seat.vehicle, seat.chart)
+  resetVehicle(seat.vehicle, spawn)
   if (!wrecked) seat.vehicle.damage = damage
   seat.epoch = nextEpoch(seat.epoch)
   seat.submersion = 0
@@ -633,8 +602,8 @@ export function respawn(seat: Seat, spawn: VehicleSpawn = seat.spawn): void {
  * to grief carries on from about where it did.
  */
 export function respawnNearby(arena: Arena, seat: Seat): void {
-  const { position, forward } = seat.chart
-  const spot = nearestRoadSpotTo(arena.map, position.x, position.z)
+  const { position, forward } = seat.vehicle.frame
+  const spot = nearestRoadSpotTo(arena.planet, position)
   respawn(seat, spot === null ? seat.spawn : spawnFacing(spot, forward))
 }
 
@@ -644,17 +613,17 @@ export function respawnNearby(arena: Arena, seat: Seat): void {
  * deck. The map, and the rest of the arena, go on as they were.
  */
 export function changeVehicle(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
-  const { position, forward, up, scale } = seat.chart
+  const { position, forward, up: roof } = seat.vehicle.frame
+  const up = upOf(position)
   // Upright, the old car stood its ride height over what it was on; on its
   // side or roof, no more than its half height, so the new one is never set
-  // down under the ground. Its height is on the chart, where a meter of the
-  // world is more than a meter away from the equator.
-  const upright = up.y > UPRIGHT
-  const below = (upright ? seat.vehicle.rideHeight : seat.tuning.chassisHalfHeight) / scale
-  const heading = hypot(forward.x, forward.z)
+  // down under the ground.
+  const below = vdot(roof, up) > UPRIGHT ? seat.vehicle.rideHeight : seat.tuning.chassisHalfHeight
+  const heading = alongGround(forward, up)
   const spawn: VehicleSpawn = {
-    position: { x: position.x, y: position.y - below, z: position.z },
-    yaw: heading > 1e-6 ? atan2(-forward.x, -forward.z) : seat.spawn.yaw,
+    position: vaddScaled(v3(), position, up, -below),
+    up,
+    rotation: uprightRotation(up, vdot(heading, heading) > 1e-12 ? heading : forwardOf(seat.spawn)),
   }
   reshape(arena, seat, profile)
   respawn(seat, spawn)
@@ -698,9 +667,8 @@ export function occupiedSeats(arena: Arena): Seat[] {
 }
 
 /** Water surface where a vehicle is, or nothing at all where it is dry. */
-function waterUnder(arena: Arena, seat: Seat): number {
-  const { x, z } = seat.chart.position
-  return waterLevelAt(arena.map.heightfield, arena.water, x, z)
+function waterAt(arena: Arena, seat: Seat): number {
+  return waterUnder(arena.planet, seat.vehicle.frame.position)
 }
 
 /**
@@ -719,7 +687,7 @@ export function advance(
   pullToMiddle(arena, gravity)
   for (const seat of arena.seats) {
     seat.vehicle.spared = arena.mirror
-    shapeUp(arena.shape, seat.vehicle.frame.position, seat.vehicle.up)
+    upOf(seat.vehicle.frame.position, seat.vehicle.up)
     if (!seat.occupied) continue
     // A stunned car takes no driving.
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
@@ -732,28 +700,27 @@ export function advance(
     seat.vehicle.winged = winged(seat)
     seat.vehicle.grip = gripOf(seat)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
-    updateSeatChart(arena.shape, seat.vehicle, seat.chart)
     pushWithWeapons(seat, gravity)
     reel(arena, seat)
     hinder(seat)
     mend(seat)
-    const level = waterUnder(arena, seat)
+    const level = waterAt(arena, seat)
     seat.submersion =
-      level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level, seat.chart.position.y)
+      level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level, heightOver(arena.planet, seat.vehicle.frame.position))
   }
   // The robots roll on, their bodies carried there over the step.
   for (const robot of arena.robots) {
-    walkRobot(arena.map, robot, dt)
+    walkRobot(arena.planet, robot, dt)
     seatRobotBody(robot, false)
   }
   // The spiders stride on, each letting a bomb fall from its belly when one is due: on the server's word, in a mirror.
   for (const spider of arena.spiders) {
-    if (walkSpider(arena.map, spider, dt) && !arena.mirror) dropFromSpider(arena, spider)
+    if (walkSpider(arena.planet, spider, dt) && !arena.mirror) dropFromSpider(arena, spider)
   }
   // The boats drift on to where the next tick has them.
   for (const boat of arena.boats) moveBoat(boat, arena.tick + 1, false)
   // The saucers fly on, and pull on whatever car they have in their beams.
-  for (const ufo of arena.ufos) flyUfo(arena.map, ufo, arena.seats, gravity, dt)
+  for (const ufo of arena.ufos) flyUfo(arena.planet, ufo, arena.seats, gravity, dt)
   arena.world.step()
   arena.tick += 1
   restoreProps(arena)
@@ -765,9 +732,9 @@ export function advance(
   flyRockets(arena, dt)
   // A machine the weapons have brought down comes back whole elsewhere.
   if (!arena.mirror) {
-    for (const robot of arena.robots) if (robot.damage >= 1) rebuildRobot(arena.map, robot)
-    for (const ufo of arena.ufos) if (ufo.damage >= 1) rebuildUfo(arena.map, ufo)
-    for (const spider of arena.spiders) if (spider.damage >= 1) rebuildSpider(arena.map, spider)
+    for (const robot of arena.robots) if (robot.damage >= 1) rebuildRobot(arena.planet, robot)
+    for (const ufo of arena.ufos) if (ufo.damage >= 1) rebuildUfo(arena.planet, ufo)
+    for (const spider of arena.spiders) if (spider.damage >= 1) rebuildSpider(arena.planet, spider)
   }
   trimLoose(arena)
 }
@@ -791,10 +758,10 @@ function fireRobots(arena: Arena): void {
         robot.cooldownTicks = ROBOT_COOLDOWN_TICKS
         continue
       }
-      const at = target.chart.position
-      const clear = sightLine(arena.map, eyes, at)
+      const at = target.vehicle.frame.position
+      const clear = sightLine(arena.planet, eyes, at)
       const to = v3(eyes.x + (at.x - eyes.x) * clear, eyes.y + (at.y - eyes.y) * clear, eyes.z + (at.z - eyes.z) * clear)
-      const hit = clear === 1 && hypot(at.x - eyes.x, at.z - eyes.z) <= ROBOT_RANGE
+      const hit = clear === 1 && vdistance(at, eyes) <= ROBOT_RANGE
       if (hit) harm(target, ROBOT_DAMAGE)
       arena.shots.push({ owner: NO_TARGET, from: v3(eyes.x, eyes.y, eyes.z), to, hit: hit ? target.id : NO_TARGET, kind: 'laser' })
       continue
@@ -807,9 +774,9 @@ function fireRobots(arena: Arena): void {
     robot.target = NO_TARGET
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked) continue
-      const at = seat.chart.position
-      const distance = hypot(at.x - eyes.x, at.z - eyes.z)
-      if (distance > nearest || sightLine(arena.map, eyes, at) < 1) continue
+      const at = seat.vehicle.frame.position
+      const distance = vdistance(at, eyes)
+      if (distance > nearest || sightLine(arena.planet, eyes, at) < 1) continue
       nearest = distance
       robot.target = seat.id
     }
@@ -817,24 +784,18 @@ function fireRobots(arena: Arena): void {
   }
 }
 
-/**
- * A prop that has fallen off the map, into the sea or over its edge, is
- * put back where the map stands it, at rest.
- */
+/** A prop that has sunk deep under the sea, or through the ground, is put back where the map stands it, at rest. */
 function restoreProps(arena: Arena): void {
-  const extent = mapExtent(arena.map)
   for (const prop of arena.props) {
-    const { x, y, z } = shapeToChart(arena.shape, prop.body.translation(), propAt)
-    if (y >= arena.map.seaLevel - ABYSS && x >= 0 && z >= 0 && x <= extent.x && z <= extent.z) continue
-    putPropBack(prop, arena.shape)
+    if (heightOver(arena.planet, prop.body.translation()) >= arena.planet.seaLevel - ABYSS) continue
+    putPropBack(prop)
   }
 }
-const propAt = v3()
 
 /** Stand a prop back where the map has it, at rest. */
-export function putPropBack(prop: ArenaProp, shape: WorldShape = FLAT): void {
+export function putPropBack(prop: ArenaProp): void {
   const { body, home } = prop
-  const { position, rotation } = propPlacement(shape, home)
+  const { position, rotation } = propPlacement(home)
   body.setTranslation(position, true)
   body.setRotation(rotation, true)
   body.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -883,13 +844,13 @@ function clearTally(seat: Seat): void {
  * Nothing, on an island without arterials.
  */
 export function seatNpc(arena: Arena, id: number): Seat | null {
-  const driver = createDriver(arena.map, id)
+  const driver = createDriver(arena.planet, id)
   if (driver === null) return null
   const seat = takeSeat(arena, id, NPC_PROFILES[id % NPC_PROFILES.length]!)
   seat.npc = true
   seat.driver = driver
   seat.tuning.damageToWreck /= NPC_FRAGILITY
-  respawn(seat, driverSpawn(arena.map, driver))
+  respawn(seat, driverSpawn(arena.planet, driver))
   return seat
 }
 
@@ -900,10 +861,10 @@ export function npcInput(arena: Arena, seat: Seat, out: VehicleInput): VehicleIn
   Object.assign(out, NEUTRAL_INPUT)
   const { driver, vehicle } = seat
   if (driver === null || vehicle.wrecked) return out
-  const { position, forward, right } = seat.chart
-  drive(arena.map, driver, { position, forward, right, speed: vehicle.speed }, npcCommand)
+  const { position, forward, right } = vehicle.frame
+  drive(arena.planet, driver, { position, forward, right, speed: vehicle.speed }, npcCommand)
   if (npcCommand.stuck) {
-    respawn(seat, driverSpawn(arena.map, driver, UNSTUCK_AHEAD))
+    respawn(seat, driverSpawn(arena.planet, driver, UNSTUCK_AHEAD))
     return out
   }
   out.steer = npcCommand.steer
@@ -936,7 +897,7 @@ function spillBananas(arena: Arena): void {
     if (!seat.occupied || !seat.vehicle.wrecked || seat.score === 0) continue
     const count = holdBananaSlots(arena, seat.score)
     arena.loose.push(
-      ...spillFrom(arena.map, seat.chart.position, count, seat.id, arena.tick, arena.looseNext),
+      ...spillFrom(arena.planet, seat.vehicle.frame.position, count, seat.id, arena.tick, arena.looseNext),
     )
     arena.looseNext = (arena.looseNext + count) % LOOSE_IDS
     seat.score = 0
@@ -945,14 +906,15 @@ function spillBananas(arena: Arena): void {
 
 /** A bomb falls from a spider's belly to float over the ground under it, for the next car to run into. */
 function dropFromSpider(arena: Arena, spider: Spider): void {
-  const { x, y, z } = spider.position
+  const { position } = spider
+  const up = upOf(position)
   arena.loose.push({
     id: arena.looseNext,
     kind: 'bomb',
     owner: NO_TARGET,
     power: 1,
-    from: v3(x, y + SPIDER_BELLY, z),
-    position: v3(x, y + PICKUP_HEIGHT, z),
+    from: vaddScaled(v3(), position, up, SPIDER_BELLY),
+    position: vaddScaled(v3(), position, up, PICKUP_HEIGHT),
     bornTick: arena.tick,
   })
   arena.looseNext = (arena.looseNext + 1) % LOOSE_IDS
@@ -969,7 +931,7 @@ function holdBananaSlots(arena: Arena, count: number): number {
     for (let slot = 0; slot < BANANA_SLOTS && held < count; slot++) {
       const pickup = arena.pickups[slot]!
       if (pickup.spawnTick === PICKUP_HELD || pickupOut(pickup, arena.tick) === waiting) continue
-      setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, PICKUP_HELD)
+      setPickup(arena.planet, pickup, slot, pickup.generation + 1, PICKUP_HELD)
       held++
     }
   }
@@ -981,7 +943,7 @@ function freeBananaSlot(arena: Arena): void {
   for (let slot = 0; slot < BANANA_SLOTS; slot++) {
     const pickup = arena.pickups[slot]!
     if (pickup.spawnTick !== PICKUP_HELD) continue
-    setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
+    setPickup(arena.planet, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
     return
   }
 }
@@ -1007,10 +969,10 @@ function collectPickups(arena: Arena): void {
       // A car nobody drives takes nothing: it has no use for bananas or weapons.
       if (!seat.occupied || seat.vehicle.wrecked || seat.npc) continue
       if (health && seat.vehicle.damage <= 0) continue
-      if (!reachesPickup(pickup, seat.chart.position, health ? 0 : magnetOf(seat))) continue
+      if (!reachesPickup(pickup, seat.vehicle.frame.position, health ? 0 : magnetOf(seat))) continue
       if (health) seat.vehicle.damage = Math.max(seat.vehicle.damage - HEALTH_MEND, 0)
       else score(seat)
-      setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
+      setPickup(arena.planet, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
       break
     }
   }
@@ -1029,7 +991,7 @@ function collectPickups(arena: Arena): void {
     }
     if (!looseOut(loose, arena.tick)) continue
     for (const seat of arena.seats) {
-      if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.chart.position, magnetOf(seat))) continue
+      if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position, magnetOf(seat))) continue
       if (loose.kind === 'banana' && seat.npc) continue
       if (loose.kind === 'oil') {
         seat.slipTicks = Math.max(seat.slipTicks, Math.round(OIL_SLIP_TICKS * loose.power))
@@ -1054,7 +1016,7 @@ function collectPickups(arena: Arena): void {
 /** Under this much water a vehicle is not coming back on its own. */
 const SUNK = 0.6
 
-/** How far beneath the sea a vehicle can be before it has left the map. */
+/** How far beneath the sea a vehicle can be before it is lost for good. */
 const ABYSS = 5
 
 /** How long a vehicle stays lost before it is put back, in steps. */
@@ -1062,22 +1024,13 @@ const LOST_PATIENCE = 180
 /** A wreck lies a little longer, to be watched burning. */
 const WRECK_PATIENCE = 270
 
-/**
- * Whether a vehicle is done driving for now: blown up, deep in the water,
- * fallen through the world, or off the edge of it.
- */
+/** Whether a vehicle is done driving for now: blown up, deep in the water, or fallen through the world. */
 export function isLost(arena: Arena, seat: Seat): boolean {
-  const { x, y, z } = seat.chart.position
-  const extent = mapExtent(arena.map)
   return (
     seat.vehicle.wrecked ||
     // A hull that floats is where it means to be on the water, however far out.
     (seat.submersion > SUNK && seat.tuning.hull === undefined) ||
-    y < arena.map.seaLevel - ABYSS ||
-    x < 0 ||
-    z < 0 ||
-    x > extent.x ||
-    z > extent.z
+    heightOver(arena.planet, seat.vehicle.frame.position) < arena.planet.seaLevel - ABYSS
   )
 }
 

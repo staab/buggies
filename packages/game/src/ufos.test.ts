@@ -1,4 +1,4 @@
-import { generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { PLANET_TERRAIN, atHeight, generateTerrain, heightOver, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -10,17 +10,25 @@ import {
   createArena,
   initPhysics,
   takeSeat,
+  type Arena,
+  type Ufo,
 } from './index.ts'
+import { ahead, apart, over } from './test-planet.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
+/** Set a saucer down this far east of a point, at the height it is at. */
+function eastOf(arena: Arena, ufo: Ufo, point: { x: number; y: number; z: number }, distance: number): void {
+  const height = heightOver(arena.planet, ufo.position)
+  const east = ahead(point, tangentFrame(upOf(point)).east, distance)
+  atHeight(arena.planet, upOf(east), height, ufo.position)
+}
+
 
 let map: TerrainMap
 
 describe('flying saucers', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    map = generateTerrain(11, PLANET_TERRAIN)
   }, 60_000)
 
   it('cruise high over the island, then come down over a car, lift it up the beam and set it down somewhere else', () => {
@@ -28,14 +36,13 @@ describe('flying saucers', () => {
     expect(arena.ufos).toHaveLength(UFOS)
     const [ufo] = arena.ufos
     const start = { ...ufo!.position }
-    expect(ufo!.position.y).toBeGreaterThan(map.seaLevel + UFO_CRUISE - 1)
+    expect(heightOver(arena.planet, ufo!.position)).toBeGreaterThan(map.seaLevel + UFO_CRUISE - 1)
     const seat = takeSeat(arena, 0, 'sportsCar')
     for (let i = 0; i < 60; i++) advance(arena)
-    expect(Math.hypot(ufo!.position.x - start.x, ufo!.position.z - start.z)).toBeGreaterThan(5)
+    expect(apart(ufo!.position, start)).toBeGreaterThan(5)
     // Ready to take a car, it goes after this one, and takes it.
     ufo!.cooldownTicks = 0
-    ufo!.position.x = seat.vehicle.frame.position.x + 60
-    ufo!.position.z = seat.vehicle.frame.position.z
+    eastOf(arena, ufo!, seat.vehicle.frame.position, 60)
     const before = { ...seat.vehicle.frame.position }
     let lifted = -Infinity
     let fastest = 0
@@ -45,11 +52,14 @@ describe('flying saucers', () => {
     for (let i = 0; i < 60 * 90 && ufo!.abductions === 0; i++) {
       advance(arena)
       const now = seat.vehicle.frame.position
-      if (ufo!.state === 'lift') lifted = Math.max(lifted, now.y - before.y)
+      if (ufo!.state === 'lift') lifted = Math.max(lifted, over(now, before))
       if (ufo!.state === 'carry') carried = true
       // Carried off under the saucer, never put somewhere else in a blink.
-      jump = Math.max(jump, Math.hypot(now.x - last.x, now.z - last.z))
-      fastest = Math.max(fastest, seat.vehicle.frame.linearVelocity.x ** 2 + seat.vehicle.frame.linearVelocity.z ** 2)
+      jump = Math.max(jump, apart(now, last))
+      const { linearVelocity } = seat.vehicle.frame
+      const up = upOf(now)
+      const rise = linearVelocity.x * up.x + linearVelocity.y * up.y + linearVelocity.z * up.z
+      fastest = Math.max(fastest, linearVelocity.x ** 2 + linearVelocity.y ** 2 + linearVelocity.z ** 2 - rise * rise)
       last = { ...now }
     }
     expect(ufo!.abductions).toBe(1)
@@ -57,8 +67,7 @@ describe('flying saucers', () => {
     expect(lifted).toBeGreaterThan(2)
     expect(jump).toBeLessThan(UFO_CARRY_SPEED / 60 + 0.5)
     expect(Math.sqrt(fastest)).toBeGreaterThan(UFO_CARRY_SPEED / 2)
-    const { x, z } = seat.vehicle.frame.position
-    expect(Math.hypot(x - before.x, z - before.z)).toBeGreaterThan(50)
+    expect(apart(seat.vehicle.frame.position, before)).toBeGreaterThan(50)
     // Let down onto the road, and settled on it a moment later, whole.
     for (let i = 0; i < 120; i++) advance(arena)
     expect(seat.vehicle.wrecked).toBe(false)
@@ -76,8 +85,7 @@ describe('flying saucers', () => {
     advance(arena)
     seat.shieldTicks = 60 * 60
     ufo!.cooldownTicks = 0
-    ufo!.position.x = seat.vehicle.frame.position.x + 20
-    ufo!.position.z = seat.vehicle.frame.position.z
+    eastOf(arena, ufo!, seat.vehicle.frame.position, 20)
     for (let i = 0; i < 60 * 10; i++) {
       advance(arena)
       expect(ufo!.state === 'carry' || ufo!.state === 'lower').toBe(false)

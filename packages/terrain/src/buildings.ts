@@ -7,7 +7,7 @@
  * touches a road.
  */
 
-import { createRng, randomInt, randomRange, type Rng } from '@buggies/physics'
+import { createRng, qmultiply, quatFromBasis, quatFromYaw, randomInt, randomRange, type Quat, type Rng, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 
 import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './districts.ts'
@@ -30,6 +30,8 @@ import {
   type Footprint,
 } from './roads.ts'
 import { HOUSE_KINDS } from './types.ts'
+import { tangentFrame } from './sphere-heights.ts'
+import type { WorldBuilding } from './world.ts'
 import type {
   Building,
   District,
@@ -326,6 +328,35 @@ export function boatAt(boat: Building, index: number, seconds: number, out: { x:
   const vx = a * cosine(a * seconds + p)
   const vz = b * cosine(b * seconds + q)
   out.yaw = atan2(-vz, vx)
+  return out
+}
+
+/**
+ * Where a boat on the planet is at this time, and how it is turned: as
+ * `boatAt` has it, meandering about where it lies at anchor along the east
+ * and the south there, its bow the way it is going, upright on the way up.
+ */
+export function worldBoatAt(boat: WorldBuilding, index: number, seconds: number, out: { at: Vec3; turn: Quat }): { at: Vec3; turn: Quat } {
+  const a = (2 * Math.PI) / (BOAT_SWING * (1 + 0.13 * (index % 5)))
+  const b = a * (1.37 + 0.11 * (index % 3))
+  const p = boat.tone * 2 * Math.PI
+  const x = BOAT_WANDER * sine(a * seconds + p)
+  const z = BOAT_WANDER * sine(b * seconds + index)
+  const length = Math.sqrt(boat.at.x * boat.at.x + boat.at.y * boat.at.y + boat.at.z * boat.at.z)
+  const up = { x: boat.at.x / length, y: boat.at.y / length, z: boat.at.z / length }
+  const { east, north } = tangentFrame(up)
+  out.at.x = boat.at.x + east.x * x - north.x * z
+  out.at.y = boat.at.y + east.y * x - north.y * z
+  out.at.z = boat.at.z + east.z * x - north.z * z
+  // The hull's length lies along its own X: turned by the yaw, X points east by its cosine and north by its sine.
+  const vx = a * cosine(a * seconds + p)
+  const vz = b * cosine(b * seconds + index)
+  const standing = quatFromBasis(east.x, east.y, east.z, up.x, up.y, up.z, -north.x, -north.y, -north.z)
+  const turned = qmultiply(standing, quatFromYaw(atan2(-vz, vx)))
+  out.turn.x = turned.x
+  out.turn.y = turned.y
+  out.turn.z = turned.z
+  out.turn.w = turned.w
   return out
 }
 

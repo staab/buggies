@@ -1,14 +1,13 @@
-import { createRng, shapeToWorld, uprightRotation, v3, vaddScaled, vdot, type Vec3, type WorldShape } from '@buggies/physics'
+import { createRng, uprightRotation, v3, vaddScaled, vdot, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { mapExtent, roadLift, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { atHeight, groundUnder, heightOver, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
 import { addForceAlong, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
-import type { SeatChart } from './chart.ts'
 import { nearestRoadSpotTo } from './spawns.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { atan2, cos, hypot, sin } = exact
+const { atan2, cos, sin } = exact
 
 /** How many flying saucers each island has. */
 export const UFOS = 1
@@ -75,38 +74,32 @@ export interface Abductee {
   readonly id: number
   readonly occupied: boolean
   readonly vehicle: Vehicle
-  /** Where its car is on the map, and the shape of the world its body is in. */
-  readonly chart: SeatChart
-  readonly shape: WorldShape
   readonly tuning: VehicleTuning
   readonly shieldTicks: number
 }
 
-function ufoSeed(map: TerrainMap, id: number): number {
+function ufoSeed(map: World, id: number): number {
   return (map.seed ^ UFO_SALT) + id * 15485863
 }
 
-/** The ground under a point, or the sea where that is higher. */
-function groundAt(map: TerrainMap, x: number, z: number): number {
-  return Math.max(sampleHeight(map.heightfield, x, z), map.seaLevel)
+/** The ground under a point, or the sea where that is higher, over the planet's radius. */
+function groundAt(map: World, point: Vec3): number {
+  return Math.max(groundUnder(map, point), map.seaLevel)
 }
 
-/** Where a saucer cruises to next: a point over the land, picked by how many it has reached. */
-export function waypoint(map: TerrainMap, ufo: Ufo, out: { x: number; z: number }): { x: number; z: number } {
+/** Where a saucer cruises to next: a point on the land, picked by how many it has reached. */
+export function waypoint(map: World, ufo: Ufo, out: Vec3): Vec3 {
   const rng = createRng(ufoSeed(map, ufo.id) + ufo.legs * 31)
-  const extent = mapExtent(map)
-  for (let attempt = 0; attempt < 24; attempt++) {
-    out.x = extent.x * (0.1 + 0.8 * rng())
-    out.z = extent.z * (0.1 + 0.8 * rng())
-    if (sampleHeight(map.heightfield, out.x, out.z) > map.seaLevel) return out
+  // Most of the planet is sea, so it tries a good many spots for one on the land.
+  for (let attempt = 0; attempt < 96; attempt++) {
+    randomDirection(rng, out)
+    if (onLand(map, out)) return overSurface(map, out, 0, out)
   }
-  out.x = extent.x / 2
-  out.z = extent.z / 2
-  return out
+  return overSurface(map, map.districts[0]?.center ?? { x: 0, y: 0, z: 1 }, 0, out)
 }
 
 /** The island's saucers, each cruising over it, waiting a while before it takes its first car. */
-export function createUfos(map: TerrainMap): Ufo[] {
+export function createUfos(map: World): Ufo[] {
   return Array.from({ length: UFOS }, (_, id) => {
     const ufo: Ufo = {
       id,
@@ -120,26 +113,41 @@ export function createUfos(map: TerrainMap): Ufo[] {
       damage: 0,
       deaths: 0,
     }
-    const start = waypoint(map, { ...ufo, legs: -1 }, { x: 0, z: 0 })
-    ufo.position.x = start.x
-    ufo.position.z = start.z
-    ufo.position.y = groundAt(map, start.x, start.z) + UFO_CRUISE
+    const start = waypoint(map, { ...ufo, legs: -1 }, v3())
+    atHeight(map, upOf(start), groundAt(map, start) + UFO_CRUISE, ufo.position)
     return ufo
   })
 }
 
-/** Move a saucer toward a point across the ground at this speed, and toward this height at this climb rate. */
-function fly(ufo: Ufo, x: number, z: number, height: number, speed: number, dt: number, climb = UFO_CLIMB): number {
-  const dx = x - ufo.position.x
-  const dz = z - ufo.position.z
-  const distance = hypot(dx, dz)
-  const step = Math.min(distance, speed * dt)
-  if (distance > 1e-6) {
-    ufo.position.x += (dx / distance) * step
-    ufo.position.z += (dz / distance) * step
+const from = v3()
+const toward = v3()
+
+/**
+ * Move a saucer round the planet toward over a point at this speed, and
+ * toward this height over the planet's radius at this climb rate. How far
+ * it had to go, along the ground.
+ */
+function fly(map: World, ufo: Ufo, point: Vec3, height: number, speed: number, dt: number, climb = UFO_CLIMB): number {
+  upOf(ufo.position, from)
+  upOf(point, toward)
+  // The way round from one to the other, and how far: the great circle between them.
+  const dot = vdot(from, toward)
+  vaddScaled(toward, toward, from, -dot)
+  const aside = Math.sqrt(vdot(toward, toward))
+  const angle = atan2(aside, dot)
+  const distance = angle * map.radius
+  const turn = Math.min(distance, speed * dt) / map.radius
+  const reached = heightOver(map, ufo.position)
+  const rise = height - reached
+  const next = reached + Math.sign(rise) * Math.min(Math.abs(rise), climb * dt)
+  if (aside > 1e-9) {
+    const c = cos(turn)
+    const s = sin(turn) / aside
+    from.x = from.x * c + toward.x * s
+    from.y = from.y * c + toward.y * s
+    from.z = from.z * c + toward.z * s
   }
-  const rise = height - ufo.position.y
-  ufo.position.y += Math.sign(rise) * Math.min(Math.abs(rise), climb * dt)
+  atHeight(map, upOf(from, from), next, ufo.position)
   return distance
 }
 
@@ -156,7 +164,7 @@ function giveUp(ufo: Ufo, wait: number): void {
   ufo.cooldownTicks = wait
 }
 
-const to = { x: 0, z: 0 }
+const to = v3()
 const across = v3()
 
 /**
@@ -165,20 +173,19 @@ const across = v3()
  * overhead; then holding over it and pulling it up its beam; then carrying
  * it off fast over the island, and letting it down onto a road far away.
  */
-export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gravity: number, dt: number): void {
+export function flyUfo(map: World, ufo: Ufo, seats: readonly Abductee[], gravity: number, dt: number): void {
   if (ufo.cooldownTicks > 0) ufo.cooldownTicks -= 1
   ufo.stateTicks += 1
   const target = ufo.target < 0 ? undefined : seats[ufo.target]
   switch (ufo.state) {
     case 'roam': {
       waypoint(map, ufo, to)
-      if (fly(ufo, to.x, to.z, groundAt(map, ufo.position.x, ufo.position.z) + UFO_CRUISE, UFO_SPEED, dt) < WAYPOINT_REACH) ufo.legs += 1
+      if (fly(map, ufo, to, groundAt(map, ufo.position) + UFO_CRUISE, UFO_SPEED, dt) < WAYPOINT_REACH) ufo.legs += 1
       if (ufo.cooldownTicks > 0) return
       let nearest = UFO_HUNT_RANGE
       for (const seat of seats) {
         if (!takeable(seat)) continue
-        const { x, z } = seat.chart.position
-        const distance = hypot(x - ufo.position.x, z - ufo.position.z)
+        const distance = alongGroundBetween(map, seat.vehicle.frame.position, ufo.position)
         if (distance >= nearest) continue
         nearest = distance
         ufo.target = seat.id
@@ -194,8 +201,8 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
         giveUp(ufo, UFO_LOST_TICKS)
         return
       }
-      const { x, y, z } = target.chart.position
-      if (fly(ufo, x, z, y + UFO_HOVER, UFO_HUNT_SPEED, dt) < UFO_BEAM_REACH / 2) {
+      const at = target.vehicle.frame.position
+      if (fly(map, ufo, at, heightOver(map, at) + UFO_HOVER, UFO_HUNT_SPEED, dt) < UFO_BEAM_REACH / 2) {
         ufo.state = 'lift'
         ufo.stateTicks = 0
       }
@@ -206,10 +213,9 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
         giveUp(ufo, UFO_LOST_TICKS)
         return
       }
-      const { position } = target.chart
-      const { linearVelocity } = target.vehicle.frame
+      const { position, linearVelocity } = target.vehicle.frame
       const { up } = target.vehicle
-      const off = fly(ufo, position.x, position.z, ufo.position.y, UFO_SPEED, dt)
+      const off = fly(map, ufo, position, heightOver(map, ufo.position), UFO_SPEED, dt)
       if (off > UFO_BEAM_REACH * 2) {
         giveUp(ufo, UFO_LOST_TICKS)
         return
@@ -218,10 +224,10 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
       const { body } = target.vehicle
       const mass = target.tuning.mass
       const rising = Math.min(Math.max(1 - vdot(linearVelocity, up) / LIFT_RISE, 0), 1)
-      if (position.y < ufo.position.y - 4) addForceAlong(body, up, mass * (gravity + LIFT_PULL * rising))
+      if (heightOver(map, position) < heightOver(map, ufo.position) - 4) addForceAlong(body, up, mass * (gravity + LIFT_PULL * rising))
       // In toward the point under the saucer at the car's own height, along the ground: nothing up or down.
-      shapeToWorld(target.shape, ufo.position.x, position.y, ufo.position.z, under)
-      const at = target.vehicle.frame.position
+      atHeight(map, upOf(ufo.position, under), heightOver(map, position), under)
+      const at = position
       across.x = (under.x - at.x) * 2 - linearVelocity.x * 1.5
       across.y = (under.y - at.y) * 2 - linearVelocity.y * 1.5
       across.z = (under.z - at.z) * 2 - linearVelocity.z * 1.5
@@ -240,22 +246,24 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
         return
       }
       const drop = dropSpot(map, ufo)
-      const { x, z } = ufo.position
+      const floor = heightOver(map, drop)
+      const { position } = ufo
       if (ufo.state === 'carry') {
         // Off over the island to where it sets the car down, high enough to clear the ground ahead as well as under it.
-        const ahead = Math.max(groundAt(map, x, z), groundAt(map, x + (drop.x - x) * 0.05, z + (drop.z - z) * 0.05))
-        if (fly(ufo, drop.x, drop.z, ahead + UFO_CRUISE, UFO_CARRY_SPEED, dt, UFO_CARRY_CLIMB) < WAYPOINT_REACH / 4) {
+        const ahead = v3(position.x + (drop.x - position.x) * 0.05, position.y + (drop.y - position.y) * 0.05, position.z + (drop.z - position.z) * 0.05)
+        const clear = Math.max(groundAt(map, position), groundAt(map, ahead))
+        if (fly(map, ufo, drop, clear + UFO_CRUISE, UFO_CARRY_SPEED, dt, UFO_CARRY_CLIMB) < WAYPOINT_REACH / 4) {
           ufo.state = 'lower'
           ufo.stateTicks = 0
         }
-        hold(target, ufo, ufo.position.y - UFO_HANG, dt)
+        hold(map, target, ufo, heightOver(map, position) - UFO_HANG, dt)
         return
       }
       // Down to hover over the road, then the car let down its beam until it is all but on it.
-      fly(ufo, drop.x, drop.z, drop.y + UFO_HOVER, UFO_SPEED, dt, UFO_CARRY_CLIMB)
-      const hanging = Math.max(ufo.position.y - UFO_HANG - ufo.stateTicks * dt * UFO_LOWER_SPEED, drop.y + UFO_LET_GO)
-      hold(target, ufo, hanging, dt)
-      if (hanging <= drop.y + UFO_LET_GO) released(ufo)
+      fly(map, ufo, drop, floor + UFO_HOVER, UFO_SPEED, dt, UFO_CARRY_CLIMB)
+      const hanging = Math.max(heightOver(map, position) - UFO_HANG - ufo.stateTicks * dt * UFO_LOWER_SPEED, floor + UFO_LET_GO)
+      hold(map, target, ufo, hanging, dt)
+      if (hanging <= floor + UFO_LET_GO) released(ufo)
       return
     }
   }
@@ -269,10 +277,10 @@ const under = v3()
  * it was, drawn in under it no faster than the saucer carries it, so it is
  * never put anywhere in a blink.
  */
-function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
+function hold(map: World, seat: Abductee, ufo: Ufo, height: number, dt: number): void {
   const { body, frame, lastLinearVelocity, up } = seat.vehicle
   const at = body.translation()
-  shapeToWorld(seat.shape, ufo.position.x, height, ufo.position.z, under)
+  atHeight(map, upOf(ufo.position, under), height, under)
   drift.x = under.x - at.x
   drift.y = under.y - at.y
   drift.z = under.z - at.z
@@ -295,16 +303,25 @@ function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
 const drops = new WeakMap<Ufo, { abductions: number; x: number; y: number; z: number }>()
 
 /** The spot on a road a saucer sets the car it has down on, picked by how many it has taken. */
-function dropSpot(map: TerrainMap, ufo: Ufo): { x: number; y: number; z: number } {
+function dropSpot(map: World, ufo: Ufo): Vec3 {
   const known = drops.get(ufo)
   if (known !== undefined && known.abductions === ufo.abductions) return known
   const at = dropPoint(map, ufo)
-  const spot = nearestRoadSpotTo(map, at.x, at.z)
-  const found = spot === null
-    ? { abductions: ufo.abductions, x: at.x, y: groundAt(map, at.x, at.z), z: at.z }
-    : { abductions: ufo.abductions, x: spot.point.x, y: spot.point.y + roadLift(spot.road), z: spot.point.z }
+  const point = nearestRoadSpotTo(map, at)?.point ?? at
+  const found = { abductions: ufo.abductions, x: point.x, y: point.y, z: point.z }
   drops.set(ufo, found)
   return found
+}
+
+/** How far apart two points are along the ground, round the planet. */
+function alongGroundBetween(map: World, a: Vec3, b: Vec3): number {
+  upOf(a, from)
+  upOf(b, toward)
+  const dot = vdot(from, toward)
+  const cx = from.y * toward.z - from.z * toward.y
+  const cy = from.z * toward.x - from.x * toward.z
+  const cz = from.x * toward.y - from.y * toward.x
+  return atan2(Math.sqrt(cx * cx + cy * cy + cz * cz), dot) * map.radius
 }
 
 /** Whether a saucer has a car on its beam: lifting it, carrying it off or letting it down. */
@@ -313,8 +330,8 @@ export function carrying(ufo: Ufo): boolean {
 }
 
 /** Where a car taken is set down: somewhere over the land picked by how many the saucer has taken, then on the road nearest it. */
-export function dropPoint(map: TerrainMap, ufo: Ufo): { x: number; z: number } {
-  return waypoint(map, { ...ufo, legs: 100000 + ufo.abductions * 7 }, { x: 0, z: 0 })
+export function dropPoint(map: World, ufo: Ufo): Vec3 {
+  return waypoint(map, { ...ufo, legs: 100000 + ufo.abductions * 7 }, v3())
 }
 
 /** Done with a car it took: back to cruising, to wait a good while before it takes another. */
@@ -328,12 +345,10 @@ export function released(ufo: Ufo): void {
  * island, picked by how many times it has been brought down, letting go
  * of whatever car it had and waiting a good while before it takes another.
  */
-export function rebuildUfo(map: TerrainMap, ufo: Ufo): void {
+export function rebuildUfo(map: World, ufo: Ufo): void {
   ufo.deaths += 1
   ufo.damage = 0
-  const at = waypoint(map, { ...ufo, legs: 50000 + ufo.deaths * 13 }, { x: 0, z: 0 })
-  ufo.position.x = at.x
-  ufo.position.z = at.z
-  ufo.position.y = groundAt(map, at.x, at.z) + UFO_CRUISE
+  const at = waypoint(map, { ...ufo, legs: 50000 + ufo.deaths * 13 }, v3())
+  atHeight(map, upOf(at), groundAt(map, at) + UFO_CRUISE, ufo.position)
   giveUp(ufo, UFO_COOLDOWN_TICKS)
 }

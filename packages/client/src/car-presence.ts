@@ -6,7 +6,6 @@ import {
   MOUNT_HEIGHT,
   NO_TARGET,
   aimPoint,
-  chartPoint,
   OWN_ACTIONS,
   SHOCKWAVE_RANGE,
   WEAPON_LABELS,
@@ -85,9 +84,7 @@ const PLOW_OUT = 0.35
 /** Where a seat's gun is trained: the middle of the car, or the machine, it has picked out, if any. */
 export function aimPointOf(seat: Seat, field: Pick<Arena, 'seats' | 'robots' | 'ufos' | 'spiders'>): Vec3 | null {
   if ((seat.weapon !== 'machineGun' && seat.weapon !== 'laser') || seat.aimTarget === NO_TARGET) return null
-  // Where the map has it, in the world.
-  const at = aimPoint(field, seat.aimTarget, v3())
-  return at === null ? null : chartPoint(seat.shape, at, at)
+  return aimPoint(field, seat.aimTarget, v3())
 }
 
 /** What every car on a screen feeds: one set for the whole view. */

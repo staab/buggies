@@ -1,5 +1,5 @@
 import type { IslandMark } from '@buggies/net'
-import { shapeOf } from '@buggies/game'
+import { shapeOf } from './globe.ts'
 import { mapExtent, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'

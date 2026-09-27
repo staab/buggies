@@ -108,12 +108,16 @@ export interface Vehicle {
   selfRightElapsed: number
 }
 
+/** Where a car starts: the point under it, the way up there, and its whole turn, standing on it. */
 export interface VehicleSpawn {
   position: Vec3
-  yaw: number
-  /** On a round world, the way up at the spawn and the car's whole turn there, standing on it: the yaw alone turns it about the y axis. */
-  up?: Vec3
-  rotation?: Quat
+  up: Vec3
+  rotation: Quat
+}
+
+/** A spawn on level ground whose way up is the y axis, turned by this yaw about it. */
+export function levelSpawn(position: Vec3, yaw = 0): VehicleSpawn {
+  return { position, up: { x: 0, y: 1, z: 0 }, rotation: quatFromYaw(yaw) }
 }
 
 type WheelFrame =
@@ -250,7 +254,6 @@ const restingPosition = v3()
 
 function chassisRestingPosition(out: Vec3, vehicle: Vehicle, spawn: VehicleSpawn): Vec3 {
   const { up } = spawn
-  if (up === undefined) return vset(out, spawn.position.x, spawn.position.y + vehicle.rideHeight, spawn.position.z)
   return vset(out, spawn.position.x + up.x * vehicle.rideHeight, spawn.position.y + up.y * vehicle.rideHeight, spawn.position.z + up.z * vehicle.rideHeight)
 }
 
@@ -369,9 +372,9 @@ export function activateVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
 export function resetVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
   const { body } = vehicle
 
-  if (spawn.up !== undefined) vset(vehicle.up, spawn.up.x, spawn.up.y, spawn.up.z)
+  vset(vehicle.up, spawn.up.x, spawn.up.y, spawn.up.z)
   body.setTranslation(chassisRestingPosition(restingPosition, vehicle, spawn), true)
-  body.setRotation(spawn.rotation ?? quatFromYaw(spawn.yaw), true)
+  body.setRotation(spawn.rotation, true)
   body.setLinvel({ x: 0, y: 0, z: 0 }, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   body.resetForces(true)

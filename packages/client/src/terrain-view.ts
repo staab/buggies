@@ -1,4 +1,4 @@
-import { shapeOf } from '@buggies/game'
+import { shapeOf } from './globe.ts'
 import {
   groundIndex,
   gridDirection,

@@ -1,14 +1,9 @@
-import { FLAT, v3, type Vec3, type WorldShape } from '@buggies/physics'
-import * as exact from '@buggies/physics'
-import type { TerrainMap } from '@buggies/terrain'
-import { addMover, placeOnShape } from '@buggies/vehicle'
+import { uprightRotation, v3, type Vec3 } from '@buggies/physics'
+import { upOf, type World } from '@buggies/terrain'
+import { addMover } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { advancePatrol, patrolPoint, startPatrol, type Patrol } from './patrol.ts'
-
-// The exact trigonometry, copied into this module: called through the import binding it
-// is several times slower under the test runner's module loader, and these run hot.
-const { cos, sin } = exact
 
 /** How many robots walk each island. */
 export const ROBOTS = 2
@@ -43,28 +38,31 @@ export interface Robot extends Patrol {
   target: number
   beamTicks: number
   cooldownTicks: number
-  /** Where its feet are, and which way it faces, worked out from the road. */
+  /** Where its feet are, and which way it faces along the road, worked out from the road. */
   readonly position: Vec3
-  heading: number
+  readonly forward: Vec3
   /** What the cars run into. */
   readonly body: RAPIER.RigidBody
-  /** The shape of the world its body is in: it rolls on the map, and its body goes where that is in the world. */
-  readonly shape: WorldShape
 }
 
 /** The seed a robot's rounds are picked by. */
-function robotSeed(map: TerrainMap, id: number): number {
+function robotSeed(map: World, id: number): number {
   return (map.seed ^ ROBOT_SALT) + id * 7919
 }
 
 /** Where a robot is on its road: its feet on the road surface, and its heading along it. */
-export function placeRobot(map: TerrainMap, robot: Robot): void {
-  robot.heading = patrolPoint(map, robot, robot.position)
+export function placeRobot(map: World, robot: Robot): void {
+  patrolPoint(map, robot, robot.position, 0, robot.forward)
 }
+
+const up = v3()
 
 /** Put a robot's body where the robot is: straight there, or moved there over the next step. */
 export function seatRobotBody(robot: Robot, now: boolean): void {
-  const { position: at, rotation: turn } = placeOnShape(robot.shape, robot.position.x, robot.position.y + ROBOT_SIZE.halfHeight, robot.position.z, robot.heading)
+  const { position, forward } = robot
+  upOf(position, up)
+  const at = { x: position.x + up.x * ROBOT_SIZE.halfHeight, y: position.y + up.y * ROBOT_SIZE.halfHeight, z: position.z + up.z * ROBOT_SIZE.halfHeight }
+  const turn = uprightRotation(up, forward)
   if (now) {
     robot.body.setTranslation(at, true)
     robot.body.setRotation(turn, true)
@@ -75,7 +73,7 @@ export function seatRobotBody(robot: Robot, now: boolean): void {
 }
 
 /** The island's robots, each on an arterial of the seed's choosing; none on an island with no arterials. */
-export function createRobots(map: TerrainMap, world: RAPIER.World, shape: WorldShape = FLAT): Robot[] {
+export function createRobots(map: World, world: RAPIER.World): Robot[] {
   const robots: Robot[] = []
   for (let id = 0; id < ROBOTS; id++) {
     const patrol = startPatrol(robotSeed(map, id))(map)
@@ -89,9 +87,8 @@ export function createRobots(map: TerrainMap, world: RAPIER.World, shape: WorldS
       beamTicks: 0,
       cooldownTicks: 0,
       position: v3(),
-      heading: 0,
-      body: addMover(world, ROBOT_SIZE.halfWidth, ROBOT_SIZE.halfHeight, ROBOT_SIZE.halfDepth, { x: 0, y: -1000, z: 0 }),
-      shape,
+      forward: v3(0, 0, -1),
+      body: addMover(world, ROBOT_SIZE.halfWidth, ROBOT_SIZE.halfHeight, ROBOT_SIZE.halfDepth, { x: 0, y: 0, z: 0 }),
     }
     placeRobot(map, robot)
     seatRobotBody(robot, true)
@@ -101,16 +98,18 @@ export function createRobots(map: TerrainMap, world: RAPIER.World, shape: WorldS
 }
 
 /** Roll a robot on along its round of the arterials. */
-export function walkRobot(map: TerrainMap, robot: Robot, dt: number): void {
+export function walkRobot(map: World, robot: Robot, dt: number): void {
   advancePatrol(map, robot, ROBOT_SPEED * dt, robotSeed(map, robot.id))
   placeRobot(map, robot)
 }
 
 /** Where a robot's eyes are. */
 export function robotEyes(out: Vec3, robot: Robot): Vec3 {
-  out.x = robot.position.x
-  out.y = robot.position.y + ROBOT_EYES
-  out.z = robot.position.z
+  const { position } = robot
+  upOf(position, up)
+  out.x = position.x + up.x * ROBOT_EYES
+  out.y = position.y + up.y * ROBOT_EYES
+  out.z = position.z + up.z * ROBOT_EYES
   return out
 }
 
@@ -118,7 +117,7 @@ export function robotEyes(out: Vec3, robot: Robot): Vec3 {
  * A robot brought down comes back whole somewhere else on the arterials,
  * picked by how many times it has been brought down, its eyes charging.
  */
-export function rebuildRobot(map: TerrainMap, robot: Robot): void {
+export function rebuildRobot(map: World, robot: Robot): void {
   robot.deaths += 1
   robot.damage = 0
   const patrol = startPatrol(robotSeed(map, robot.id) + robot.deaths * 977)(map)

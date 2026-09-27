@@ -6,7 +6,7 @@ import { addHeightfield } from './terrain.ts'
 import { createVehicleTuning, type VehicleTuning } from './tuning.ts'
 import { HOLD_SLIP_SPEED } from './tireModel.ts'
 import { stepVehicle } from './vehicle.ts'
-import { createVehicle, type Vehicle } from './vehicleBody.ts'
+import { createVehicle, levelSpawn, type Vehicle } from './vehicleBody.ts'
 import { createVehicleStepState, readVehicleStepState, writeVehicleStepState } from './vehicleStepState.ts'
 import { FIXED_TIMESTEP, createPhysicsWorld, initPhysics } from './world.ts'
 
@@ -38,7 +38,7 @@ function park(field: Heightfield, tuning: VehicleTuning, grade: number): Parked 
   const world = createPhysicsWorld()
   addHeightfield(world, field)
   const z = (LENGTH * CELL) / 2
-  const vehicle = createVehicle(world, tuning, { position: { x: (WIDTH * CELL) / 2, y: z * grade + 1, z }, yaw: 0 })
+  const vehicle = createVehicle(world, tuning, levelSpawn({ x: (WIDTH * CELL) / 2, y: z * grade + 1, z }, 0))
   const drive = (seconds: number, driving: Driving = NEUTRAL_INPUT): void => {
     for (let tick = 0; tick < seconds * TICKS_PER_SECOND; tick++) {
       stepVehicle(world, vehicle, tuning, typeof driving === 'function' ? driving(vehicle) : driving, FIXED_TIMESTEP)

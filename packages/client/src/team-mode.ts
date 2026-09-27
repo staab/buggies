@@ -1,4 +1,4 @@
-import { shapeOf } from '@buggies/game'
+import { shapeOf } from './globe.ts'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 

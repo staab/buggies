@@ -1,7 +1,6 @@
 import {
   DEFAULT_VEHICLE_PROFILE,
   FIXED_TIMESTEP,
-  FLAT,
   GRAPPLE_MISS_TICKS,
   GRAPPLE_RANGE,
   NEUTRAL_INPUT,
@@ -9,10 +8,10 @@ import {
   OWN_ACTIONS,
   addHeightfield,
   createPhysicsWorld,
-  createSeatChart,
   createVehicle,
   createVehicleTuning,
   initPhysics,
+  levelSpawn,
   stepVehicle,
   wreckVehicle,
   type Seat,
@@ -32,7 +31,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
   const world = createPhysicsWorld()
   addHeightfield(world, flatHeightfield(20, 20, 3))
   const tuning = createVehicleTuning(DEFAULT_VEHICLE_PROFILE)
-  const vehicle = createVehicle(world, tuning, { position: { x: 30, y: 0, z: 30 }, yaw: 0 })
+  const vehicle = createVehicle(world, tuning, levelSpawn({ x: 30, y: 0, z: 30 }, 0))
   // Settled on its springs, so that it is on the road and not still landing.
   for (let i = 0; i < 60; i++) {
     stepVehicle(world, vehicle, tuning, NEUTRAL_INPUT, FIXED_TIMESTEP)
@@ -40,7 +39,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
   }
   const seat: Seat = {
     id: 3,
-    spawn: { position: { x: 30, y: 0, z: 30 }, yaw: 0 },
+    spawn: levelSpawn({ x: 30, y: 0, z: 30 }, 0),
     vehicle,
     tuning,
     profile: DEFAULT_VEHICLE_PROFILE,
@@ -52,8 +51,6 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     collected: 0,
     kills: 0,
     robotKills: 0,
-    shape: FLAT,
-    chart: createSeatChart(),
     goal: null,
     goalsWon: 0,
     npc: false,

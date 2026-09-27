@@ -6,7 +6,7 @@ import { NEUTRAL_INPUT } from './input.ts'
 import { addHeightfield } from './terrain.ts'
 import { createVehicleTuning, type VehicleTuning } from './tuning.ts'
 import { stepVehicle } from './vehicle.ts'
-import { createVehicle, type Vehicle } from './vehicleBody.ts'
+import { createVehicle, levelSpawn, type Vehicle } from './vehicleBody.ts'
 import { FIXED_TIMESTEP, addDynamicBox, createPhysicsWorld, initPhysics } from './world.ts'
 
 const CELL = 3
@@ -47,10 +47,7 @@ function fly(
 ): Flight {
   const world = createPhysicsWorld()
   addHeightfield(world, field)
-  const vehicle = createVehicle(world, tuning, {
-    position: { x: (WIDTH * CELL) / 2, y: 0, z: 1150 },
-    yaw: 0,
-  })
+  const vehicle = createVehicle(world, tuning, levelSpawn({ x: (WIDTH * CELL) / 2, y: 0, z: 1150 }, 0))
   world.step()
 
   let airborneTicks = 0

@@ -6,7 +6,7 @@ export {
   sampleHeight,
   mapExtent,
 } from './heightfield.ts'
-export { BOAT_WANDER, boatAt, generateBuildings } from './buildings.ts'
+export { BOAT_WANDER, boatAt, generateBuildings, worldBoatAt } from './buildings.ts'
 export {
   DISTRICT_CITY,
   DISTRICT_COUNTRY,
@@ -137,6 +137,7 @@ export type {
   WorldField,
   WorldLake,
   WorldLot,
+  WorldMesh,
   WorldProp,
   WorldRamp,
   WorldRiver,
@@ -147,3 +148,18 @@ export type {
   WorldTree,
 } from './world.ts'
 export { groundDirections, groundNeighbors } from './sphere-water.ts'
+export {
+  alongGround,
+  atHeight,
+  districtUnder,
+  groundDistance,
+  groundUnder,
+  heightOver,
+  onLand,
+  overGround,
+  overSurface,
+  randomDirection,
+  upOf,
+  waterUnder,
+} from './world-queries.ts'
+export { tangentFrame } from './sphere-heights.ts'

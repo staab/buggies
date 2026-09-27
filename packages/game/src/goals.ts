@@ -1,8 +1,9 @@
 import * as exact from '@buggies/physics'
+import type { Vec3 } from '@buggies/physics'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { hypot } = exact
+const { atan2 } = exact
 
 /**
  * What a player may play for on top of free play: a number of bananas
@@ -27,8 +28,9 @@ export interface GoalRequest {
   kind: GoalKind
   /** How many bananas or wrecks; nothing, for a spot. */
   target: number
-  /** Where the spot is; nothing, for a count. */
+  /** The way out from the planet's middle through the spot; nothing, for a count. */
   x: number
+  y: number
   z: number
 }
 
@@ -46,22 +48,22 @@ export interface GoalSeat {
   goalsWon: number
   score: number
   readonly occupied: boolean
-  readonly vehicle: { readonly wrecked: boolean }
-  /** Where its car is on the map. */
-  readonly chart: { readonly position: { x: number; z: number } }
+  readonly vehicle: { readonly wrecked: boolean; readonly frame: { readonly position: Vec3 } }
 }
 
-/** A goal as asked for, if it is one that can be played for on a map this wide; `null` otherwise. */
-export function validGoal(request: GoalRequest, extent: { x: number; z: number }): GoalRequest | null {
+/** A goal as asked for, if it is one that can be played for; `null` otherwise. A spot's way out is made of unit length. */
+export function validGoal(request: GoalRequest): GoalRequest | null {
   if (!GOAL_KINDS.includes(request.kind)) return null
   if (request.kind === 'location') {
-    const { x, z } = request
-    if (!Number.isFinite(x) || !Number.isFinite(z) || x < 0 || z < 0 || x > extent.x || z > extent.z) return null
-    return { kind: 'location', target: 0, x, z }
+    const { x, y, z } = request
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null
+    const length = Math.sqrt(x * x + y * y + z * z)
+    if (length < 1e-6) return null
+    return { kind: 'location', target: 0, x: x / length, y: y / length, z: z / length }
   }
   const { target } = request
   if (!Number.isInteger(target) || target < 1 || target > GOAL_TARGET_MOST) return null
-  return { kind: request.kind, target, x: 0, z: 0 }
+  return { kind: request.kind, target, x: 0, y: 0, z: 0 }
 }
 
 /** Play for this goal from now, counted from where the seat stands, or for none. */
@@ -79,18 +81,26 @@ function countOf(seat: GoalSeat, kind: Exclude<GoalKind, 'location'>): number {
   return kind === 'score' ? seat.collected : kind === 'kills' ? seat.kills : seat.robotKills
 }
 
-/** How far a seat has come toward its goal: bananas or wrecks since it was set, or meters still to go to the spot. */
-export function goalProgress(seat: GoalSeat, goal: Goal): number {
+/**
+ * How far a seat has come toward its goal: bananas or wrecks since it was
+ * set, or meters still to go to the spot, along the ground of a planet this big.
+ */
+export function goalProgress(seat: GoalSeat, goal: Goal, radius: number): number {
   if (goal.kind !== 'location') return countOf(seat, goal.kind) - goal.from
-  const { x, z } = seat.chart.position
-  return hypot(goal.x - x, goal.z - z)
+  const { x, y, z } = seat.vehicle.frame.position
+  const length = Math.sqrt(x * x + y * y + z * z) || 1
+  const dot = (x * goal.x + y * goal.y + z * goal.z) / length
+  const cx = (y * goal.z - z * goal.y) / length
+  const cy = (z * goal.x - x * goal.z) / length
+  const cz = (x * goal.y - y * goal.x) / length
+  return atan2(Math.sqrt(cx * cx + cy * cy + cz * cz), dot) * radius
 }
 
-/** Whether a seat has reached its goal. */
-export function goalMet(seat: GoalSeat): boolean {
+/** Whether a seat has reached its goal, on a planet this big. */
+export function goalMet(seat: GoalSeat, radius: number): boolean {
   const { goal } = seat
   if (goal === null) return false
-  const progress = goalProgress(seat, goal)
+  const progress = goalProgress(seat, goal, radius)
   return goal.kind === 'location' ? progress <= GOAL_REACH : progress >= goal.target
 }
 
@@ -99,10 +109,10 @@ export function goalMet(seat: GoalSeat): boolean {
  * back to free play. A wreck reaches nothing. Done by whoever has the last
  * word on the arena, so a goal is paid once; the seats paid are returned.
  */
-export function awardGoals<S extends GoalSeat>(seats: readonly S[]): S[] {
+export function awardGoals<S extends GoalSeat>(seats: readonly S[], radius: number): S[] {
   const paid: S[] = []
   for (const seat of seats) {
-    if (!seat.occupied || seat.vehicle.wrecked || !goalMet(seat)) continue
+    if (!seat.occupied || seat.vehicle.wrecked || !goalMet(seat, radius)) continue
     seat.score += GOAL_PRIZE
     seat.goal = null
     seat.goalsWon = (seat.goalsWon + 1) & 0xff

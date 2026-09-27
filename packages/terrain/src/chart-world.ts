@@ -4,16 +4,30 @@
  * it is and scaled as the chart is there.
  */
 
-import { chartFrame, chartToWorld, createChartFrame, qmultiply, quatFromBasis, quatFromYaw, worldToChart, type Planet, type Vec3 } from '@buggies/physics'
+import { vlength, chartFrame, chartToWorld, createChartFrame, qmultiply, quatFromBasis, quatFromYaw, worldToChart, type Planet, type Vec3 } from '@buggies/physics'
 
+import { deckMesh } from './decks.ts'
 import { DISTRICT_COUNTRY } from './districts.ts'
 import { sampleHeight } from './heightfield.ts'
 import type { SphereMountain } from './sphere-heights.ts'
 import type { SphereGround } from './sphere.ts'
 import { groundDirections } from './sphere-water.ts'
+import { railMesh, railRuns } from './rails.ts'
+import { roadLift } from './roads.ts'
+import { rampFacets } from './ramps.ts'
+import { sidewalkMesh } from './sidewalks.ts'
+import { TUNNEL_WALL, tunnelCutFloors, tunnelSegments, tunnelShellMesh } from './tunnels.ts'
 import type { TerrainMap } from './types.ts'
 import { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
-import type { Stand, World, WorldLake, WorldLot } from './world.ts'
+import type { Stand, World, WorldLake, WorldLot, WorldMesh } from './world.ts'
+
+/**
+ * How far under its road the floor of a bore is cut, matching the bed a graded
+ * road is given. Cutting only to the road leaves the ground a few centimeters
+ * proud of the deck wherever the tunnel climbs, and a few centimeters proud is
+ * a lip across the road that a vehicle at speed hits as a step.
+ */
+const BORE_BED = 0.6
 
 /** The world a planet's chart map comes to, on the ground it was read off, with the mountains it was raised with. */
 export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Planet, mountains: readonly SphereMountain[]): World {
@@ -42,12 +56,62 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
     onSphere.y = directions[at * 3 + 1]! * planet.radius
     onSphere.z = directions[at * 3 + 2]! * planet.radius
     worldToChart(planet, onSphere, onChart)
-    scaleOf[at] = Math.sqrt(Math.max(1 - directions[at * 3 + 1]! ** 2, 0))
+    scaleOf[at] = Math.sqrt(Math.max(1 - directions[at * 3 + 1]! * directions[at * 3 + 1]!, 0))
     const col = Math.round(onChart.x / cellSize)
     const row = Math.round(onChart.z / cellSize)
     if (row < 0 || row >= depth) continue
     cellOf[at] = row * width + ((col % width) + width) % width
   }
+
+  /** Chart points, x, height and z each, carried onto the planet. */
+  const bend = (positions: ArrayLike<number>): Float32Array => {
+    const out = new Float32Array(positions.length)
+    for (let i = 0; i < positions.length; i += 3) {
+      chartToWorld(planet, positions[i]!, positions[i + 1]!, positions[i + 2]!, onSphere)
+      out[i] = onSphere.x
+      out[i + 1] = onSphere.y
+      out[i + 2] = onSphere.z
+    }
+    return out
+  }
+  const mesh = (positions: ArrayLike<number>, indices: ArrayLike<number>): WorldMesh => ({ positions: bend(positions), indices: Uint32Array.from(indices) })
+
+  // The ground where it is driven on: cut to below the road through every tunnel, and a cell's
+  // diagonal beyond the bore either side, so no face of the hill leans in over the ledge.
+  const cutMargin = cellSize * Math.SQRT2
+  const floors = tunnelCutFloors(map.heightfield, tunnelSegments(map.roads), cutMargin)
+  const bored = Float32Array.from(ground.heights)
+  for (let at = 0; at < count; at++) {
+    const cell = cellOf[at]!
+    const floor = cell < 0 ? NaN : floors[cell]!
+    if (!Number.isNaN(floor)) bored[at] = Math.min(bored[at]!, (floor - BORE_BED) * scaleOf[at]!)
+  }
+  const shells = map.roads.flatMap((road) => {
+    // As thick as a collider as it must be to roof over every face beside a cut cell: the extra is buried in the hill.
+    const shell = tunnelShellMesh(road, Math.max(TUNNEL_WALL, 2 * cutMargin))
+    return shell === null ? [] : [mesh(shell.positions, shell.indices)]
+  })
+  const kickers = map.ramps.flatMap((ramp) => {
+    const sx = -ramp.dz * (ramp.width / 2)
+    const sz = ramp.dx * (ramp.width / 2)
+    const under = ramp.bottom - 1
+    const facets = rampFacets(ramp)
+    return facets.slice(1).map((b, i) => {
+      const a = facets[i]!
+      const ax = ramp.x + ramp.dx * a.along
+      const az = ramp.z + ramp.dz * a.along
+      const bx = ramp.x + ramp.dx * b.along
+      const bz = ramp.z + ramp.dz * b.along
+      // prettier-ignore
+      return bend([
+        ax + sx, a.height, az + sz, ax - sx, a.height, az - sz, bx + sx, b.height, bz + sz, bx - sx, b.height, bz - sz,
+        ax + sx, under, az + sz, ax - sx, under, az - sz, bx + sx, under, bz + sz, bx - sx, under, bz - sz,
+      ])
+    })
+  })
+  const decks = deckMesh(map.roads, map.heightfield)
+  const rails = railMesh(railRuns(map.roads))
+  const curbs = sidewalkMesh(map.heightfield, map.sidewalks)
 
   const levels = buildWaterLevels(map)
   const water = new Float32Array(count)
@@ -83,9 +147,11 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
   }
 
   return {
+    seed: map.seed,
     radius: planet.radius,
     seaLevel: map.seaLevel,
     ground,
+    bored,
     water,
     districtOf,
     mountains,
@@ -97,7 +163,7 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
     districts: map.districts.map((district) => {
       const scale = scaleAt(district.cx, district.cz)
       const center = point(district.cx, 0, district.cz)
-      const length = Math.hypot(center.x, center.y, center.z)
+      const length = vlength(center)
       return {
         id: district.id,
         center: { x: center.x / length, y: center.y / length, z: center.z / length },
@@ -111,7 +177,7 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
       id: road.id,
       kind: road.kind,
       closed: road.closed,
-      points: road.points.map((p) => point(p.x, p.y, p.z)),
+      points: road.points.map((p) => point(p.x, p.y + roadLift(road), p.z)),
       widths: Float32Array.from(road.points, (p) => road.width * scaleAt(p.x, p.z)),
       structure: road.structure,
       ...(road.lot === undefined ? {} : { lot: lot(road.lot) }),
@@ -153,12 +219,18 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
       }
     }),
     sidewalks: map.sidewalks.map((sidewalk) => {
-      const { at, turn, scale } = stand(sidewalk.x, groundAt(sidewalk.x, sidewalk.z), sidewalk.z, sidewalk.yaw)
+      // A sidewalk's yaw turns it the other way about from everything else's.
+      const { at, turn, scale } = stand(sidewalk.x, groundAt(sidewalk.x, sidewalk.z), sidewalk.z, -sidewalk.yaw)
       return { at, turn, half: sidewalk.half * scale, band: sidewalk.band * scale, sides: sidewalk.sides }
     }),
     fields: map.fields.map((field) => {
       const { at, turn, scale } = stand(field.x, groundAt(field.x, field.z), field.z, field.yaw)
       return { kind: field.kind, at, turn, width: field.width * scale, depth: field.depth * scale, tone: field.tone }
     }),
+    decks: mesh(decks.positions, decks.indices),
+    shells,
+    rails: mesh(rails.positions, rails.indices),
+    curbs: mesh(curbs.positions, curbs.indices),
+    kickers,
   }
 }

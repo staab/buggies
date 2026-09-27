@@ -1,4 +1,5 @@
-import { DRY, boreClearance, generateTerrain, sampleHeight, tunnelSegments, waterLevelAt, type TerrainMap } from '@buggies/terrain'
+import { DRY, PLANET_TERRAIN, generateTerrain, groundUnder, heightOver, tangentFrame, upOf, waterUnder, type TerrainMap, type World } from '@buggies/terrain'
+import type { Vec3 } from '@buggies/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -24,47 +25,47 @@ import {
   pickupSpot,
   respawn,
   looseOut,
+  spawnHere,
   takeSeat,
   type Arena,
   type Loose,
 } from './index.ts'
+import { apart, between, lifted } from './test-planet.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
 
 let map: TerrainMap
+let planet: World
+
+/** A spawn on the ground under a floating pickup, facing east. */
+function under(point: Vec3): ReturnType<typeof spawnHere> {
+  return spawnHere(lifted(point, -PICKUP_HEIGHT), tangentFrame(upOf(point)).east)
+}
 
 describe('pickups', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    map = generateTerrain(11, PLANET_TERRAIN)
+    planet = map.world!
   }, 60_000)
 
-  it('are put out over the map, above dry land or a road, the same every time', () => {
+  it('are put out over the planet, above dry land or a road, the same every time', () => {
     const arena = createArena(map)
     expect(arena.pickups).toHaveLength(PICKUP_SLOTS)
-    const extent = map.size * map.cellSize
-    const bores = tunnelSegments(map.roads)
     let onRoads = 0
     let moved = 0
     for (const [slot, pickup] of arena.pickups.entries()) {
-      const { x, y, z } = pickup.position
-      expect(x).toBeGreaterThan(0)
-      expect(x).toBeLessThan(extent)
-      expect(z).toBeGreaterThan(0)
-      expect(z).toBeLessThan(extent)
+      const { position } = pickup
+      const height = heightOver(planet, position)
       // Floating over the ground, or over a road that may be above it or in a tunnel under it.
-      const ground = sampleHeight(map.heightfield, x, z)
-      if (boreClearance(bores, x, z, y) >= 0) expect(y).toBeGreaterThanOrEqual(ground + PICKUP_HEIGHT - 0.5)
-      const water = waterLevelAt(map.heightfield, arena.water, x, z)
-      if (water !== DRY) expect(y).toBeGreaterThan(water + 1)
-      if (Math.abs(y - ground - PICKUP_HEIGHT) > 0.5) onRoads++
+      const ground = groundUnder(planet, position)
+      if (height >= ground) expect(height).toBeGreaterThanOrEqual(ground + PICKUP_HEIGHT - 0.5)
+      const water = waterUnder(planet, position)
+      if (water !== DRY) expect(height).toBeGreaterThan(water + 1)
+      if (Math.abs(height - ground - PICKUP_HEIGHT) > 0.5) onRoads++
       expect(pickupOut(pickup, 0)).toBe(true)
       // Worked out again, it is where it was; the slot's next is elsewhere.
-      const again = pickupSpot(map, arena.water, slot, 0)
-      expect(again).toEqual(pickup.position)
-      const next = pickupSpot(map, arena.water, slot, 1)
-      if (Math.hypot(next.x - x, next.z - z) > 5) moved++
+      expect(pickupSpot(planet, slot, 0)).toEqual(position)
+      if (apart(pickupSpot(planet, slot, 1), position) > 5) moved++
     }
     // Some are up on decks; most are on the ground or on roads at grade.
     expect(onRoads).toBeLessThan(PICKUP_SLOTS / 2)
@@ -79,7 +80,7 @@ describe('pickups', () => {
     // On the ground under the pickup, rolling, and armed already, so the
     // banana it takes is kept and counted rather than spent on a weapon.
     arm(seat, 'rocket')
-    respawn(seat, { position: { x: position.x, y: position.y - PICKUP_HEIGHT, z: position.z }, yaw: 0 })
+    respawn(seat, under(position))
     return seat
   }
 
@@ -98,7 +99,7 @@ describe('pickups', () => {
     expect(banana.spawnTick).toBeGreaterThan(arena.tick)
     expect(banana.spawnTick - arena.tick).toBeLessThanOrEqual(PICKUP_RESPAWN_TICKS)
     expect(pickupOut(banana, banana.spawnTick)).toBe(true)
-    expect(Math.hypot(banana.position.x - before.x, banana.position.z - before.z)).toBeGreaterThan(1)
+    expect(apart(banana.position, before)).toBeGreaterThan(1)
     // The one taken is not taken again, and the rest were out of reach.
     for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
@@ -136,14 +137,13 @@ describe('pickups', () => {
     // Numbered as they come.
     expect(arena.loose.map((loose) => loose.id)).toEqual([0, 1, 2, 3, 4])
     for (const loose of arena.loose) {
-      expect(loose.from.x).toBeCloseTo(wreck.x, 1)
-      const flung = Math.hypot(loose.position.x - wreck.x, loose.position.z - wreck.z)
+      expect(between(loose.from, wreck)).toBeLessThan(0.1)
+      const flung = apart(loose.position, wreck)
       expect(flung).toBeGreaterThanOrEqual(SPILL_NEAR - 0.5)
       expect(flung).toBeLessThanOrEqual(SPILL_FAR + 0.5)
-      expect(loose.position.y).toBeCloseTo(
-        sampleHeight(map.heightfield, loose.position.x, loose.position.z) + PICKUP_HEIGHT,
-        3,
-      )
+      // Landed on the ground, or on the water where that is higher.
+      const surface = Math.max(groundUnder(planet, loose.position), planet.seaLevel)
+      expect(heightOver(planet, loose.position)).toBeCloseTo(surface + PICKUP_HEIGHT, 3)
       expect(looseOut(loose, arena.tick)).toBe(false)
       expect(looseOut(loose, loose.bornTick + SPILL_FLIGHT_TICKS)).toBe(true)
     }
@@ -153,16 +153,11 @@ describe('pickups', () => {
 
     // Once one has landed, someone driving onto it takes it, and it is gone:
     // the one lying furthest from the others, so that it is the only one taken.
-    const apart = (banana: Loose): number =>
-      Math.min(
-        ...arena.loose
-          .filter((other) => other !== banana)
-          .map((other) => Math.hypot(other.position.x - banana.position.x, other.position.z - banana.position.z)),
-      )
-    const target = arena.loose.reduce((best, banana) => (apart(banana) > apart(best) ? banana : best))
-    expect(apart(target)).toBeGreaterThan(BANANA_REACH + 1)
+    const alone = (banana: Loose): number => Math.min(...arena.loose.filter((other) => other !== banana).map((other) => apart(other.position, banana.position)))
+    const target = arena.loose.reduce((best, banana) => (alone(banana) > alone(best) ? banana : best))
+    expect(alone(target)).toBeGreaterThan(BANANA_REACH + 1)
     arm(b, 'rocket')
-    respawn(b, { position: { x: target.position.x, y: target.position.y - PICKUP_HEIGHT, z: target.position.z }, yaw: 0 })
+    respawn(b, under(target.position))
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(b.score).toBe(0)
     for (let i = 0; i < SPILL_FLIGHT_TICKS; i++) advance(arena, () => NEUTRAL_INPUT)

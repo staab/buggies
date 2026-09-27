@@ -11,9 +11,13 @@ import {
   type Loose,
 } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
+import { groundDistance } from '@buggies/terrain'
 import * as THREE from 'three'
 
-import { FLAT_GLOBE, UPRIGHT, type Globe } from './globe.ts'
+import { lifted, standOn, uprightAt } from './stand.ts'
+
+const spun = new THREE.Quaternion()
+const angles = new THREE.Euler()
 
 /** Tip to tip, in meters: big enough to be seen from a chase camera. */
 export const BANANA_LENGTH = 3.9
@@ -252,15 +256,12 @@ export class PickupField {
   private readonly seen: number[]
   private readonly wasOut: boolean[]
   private readonly lastPositions: THREE.Vector3[]
-  private readonly globe: Globe
-  private readonly bent = new THREE.Matrix4()
   private pops: Pop[] = []
   private time = 0
 
-  constructor(source: PickupSource, onBomb: (at: Vec3) => void = () => {}, globe: Globe = FLAT_GLOBE) {
+  constructor(source: PickupSource, onBomb: (at: Vec3) => void = () => {}) {
     this.source = source
     this.onBomb = onBomb
-    this.globe = globe
     const kinds = source.pickups.map((_, slot) => pickupKind(slot))
     const bananaCount = kinds.filter((kind) => kind === 'banana').length
     this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(bananaCount, 1))
@@ -307,13 +308,12 @@ export class PickupField {
         this.seen[slot] = pickup.generation
       }
       const phase = this.time * BOB_RATE + slot * 1.7
-      this.placer.position.set(pickup.position.x, pickup.position.y + Math.sin(phase) * BOB, pickup.position.z)
       // A banana is tipped over to show its curve; a health pack stands up to show its face.
       const { mesh, index } = this.drawnBy[slot]!
-      this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, mesh === this.bananas ? TILT : 0, 'YXZ')
+      this.stand(pickup.position, Math.sin(phase) * BOB, 0, this.time * SPIN_RATE + slot * 0.9, mesh === this.bananas ? TILT : 0)
       this.placer.scale.setScalar(out ? 1 : 0)
       this.placer.updateMatrix()
-      mesh.setMatrixAt(index, this.globe.bendMatrix(this.placer.matrix, this.bent, false))
+      mesh.setMatrixAt(index, this.placer.matrix)
       this.lastPositions[slot]!.copy(this.placer.position)
       this.wasOut[slot] = out
     }
@@ -345,20 +345,20 @@ export class PickupField {
         this.placer.scale.setScalar(Math.max(1 - (1 - flight) * (1 - flight), OIL_SEED))
       } else if (flight < 1) {
         // Out of the blast, or off the back of the car, in an arc, tumbling.
-        const across = Math.hypot(position.x - from.x, position.z - from.z)
+        const across = groundDistance(position, from)
         const lift = Math.sin(Math.PI * flight) * (FLING_HEIGHT + FLING_LIFT * across)
-        this.placer.position.set(
-          from.x + (position.x - from.x) * flight,
-          from.y + (position.y - from.y) * flight + lift,
-          from.z + (position.z - from.z) * flight,
-        )
-        this.placer.rotation.set(flight * FLING_SPIN * 0.6, flight * FLING_SPIN + thing.bornTick, kind === 'banana' ? TILT : 0, 'YXZ')
+        const between = {
+          x: from.x + (position.x - from.x) * flight,
+          y: from.y + (position.y - from.y) * flight,
+          z: from.z + (position.z - from.z) * flight,
+        }
+        this.stand(between, lift, flight * FLING_SPIN * 0.6, flight * FLING_SPIN + thing.bornTick, kind === 'banana' ? TILT : 0)
         this.placer.scale.setScalar(0.4 + 0.6 * Math.min(flight * 4, 1))
       } else {
         this.place(thing, slot)
       }
       this.placer.updateMatrix()
-      this.loose[kind].setMatrixAt(slot, this.globe.bendMatrix(this.placer.matrix, this.bent, false))
+      this.loose[kind].setMatrixAt(slot, this.placer.matrix)
       drawn[kind] += 1
       const known = this.looseSeen.get(thing.id)
       const at = known?.position ?? new THREE.Vector3()
@@ -367,7 +367,7 @@ export class PickupField {
     }
     for (const [id, known] of this.looseSeen) {
       if (seen.has(id)) continue
-      if (known.kind === 'bomb' || known.kind === 'mine') this.onBomb(this.globe.toWorld(known.position.x, known.position.y, known.position.z, new THREE.Vector3()))
+      if (known.kind === 'bomb' || known.kind === 'mine') this.onBomb(known.position.clone())
       else if (known.kind === 'banana' && tick < known.goneTick) this.pop(known.position)
     }
     this.looseSeen = seen
@@ -378,23 +378,27 @@ export class PickupField {
   }
 
   /** Put a loose thing that has landed where it lies: a banana or a bomb bobbing and turning, a mine or a slick still. */
+  /** Put the placer this far up from a point, stood upright there and turned by these angles about its own axes. */
+  private stand(at: Vec3, rise: number, x: number, y: number, z: number): void {
+    lifted(at, rise, this.placer.position)
+    uprightAt(at, this.placer.quaternion)
+    this.placer.quaternion.multiply(spun.setFromEuler(angles.set(x, y, z, 'YXZ')))
+  }
+
   private place(thing: Loose, slot: number): void {
     const { position } = thing
     const phase = this.time * BOB_RATE + slot * 1.7
     this.placer.scale.setScalar(1)
     switch (thing.kind) {
       case 'banana':
-        this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
-        this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, TILT, 'YXZ')
+        this.stand(position, Math.sin(phase) * BOB, 0, this.time * SPIN_RATE + slot * 0.9, TILT)
         return
       case 'bomb':
-        this.placer.position.set(position.x, position.y + Math.sin(phase) * BOB, position.z)
-        this.placer.rotation.set(0, this.time * BOMB_SPIN + slot * 0.9, 0, 'YXZ')
+        this.stand(position, Math.sin(phase) * BOB, 0, this.time * BOMB_SPIN + slot * 0.9, 0)
         return
       default:
         // Turned by its number, so no two lie alike.
-        this.placer.position.set(position.x, position.y, position.z)
-        this.placer.rotation.set(0, thing.id * 2.4, 0, 'YXZ')
+        this.stand(position, 0, 0, thing.id * 2.4, 0)
     }
   }
 
@@ -421,8 +425,7 @@ export class PickupField {
 
   private pop(at: THREE.Vector3, health = false): void {
     const group = new THREE.Group()
-    // Where it was on the map, stood upright there in the world.
-    this.globe.place(group, at, UPRIGHT)
+    standOn(group, at)
     const prizeMaterial = (health ? this.healthMaterial : this.bananaMaterial).clone()
     prizeMaterial.transparent = true
     const prize = new THREE.Mesh(health ? this.healthShape : this.bananaShape, prizeMaterial)
