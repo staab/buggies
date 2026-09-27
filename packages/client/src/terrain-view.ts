@@ -27,6 +27,8 @@ import {
 } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { buildClouds } from './clouds-view.ts'
+
 /** A building laid out flat about its own foot: turned by `yaw`, `width` along its x and `depth` along its z, from `bottom` up to `top`. */
 interface Building {
   kind: BuildingKind
@@ -2353,6 +2355,12 @@ function buildStanding(world: World): THREE.Object3D[] {
 }
 
 
+/** Carry the clouds of a terrain view to where the wind has them this many seconds into the game. */
+export function moveClouds(view: THREE.Object3D, seconds: number): void {
+  const clouds = view.getObjectByName('clouds')
+  ;(clouds?.userData.move as ((seconds: number) => void) | undefined)?.(seconds)
+}
+
 /** Move the boats of a terrain view to where they are this many seconds into the game. */
 export function moveBoats(view: THREE.Object3D, seconds: number): void {
   const fleet = view.getObjectByName('boats')
@@ -2376,6 +2384,7 @@ export function createTerrainView(world: World): THREE.Group {
   })
 
   group.add(buildGround(world))
+  group.add(buildClouds(world))
 
   // The sea round the whole planet, at its level.
   const sea = new THREE.Mesh(new THREE.SphereGeometry(world.radius + world.seaLevel + 0.02, 192, 96), waterMaterial)

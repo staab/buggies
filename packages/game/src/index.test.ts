@@ -3,6 +3,8 @@ import { ROAD_GRADE, ROAD_TUNNEL, alongGround, generatePlanet, groundUnder, heig
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  CEILING,
+  CLOUD_HEIGHT,
   MAX_PLAYERS,
   NEUTRAL_INPUT,
   advance,
@@ -159,6 +161,24 @@ describe('game', () => {
     // Put back on the nearest road, at rest, its ride height over it.
     expect(offRoad(seat.vehicle.frame.position)).toBeLessThan(1.5)
     expect(seat.vehicle.speed).toBe(0)
+  })
+
+  it('keeps a vehicle under the ceiling, a little over the clouds, however hard it is thrown up', () => {
+    const arena = createArena(map)
+    const seat = solo(arena)
+    expect(CEILING).toBeGreaterThan(CLOUD_HEIGHT)
+    const up = upOf(seat.vehicle.frame.position)
+    const high = arena.planet.radius + CEILING + 40
+    seat.vehicle.body.setTranslation({ x: up.x * high, y: up.y * high, z: up.z * high }, true)
+    seat.vehicle.body.setLinvel({ x: up.x * 30, y: up.y * 30, z: up.z * 30 }, true)
+    for (let i = 0; i < 60; i++) {
+      advance(arena)
+      expect(heightOver(arena.planet, seat.vehicle.body.translation())).toBeLessThanOrEqual(CEILING + 1e-6)
+    }
+    // Let go of, it falls back down under it.
+    const velocity = seat.vehicle.body.linvel()
+    expect(velocity.x * up.x + velocity.y * up.y + velocity.z * up.z).toBeLessThan(0)
+    arena.world.free()
   })
 
   it('puts a vehicle back on the nearest road, facing the way it was going', () => {

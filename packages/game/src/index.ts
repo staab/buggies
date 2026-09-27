@@ -44,6 +44,7 @@ import {
   walkRobot,
   type Robot,
 } from './robots.ts'
+import { CEILING } from './sky.ts'
 import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
@@ -92,6 +93,7 @@ export {
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
+export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, sunDirection } from './sky.ts'
 export {
   UFOS,
   UFO_BEAM_REACH,
@@ -719,6 +721,7 @@ export function advance(
   for (const ufo of arena.ufos) flyUfo(arena.planet, ufo, arena.seats, gravity, dt)
   arena.world.step()
   arena.tick += 1
+  for (const seat of arena.seats) if (seat.occupied) holdUnderCeiling(arena.planet.radius, seat.vehicle)
   restoreProps(arena)
   collectPickups(arena)
   spillBananas(arena)
@@ -733,6 +736,26 @@ export function advance(
     for (const spider of arena.spiders) if (spider.damage >= 1) rebuildSpider(arena.planet, spider)
   }
   trimLoose(arena)
+}
+
+/**
+ * Keep a vehicle under the ceiling, a little over the clouds: brought back
+ * down to it where it has risen through, and whatever of its way was taking
+ * it up and away from the planet taken off.
+ */
+function holdUnderCeiling(radius: number, vehicle: Seat['vehicle']): void {
+  const { body } = vehicle
+  const at = body.translation()
+  const r = Math.sqrt(at.x * at.x + at.y * at.y + at.z * at.z)
+  const most = radius + CEILING
+  if (r <= most) return
+  const ux = at.x / r
+  const uy = at.y / r
+  const uz = at.z / r
+  body.setTranslation({ x: ux * most, y: uy * most, z: uz * most }, true)
+  const v = body.linvel()
+  const out = v.x * ux + v.y * uy + v.z * uz
+  if (out > 0) body.setLinvel({ x: v.x - ux * out, y: v.y - uy * out, z: v.z - uz * out }, true)
 }
 
 const eyes = v3()

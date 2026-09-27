@@ -28,7 +28,7 @@ In **2 players** mode, two people share one keyboard on a split screen, and each
 
 ## The planet
 
-Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera and the sun stand over wherever your car is, so it is always day where you play. Around your car the world is drawn as though the planet were eight times bigger, which puts the horizon nearly three times as far off; only the drawing is bent, not the game. Islands lie anywhere on it, the poles included.
+Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera stands over wherever your car is. The planet turns under the sun once every ten minutes of game time, so day and night go round it: the side facing the sun is lit and the night side is dark, under a dark sky. Clouds float about 180 m up, carried slowly round the planet by the wind, and nothing driven or flown can go more than 30 m above them. Around your car the world is drawn as though the planet were eight times bigger, which puts the horizon nearly three times as far off; only the drawing is bent, not the game. Islands lie anywhere on it, the poles included.
 
 ## Bananas
 

@@ -14,7 +14,7 @@ import type { OnlinePlayer } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 import { createTeamMode } from './team-mode.ts'
-import { createTerrainView, moveBoats } from './terrain-view.ts'
+import { createTerrainView, moveBoats, moveClouds } from './terrain-view.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /** The menu, as the shell drives it. */
@@ -350,7 +350,12 @@ export class Shell implements MenuHost {
       this.view.userData.tick = game?.mode.tick ?? null
       // The boats by the game's time where there is one, to be where the game has them; by the screen's otherwise.
       this.idle += dt
-      moveBoats(this.view, game?.mode.tick === undefined ? this.idle : game.mode.tick / 60)
+      const seconds = game?.mode.tick === undefined ? this.idle : game.mode.tick / 60
+      moveBoats(this.view, seconds)
+      moveClouds(this.view, seconds)
+      // The planet turns under the sun by the game's time, and the sky is as the day is over the whole of it, until a view says where the play is.
+      this.sun.turn(seconds)
+      this.sun.shade(this.scene)
     }
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {

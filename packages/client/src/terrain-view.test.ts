@@ -2,7 +2,9 @@ import { ROAD_GRADE, generatePlanet, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { createTerrainView } from './terrain-view.ts'
+import { CLOUD_HEIGHT } from '@buggies/game'
+
+import { createTerrainView, moveClouds } from './terrain-view.ts'
 
 let map: World
 let world: World
@@ -117,5 +119,28 @@ describe('the planet drawn', () => {
     expect(upright / seen).toBeGreaterThan(0.95)
     const sea = view.getObjectByName('water') as THREE.Mesh
     expect(sea.geometry).toBeInstanceOf(THREE.SphereGeometry)
+  })
+
+  it('floats see-through clouds high over the land all round the planet, carried round it by the wind', () => {
+    const clouds = view.getObjectByName('clouds')!
+    const puffs = clouds.children[0] as THREE.InstancedMesh
+    expect(puffs.count).toBeGreaterThan(300)
+    const material = puffs.material as THREE.MeshLambertMaterial
+    expect(material.transparent).toBe(true)
+    expect(material.opacity).toBeLessThan(1)
+    const matrix = new THREE.Matrix4()
+    const at = new THREE.Vector3()
+    let highest = -Infinity
+    for (let i = 0; i < puffs.count; i++) {
+      puffs.getMatrixAt(i, matrix)
+      const height = at.setFromMatrixPosition(matrix).length() - world.radius
+      expect(height).toBeGreaterThan(CLOUD_HEIGHT - 10)
+      highest = Math.max(highest, height)
+    }
+    expect(highest).toBeLessThan(CLOUD_HEIGHT + 30)
+    moveClouds(view, 0)
+    const before = clouds.rotation.y
+    moveClouds(view, 60)
+    expect(clouds.rotation.y).not.toBe(before)
   })
 })
