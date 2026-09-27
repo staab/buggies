@@ -93,6 +93,7 @@ export {
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
+export { portalCrossed, portalLink, portalSpawn } from './portals.ts'
 export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, sunDirection } from './sky.ts'
 export {
   UFOS,

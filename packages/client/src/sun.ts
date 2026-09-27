@@ -8,6 +8,7 @@ export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
 /** The sky by day and by night, and how far the sun is below the horizon, and above it, as day turns to night and back. */
 const DAY_SKY = new THREE.Color('#a9cbe6')
 const NIGHT_SKY = new THREE.Color('#0b1326')
+const SPACE = new THREE.Color('#000000')
 const DUSK = { below: -0.08, above: 0.12 } as const
 /** How bright the sun's light is at noon, and the sky's light, by day and at the least by night. */
 const SUN_LIGHT = 1.6
@@ -133,10 +134,11 @@ export class Sun {
     this.disc.visible = this.glow.visible = this.daylight > 0
   }
 
-  /** Colour the sky, and the haze over the distance, by how much of the day there is where the play is. */
-  shade(scene: THREE.Scene): void {
+  /** Colour the sky, and the haze over the distance, by how much of the day there is where the play is; over an airless moon, black by day as by night. */
+  shade(scene: THREE.Scene, airless = false): void {
     const sky = scene.background instanceof THREE.Color ? scene.background : (scene.background = new THREE.Color())
-    sky.copy(NIGHT_SKY).lerp(DAY_SKY, this.daylight)
+    if (airless) sky.copy(SPACE)
+    else sky.copy(NIGHT_SKY).lerp(DAY_SKY, this.daylight)
     if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(sky)
   }
 

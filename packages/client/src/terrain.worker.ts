@@ -1,4 +1,4 @@
-import { generatePlanet } from '@buggies/terrain'
+import { generateWorld } from '@buggies/terrain'
 
 import { terrainTransferables } from './terrain-transfer.ts'
 
@@ -15,6 +15,6 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope
 // Every island is one wrapped round a planet, as the server makes them.
 scope.onmessage = (event) => {
-  const map = generatePlanet(event.data)
+  const map = generateWorld(event.data)
   scope.postMessage(map, terrainTransferables(map))
 }

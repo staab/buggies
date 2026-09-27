@@ -16,6 +16,7 @@ import {
   decodeReject,
   decodeSnapshot,
   decodeWelcome,
+  NO_ARRIVAL,
   encodeHello,
   encodeInput,
   encodeChangeVehicle,
@@ -119,8 +120,8 @@ export class NetClient {
     return this.newestSnapshot?.vehicles.length ?? 0
   }
 
-  /** Join the room for a seed, in a vehicle. */
-  async connect(profile: VehicleProfileId, seed: number): Promise<WelcomeMessage> {
+  /** Join the room for a seed, in a vehicle: out of one of its portals, if come through one to it. */
+  async connect(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL): Promise<WelcomeMessage> {
     try {
       await this.transport.connect({
         onMessage: (payload) => this.receive(payload),
@@ -129,7 +130,7 @@ export class NetClient {
       const welcome = new Promise<WelcomeMessage>((resolve, reject) => {
         this.settleWelcome = { resolve, reject }
       })
-      this.transport.send(encodeHello(profile, seed))
+      this.transport.send(encodeHello(profile, seed, arrival))
       return await welcome
     } catch (error) {
       throw new ConnectionFailure(error instanceof Error ? error.message : String(error))

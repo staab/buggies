@@ -16,6 +16,7 @@ import {
   arm,
   createArena,
   initPhysics,
+  portalSpawn,
   respawn,
   spawnHere,
   setPickup,
@@ -27,7 +28,7 @@ import {
   type VehicleProfileId,
 } from '@buggies/game'
 import { uprightRotation, vdistance, type Vec3 } from '@buggies/physics'
-import { ROAD_TUNNEL, STREET_WIDTH, generatePlanet, groundDistance, tangentFrame, upOf, type World, type WorldProp } from '@buggies/terrain'
+import { ROAD_TUNNEL, STREET_WIDTH, generateWorld, moonOf, groundDistance, tangentFrame, upOf, type World, type WorldProp } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
@@ -49,6 +50,7 @@ import type {
   TransportHandlers,
 } from './transport.ts'
 import {
+  NO_ARRIVAL,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_ROBOT_BYTES,
   SNAPSHOT_SPIDER_BYTES,
@@ -59,12 +61,12 @@ import {
   type SnapshotMessage,
 } from './wire.ts'
 
-/** Each seed's planet, made once: making one takes seconds. */
+/** Each seed's world, a planet or its moon, made once: making one takes seconds. */
 const planets = new Map<number, World>()
 function planetOf(seed: number): World {
   let known = planets.get(seed)
   if (known === undefined) {
-    known = generatePlanet(seed)
+    known = generateWorld(seed)
     planets.set(seed, known)
   }
   return known
@@ -196,10 +198,10 @@ class Session {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed): Promise<Player> {
+  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL): Promise<Player> {
     const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
     const client = new NetClient(wire.client, () => this.nowMs)
-    const welcoming = client.connect(profile, seed)
+    const welcoming = client.connect(profile, seed, arrival)
     welcoming.catch(() => undefined)
     // The hello goes out once connect() has had a turn; then it has to get
     // there and the welcome has to come back. A refusal comes back the same way.
@@ -257,7 +259,9 @@ class Session {
   }
 
   serverPositionOf(player: Player): { x: number; y: number; z: number } {
-    return { ...this.arena.seats[player.client.welcome!.seat]!.vehicle.frame.position }
+    // In the room the player was welcomed to, which is not always the one the session started on.
+    const { arena } = this.server.roomFor(player.client.welcome!.seed)!
+    return { ...arena.seats[player.client.welcome!.seat]!.vehicle.frame.position }
   }
 
   predictedPositionOf(player: Player): { x: number; y: number; z: number } {
@@ -569,6 +573,22 @@ describe('a session', () => {
     expect(a.prediction.stats.ticksAheadOfServer).toBeLessThan(INPUT_TIMELINE_TICKS / 2)
     expect(a.prediction.stats.hardResyncs - resyncsBefore).toBe(0)
     expect(a.prediction.stats.lastCorrectionMeters).toBeLessThan(0.5)
+    session.dispose()
+  })
+
+  it('sets a player come through a portal down out of the one they arrive by, beside whoever came with them', async () => {
+    const session = new Session()
+    const moon = moonOf(map.seed)
+    const a = await session.join('sportsCar', 0, moon, 0)
+    const b = await session.join('sportsCar', 0, moon, 0)
+    expect(a.client.welcome!.seed).toBe(moon)
+    session.run(0.5)
+    const world = planetOf(moon)
+    const exit = portalSpawn(world, 0)!
+    const at = session.serverPositionOf(a)
+    expect(Math.hypot(at.x - exit.position.x, at.y - exit.position.y, at.z - exit.position.z)).toBeLessThan(2)
+    // The second out stands beside the first, not on it.
+    expect(distance(session.serverPositionOf(b), at)).toBeGreaterThan(2)
     session.dispose()
   })
 

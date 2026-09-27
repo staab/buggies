@@ -42,7 +42,7 @@ import {
  * anything the wrong length is refused rather than read past.
  */
 
-export const HELLO_BYTES = 8
+export const HELLO_BYTES = 9
 export const WELCOME_BYTES = 15
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
@@ -78,9 +78,14 @@ const NOBODY_BYTE = 0xff
 export interface HelloMessage {
   protocolVersion: number
   profile: VehicleProfileId
-  /** Which island: the room to be seated in. */
+  /** Which world: the room to be seated in. */
   seed: number
+  /** Which of its portals to come out of, having come through a portal to it, or `NO_ARRIVAL`. */
+  arrival: number
 }
+
+/** No portal to come out of: the car starts where the world's spawns are. */
+export const NO_ARRIVAL = 0xff
 
 export interface WelcomeMessage {
   protocolVersion: number
@@ -403,12 +408,13 @@ function profileIndex(profile: VehicleProfileId): number {
   return VEHICLE_PROFILE_IDS.indexOf(profile)
 }
 
-export function encodeHello(profile: VehicleProfileId, seed: number): Uint8Array {
+export function encodeHello(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL): Uint8Array {
   const writer = new Writer(HELLO_BYTES)
   writer.u8(CLIENT_HELLO)
   writer.u16(PROTOCOL_VERSION)
   writer.u8(profileIndex(profile))
   writer.u32(seed)
+  writer.u8(arrival)
   return writer.bytes
 }
 
@@ -419,7 +425,8 @@ export function decodeHello(payload: Uint8Array): HelloMessage | null {
   const protocolVersion = reader.u16()
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
   const seed = reader.u32()
-  return profile === undefined ? null : { protocolVersion, profile, seed }
+  const arrival = reader.u8()
+  return profile === undefined ? null : { protocolVersion, profile, seed, arrival }
 }
 
 export function encodeWelcome(message: WelcomeMessage): Uint8Array {

@@ -28,6 +28,7 @@ import {
 import * as THREE from 'three'
 
 import { buildClouds } from './clouds-view.ts'
+import { buildMoonCraft, buildPortals } from './portals-view.ts'
 
 /** A building laid out flat about its own foot: turned by `yaw`, `width` along its x and `depth` along its z, from `bottom` up to `top`. */
 interface Building {
@@ -93,6 +94,13 @@ const LAND_STOPS: Stops = [
   { t: 0.6, color: new THREE.Color('#7d7367') },
   { t: 0.82, color: new THREE.Color('#9d9d9d') },
   { t: 1, color: new THREE.Color('#f4f6f8') },
+]
+
+/** A moon's rock, darker down in its craters and valleys, paler up on its heights. */
+const MOON_STOPS: Stops = [
+  { t: 0, color: new THREE.Color('#58585c') },
+  { t: 0.45, color: new THREE.Color('#8a8a8d') },
+  { t: 1, color: new THREE.Color('#c9c8c4') },
 ]
 
 const SEABED_DEEP = new THREE.Color('#1c3a4a')
@@ -519,7 +527,8 @@ function groundColors(world: World): GroundColors {
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
   for (let at = 0; at < heights.length; at++) {
-    terrainColor(heights[at]!, min, max, world.seaLevel, world.districtOf[at]!, color)
+    if (world.kind === 'moon') sampleRamp((heights[at]! - min) / Math.max(max - min, 1e-3), MOON_STOPS, color)
+    else terrainColor(heights[at]!, min, max, world.seaLevel, world.districtOf[at]!, color)
     color.getRGB(rgb, THREE.SRGBColorSpace)
     srgb[at * 3] = rgb.r
     srgb[at * 3 + 1] = rgb.g
@@ -2384,12 +2393,15 @@ export function createTerrainView(world: World): THREE.Group {
   })
 
   group.add(buildGround(world))
-  group.add(buildClouds(world))
-
-  // The sea round the whole planet, at its level.
-  const sea = new THREE.Mesh(new THREE.SphereGeometry(world.radius + world.seaLevel + 0.02, 192, 96), waterMaterial)
-  sea.name = 'water'
-  group.add(sea)
+  group.add(buildPortals(world))
+  if (world.kind === 'moon') group.add(buildMoonCraft(world))
+  else {
+    // An airless moon has neither clouds nor a sea; a planet has both.
+    group.add(buildClouds(world))
+    const sea = new THREE.Mesh(new THREE.SphereGeometry(world.radius + world.seaLevel + 0.02, 192, 96), waterMaterial)
+    sea.name = 'water'
+    group.add(sea)
+  }
   if (world.lakes.length > 0) group.add(new THREE.Mesh(buildLakeGeometry(world), waterMaterial))
   if (world.rivers.length > 0) group.add(new THREE.Mesh(buildRiversGeometry(world.rivers), waterMaterial))
 

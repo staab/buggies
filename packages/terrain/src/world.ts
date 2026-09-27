@@ -124,9 +124,22 @@ export interface WorldDecks extends WorldMesh {
   readonly surfaces: Uint8Array
 }
 
+/**
+ * A portal: a ring standing on the ground, its middle `radius` up from its
+ * foot, facing along its z, which a car drives through to another world.
+ */
+export interface WorldPortal extends Stand {
+  readonly radius: number
+}
+
+/** A world a planet has: the planet itself, or its moon. */
+export type WorldKind = 'planet' | 'moon'
+
 /** A planet's map, every part of it where it is on the planet. */
 export interface World {
+  /** Which world this is: a planet's seed, or its moon's, the seed with `MOON_BIT` set. */
   readonly seed: number
+  readonly kind: WorldKind
   readonly radius: number
   readonly seaLevel: number
   readonly ground: SphereGround
@@ -160,6 +173,8 @@ export interface World {
   readonly rails: WorldMesh
   /** The sidewalks round the blocks, a curb's step up off the street. */
   readonly curbs: WorldMesh
+  /** The portals over to the moon from a planet, or back from its moon. */
+  readonly portals: readonly WorldPortal[]
   /** Each ramp's facets, slice by slice from its foot to its lip, as the eight corners of a solid. */
   readonly kickers: readonly Float32Array[]
 }

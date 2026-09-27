@@ -10,6 +10,8 @@ import {
   leaveSeat,
   respawnLost,
   npcInput,
+  portalSpawn,
+  respawn,
   respawnNearby,
   seatNpc,
   setGoal,
@@ -17,7 +19,9 @@ import {
   type Arena,
   type Seat,
   type VehicleInput,
+  type VehicleSpawn,
 } from '@buggies/game'
+import { vdistance } from '@buggies/physics'
 import { InputTimeline } from './input-timeline.ts'
 import {
   CLIENT_CHANGE_VEHICLE,
@@ -41,6 +45,7 @@ import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
   decodeChangeVehicle,
   decodeGoal,
+  NO_ARRIVAL,
   decodeHello,
   decodeInput,
   encodeReject,
@@ -422,6 +427,11 @@ export class GameServer implements TransportHandlers {
 
     this.handshaking.delete(connection.id)
     const seat = takeSeat(arena, free.id, hello.profile)
+    // Come through a portal, the car comes out of the one it arrives by, beside anyone already there.
+    if (hello.arrival !== NO_ARRIVAL) {
+      const out = arrivalSpawn(arena, hello.arrival, seat)
+      if (out !== null) respawn(seat, out)
+    }
     const player: Player = {
       connection,
       room,
@@ -492,3 +502,17 @@ export class GameServer implements TransportHandlers {
     rememberTold(arena, snapshots)
   }
 }
+
+/** Where a car comes out of a portal: the first place out of it that no other car in play is standing on. */
+function arrivalSpawn(arena: Arena, portal: number, seat: Seat): VehicleSpawn | null {
+  for (let place = 0; place < 8; place++) {
+    const out = portalSpawn(arena.planet, portal, place)
+    if (out === null) return null
+    const taken = arena.seats.some((other) => other !== seat && other.occupied && vdistance(other.vehicle.frame.position, out.position) < ARRIVAL_CLEAR)
+    if (!taken) return out
+  }
+  return portalSpawn(arena.planet, portal, 0)
+}
+
+/** How far apart two cars coming out of a portal must stand. */
+const ARRIVAL_CLEAR = 3

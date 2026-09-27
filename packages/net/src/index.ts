@@ -32,6 +32,7 @@ export type {
   TransportHandlers,
 } from './transport.ts'
 export {
+  NO_ARRIVAL,
   decodeSnapshot,
   decodeWelcome,
   encodeSnapshot,

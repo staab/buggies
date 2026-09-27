@@ -177,8 +177,8 @@ export function countryLand(site: Site): Int32Array {
 }
 
 /** Somewhere on the land in the open country, taken at random, or nothing on a planet with none. */
-function countrySpot(site: Site, country: Int32Array): Vec3 | null {
-  const at = country[Math.floor(site.rng() * country.length)]
+export function countrySpot(site: Site, country: Int32Array, rng: () => number = site.rng): Vec3 | null {
+  const at = country[Math.floor(rng() * country.length)]
   if (at === undefined) return null
   const { directions } = site.land
   return { x: directions[at * 3]!, y: directions[at * 3 + 1]!, z: directions[at * 3 + 2]! }

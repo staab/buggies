@@ -1,4 +1,4 @@
-import { ROAD_GRADE, generatePlanet, type World } from '@buggies/terrain'
+import { ROAD_GRADE, generateMoon, generatePlanet, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -142,5 +142,36 @@ describe('the planet drawn', () => {
     const before = clouds.rotation.y
     moveClouds(view, 60)
     expect(clouds.rotation.y).not.toBe(before)
+  })
+
+  it('stands each portal as a ring on the ground, facing the way through it', () => {
+    const portals = view.getObjectByName('portals')!
+    expect(portals.children).toHaveLength(world.portals.length)
+    expect(world.portals.length).toBeGreaterThanOrEqual(3)
+    for (const [k, standing] of portals.children.entries()) {
+      expect(standing.position.distanceTo(new THREE.Vector3(world.portals[k]!.at.x, world.portals[k]!.at.y, world.portals[k]!.at.z))).toBeLessThan(1e-6)
+    }
+  })
+
+  it('draws a moon gray and airless: no sea, no clouds, its portal back, and the lander and its flag', () => {
+    const moon = generateMoon(1)
+    const drawn = createTerrainView(moon)
+    expect(drawn.getObjectByName('water')).toBeUndefined()
+    expect(drawn.getObjectByName('clouds')).toBeUndefined()
+    expect(drawn.getObjectByName('portals')!.children).toHaveLength(1)
+    expect(drawn.getObjectByName('moon craft')!.children).toHaveLength(2)
+    const pieces: THREE.Mesh[] = []
+    drawn.getObjectByName('ground')!.traverse((node) => {
+      if (node instanceof THREE.Mesh) pieces.push(node)
+    })
+    // Every color of its ground a gray, near enough.
+    for (const piece of pieces) {
+      const colors = piece.geometry.getAttribute('color')
+      if (colors === undefined) continue
+      for (let i = 0; i < colors.count; i += 97) {
+        expect(Math.abs(colors.getX(i) - colors.getY(i))).toBeLessThan(0.05)
+        expect(Math.abs(colors.getY(i) - colors.getZ(i))).toBeLessThan(0.05)
+      }
+    }
   })
 })

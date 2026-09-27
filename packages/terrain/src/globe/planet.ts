@@ -138,6 +138,7 @@ export function generatePlanet(seed: number): World {
   const { bored, holes } = boreGround({ ...land, water, districtOf }, roads)
   return {
     seed,
+    kind: 'planet',
     radius,
     seaLevel,
     ground,

@@ -32,6 +32,8 @@ export interface ModeView {
   goal?(): Goal | null
   /** Put everyone on this screen to playing for this goal, or for none. */
   setGoal?(goal: GoalRequest | null): void
+  /** The portal anyone on this screen has driven through since last asked, or -1. */
+  portal?(): number
   /** Show where every car is on the island being looked over, as the server last said. */
   showMarks?(marks: readonly IslandMark[]): void
   dispose(): void

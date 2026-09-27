@@ -1,4 +1,5 @@
 import type { World } from '@buggies/terrain'
+import { NO_ARRIVAL } from '@buggies/net'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -21,10 +22,11 @@ export async function createTeamMode(
   mapFor: (seed: number) => Promise<World>,
   sound: Sound,
   sun: Sun,
+  arrival = NO_ARRIVAL,
 ): Promise<ModeView> {
   const locals = new Set<number>()
   const joins = await Promise.allSettled(
-    players.map((player) => joinOnline(scene, url, seed, player, locals, mapFor, sound)),
+    players.map((player) => joinOnline(scene, url, seed, player, locals, mapFor, sound, arrival)),
   )
   const failed = joins.find((join): join is PromiseRejectedResult => join.status === 'rejected')
   if (failed !== undefined) {
@@ -56,7 +58,7 @@ export async function createTeamMode(
       // The sun's shadows are drawn afresh for each view, around its own car.
       if (!split) {
         sun.follow(first.focus, first.up)
-        sun.shade(scene)
+        sun.shade(scene, first.map.kind === 'moon')
         bendFor(first)
         renderer.render(scene, first.camera)
         bendAround(null)
@@ -69,7 +71,7 @@ export async function createTeamMode(
       views.forEach((view, side) => {
         for (const other of views) other.root.visible = other === view
         sun.follow(view.focus, view.up)
-        sun.shade(scene)
+        sun.shade(scene, view.map.kind === 'moon')
         bendFor(view)
         const left = x + side * each
         renderer.setViewport(left, y, each, height)
@@ -83,6 +85,13 @@ export async function createTeamMode(
     },
     hud() {
       return views.map((view) => view.hud())
+    },
+    portal() {
+      // Asked of every view, so none keeps a portal for next time.
+      return views.reduce((through, view) => {
+        const crossed = view.portal()
+        return through >= 0 ? through : crossed
+      }, -1)
     },
     changeVehicles(profiles) {
       views.forEach((view, index) => {

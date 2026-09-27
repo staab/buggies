@@ -2,6 +2,8 @@ import { uprightRotation, v3, vdistance, vlength, vscale, type Vec3 } from '@bug
 import { ROAD_GRADE, ROAD_TUNNEL, atHeight, upOf, type World, type WorldRoad } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
 
+import { portalSpawn } from './portals.ts'
+
 /** Nose to tail along the road, with room to pull out, and side to side, two abreast. */
 const SPAWN_SPACING = 9
 const SPAWN_ABREAST = 5
@@ -130,7 +132,9 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
 export function findSpawns(planet: World, count: number): VehicleSpawn[] {
   const first = nearestGradeSpot(planet)
   if (first === null) {
-    // No road at all: side by side on the ground over the middle of the first city.
+    // No road at all, as on a moon: out of its portal, side by side, where it has one.
+    if (planet.portals.length > 0) return Array.from({ length: count }, (_, place) => portalSpawn(planet, 0, place)!)
+    // Or on the ground over the middle of the first city.
     const middle = planet.districts[0]?.center ?? { x: 0, y: 0, z: 1 }
     return Array.from({ length: count }, () => spawnHere(atHeight(planet, middle, planet.seaLevel + 1), { x: 1, y: 0, z: 0 }))
   }

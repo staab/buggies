@@ -225,7 +225,8 @@ function addGround(world: RAPIER.World, map: World): void {
       }
     }
   }
-  let deepest = floor
+  // Just under the lowest ground, whatever the sea: a moon has none, and its level is far under everything.
+  let deepest = Infinity
   for (const height of bored) deepest = Math.min(deepest, height)
   world.createCollider(
     RAPIER.ColliderDesc.ball(radius + deepest - 1)

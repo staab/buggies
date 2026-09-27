@@ -1,6 +1,6 @@
 import { FIXED_TIMESTEP, createArena, initPhysics } from '@buggies/game'
 import { GameServer, SNAPSHOTS_PER_SECOND, TICKS_PER_SECOND } from '@buggies/net'
-import { generatePlanet } from '@buggies/terrain'
+import { generateWorld } from '@buggies/terrain'
 
 import { WebSocketServerTransport } from './ws-transport.ts'
 
@@ -30,7 +30,7 @@ await initPhysics()
 const server = new GameServer(
   (seed) => {
     log(`generating seed ${seed}...`)
-    return createArena(generatePlanet(seed))
+    return createArena(generateWorld(seed))
   },
   {
     onJoined: (seat, connection, seed) => log(`joined seed=${seed} seat=${seat.id} ${seat.profile} connection=${connection}`),

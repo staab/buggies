@@ -1,6 +1,6 @@
-import type { VehicleProfileId } from '@buggies/game'
+import { portalLink, type VehicleProfileId } from '@buggies/game'
 import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
-import type { World } from '@buggies/terrain'
+import { isMoon, planetSeedOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -56,6 +56,7 @@ export interface ShellModes {
     mapFor: (seed: number) => Promise<World>,
     sound: Sound,
     sun: Sun,
+    arrival?: number,
   ): Promise<ModeView>
 }
 
@@ -92,6 +93,8 @@ export interface ShellDeps {
 interface Game {
   mode: ModeView
   choice: Choice
+  /** Which world is being played: the chosen planet, or its moon, gone to through a portal. */
+  world: number
 }
 
 /** What the menu puts up over the game while something is chosen. */
@@ -158,6 +161,8 @@ export class Shell implements MenuHost {
   private view: THREE.Group | null = null
   /** Seconds the screen has run, for what keeps time with no game on. */
   private idle = 0
+  /** The planet's portal the moon was gone to by, to come back out of. */
+  private cameFrom = 0
   /** An island on its way, so that two players joining at once do not each make one. */
   private making: { seed: number; island: Promise<World> } | null = null
   private game: Game | null = null
@@ -302,13 +307,42 @@ export class Shell implements MenuHost {
         mode.dispose()
         return
       }
-      this.setGame({ mode, choice: next })
+      this.setGame({ mode, choice: next, world: next.seed })
       this.settle(next)
     } catch (error: unknown) {
       if (stamp !== this.generation) return
       const why = error instanceof Error ? error.message : String(error)
       this.menu.show(this.choiceNow)
       this.menu.notice(`Could not join ${this.server}: ${why}`)
+    }
+  }
+
+  /**
+   * Take everyone on this screen through a portal: from a planet to its
+   * moon, or from the moon back to the planet, out of the portal they left
+   * it by. They join the room for the world on the other side, in the
+   * vehicles they are in.
+   */
+  private async travel(through: number): Promise<void> {
+    const { game, map } = this
+    if (game === null || map === null || map.seed !== game.world) return
+    const link = portalLink(map, this.cameFrom)
+    if (!isMoon(map.seed)) this.cameFrom = through
+    const stamp = ++this.generation
+    this.setGame(null)
+    this.notice(isMoon(link.to) ? 'through the portal to the moon...' : 'back through the portal...')
+    try {
+      const mode = await this.modes.play(this.scene, this.server, link.to, playersFor(game.choice), (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival)
+      if (stamp !== this.generation) {
+        mode.dispose()
+        return
+      }
+      this.setGame({ mode, choice: game.choice, world: link.to })
+    } catch (error: unknown) {
+      if (stamp !== this.generation) return
+      const why = error instanceof Error ? error.message : String(error)
+      this.menu.show(this.choiceNow)
+      this.menu.notice(`Could not go through the portal: ${why}`)
     }
   }
 
@@ -321,7 +355,7 @@ export class Shell implements MenuHost {
     if (game === null) return
     const stamp = ++this.generation
     this.choiceNow = game.choice
-    await this.mapFor(game.choice.seed)
+    await this.mapFor(game.world)
     if (stamp !== this.generation) return
     this.setBackdrop(null)
     this.settle(game.choice)
@@ -344,6 +378,9 @@ export class Shell implements MenuHost {
   frame(dt: number): void {
     const { menu, game, backdrop } = this
     game?.mode.update(dt, !menu.open && !this.overlay.open)
+    // Through a portal, everyone on this screen goes over to the world it leads to.
+    const through = game?.mode.portal?.() ?? -1
+    if (through >= 0) void this.travel(through)
     if (menu.open) backdrop?.mode.update(dt, false)
     // The island's clocks keep the game's time.
     if (this.view !== null) {
@@ -355,7 +392,7 @@ export class Shell implements MenuHost {
       moveClouds(this.view, seconds)
       // The planet turns under the sun by the game's time, and the sky is as the day is over the whole of it, until a view says where the play is.
       this.sun.turn(seconds)
-      this.sun.shade(this.scene)
+      this.sun.shade(this.scene, this.map?.kind === 'moon')
     }
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
@@ -376,7 +413,7 @@ export class Shell implements MenuHost {
   private mapFor(seed: number): Promise<World> {
     if (this.map !== null && this.map.seed === seed) return Promise.resolve(this.map)
     if (this.making !== null && this.making.seed === seed) return this.making.island
-    this.notice(`generating island ${seed}...`)
+    this.notice(isMoon(seed) ? `generating the moon of island ${planetSeedOf(seed)}...` : `generating island ${seed}...`)
     const island = this.islands.generate(seed).then((made) => {
       if (this.making?.island === island) this.making = null
       if (this.view) disposeView(this.scene, this.view)

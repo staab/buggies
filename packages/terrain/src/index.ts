@@ -1,4 +1,6 @@
 export { PLANET_RADIUS, SPHERE_CELLS, generatePlanet } from './globe/planet.ts'
+export { MOON_BIT, generateMoon, generateWorld, isMoon, moonOf, planetSeedOf } from './globe/moon.ts'
+export { PORTAL_RADIUS } from './globe/portals.ts'
 export { fingerprint } from './fingerprint.ts'
 export { flatHeightfield } from './heightfield.ts'
 export { BOAT_WANDER, worldBoatAt } from './globe/boats.ts'
@@ -52,7 +54,9 @@ export type {
   WorldDistrict,
   WorldField,
   WorldLake,
+  WorldKind,
   WorldMesh,
+  WorldPortal,
   WorldProp,
   WorldRamp,
   WorldRiver,

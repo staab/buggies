@@ -6,6 +6,7 @@ import {
   VEHICLE_PROFILE_LABELS,
   createArena,
   goalProgress,
+  portalCrossed,
   takeSeat,
   type Goal,
   type GoalRequest,
@@ -15,7 +16,7 @@ import {
   type Ufo,
   type VehicleProfileId,
 } from '@buggies/game'
-import { LocalPrediction, NetClient } from '@buggies/net'
+import { LocalPrediction, NO_ARRIVAL, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
 import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
@@ -135,6 +136,8 @@ export interface OnlineView {
   goal(): Goal | null
   /** Play for this goal, or for none. */
   setGoal(goal: GoalRequest | null): void
+  /** The portal the car has driven through since last asked, or -1. */
+  portal(): number
   dispose(): void
 }
 
@@ -153,6 +156,7 @@ export async function joinOnline(
   locals: Set<number>,
   mapFor: (seed: number) => Promise<World>,
   sound: Sound,
+  arrival = NO_ARRIVAL,
 ): Promise<OnlineView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
@@ -160,7 +164,7 @@ export async function joinOnline(
       lost = reason
     },
   })
-  const welcome = await client.connect(player.profile, seed)
+  const welcome = await client.connect(player.profile, seed, arrival)
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
   // A mirror of the server's arena: same map, same seats, so the local car
@@ -194,6 +198,9 @@ export async function joinOnline(
   window.addEventListener('keydown', onKey)
 
   let owed = 0
+  // Where the car was before each tick, and the portal it has driven through since last asked.
+  const from = { x: 0, y: 0, z: 0 }
+  let crossed = -1
   let chaseSnapped = false
   // A goal reached: how many the server has counted, and how much longer that is told of.
   let goalsWon = prediction.ownSeat.goalsWon
@@ -230,7 +237,12 @@ export async function joinOnline(
       const input = held ?? NEUTRAL_INPUT
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
+        const before = prediction.ownSeat.vehicle.frame.position
+        from.x = before.x
+        from.y = before.y
+        from.z = before.z
         if (car.tick(client.pump(input), others) === 'resynced') chaseSnapped = false
+        else if (crossed < 0) crossed = portalCrossed(map, from, prediction.ownSeat.vehicle.frame.position)
         owed -= FIXED_TIMESTEP
       }
       others.render(owed / FIXED_TIMESTEP, dt)
@@ -285,6 +297,11 @@ export async function joinOnline(
     },
     setGoal(goal) {
       client.setGoal(goal)
+    },
+    portal() {
+      const through = crossed
+      crossed = -1
+      return through
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

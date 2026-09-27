@@ -1,5 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
-import type { World } from '@buggies/terrain'
+import { isMoon, moonOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -14,6 +14,8 @@ import { Sun } from './sun.ts'
 /** A game that only remembers what was done to it. */
 interface StubGame extends ModeView {
   kind: string
+  /** The portal to say was driven through when next asked, if any. */
+  through: number
   disposed: boolean
   updates: { dt: number; active: boolean }[]
   /** The vehicles everyone was swapped into, where they were, one entry a swap. */
@@ -50,7 +52,7 @@ function stubShowroom(): StubShowroom {
 }
 
 function fakeMap(seed: number): World {
-  return { seed, size: 8, cellSize: 1, districts: [], roads: [], rivers: [], lakes: [], world: { radius: 600 } } as unknown as World
+  return { seed, kind: isMoon(seed) ? 'moon' : 'planet', radius: 600, districts: [], roads: [], rivers: [], lakes: [], portals: [] } as unknown as World
 }
 
 class StubMenu implements ShellMenu {
@@ -87,6 +89,7 @@ function build(refuse: string | null = null) {
   const generated: number[] = []
   const settled: Choice[] = []
   const joined: string[] = []
+  const arrivals: (number | undefined)[] = []
   const hudStates: (HudState | null)[][] = [[], []]
   const rendered: string[] = []
   const menu = new StubMenu()
@@ -127,13 +130,20 @@ function build(refuse: string | null = null) {
       if (refuse !== null) throw new Error(refuse)
       return [{ seed: url.length, players: 3 }]
     },
-    play: async (_scene, url, seed, players, mapFor) => {
+    play: async (_scene, url, seed, players, mapFor, _sound, _sun, arrival) => {
       joined.push(`${url}#${seed}`)
+      arrivals.push(arrival)
       if (refuse !== null) throw new Error(refuse)
       // Two players joining at once both ask for the island.
       await Promise.all(players.map(() => mapFor(seed)))
       const game: StubGame = {
         kind: `${players.map((player) => player.profile).join('+')} on ${seed}`,
+        through: -1,
+        portal() {
+          const through = game.through
+          game.through = -1
+          return through
+        },
         disposed: false,
         updates: [],
         swaps: [],
@@ -186,7 +196,7 @@ function build(refuse: string | null = null) {
     },
     CHOICE,
   )
-  return { shell, menu, games, showrooms, islands, generated, settled, joined, hudStates, rendered }
+  return { shell, menu, games, showrooms, islands, generated, settled, joined, arrivals, hudStates, rendered }
 }
 
 /** Let every promise the shell is waiting on settle. */
@@ -326,6 +336,25 @@ describe('the shell', () => {
   it('asks the server which islands are busy, and has none to offer when it cannot say', async () => {
     expect(await build().shell.listRooms()).toEqual([{ seed: SERVER.length, players: 3 }])
     expect(await build('down').shell.listRooms()).toEqual([])
+  })
+
+  it('takes everyone through a portal to the moon, and back out of the portal they left the planet by', async () => {
+    const { shell, games, joined, arrivals } = build()
+    await shell.start(CHOICE)
+    await settle()
+    games[0]!.through = 2
+    shell.frame(1 / 60)
+    await settle()
+    expect(games[0]!.disposed).toBe(true)
+    expect(joined.at(-1)).toBe(`${SERVER}#${moonOf(5)}`)
+    expect(arrivals.at(-1)).toBe(0)
+    games[1]!.through = 0
+    shell.frame(1 / 60)
+    await settle()
+    expect(joined.at(-1)).toBe(`${SERVER}#5`)
+    expect(arrivals.at(-1)).toBe(2)
+    expect(games[1]!.disposed).toBe(true)
+    expect(shell.onShow).toBe('game')
   })
 
   it('knows when a choice is the game already on', () => {

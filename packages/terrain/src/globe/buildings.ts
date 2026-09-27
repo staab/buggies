@@ -12,10 +12,11 @@ import { STREET_CURB, STREET_WIDTH } from '../roads/constants.ts'
 import type { SphereGround } from '../sphere.ts'
 import type { SphereMountain } from '../sphere-heights.ts'
 import { groundDirections, groundNeighbors } from '../sphere-water.ts'
-import type { WorldBuilding, WorldDistrict, WorldField, WorldProp, WorldRamp, WorldRiver, WorldRoad, WorldRock, WorldSidewalk, WorldTree } from '../world.ts'
+import type { WorldBuilding, WorldDistrict, WorldField, WorldPortal, WorldProp, WorldRamp, WorldRiver, WorldRoad, WorldRock, WorldSidewalk, WorldTree } from '../world.ts'
 import { fillCities } from './city.ts'
 import {
   countryLand,
+  countrySpot,
   moorBoats,
   pitchCamps,
   plantFarms,
@@ -35,7 +36,11 @@ import { coneOffRoadworks, lineArterials, lineRamps, plantInterchanges, raiseSta
 import { planter, worldBuilding, type Site } from './site.ts'
 import { BOAT_SALT, BUILDING_SALT, CAMP_SALT, OBSERVATORY_SALT, PROP_SALT, SIDEWALK_BAND } from './sizes.ts'
 import type { Grid } from './streets.ts'
+import { raisePortals } from './portals.ts'
 import { plantWilds } from './wilds.ts'
+
+/** The dice the portals throw. */
+const PORTAL_SALT = 0x9071a1
 
 /** What stands on a planet's land. */
 export interface GlobeStands {
@@ -46,6 +51,7 @@ export interface GlobeStands {
   readonly ramps: WorldRamp[]
   readonly sidewalks: WorldSidewalk[]
   readonly fields: WorldField[]
+  readonly portals: WorldPortal[]
 }
 
 /**
@@ -120,6 +126,9 @@ export function buildGlobeStands(
   raiseChurches(site, plant)
   raiseWaterTowers(site, cities)
   pitchCamps(site, createRng((seed ^ CAMP_SALT) >>> 0), plant)
+  // The portals throw their own dice, and take their runs before the woods grow over them.
+  const portalRng = createRng((seed ^ PORTAL_SALT) >>> 0)
+  const portals = raisePortals(site, () => countrySpot(site, country, portalRng), portalRng)
   plantWilds(site, seed, mountains, plant)
   return {
     buildings: site.buildings.map((raised) => worldBuilding(raised, radius)),
@@ -129,5 +138,6 @@ export function buildGlobeStands(
     ramps: site.ramps,
     sidewalks: site.sidewalks,
     fields: site.fields,
+    portals,
   }
 }
