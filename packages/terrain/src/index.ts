@@ -15,7 +15,7 @@ export {
   type DistrictMap,
 } from './districts.ts'
 export { computeFlowRouting, findLakes, type FlowRouting } from './flow.ts'
-export { WORLD_SCALE, generateTerrain } from './generate.ts'
+export { PLANET_TERRAIN, WORLD_SCALE, generateTerrain } from './generate.ts'
 export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
 export { insidePolygon, interchangeZones, meetsInterchange } from './interchanges.ts'
 export { deckSpans, lowestDeckOver, type DeckSpan } from './overhead.ts'

@@ -262,6 +262,14 @@ export interface TerrainOptions {
   size?: number
   /** Cells down the map, north to south: as many as across, unless asked for fewer or more. */
   depth?: number
+  /**
+   * How far from the middle of the map, north and south, the land may reach,
+   * as a share of its depth: half, the whole map, unless asked for a band
+   * across its middle.
+   */
+  landBand?: number
+  /** How big the mountains are, as a share of their full width: small islands want small mountains. */
+  mountainScale?: number
   cellSize?: number
   seaLevel?: number
   oceanDepth?: number

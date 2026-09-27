@@ -124,11 +124,16 @@ interface Island {
  * speck to the largest the map holds, and kept far enough in from the edge
  * that its coast is not cut off there. Islands may overlap into one.
  */
-/** A map's extent in world units, across and down, and the shorter of the two, which its scale is taken from. */
+/**
+ * A map's extent in world units, across and down; the shorter of the two,
+ * which its scale is taken from; and how far from its middle, north and
+ * south, the land may reach.
+ */
 interface Extent {
   x: number
   z: number
   short: number
+  band: number
 }
 
 function layIslands(rng: Rng, extent: Extent, largest: number, count: number): Island[] {
@@ -139,7 +144,8 @@ function layIslands(rng: Rng, extent: Extent, largest: number, count: number): I
     // The coast reaches about nine tenths of the radius at most.
     const reach = edge + radius * 0.9
     const marginX = Math.min(reach, extent.x / 2)
-    const marginZ = Math.min(reach, extent.z / 2)
+    // Its coast inside the band as well as the map, as far as it can be.
+    const marginZ = Math.min(Math.max(reach, extent.z / 2 - extent.band + radius * 0.9), extent.z / 2)
     return {
       cx: randomRange(rng, marginX, extent.x - marginX),
       cz: randomRange(rng, marginZ, extent.z - marginZ),
@@ -151,10 +157,13 @@ function layIslands(rng: Rng, extent: Extent, largest: number, count: number): I
 /**
  * Mountains scattered over the islands, each on an island picked in
  * proportion to its area among those big enough to carry one, and standing
- * anywhere within `MOUNTAIN_REACH` of that island's middle.
+ * anywhere within `MOUNTAIN_REACH` of that island's middle. On a map whose
+ * islands are kept small, as a planet's are, the mountains are `scale` their
+ * full width and its root their full height, so they leave room on the land
+ * for its cities.
  */
-function createMountains(rng: Rng, count: number, islands: Island[]): Mountain[] {
-  const hosts = islands.filter((island) => island.radius >= MOUNTAIN_ISLAND_LEAST)
+function createMountains(rng: Rng, count: number, islands: Island[], scale = 1): Mountain[] {
+  const hosts = islands.filter((island) => island.radius >= MOUNTAIN_ISLAND_LEAST * scale)
   const pool = hosts.length > 0 ? hosts : islands.slice(0, 1)
   const total = pool.reduce((sum, island) => sum + island.radius ** 2, 0)
   return Array.from({ length: count }, () => {
@@ -172,7 +181,7 @@ function createMountains(rng: Rng, count: number, islands: Island[]): Mountain[]
     const cx = island.cx + cos(offsetAngle) * offset
     const cz = island.cz + sin(offsetAngle) * offset
 
-    const radius = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
+    const radius = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max) * scale
     const rotation = randomRange(rng, 0, Math.PI * 2)
     const corner = (k: number): { x: number; z: number } => {
       const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
@@ -197,8 +206,8 @@ function createMountains(rng: Rng, count: number, islands: Island[]): Mountain[]
       bz: b.z,
       cx: c.x,
       cz: c.z,
-      skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max),
-      height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max),
+      skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max) * scale,
+      height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max) * Math.sqrt(scale),
     }
   })
 }
@@ -232,6 +241,7 @@ function buildHeights(
   oceanDepth: number,
   islands: Island[],
   largest: number,
+  band: number,
 ): void {
   const { width, depth, cellSize, heights } = field
   const spanX = width * cellSize
@@ -260,8 +270,8 @@ function buildHeights(
       const warpZ =
         (fbm2D(x * warpFrequency + 3.7, z * warpFrequency + 19.2, seed + 211, 4) - 0.5) +
         (fbm2D(x * warpFrequency * 3.7 + 9.4, z * warpFrequency * 3.7 + 13.8, seed + 241, 3) - 0.5) * 0.5
-      // All land fades out before the map's edge.
-      const inside = smoothstep(0, edge, Math.min(x, z, spanX - x, spanZ - z))
+      // All land fades out before the map's edge, and before the edge of the band it keeps to.
+      const inside = smoothstep(0, edge, Math.min(x, z, spanX - x, spanZ - z, band - Math.abs(z - spanZ / 2)))
       // Where islands overlap their land and their domes run together
       // smoothly: a plain maximum would leave a crease along the seam.
       let sea = 1
@@ -711,7 +721,8 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const cellSize = options.cellSize ?? DEFAULTS.cellSize
   const seaLevel = options.seaLevel ?? DEFAULTS.seaLevel
   const oceanDepth = options.oceanDepth ?? DEFAULTS.oceanDepth
-  const extent: Extent = { x: size * cellSize, z: depth * cellSize, short: Math.min(size, depth) * cellSize }
+  const band = (options.landBand ?? 0.5) * depth * cellSize
+  const extent: Extent = { x: size * cellSize, z: depth * cellSize, short: Math.min(size, depth, (band * 2) / cellSize) * cellSize, band }
   const largest = options.islandRadius ?? extent.short * ISLAND_RADIUS_MAX
 
   const rng = createRng(seed)
@@ -723,9 +734,10 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
       randomInt(
         rng,
         MOUNTAIN_COUNT.min,
-        Math.max(MOUNTAIN_COUNT.min, Math.round(MOUNTAIN_COUNT.max * Math.min((extent.x * extent.z) / MOUNTAIN_COUNT_MAP ** 2, 1))),
+        Math.max(MOUNTAIN_COUNT.min, Math.round(MOUNTAIN_COUNT.max * Math.min((extent.x * Math.min(extent.z, band * 2)) / MOUNTAIN_COUNT_MAP ** 2, 1))),
       ),
     islands,
+    options.mountainScale ?? 1,
   )
   // Up to one river a mountain, and always at least one.
   const springs = mountains.filter(() => rng() < RIVER_CHANCE)
@@ -748,7 +760,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   })
 
   const field: Heightfield = { width: size, depth, cellSize, heights: new Float32Array(size * depth) }
-  buildHeights(field, seed, shapes, oceanDepth, islands, largest)
+  buildHeights(field, seed, shapes, oceanDepth, islands, largest, band)
   const islandOf = labelLandMasses(field, seaLevel)
 
   const routing = computeFlowRouting(field, seaLevel)
@@ -816,3 +828,9 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   )
   return map
 }
+/**
+ * A planet's map: once round its equator across, pole to pole down, and its
+ * land kept to a band across the middle, where the map is stretched least
+ * over the sphere.
+ */
+export const PLANET_TERRAIN = { size: 1281, depth: 641, landBand: 0.28, islandRadius: 160, mountainScale: 0.37 } as const satisfies TerrainOptions
