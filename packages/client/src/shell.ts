@@ -1,6 +1,6 @@
 import type { VehicleProfileId } from '@buggies/game'
 import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
-import type { TerrainMap } from '@buggies/terrain'
+import { mapExtent, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -379,9 +379,10 @@ export class Shell implements MenuHost {
       this.view = this.modes.terrainView(made)
       this.scene.add(this.view)
       // View distances ride the world scale so the framing stays the same.
-      const worldSize = made.size * made.cellSize
-      this.scene.fog = new THREE.Fog('#a9cbe6', worldSize * 0.65, worldSize * 2.34)
-      this.sun.centerOn({ x: worldSize / 2, y: 0, z: worldSize / 2 })
+      const extent = mapExtent(made)
+      const across = Math.max(extent.x, extent.z)
+      this.scene.fog = new THREE.Fog('#a9cbe6', across * 0.65, across * 2.34)
+      this.sun.centerOn({ x: extent.x / 2, y: 0, z: extent.z / 2 })
       return made
     })
     this.making = { seed, island }

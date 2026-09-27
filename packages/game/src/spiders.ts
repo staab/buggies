@@ -1,6 +1,6 @@
 import { createRng, v3, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
 import { addMover } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
@@ -95,12 +95,12 @@ export function spiderWaypoint(
   from?: { x: number; z: number },
 ): { x: number; z: number } {
   const rng = createRng(spiderSeed(map, id) + legs * 131)
-  const extent = map.size * map.cellSize
+  const extent = mapExtent(map)
   // Failing that, the point on the land least far into a city.
-  let fallback = { x: extent / 2, z: extent / 2, into: Infinity }
+  let fallback = { x: extent.x / 2, z: extent.z / 2, into: Infinity }
   for (let attempt = 0; attempt < 48; attempt++) {
-    out.x = extent * (0.1 + 0.8 * rng())
-    out.z = extent * (0.1 + 0.8 * rng())
+    out.x = extent.x * (0.1 + 0.8 * rng())
+    out.z = extent.z * (0.1 + 0.8 * rng())
     if (sampleHeight(map.heightfield, out.x, out.z) <= map.seaLevel) continue
     const into = intoCity(map, out.x, out.z)
     if (into <= 0 && (from === undefined || clearOfCities(map, from, out))) return out

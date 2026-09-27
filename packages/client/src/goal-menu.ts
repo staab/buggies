@@ -1,5 +1,5 @@
 import { GOAL_KINDS, GOAL_LABELS, GOAL_TARGET_MOST, type Goal, type GoalKind, type GoalRequest } from '@buggies/game'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
 
 import { drawIsland } from './island-picture.ts'
 
@@ -181,9 +181,9 @@ export class GoalMenu {
     const map = this.host.map()
     if (map === null) return
     const bounds = this.board.getBoundingClientRect()
-    const extent = map.size * map.cellSize
-    const x = ((event.clientX - bounds.left) / bounds.width) * extent
-    const z = ((event.clientY - bounds.top) / bounds.height) * extent
+    const extent = mapExtent(map)
+    const x = ((event.clientX - bounds.left) / bounds.width) * extent.x
+    const z = ((event.clientY - bounds.top) / bounds.height) * extent.z
     this.picked = sampleHeight(map.heightfield, x, z) > map.seaLevel ? { x, z } : null
     this.note.textContent = this.picked === null ? 'Pick a spot on land.' : ''
     this.render()
@@ -219,9 +219,14 @@ export class GoalMenu {
     const map = this.host.map()
     const context = this.board.getContext('2d')
     if (map === null || context === null) return
-    if (this.island?.seed !== map.seed) this.island = { seed: map.seed, picture: drawIsland(map, MAP_PIXELS) }
+    if (this.island?.seed !== map.seed) {
+      this.island = { seed: map.seed, picture: drawIsland(map, MAP_PIXELS) }
+      this.board.width = this.island.picture.width
+      this.board.height = this.island.picture.height
+    }
     context.drawImage(this.island.picture, 0, 0)
-    const scale = MAP_PIXELS / (map.size * map.cellSize)
+    const extent = mapExtent(map)
+    const scale = MAP_PIXELS / Math.max(extent.x, extent.z)
     const here = this.host.position()
     if (here !== null) {
       context.fillStyle = '#6fd3c7'

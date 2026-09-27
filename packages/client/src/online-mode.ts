@@ -17,7 +17,7 @@ import {
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
@@ -164,7 +164,7 @@ export async function joinOnline(
 
   const cameraTuning = createCameraTuning()
   // Far enough to take in the whole island, and the sun beyond it.
-  cameraTuning.far = Math.max(map.size * map.cellSize * 2, SUN_DISTANCE * 1.5)
+  cameraTuning.far = Math.max(Math.max(mapExtent(map).x, mapExtent(map).z) * 2, SUN_DISTANCE * 1.5)
   const chase = new ChaseCamera(cameraTuning)
   chase.setBoundsAt(cameraBounds(map))
   const target = createChaseTarget()

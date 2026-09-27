@@ -50,3 +50,8 @@ export function sampleHeight(field: Heightfield, x: number, z: number): number {
   const bottom = heights[row1 * width + col]! * (1 - tx) + heights[row1 * width + col1]! * tx
   return top * (1 - tz) + bottom * tz
 }
+
+/** How far a map runs, in world units: across it, west to east, and down it, north to south. */
+export function mapExtent(map: { size: number; depth: number; cellSize: number }): { x: number; z: number } {
+  return { x: map.size * map.cellSize, z: map.depth * map.cellSize }
+}

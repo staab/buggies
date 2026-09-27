@@ -124,16 +124,25 @@ interface Island {
  * speck to the largest the map holds, and kept far enough in from the edge
  * that its coast is not cut off there. Islands may overlap into one.
  */
-function layIslands(rng: Rng, worldSize: number, largest: number, count: number): Island[] {
-  const least = Math.min(worldSize * ISLAND_RADIUS_MIN, largest)
-  const edge = worldSize * EDGE_FRACTION
+/** A map's extent in world units, across and down, and the shorter of the two, which its scale is taken from. */
+interface Extent {
+  x: number
+  z: number
+  short: number
+}
+
+function layIslands(rng: Rng, extent: Extent, largest: number, count: number): Island[] {
+  const least = Math.min(extent.short * ISLAND_RADIUS_MIN, largest)
+  const edge = extent.short * EDGE_FRACTION
   return Array.from({ length: count }, (_, i) => {
     const radius = randomRange(rng, i === 0 ? largest * FIRST_ISLAND_LEAST : least, largest)
     // The coast reaches about nine tenths of the radius at most.
-    const margin = Math.min(edge + radius * 0.9, worldSize / 2)
+    const reach = edge + radius * 0.9
+    const marginX = Math.min(reach, extent.x / 2)
+    const marginZ = Math.min(reach, extent.z / 2)
     return {
-      cx: randomRange(rng, margin, worldSize - margin),
-      cz: randomRange(rng, margin, worldSize - margin),
+      cx: randomRange(rng, marginX, extent.x - marginX),
+      cz: randomRange(rng, marginZ, extent.z - marginZ),
       radius,
     }
   })
@@ -225,8 +234,9 @@ function buildHeights(
   largest: number,
 ): void {
   const { width, depth, cellSize, heights } = field
-  const worldSize = width * cellSize
-  const edge = worldSize * EDGE_FRACTION
+  const spanX = width * cellSize
+  const spanZ = depth * cellSize
+  const edge = Math.min(spanX, spanZ) * EDGE_FRACTION
   // The plains are all but flat: what relief they keep is long and low, so a
   // road across them needs no cutting and a car at speed feels nothing of it.
   // The hills are the mountains' skirts.
@@ -251,7 +261,7 @@ function buildHeights(
         (fbm2D(x * warpFrequency + 3.7, z * warpFrequency + 19.2, seed + 211, 4) - 0.5) +
         (fbm2D(x * warpFrequency * 3.7 + 9.4, z * warpFrequency * 3.7 + 13.8, seed + 241, 3) - 0.5) * 0.5
       // All land fades out before the map's edge.
-      const inside = smoothstep(0, edge, Math.min(x, z, worldSize - x, worldSize - z))
+      const inside = smoothstep(0, edge, Math.min(x, z, spanX - x, spanZ - z))
       // Where islands overlap their land and their domes run together
       // smoothly: a plain maximum would leave a crease along the seam.
       let sea = 1
@@ -697,22 +707,23 @@ function scaleWorld(map: TerrainMap, scale: number): void {
  */
 export function generateTerrain(seed: number, options: TerrainOptions = {}): TerrainMap {
   const size = options.size ?? DEFAULTS.size
+  const depth = options.depth ?? size
   const cellSize = options.cellSize ?? DEFAULTS.cellSize
   const seaLevel = options.seaLevel ?? DEFAULTS.seaLevel
   const oceanDepth = options.oceanDepth ?? DEFAULTS.oceanDepth
-  const worldSize = size * cellSize
-  const largest = options.islandRadius ?? worldSize * ISLAND_RADIUS_MAX
+  const extent: Extent = { x: size * cellSize, z: depth * cellSize, short: Math.min(size, depth) * cellSize }
+  const largest = options.islandRadius ?? extent.short * ISLAND_RADIUS_MAX
 
   const rng = createRng(seed)
   const islandCount = options.islandCount ?? randomInt(rng, ISLAND_COUNT.min, options.islandsMost ?? ISLAND_COUNT.max)
-  const islands = layIslands(rng, worldSize, largest, islandCount)
+  const islands = layIslands(rng, extent, largest, islandCount)
   const mountains = createMountains(
     rng,
     options.mountainCount ??
       randomInt(
         rng,
         MOUNTAIN_COUNT.min,
-        Math.max(MOUNTAIN_COUNT.min, Math.round(MOUNTAIN_COUNT.max * Math.min((worldSize / MOUNTAIN_COUNT_MAP) ** 2, 1))),
+        Math.max(MOUNTAIN_COUNT.min, Math.round(MOUNTAIN_COUNT.max * Math.min((extent.x * extent.z) / MOUNTAIN_COUNT_MAP ** 2, 1))),
       ),
     islands,
   )
@@ -736,7 +747,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     }
   })
 
-  const field: Heightfield = { width: size, depth: size, cellSize, heights: new Float32Array(size * size) }
+  const field: Heightfield = { width: size, depth, cellSize, heights: new Float32Array(size * depth) }
   buildHeights(field, seed, shapes, oceanDepth, islands, largest)
   const islandOf = labelLandMasses(field, seaLevel)
 
@@ -760,6 +771,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const map: TerrainMap = {
     seed,
     size,
+    depth,
     cellSize,
     seaLevel,
     heightfield: field,

@@ -70,7 +70,7 @@ function traceCourse(field: Heightfield, routing: FlowRouting, source: number, s
   const { width, cellSize, heights } = field
   const { filled, flow } = routing
   const points: RiverPoint[] = []
-  const maxSteps = width * width
+  const maxSteps = width * field.depth
   // The source is a cell of the field, and so is everything the flow leads to.
   const sourceY = filled[source]!
   const drop = Math.max(sourceY - seaLevel, 1e-3)

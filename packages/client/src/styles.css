@@ -162,7 +162,7 @@ body {
 .goals .spot canvas {
   display: block;
   width: 100%;
-  aspect-ratio: 1;
+  height: auto;
   border-radius: 8px;
   cursor: crosshair;
 }

@@ -258,7 +258,10 @@ export interface Tree {
 }
 
 export interface TerrainOptions {
+  /** Cells across the map, west to east. */
   size?: number
+  /** Cells down the map, north to south: as many as across, unless asked for fewer or more. */
+  depth?: number
   cellSize?: number
   seaLevel?: number
   oceanDepth?: number
@@ -317,7 +320,9 @@ export interface Prop {
 
 export interface TerrainMap {
   seed: number
+  /** Cells across the map, west to east, and down it, north to south. */
   size: number
+  depth: number
   cellSize: number
   seaLevel: number
   heightfield: Heightfield

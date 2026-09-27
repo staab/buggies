@@ -1,5 +1,5 @@
 import type { IslandMark } from '@buggies/net'
-import type { TerrainMap } from '@buggies/terrain'
+import { mapExtent, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
@@ -28,14 +28,15 @@ export function islandSummary(map: TerrainMap): string {
  * menu is up, since the menu is what this is for.
  */
 export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView {
-  const worldSize = map.size * map.cellSize
+  const extent = mapExtent(map)
+  const worldSize = Math.max(extent.x, extent.z)
   const camera = new THREE.PerspectiveCamera(55, 1, 0.5, worldSize * 6.5)
-  camera.position.set(worldSize * 0.85, worldSize * 0.8, worldSize * 1.15)
+  camera.position.set(extent.x / 2 + worldSize * 0.35, worldSize * 0.8, extent.z / 2 + worldSize * 0.65)
 
   const controls = new OrbitControls(camera, surface)
   controls.enableDamping = true
   controls.maxPolarAngle = Math.PI / 2.05
-  controls.target.set(worldSize / 2, 0, worldSize / 2)
+  controls.target.set(extent.x / 2, 0, extent.z / 2)
   controls.update()
 
   const beacons = new THREE.Group()

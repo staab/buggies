@@ -1,6 +1,6 @@
 import * as exact from '@buggies/physics'
 import { FIXED_TIMESTEP, v3 } from '@buggies/physics'
-import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
+import { buildWaterLevels, DRY, mapExtent, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
@@ -782,10 +782,10 @@ function fireRobots(arena: Arena): void {
  * put back where the map stands it, at rest.
  */
 function restoreProps(arena: Arena): void {
-  const worldSize = arena.map.size * arena.map.cellSize
+  const extent = mapExtent(arena.map)
   for (const prop of arena.props) {
     const { x, y, z } = prop.body.translation()
-    if (y >= arena.map.seaLevel - ABYSS && x >= 0 && z >= 0 && x <= worldSize && z <= worldSize) continue
+    if (y >= arena.map.seaLevel - ABYSS && x >= 0 && z >= 0 && x <= extent.x && z <= extent.z) continue
     putPropBack(prop)
   }
 }
@@ -1026,7 +1026,7 @@ const WRECK_PATIENCE = 270
  */
 export function isLost(arena: Arena, seat: Seat): boolean {
   const { x, y, z } = seat.vehicle.frame.position
-  const worldSize = arena.map.size * arena.map.cellSize
+  const extent = mapExtent(arena.map)
   return (
     seat.vehicle.wrecked ||
     // A hull that floats is where it means to be on the water, however far out.
@@ -1034,8 +1034,8 @@ export function isLost(arena: Arena, seat: Seat): boolean {
     y < arena.map.seaLevel - ABYSS ||
     x < 0 ||
     z < 0 ||
-    x > worldSize ||
-    z > worldSize
+    x > extent.x ||
+    z > extent.z
   )
 }
 

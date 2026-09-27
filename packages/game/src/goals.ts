@@ -50,11 +50,11 @@ export interface GoalSeat {
 }
 
 /** A goal as asked for, if it is one that can be played for on a map this wide; `null` otherwise. */
-export function validGoal(request: GoalRequest, extent: number): GoalRequest | null {
+export function validGoal(request: GoalRequest, extent: { x: number; z: number }): GoalRequest | null {
   if (!GOAL_KINDS.includes(request.kind)) return null
   if (request.kind === 'location') {
     const { x, z } = request
-    if (!Number.isFinite(x) || !Number.isFinite(z) || x < 0 || z < 0 || x > extent || z > extent) return null
+    if (!Number.isFinite(x) || !Number.isFinite(z) || x < 0 || z < 0 || x > extent.x || z > extent.z) return null
     return { kind: 'location', target: 0, x, z }
   }
   const { target } = request

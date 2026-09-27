@@ -1,6 +1,6 @@
 import { createRng, v3, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { DRY, roadLift, sampleHeight, waterLevelAt, type Road, type TerrainMap } from '@buggies/terrain'
+import { DRY, mapExtent, roadLift, sampleHeight, waterLevelAt, type Road, type TerrainMap } from '@buggies/terrain'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
@@ -161,17 +161,19 @@ export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, g
   }
   // The land is cut into a cell a slot, so that pickups off the road are spread over all of it.
   const grid = Math.ceil(Math.sqrt(shares))
-  const extent = map.size * map.cellSize
-  const span = extent - 2 * LAND_MARGIN
-  const cell = span / grid
+  const extent = mapExtent(map)
+  const spanX = extent.x - 2 * LAND_MARGIN
+  const spanZ = extent.z - 2 * LAND_MARGIN
+  const cellX = spanX / grid
+  const cellZ = spanZ / grid
   const patch = share % (grid * grid)
-  const left = LAND_MARGIN + (patch % grid) * cell
-  const top = LAND_MARGIN + Math.floor(patch / grid) * cell
+  const left = LAND_MARGIN + (patch % grid) * cellX
+  const top = LAND_MARGIN + Math.floor(patch / grid) * cellZ
   for (let attempt = 0; attempt < LAND_TRIES; attempt++) {
     // Half the tries in its own patch; if that is lake or sea, anywhere.
     const own = attempt < LAND_TRIES / 2
-    const x = own ? left + rng() * cell : LAND_MARGIN + rng() * span
-    const z = own ? top + rng() * cell : LAND_MARGIN + rng() * span
+    const x = own ? left + rng() * cellX : LAND_MARGIN + rng() * spanX
+    const z = own ? top + rng() * cellZ : LAND_MARGIN + rng() * spanZ
     if (waterLevelAt(map.heightfield, water, x, z) !== DRY) continue
     out.x = x
     out.y = sampleHeight(map.heightfield, x, z) + PICKUP_HEIGHT
@@ -182,9 +184,9 @@ export function pickupSpot(map: TerrainMap, water: Float32Array, slot: number, g
     const spot = roadSpot(map, rng, share, shares, out)
     if (spot !== null) return spot
   }
-  out.x = extent / 2
-  out.y = sampleHeight(map.heightfield, extent / 2, extent / 2) + PICKUP_HEIGHT
-  out.z = extent / 2
+  out.x = extent.x / 2
+  out.y = sampleHeight(map.heightfield, extent.x / 2, extent.z / 2) + PICKUP_HEIGHT
+  out.z = extent.z / 2
   return out
 }
 

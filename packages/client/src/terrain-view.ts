@@ -1,4 +1,5 @@
 import {
+  mapExtent,
   boatAt,
   DISTRICT_CITY,
   DISTRICT_SUBURB,
@@ -1026,7 +1027,6 @@ function groundPiece(
 function buildGround(map: TerrainMap, hole: Uint8Array, segments: BoreSegment[], margin: number): THREE.Group {
   const field = map.heightfield
   const { width, depth, cellSize } = field
-  const worldSize = width * cellSize
   const group = new THREE.Group()
   group.name = 'ground'
   const colors = groundColors(map)
@@ -1035,27 +1035,28 @@ function buildGround(map: TerrainMap, hole: Uint8Array, segments: BoreSegment[],
   // A tile is a whole number of cells, as near the size asked for as that comes.
   const tileCells = Math.max(1, Math.round(GROUND_TILE / cellSize))
   const tileMeters = tileCells * cellSize
-  const tiles = Math.ceil(worldSize / tileMeters)
+  const tilesX = Math.ceil((width * cellSize) / tileMeters)
+  const tilesZ = Math.ceil((depth * cellSize) / tileMeters)
   const tileTexels = Math.round(tileMeters * TEXELS_PER_METER)
   // What is painted on each tile, in the order it goes on.
-  const painted: Paint[][] = Array.from({ length: tiles * tiles }, () => [])
+  const painted: Paint[][] = Array.from({ length: tilesX * tilesZ }, () => [])
   const border = 1 / TEXELS_PER_METER
   for (const paint of paints) {
     const fromCol = Math.max(Math.floor((paint.minX - border) / tileMeters), 0)
-    const toCol = Math.min(Math.floor((paint.maxX + border) / tileMeters), tiles - 1)
+    const toCol = Math.min(Math.floor((paint.maxX + border) / tileMeters), tilesX - 1)
     const fromRow = Math.max(Math.floor((paint.minZ - border) / tileMeters), 0)
-    const toRow = Math.min(Math.floor((paint.maxZ + border) / tileMeters), tiles - 1)
+    const toRow = Math.min(Math.floor((paint.maxZ + border) / tileMeters), tilesZ - 1)
     for (let row = fromRow; row <= toRow; row++) {
-      for (let col = fromCol; col <= toCol; col++) painted[row * tiles + col]!.push(paint)
+      for (let col = fromCol; col <= toCol; col++) painted[row * tilesX + col]!.push(paint)
     }
   }
   const tileOf = (col: number, row: number): number =>
-    Math.min(Math.floor(row / tileCells), tiles - 1) * tiles + Math.min(Math.floor(col / tileCells), tiles - 1)
+    Math.min(Math.floor(row / tileCells), tilesZ - 1) * tilesX + Math.min(Math.floor(col / tileCells), tilesX - 1)
 
   const textured = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 })
-  for (let row = 0; row < tiles; row++) {
-    for (let col = 0; col < tiles; col++) {
-      const tile = row * tiles + col
+  for (let row = 0; row < tilesZ; row++) {
+    for (let col = 0; col < tilesX; col++) {
+      const tile = row * tilesX + col
       if (painted[tile]!.length === 0) continue
       const size = tileTexels + 2
       const canvas: Canvas = { data: new Uint8Array(size * size * 4), x0: col * tileTexels - 1, z0: row * tileTexels - 1, size }
@@ -2508,7 +2509,7 @@ export function moveBoats(view: THREE.Object3D, seconds: number): void {
  */
 export function createTerrainView(map: TerrainMap): THREE.Group {
   const group = new THREE.Group()
-  const worldSize = map.size * map.cellSize
+  const extent = mapExtent(map)
   const waterMaterial = new THREE.MeshStandardMaterial({
     color: new THREE.Color('#2f6f9f'),
     transparent: true,
@@ -2525,10 +2526,10 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     buildGround(map, hole, segments, map.cellSize * 0.5),
   )
 
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(extent.x, extent.z), waterMaterial)
   sea.name = 'water'
   sea.rotation.x = -Math.PI / 2
-  sea.position.set(worldSize / 2, map.seaLevel + 0.02, worldSize / 2)
+  sea.position.set(extent.x / 2, map.seaLevel + 0.02, extent.z / 2)
   group.add(sea)
 
   if (map.lakes.length > 0) {

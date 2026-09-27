@@ -1,6 +1,6 @@
 import { createRng, v3, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { roadLift, sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { mapExtent, roadLift, sampleHeight, type TerrainMap } from '@buggies/terrain'
 import { addForceAlong, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
 import { nearestRoadSpotTo } from './spawns.ts'
@@ -90,14 +90,14 @@ function groundAt(map: TerrainMap, x: number, z: number): number {
 /** Where a saucer cruises to next: a point over the land, picked by how many it has reached. */
 export function waypoint(map: TerrainMap, ufo: Ufo, out: { x: number; z: number }): { x: number; z: number } {
   const rng = createRng(ufoSeed(map, ufo.id) + ufo.legs * 31)
-  const extent = map.size * map.cellSize
+  const extent = mapExtent(map)
   for (let attempt = 0; attempt < 24; attempt++) {
-    out.x = extent * (0.1 + 0.8 * rng())
-    out.z = extent * (0.1 + 0.8 * rng())
+    out.x = extent.x * (0.1 + 0.8 * rng())
+    out.z = extent.z * (0.1 + 0.8 * rng())
     if (sampleHeight(map.heightfield, out.x, out.z) > map.seaLevel) return out
   }
-  out.x = extent / 2
-  out.z = extent / 2
+  out.x = extent.x / 2
+  out.z = extent.z / 2
   return out
 }
 

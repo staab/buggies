@@ -1,5 +1,5 @@
 import * as exact from '@buggies/physics'
-import { ROAD_GRADE, ROAD_TUNNEL, roadLift, type Road, type RoadPoint, type TerrainMap } from '@buggies/terrain'
+import { ROAD_GRADE, ROAD_TUNNEL, mapExtent, roadLift, type Road, type RoadPoint, type TerrainMap } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
 
 // The exact trigonometry, copied into this module: called through the import binding it
@@ -83,10 +83,10 @@ function nearestGradeSpot(map: TerrainMap): RoadSpot | null {
 }
 
 function nearestGradeSpotOn(map: TerrainMap, roads: Road[]): RoadSpot | null {
-  const worldSize = map.size * map.cellSize
+  const extent = mapExtent(map)
   const district = map.districts[0]
-  const targetX = district?.cx ?? worldSize / 2
-  const targetZ = district?.cz ?? worldSize / 2
+  const targetX = district?.cx ?? extent.x / 2
+  const targetZ = district?.cz ?? extent.z / 2
 
   let best: RoadSpot | null = null
   let bestDistance = Infinity
@@ -142,8 +142,8 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
 export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
   const first = nearestGradeSpot(map)
   if (first === null) {
-    const worldSize = map.size * map.cellSize
-    const middle = { x: worldSize / 2, y: 0, z: worldSize / 2 }
+    const extent = mapExtent(map)
+    const middle = { x: extent.x / 2, y: 0, z: extent.z / 2 }
     return Array.from({ length: count }, (_, i) => ({
       position: { ...middle, z: middle.z + i * SPAWN_SPACING },
       yaw: 0,

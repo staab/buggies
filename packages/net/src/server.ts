@@ -1,3 +1,4 @@
+import { mapExtent } from '@buggies/terrain'
 import {
   NPC_CARS,
   advance,
@@ -283,7 +284,7 @@ export class GameServer implements TransportHandlers {
 
     if (messageTypeOf(payload) === CLIENT_GOAL) {
       const request = decodeGoal(payload)
-      const extent = arena.map.size * arena.map.cellSize
+      const extent = mapExtent(arena.map)
       const goal = request === null ? null : request === undefined ? undefined : validGoal(request, extent)
       if (goal === undefined || (request !== null && goal === null)) {
         this.reject(connection, REJECT_MALFORMED_MESSAGE)

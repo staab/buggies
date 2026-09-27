@@ -13,7 +13,7 @@ import {
   vsub,
   type Vec3,
 } from '@buggies/physics'
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
 import {
   WORLD_UP,
   addForceAlong,
@@ -1403,7 +1403,7 @@ function useAtOnce(arena: Battlefield, seat: Gunner): boolean {
  */
 export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
   const { map, rockets, seats, tick } = arena
-  const extent = map.size * map.cellSize
+  const extent = mapExtent(map)
   for (let i = rockets.length - 1; i >= 0; i--) {
     const rocket = rockets[i]
     if (rocket === undefined) continue
@@ -1432,7 +1432,7 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
     vaddScaled(rocket.position, rocket.position, rocket.velocity, dt)
     const { x, y, z } = rocket.position
     let spent = tick - rocket.bornTick >= ROCKET_LIFE_TICKS
-    spent ||= x < 0 || z < 0 || x > extent || z > extent || y <= sampleHeight(map.heightfield, x, z)
+    spent ||= x < 0 || z < 0 || x > extent.x || z > extent.z || y <= sampleHeight(map.heightfield, x, z)
     if (!spent) {
       for (const other of seats) {
         if (other.id === rocket.owner || !other.occupied || other.vehicle.wrecked) continue

@@ -1,4 +1,4 @@
-import { sampleHeight, type TerrainMap } from '@buggies/terrain'
+import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
 
 /** Mix two colors, `t` of the way from the first to the second. */
 function mix(a: readonly number[], b: readonly number[], t: number): number[] {
@@ -12,22 +12,25 @@ const HIGH = [150, 128, 96]
 const PEAK = [226, 226, 222]
 
 /**
- * The island from above, as a picture this many pixels a side: the sea by
- * its depth, the land by its height, the rivers and the roads over it.
+ * The island from above, as a picture this many pixels along its longer
+ * side: the sea by its depth, the land by its height, the rivers and the
+ * roads over it.
  */
 export function drawIsland(map: TerrainMap, pixels: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
-  canvas.width = pixels
-  canvas.height = pixels
+  const extent = mapExtent(map)
+  const scale = pixels / Math.max(extent.x, extent.z)
+  const across = Math.round(extent.x * scale)
+  const down = Math.round(extent.z * scale)
+  canvas.width = across
+  canvas.height = down
   const context = canvas.getContext('2d')
   if (context === null) return canvas
-  const extent = map.size * map.cellSize
-  const scale = pixels / extent
   let highest = map.seaLevel + 1
   for (const height of map.heightfield.heights) highest = Math.max(highest, height)
-  const image = context.createImageData(pixels, pixels)
-  for (let row = 0; row < pixels; row++) {
-    for (let col = 0; col < pixels; col++) {
+  const image = context.createImageData(across, down)
+  for (let row = 0; row < down; row++) {
+    for (let col = 0; col < across; col++) {
       const height = sampleHeight(map.heightfield, (col + 0.5) / scale, (row + 0.5) / scale)
       const color =
         height <= map.seaLevel
@@ -36,7 +39,7 @@ export function drawIsland(map: TerrainMap, pixels: number): HTMLCanvasElement {
               const up = (height - map.seaLevel) / (highest - map.seaLevel)
               return up < 0.5 ? mix(LOW, HIGH, up * 2) : mix(HIGH, PEAK, (up - 0.5) * 2)
             })()
-      const at = (row * pixels + col) * 4
+      const at = (row * across + col) * 4
       image.data[at] = color[0]!
       image.data[at + 1] = color[1]!
       image.data[at + 2] = color[2]!

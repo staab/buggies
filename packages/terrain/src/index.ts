@@ -4,6 +4,7 @@ export {
   heightAt,
   onGround,
   sampleHeight,
+  mapExtent,
 } from './heightfield.ts'
 export { BOAT_WANDER, boatAt, generateBuildings } from './buildings.ts'
 export {
