@@ -1,5 +1,5 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
-import { quatFromYaw } from '@buggies/physics'
+import { FLAT, type WorldShape } from '@buggies/physics'
 import {
   ROUND_KINDS,
   ROAD_GRADE,
@@ -25,7 +25,8 @@ import {
   type TerrainMap,
 } from '@buggies/terrain'
 
-import {GROUND_GROUPS, WALL_GROUPS} from './groups.ts'
+import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
+import { bendPositions, placeOnShape } from './placement.ts'
 
 const GROUND_FRICTION = 1.0
 const GROUND_RESTITUTION = 0
@@ -152,7 +153,7 @@ const LANES = 3
  * a tunnel the deck runs level to the wall. A surface road is the ground
  * wherever it is at grade, so only its bridges are built.
  */
-function addRoads(world: RAPIER.World, map: TerrainMap): void {
+function addRoads(world: RAPIER.World, map: TerrainMap, shape: WorldShape): void {
   const positions: number[] = []
   const indices: number[] = []
   const field = map.heightfield
@@ -191,7 +192,7 @@ function addRoads(world: RAPIER.World, map: TerrainMap): void {
 
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   world.createCollider(
-    RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices))
+    RAPIER.ColliderDesc.trimesh(bendPositions(shape, positions), new Uint32Array(indices))
       .setCollisionGroups(GROUND_GROUPS)
       .setFriction(ROAD_FRICTION)
       .setRestitution(GROUND_RESTITUTION),
@@ -253,10 +254,10 @@ function boredGround(map: TerrainMap): Float32Array {
  * chassis corner scraping across a seam otherwise catches on the edge and
  * the car stops dead, however slight the bend.
  */
-function addWall(world: RAPIER.World, positions: Float32Array, indices: Uint32Array): void {
+function addWall(world: RAPIER.World, positions: Float32Array, indices: Uint32Array, shape: WorldShape): void {
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   world.createCollider(
-    RAPIER.ColliderDesc.trimesh(positions, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
+    RAPIER.ColliderDesc.trimesh(bendPositions(shape, positions), indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
       .setCollisionGroups(WALL_GROUPS)
       .setFriction(WALL_FRICTION)
       .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
@@ -267,19 +268,19 @@ function addWall(world: RAPIER.World, positions: Float32Array, indices: Uint32Ar
 }
 
 /** The shell around every tunnel, driven against from inside and out. */
-function addTunnelShells(world: RAPIER.World, map: TerrainMap): void {
+function addTunnelShells(world: RAPIER.World, map: TerrainMap, shape: WorldShape): void {
   for (const road of map.roads) {
     const shell = tunnelShellMesh(road, shellWall(map))
     if (shell === null) continue
-    addWall(world, shell.positions, shell.indices)
+    addWall(world, shell.positions, shell.indices, shape)
   }
 }
 
 /** Guardrails along the given runs, as the wall their mesh draws. */
-export function addRailRuns(world: RAPIER.World, runs: RailRun[]): void {
+export function addRailRuns(world: RAPIER.World, runs: RailRun[], shape: WorldShape = FLAT): void {
   if (runs.length === 0) return
   const mesh = railMesh(runs)
-  addWall(world, mesh.positions, mesh.indices)
+  addWall(world, mesh.positions, mesh.indices, shape)
 }
 
 /** A trunk is this wide, whatever the crown; only the trunk is anything to hit. */
@@ -292,7 +293,7 @@ const TRUNK_RADIUS = 0.35
  * like a wall, so a car that clips a corner scrapes past rather than
  * sticking to it.
  */
-function addBuildings(world: RAPIER.World, map: TerrainMap): void {
+function addBuildings(world: RAPIER.World, map: TerrainMap, shape: WorldShape): void {
   if (map.buildings.length === 0 && map.trees.length === 0 && map.rocks.length === 0) return
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   const slick = (desc: RAPIER.ColliderDesc): RAPIER.ColliderDesc =>
@@ -301,21 +302,26 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
       .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
       .setRestitution(0)
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min)
+  // Each where the chart has its middle, stood upright there and as big as the chart is there.
+  const stand = (desc: (scale: number) => RAPIER.ColliderDesc, x: number, middle: number, z: number, yaw: number): void => {
+    const { position, rotation, scale } = placeOnShape(shape, x, middle, z, yaw)
+    world.createCollider(slick(desc(scale).setTranslation(position.x, position.y, position.z).setRotation(rotation)), body)
+  }
   for (const building of map.buildings) {
     // A boat drifts about where it lies, a body of its own that the game moves.
     if (building.kind === 'boat') continue
     const halfHeight = (building.top - building.bottom) / 2
     // The round towers are cylinders; everything else is the box it is drawn as.
-    const shape = ROUND_KINDS.includes(building.kind)
-      ? RAPIER.ColliderDesc.cylinder(halfHeight, building.width / 2)
-      : RAPIER.ColliderDesc.cuboid(building.width / 2, halfHeight, building.depth / 2)
-    world.createCollider(
-      slick(
-        shape
-          .setTranslation(building.x, (building.top + building.bottom) / 2, building.z)
-          .setRotation(quatFromYaw(building.yaw)),
-      ),
-      body,
+    const round = ROUND_KINDS.includes(building.kind)
+    stand(
+      (scale) =>
+        round
+          ? RAPIER.ColliderDesc.cylinder(halfHeight * scale, (building.width / 2) * scale)
+          : RAPIER.ColliderDesc.cuboid((building.width / 2) * scale, halfHeight * scale, (building.depth / 2) * scale),
+      building.x,
+      (building.top + building.bottom) / 2,
+      building.z,
+      building.yaw,
     )
   }
   // A trunk is a wall to the wheels as well: a wheel hanging past the chassis
@@ -323,55 +329,114 @@ function addBuildings(world: RAPIER.World, map: TerrainMap): void {
   // suspension would jack the car up onto the tree and hold it there.
   for (const tree of map.trees) {
     if (tree.kind === 'shrub') continue
-    world.createCollider(
-      slick(
-        RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS)
-          .setTranslation(tree.x, tree.bottom + tree.height / 2, tree.z)
-          .setCollisionGroups(WALL_GROUPS),
-      ),
-      body,
+    stand(
+      (scale) => RAPIER.ColliderDesc.cylinder((tree.height / 2) * scale, TRUNK_RADIUS * scale).setCollisionGroups(WALL_GROUPS),
+      tree.x,
+      tree.bottom + tree.height / 2,
+      tree.z,
+      0,
     )
   }
   // A boulder is a wall to the wheels for the same reason a trunk is.
   for (const rock of map.rocks) {
     if (rock.kind !== 'boulder') continue
     const half = rock.size / 2
-    world.createCollider(
-      slick(
-        RAPIER.ColliderDesc.cuboid(half, half, half)
-          .setTranslation(rock.x, rock.bottom + half, rock.z)
-          .setRotation(quatFromYaw(rock.yaw))
-          .setCollisionGroups(WALL_GROUPS),
-      ),
-      body,
+    stand(
+      (scale) => RAPIER.ColliderDesc.cuboid(half * scale, half * scale, half * scale).setCollisionGroups(WALL_GROUPS),
+      rock.x,
+      rock.bottom + half,
+      rock.z,
+      rock.yaw,
     )
   }
 }
 
 /** The guardrails of a map. */
-function addRails(world: RAPIER.World, map: TerrainMap): void {
-  addRailRuns(world, railRuns(map.roads))
+function addRails(world: RAPIER.World, map: TerrainMap, shape: WorldShape): void {
+  addRailRuns(world, railRuns(map.roads), shape)
 }
 
 /**
  * Put a generated island into a physics world: the ground, the roads on it,
- * the tunnels through it and the rails along it.
+ * the tunnels through it and the rails along it, laid on the flat or
+ * wrapped round a planet.
  */
-export function addTerrain(world: RAPIER.World, map: TerrainMap): void {
-  addHeightfield(world, map.heightfield, boredGround(map))
-  addRoads(world, map)
-  addTunnelShells(world, map)
-  addRails(world, map)
-  addBuildings(world, map)
-  addRamps(world, map.ramps)
-  addSidewalks(world, map)
+export function addTerrain(world: RAPIER.World, map: TerrainMap, shape: WorldShape = FLAT): void {
+  const heights = boredGround(map)
+  if (shape.kind === 'flat') addHeightfield(world, map.heightfield, heights)
+  else addPlanetGround(world, map, heights, shape)
+  addRoads(world, map, shape)
+  addTunnelShells(world, map, shape)
+  addRails(world, map, shape)
+  addBuildings(world, map, shape)
+  addRamps(world, map.ramps, shape)
+  addSidewalks(world, map, shape)
+}
+
+/** How far under the sea the ground is laid on a planet: deeper than this, the sea floor is left out. */
+const PLANET_FLOOR_DEPTH = 6
+
+/**
+ * The ground of a planet, as a mesh of the cells that matter: every cell
+ * with a corner on land or in the shallows, cut in two, each corner
+ * wrapped round the sphere. The deep sea floor is left out, and a sphere
+ * under it all catches anything that sinks that far.
+ */
+function addPlanetGround(world: RAPIER.World, map: TerrainMap, heights: Float32Array, shape: WorldShape): void {
+  const { width, depth, cellSize } = map.heightfield
+  const floor = map.seaLevel - PLANET_FLOOR_DEPTH
+  const used = new Int32Array(width * depth).fill(-1)
+  const positions: number[] = []
+  const indices: number[] = []
+  const corner = (col: number, row: number): number => {
+    const cell = row * width + col
+    const known = used[cell]!
+    if (known >= 0) return known
+    const index = positions.length / 3
+    positions.push(col * cellSize, heights[cell]!, row * cellSize)
+    used[cell] = index
+    return index
+  }
+  for (let row = 0; row + 1 < depth; row++) {
+    for (let col = 0; col + 1 < width; col++) {
+      const a = row * width + col
+      if (Math.max(heights[a]!, heights[a + 1]!, heights[a + width]!, heights[a + width + 1]!) < floor) continue
+      const nw = corner(col, row)
+      const ne = corner(col + 1, row)
+      const sw = corner(col, row + 1)
+      const se = corner(col + 1, row + 1)
+      // Wound to face up, away from the planet's middle, as the chart's ground faces up the y axis.
+      indices.push(nw, sw, ne, ne, sw, se)
+    }
+  }
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
+  if (indices.length > 0) {
+    world.createCollider(
+      RAPIER.ColliderDesc.trimesh(bendPositions(shape, positions), new Uint32Array(indices), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
+        .setCollisionGroups(GROUND_GROUPS)
+        .setFriction(GROUND_FRICTION)
+        .setRestitution(GROUND_RESTITUTION),
+      body,
+    )
+  }
+  if (shape.kind === 'planet') {
+    let deepest = floor
+    for (const height of heights) deepest = Math.min(deepest, height)
+    world.createCollider(
+      RAPIER.ColliderDesc.ball(shape.planet.radius + deepest - 1)
+        .setCollisionGroups(GROUND_GROUPS)
+        .setFriction(GROUND_FRICTION)
+        .setRestitution(GROUND_RESTITUTION),
+      body,
+    )
+  }
 }
 
 /**
  * The ramps on the road shoulders: solid kickers, ground to the wheels like
  * a road, built facet by facet as convex slices from the foot up to the lip.
  */
-export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
+export function addRamps(world: RAPIER.World, ramps: Ramp[], shape: WorldShape = FLAT): void {
   if (ramps.length === 0) return
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   for (const ramp of ramps) {
@@ -387,7 +452,7 @@ export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
       const bx = ramp.x + ramp.dx * b.along
       const bz = ramp.z + ramp.dz * b.along
       const slice = RAPIER.ColliderDesc.convexHull(
-        new Float32Array([
+        bendPositions(shape, [
           ax + sx, a.height, az + sz,
           ax - sx, a.height, az - sz,
           bx + sx, b.height, bz + sz,
@@ -411,12 +476,12 @@ export function addRamps(world: RAPIER.World, ramps: Ramp[]): void {
 }
 
 /** The sidewalks around the city blocks: a curb's step up off the street, driven on like the road. */
-export function addSidewalks(world: RAPIER.World, map: TerrainMap): void {
+export function addSidewalks(world: RAPIER.World, map: TerrainMap, shape: WorldShape = FLAT): void {
   if (map.sidewalks.length === 0) return
   const { positions, indices } = sidewalkMesh(map.heightfield, map.sidewalks)
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   world.createCollider(
-    RAPIER.ColliderDesc.trimesh(positions, indices)
+    RAPIER.ColliderDesc.trimesh(bendPositions(shape, positions), indices)
       .setCollisionGroups(GROUND_GROUPS)
       .setFriction(ROAD_FRICTION)
       .setRestitution(GROUND_RESTITUTION),

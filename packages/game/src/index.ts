@@ -378,9 +378,10 @@ import {
 const pulled = v3()
 
 /**
- * On a planet, the world's own gravity is none, and every car and prop is
- * pulled toward its middle here instead, by its own weight. On the flat,
- * the world's gravity pulls everything down its y axis, and this does nothing.
+ * On a planet, the world's own gravity is none, and every prop is pulled
+ * toward its middle here instead, by its own weight; a car pulls itself, as
+ * it is stepped. On the flat, the world's gravity pulls everything down its
+ * y axis, and this does nothing.
  */
 function pullToMiddle(arena: Arena, gravity: number): void {
   if (arena.shape.kind === 'flat') return
@@ -389,7 +390,6 @@ function pullToMiddle(arena: Arena, gravity: number): void {
     shapeUp(arena.shape, body.translation(), pulled)
     addForceAlong(body, pulled, -body.mass() * gravity)
   }
-  for (const seat of arena.seats) if (seat.occupied) pull(seat.vehicle.body)
   for (const prop of arena.props) pull(prop.body)
 }
 

@@ -76,4 +76,5 @@ export {
   WORLD_UP,
   worldGravity,
 } from './world.ts'
-export { CONE_SIDES, PROP_SHAPES, addMover, addProp, propRise, propRotation, type PropShape } from './props.ts'
+export { CONE_SIDES, PROP_SHAPES, addMover, addProp, propPlacement, propRise, propRotation, type PropShape } from './props.ts'
+export { bendPositions, placeOnShape, type Placement } from './placement.ts'

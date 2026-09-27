@@ -1,5 +1,8 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
+import { FLAT, qmultiply, qrotate, v3, type Quat, type Vec3, type WorldShape } from '@buggies/physics'
 import type { Prop, PropKind } from '@buggies/terrain'
+
+import { placeOnShape } from './placement.ts'
 
 /**
  * The props a car can knock about: what each is to the physics. Cones are
@@ -62,25 +65,43 @@ export function propRotation(kind: PropKind, yaw: number): RAPIER.Rotation {
  * Put a prop into a world as a dynamic body that sleeps when it comes to
  * rest, standing where the map has it.
  */
-export function addProp(world: RAPIER.World, prop: Prop): RAPIER.RigidBody {
-  const shape = PROP_SHAPES[prop.kind]
+export function addProp(world: RAPIER.World, prop: Prop, shape: WorldShape = FLAT): RAPIER.RigidBody {
+  const { position, rotation } = propPlacement(shape, prop)
+  const form = PROP_SHAPES[prop.kind]
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(prop.x, prop.bottom + propRise(prop.kind), prop.z)
-      .setRotation(propRotation(prop.kind, prop.yaw))
+      .setTranslation(position.x, position.y, position.z)
+      .setRotation(rotation)
       .setLinearDamping(0.2)
       .setAngularDamping(0.4)
       .setCanSleep(true),
   )
   const desc =
-    shape.shape === 'box'
-      ? RAPIER.ColliderDesc.cuboid(shape.halfWidth, shape.halfHeight, shape.halfDepth)
-      : shape.shape === 'drum'
-        ? RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.halfWidth)
+    form.shape === 'box'
+      ? RAPIER.ColliderDesc.cuboid(form.halfWidth, form.halfHeight, form.halfDepth)
+      : form.shape === 'drum'
+        ? RAPIER.ColliderDesc.cylinder(form.halfHeight, form.halfWidth)
         : // A hull of distinct points always makes a collider.
-          RAPIER.ColliderDesc.convexHull(conePoints(shape.halfHeight, shape.halfWidth))!
-  world.createCollider(desc.setDensity(0).setMass(shape.mass).setFriction(shape.friction).setRestitution(shape.restitution), body)
+          RAPIER.ColliderDesc.convexHull(conePoints(form.halfHeight, form.halfWidth))!
+  world.createCollider(desc.setDensity(0).setMass(form.mass).setFriction(form.friction).setRestitution(form.restitution), body)
   return body
+}
+
+/**
+ * Where a prop stands at home, and how it is turned: as the map has it on
+ * the flat, and on a planet carried round and stood upright on it, at its
+ * own size whatever the chart's scale there.
+ */
+export function propPlacement(shape: WorldShape, prop: Prop): { position: Vec3; rotation: Quat } {
+  if (shape.kind === 'flat') return { position: { x: prop.x, y: prop.bottom + propRise(prop.kind), z: prop.z }, rotation: propRotation(prop.kind, prop.yaw) }
+  const { position, rotation } = placeOnShape(shape, prop.x, prop.bottom, prop.z, 0)
+  // Lifted along the way up there by its own rise, and turned as it stands on the flat, only upright here.
+  const up = qrotate(v3(), rotation, { x: 0, y: 1, z: 0 })
+  const rise = propRise(prop.kind)
+  return {
+    position: { x: position.x + up.x * rise, y: position.y + up.y * rise, z: position.z + up.z * rise },
+    rotation: qmultiply(rotation, propRotation(prop.kind, prop.yaw)),
+  }
 }
 
 /**

@@ -235,3 +235,13 @@ export function quatFromBasis(
   const s = Math.sqrt(1 + m22 - m00 - m11) * 2
   return { w: (m10 - m01) / s, x: (m02 + m20) / s, y: (m12 + m21) / s, z: 0.25 * s }
 }
+
+/** The rotation `a` after `b`: `b` first, then `a`. */
+export function qmultiply(a: Quat, b: Quat): Quat {
+  return {
+    x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+    y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+    z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+    w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+  }
+}

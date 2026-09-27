@@ -40,7 +40,7 @@ import {
   type Vehicle,
   type WheelState,
 } from './vehicleBody.ts'
-import { worldGravity } from './world.ts'
+import { radialGravity, worldGravity } from './world.ts'
 
 const MIN_SPEED_FOR_SLIP_ANGLE = 1
 const MIN_WHEEL_RADIUS = 1e-3
@@ -490,6 +490,8 @@ export function stepVehicle(
 
   body.resetForces(false)
   body.resetTorques(false)
+  // On a world whose gravity pulls to its middle, the car's own weight, toward it.
+  if (radialGravity(world)) addForceAlong(body, vehicle.up, -tuning.mass * worldGravity(world))
 
   // A wreck takes no more driving.
   readDriverCommand(vehicle.command, vehicle.wrecked ? NEUTRAL_INPUT : input)
