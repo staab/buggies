@@ -1,5 +1,6 @@
 import { mapExtent } from '@buggies/terrain'
 import {
+  NEUTRAL_INPUT,
   NPC_CARS,
   advance,
   awardGoals,
@@ -229,7 +230,7 @@ export class GameServer implements TransportHandlers {
     for (const room of this.rooms.values()) {
       const tick = room.arena.tick
       advance(room.arena, (seat) =>
-        seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? this.scratchInput),
+        seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? NEUTRAL_INPUT),
       )
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
       for (const seat of awardGoals(room.arena.seats)) this.events.onGoalReached?.(seat)
@@ -471,8 +472,11 @@ export class GameServer implements TransportHandlers {
   private broadcastSnapshot(room: Room): void {
     if (room.players.size === 0) return
     const { arena, snapshots } = room
+    // A player's car is told with the input it was last stepped with; a car nobody drives, with what its
+    // driver last asked of it; anything else, with none. Never the scratch buffer, which holds whatever
+    // input any player sent last: told with that, every car nobody drives would honk when a player did.
     const appliedInputOf = (seat: Seat): VehicleInput =>
-      this.playerIn(room, seat)?.timeline.appliedInput ?? this.scratchInput
+      this.playerIn(room, seat)?.timeline.appliedInput ?? (seat.npc ? seat.vehicle.command : NEUTRAL_INPUT)
     // Each is encoded at most once, whoever asks first: the changes for those told before, the whole for a newcomer.
     let changes: Uint8Array | null = null
     let whole: Uint8Array | null = null

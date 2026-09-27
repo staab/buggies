@@ -68,6 +68,9 @@ export class Sun {
       depthWrite: false,
     })
     this.glow = new THREE.Mesh(new THREE.CircleGeometry(GLOW_RADIUS, 48), glowMaterial)
+    // Out in the sky, far off any planet: not bent with what is drawn round the car.
+    discMaterial.userData.bent = true
+    glowMaterial.userData.bent = true
     for (const face of [this.glow, this.disc]) {
       face.frustumCulled = false
       this.object.add(face)

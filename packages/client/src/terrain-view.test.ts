@@ -196,10 +196,12 @@ describe('createTerrainView', () => {
       }
     })
     expect(grounds).toBeGreaterThan(0)
-    // Every instance of what stands on the island stands on the sphere, its own up pointing away from the middle.
+    // Every instance of what stands on the island stands on the sphere.
     const matrix = new THREE.Matrix4()
     const up = new THREE.Vector3()
-    let standing = 0
+    // Nearly all of it upright: a few things are built leaning, as they are on the flat.
+    let seen = 0
+    let upright = 0
     view.traverse((node) => {
       if (!(node instanceof THREE.InstancedMesh) || node.count === 0) return
       for (let i = 0; i < node.count; i += 13) {
@@ -207,11 +209,12 @@ describe('createTerrainView', () => {
         point.setFromMatrixPosition(matrix)
         up.set(0, 1, 0).transformDirection(matrix)
         expect(point.length() - radius).toBeGreaterThan(-60)
-        expect(up.dot(point.clone().normalize())).toBeGreaterThan(0.5)
-        standing++
+        seen++
+        if (up.dot(point.clone().normalize()) > 0.9) upright++
       }
     })
-    expect(standing).toBeGreaterThan(100)
+    expect(seen).toBeGreaterThan(100)
+    expect(upright / seen).toBeGreaterThan(0.95)
     const sea = view.getObjectByName('water') as THREE.Mesh
     expect(sea.geometry).toBeInstanceOf(THREE.SphereGeometry)
   }, 120_000)

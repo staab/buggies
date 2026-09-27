@@ -1,4 +1,4 @@
-import { createRng, randomInt, randomRange, type Rng } from '@buggies/physics'
+import { createPlanet, createRng, directionOf, placeOf, randomInt, randomRange, worldToChart, type Planet, type Rng, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 
 import { generateBuildings } from './buildings.ts'
@@ -10,7 +10,10 @@ import {
   triangleInradius,
   type Triangle,
 } from './mountain.ts'
+import { sampleHeight } from './heightfield.ts'
 import { fbm2D, ridged2D, smoothstep } from './noise.ts'
+import { createSphereGround, gridDirection, groundIndex, sphereHeight, type SphereGround } from './sphere.ts'
+import { onTangentPlane, raiseSphereGround, tangentFrame, type SphereMountain } from './sphere-heights.ts'
 import { generateRoads } from './roads.ts'
 import { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 import type {
@@ -726,7 +729,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const largest = options.islandRadius ?? extent.short * ISLAND_RADIUS_MAX
 
   const rng = createRng(seed)
-  const islandCount = options.islandCount ?? randomInt(rng, ISLAND_COUNT.min, options.islandsMost ?? ISLAND_COUNT.max)
+  const islandCount = options.islandCount ?? randomInt(rng, options.islandsLeast ?? ISLAND_COUNT.min, options.islandsMost ?? ISLAND_COUNT.max)
   const islands = layIslands(rng, extent, largest, islandCount)
   const mountains = createMountains(
     rng,
@@ -760,7 +763,27 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   })
 
   const field: Heightfield = { width: size, depth, cellSize, heights: new Float32Array(size * depth) }
-  buildHeights(field, seed, shapes, oceanDepth, islands, largest, band)
+  // A planet's ground is raised on the sphere, and the map is read off it; a flat map is raised as it is.
+  const planet = options.planet ? createPlanet(size * cellSize * WORLD_SCALE, depth * cellSize * WORLD_SCALE) : null
+  const ground = planet === null ? null : createSphereGround(SPHERE_CELLS, planet.radius)
+  if (planet !== null && ground !== null) {
+    raiseSphereGround(ground, {
+      seed,
+      islands: islands.map((island) => {
+        const center = chartDirection(planet, island.cx * WORLD_SCALE, island.cz * WORLD_SCALE)
+        // As big on the planet as on the map, where the map is enlarged by its scale.
+        return { center, radius: island.radius * WORLD_SCALE * Math.sqrt(Math.max(1 - center.y * center.y, 0)) }
+      }),
+      mountains: mountains.map((mountain) => sphereMountain(planet, mountain)),
+      oceanDepth: oceanDepth * WORLD_SCALE,
+      largest: largest * WORLD_SCALE,
+      band: band * WORLD_SCALE,
+      edge: Math.min(size, depth) * cellSize * EDGE_FRACTION * WORLD_SCALE,
+    })
+    readChartFromSphere(field, ground, planet)
+  } else {
+    buildHeights(field, seed, shapes, oceanDepth, islands, largest, band)
+  }
   const islandOf = labelLandMasses(field, seaLevel)
 
   const routing = computeFlowRouting(field, seaLevel)
@@ -803,6 +826,8 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     fields: [],
   }
   scaleWorld(map, WORLD_SCALE)
+  // What the map is before the roads and the buildings level and cut it, to tell what they changed.
+  const unbuilt = ground === null ? null : Float32Array.from(map.heightfield.heights)
   map.roads = generateRoads(
     map.heightfield,
     map.seaLevel,
@@ -827,6 +852,10 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
       seed,
     ),
   )
+  if (planet !== null && ground !== null && unbuilt !== null) {
+    settleSphereOnChart(ground, map.heightfield, unbuilt, planet)
+    map.ground = ground
+  }
   return map
 }
 /**
@@ -834,4 +863,83 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
  * land kept to a band across the middle, where the map is stretched least
  * over the sphere.
  */
-export const PLANET_TERRAIN = { size: 1281, depth: 641, landBand: 0.28, islandRadius: 160, mountainScale: 0.37, planet: true } as const satisfies TerrainOptions
+export const PLANET_TERRAIN = {
+  size: 1281,
+  depth: 641,
+  landBand: 0.34,
+  islandRadius: 220,
+  islandsLeast: 8,
+  mountainScale: 0.37,
+  planet: true,
+} as const satisfies TerrainOptions
+
+/** How many cells a side each face of a planet's cube-sphere has: some 3 m a cell on a 612 m planet. */
+export const SPHERE_CELLS = 320
+
+/** The way out through a point of a planet's map. */
+function chartDirection(planet: Planet, x: number, z: number): Vec3 {
+  const place = placeOf(planet, x, z, { longitude: 0, latitude: 0, scale: 1 })
+  return directionOf(place.longitude, place.latitude, { x: 0, y: 0, z: 0 })
+}
+
+/** A mountain of the map, at the map's reference scale, as it stands on the planet: its triangle on the plane touching it at its middle. */
+function sphereMountain(planet: Planet, mountain: Mountain): SphereMountain {
+  const at = (x: number, z: number): Vec3 => chartDirection(planet, x * WORLD_SCALE, z * WORLD_SCALE)
+  const center = at((mountain.ax + mountain.bx + mountain.cx) / 3, (mountain.az + mountain.bz + mountain.cz) / 3)
+  const { east, north } = tangentFrame(center)
+  const corner = (x: number, z: number): { x: number; z: number } => onTangentPlane(at(x, z), center, east, north, planet.radius)
+  const a = corner(mountain.ax, mountain.az)
+  const b = corner(mountain.bx, mountain.bz)
+  const c = corner(mountain.cx, mountain.cz)
+  // Wound again as it lies on the plane, whose north runs the other way to the map's z.
+  const triangle = orientedTriangle({ ...mountain, ax: a.x, az: a.z, bx: b.x, bz: b.z, cx: c.x, cz: c.z })
+  return { center, east, north, triangle, skirt: mountain.skirt * WORLD_SCALE, height: mountain.height * WORLD_SCALE }
+}
+
+/**
+ * The map's ground, at its reference scale, read off the planet's: at each
+ * cell, the planet's height there, as the map has heights there, smaller than
+ * the planet's by the map's scale and by how much the map is to be enlarged.
+ */
+function readChartFromSphere(field: Heightfield, ground: SphereGround, planet: Planet): void {
+  const { width, depth, cellSize, heights } = field
+  const place = { longitude: 0, latitude: 0, scale: 1 }
+  const direction = { x: 0, y: 0, z: 0 }
+  for (let row = 0; row < depth; row++) {
+    for (let col = 0; col < width; col++) {
+      placeOf(planet, col * cellSize * WORLD_SCALE, row * cellSize * WORLD_SCALE, place)
+      directionOf(place.longitude, place.latitude, direction)
+      heights[row * width + col] = sphereHeight(ground, direction) / (WORLD_SCALE * place.scale)
+    }
+  }
+}
+
+/**
+ * Carry back onto the planet's ground what the roads and the buildings
+ * made of the map: every grid point among cells they levelled, cut or
+ * raised takes the map's height there, as the planet has heights there.
+ */
+function settleSphereOnChart(ground: SphereGround, field: Heightfield, unbuilt: Float32Array, planet: Planet): void {
+  const { width, depth, cellSize, heights } = field
+  const direction = { x: 0, y: 0, z: 0 }
+  const point = { x: 0, y: 0, z: 0 }
+  const chart = { x: 0, y: 0, z: 0 }
+  for (let face = 0; face < 6; face++) {
+    for (let j = 0; j <= ground.n; j++) {
+      for (let i = 0; i <= ground.n; i++) {
+        gridDirection(ground.n, face, i, j, direction)
+        point.x = direction.x * planet.radius
+        point.y = direction.y * planet.radius
+        point.z = direction.z * planet.radius
+        worldToChart(planet, point, chart)
+        const col = Math.floor(chart.x / cellSize)
+        const row = Math.floor(chart.z / cellSize)
+        if (col < 0 || row < 0 || col + 1 >= width || row + 1 >= depth) continue
+        const cells = [row * width + col, row * width + col + 1, (row + 1) * width + col, (row + 1) * width + col + 1]
+        if (!cells.some((cell) => Math.abs(heights[cell]! - unbuilt[cell]!) > 1e-4)) continue
+        const scale = Math.sqrt(Math.max(1 - direction.y * direction.y, 0))
+        ground.heights[groundIndex(ground, face, i, j)] = sampleHeight(field, chart.x, chart.z) * scale
+      }
+    }
+  }
+}

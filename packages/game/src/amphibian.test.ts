@@ -53,11 +53,11 @@ describe('the amphibian', () => {
     const start = { ...boat.vehicle.frame.position }
     for (let i = 0; i < 60 * 5; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, throttle: 1 } : NEUTRAL_INPUT))
     expect(Math.hypot(boat.vehicle.frame.position.x - start.x, boat.vehicle.frame.position.z - start.z)).toBeGreaterThan(25)
-    // And turned by its steering.
+    // And turned by its steering, briskly: a good way round in a second and a half.
     const heading = Math.atan2(boat.vehicle.frame.forward.x, boat.vehicle.frame.forward.z)
-    for (let i = 0; i < 60 * 3; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, throttle: 1, steer: 1 } : NEUTRAL_INPUT))
+    for (let i = 0; i < 90; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, throttle: 1, steer: 1 } : NEUTRAL_INPUT))
     const turned = Math.atan2(boat.vehicle.frame.forward.x, boat.vehicle.frame.forward.z)
-    expect(Math.abs(Math.atan2(Math.sin(turned - heading), Math.cos(turned - heading)))).toBeGreaterThan(0.5)
+    expect(Math.abs(Math.atan2(Math.sin(turned - heading), Math.cos(turned - heading)))).toBeGreaterThan(1.2)
     expect(boat.vehicle.frame.up.y).toBeGreaterThan(0.9)
     arena.world.free()
   })

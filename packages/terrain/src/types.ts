@@ -1,3 +1,4 @@
+import type { SphereGround } from './sphere.ts'
 /**
  * A grid of ground heights sampled on the XZ plane. Heights are stored in
  * row-major order, `width * depth` samples total. This is the shared
@@ -281,6 +282,8 @@ export interface TerrainOptions {
   islandCount?: number
   /** The most islands the seed may pick: fifteen, unless asked for fewer. */
   islandsMost?: number
+  /** The fewest: one, unless asked for more. */
+  islandsLeast?: number
   /** Number of triangular mountains. Defaults to one to twelve, by the seed. */
   mountainCount?: number
   /** Most rivers. Defaults to one for about half the mountains, and at least one. */
@@ -335,6 +338,8 @@ export interface TerrainMap {
   depth: number
   /** Whether it is wrapped round a planet, or lies flat. */
   planet: boolean
+  /** A planet's ground, raised on the sphere itself, the whole of it, poles and all. */
+  ground?: SphereGround
   cellSize: number
   seaLevel: number
   heightfield: Heightfield

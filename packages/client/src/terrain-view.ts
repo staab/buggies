@@ -1,5 +1,8 @@
 import { shapeOf } from '@buggies/game'
 import {
+  groundIndex,
+  gridDirection,
+  type SphereGround,
   mapExtent,
   boatAt,
   DISTRICT_CITY,
@@ -2501,6 +2504,66 @@ const CAR_WIDTH = 2
 const CAR_BODY_HEIGHT = 0.7
 const CAR_WHEEL_RADIUS = 0.45
 
+/**
+ * The ground round a planet's poles, past where its map reaches: every cell
+ * of the planet's own ground with a corner further north or south than the
+ * map, so the two overlap by a cell and no gap is left between them. It is
+ * the sea floor, drawn as the ground is, by its depth.
+ */
+function buildPolarCaps(map: TerrainMap, ground: SphereGround, northing: number): THREE.Mesh | null {
+  // How far north the map reaches: the latitude its edge stands at.
+  const edge = Math.sin(2 * Math.atan(Math.exp(northing)) - Math.PI / 2)
+  const { n, radius, heights } = ground
+  const side = n + 1
+  let min = Infinity
+  let max = -Infinity
+  for (const height of heights) {
+    min = Math.min(min, height)
+    max = Math.max(max, height)
+  }
+  const positions: number[] = []
+  const colors: number[] = []
+  const indices: number[] = []
+  const direction = { x: 0, y: 0, z: 0 }
+  const color = new THREE.Color()
+  const used = new Int32Array(6 * side * side).fill(-1)
+  const vertex = (face: number, i: number, j: number): number => {
+    const at = groundIndex(ground, face, i, j)
+    const known = used[at]!
+    if (known >= 0) return known
+    gridDirection(n, face, i, j, direction)
+    const r = radius + heights[at]!
+    positions.push(direction.x * r, direction.y * r, direction.z * r)
+    terrainColor(heights[at]!, min, max, map.seaLevel, 0, color)
+    colors.push(color.r, color.g, color.b)
+    used[at] = positions.length / 3 - 1
+    return used[at]!
+  }
+  const beyond = (face: number, i: number, j: number): boolean => Math.abs(gridDirection(n, face, i, j, direction).y) > edge
+  for (let face = 0; face < 6; face++) {
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        if (!beyond(face, i, j) && !beyond(face, i + 1, j) && !beyond(face, i, j + 1) && !beyond(face, i + 1, j + 1)) continue
+        const a = vertex(face, i, j)
+        const b = vertex(face, i + 1, j)
+        const c = vertex(face, i, j + 1)
+        const d = vertex(face, i + 1, j + 1)
+        indices.push(a, b, c, b, d, c)
+      }
+    }
+  }
+  if (indices.length === 0) return null
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }))
+  mesh.name = 'ground'
+  mesh.receiveShadow = true
+  return mesh
+}
+
 /** Move the boats of a terrain view to where they are this many seconds into the game. */
 export function moveBoats(view: THREE.Object3D, seconds: number): void {
   const fleet = view.getObjectByName('boats')
@@ -2629,9 +2692,14 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     node.castShadow = node.name !== 'ground' && node.name !== 'scree'
   })
 
-  // On a planet, all of it carried round onto the sphere, and the sea round it.
+  // On a planet, all of it carried round onto the sphere, and the sea round it, and the ground
+  // past where the map reaches, round the poles, laid straight from the planet's own.
   globe.bendAll(group)
   if (seaSphere !== null) group.add(seaSphere)
+  if (map.ground !== undefined && globe.shape.kind === 'planet') {
+    const caps = buildPolarCaps(map, map.ground, globe.shape.planet.chartZ / 2 / globe.shape.planet.radius)
+    if (caps !== null) group.add(caps)
+  }
   return group
 }
 

@@ -115,3 +115,17 @@ export type {
   Prop,
   PropKind,
 } from './types.ts'
+export {
+  CUBE_FACES,
+  arcDistance,
+  createSphereGround,
+  gridDirection,
+  gridPlace,
+  groundIndex,
+  sidePoints,
+  sphereHeight,
+  type CubeFace,
+  type GridPlace,
+  type SphereGround,
+} from './sphere.ts'
+export { SPHERE_CELLS } from './generate.ts'

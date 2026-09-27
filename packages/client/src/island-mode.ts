@@ -3,6 +3,7 @@ import { shapeOf } from '@buggies/game'
 import { mapExtent, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js'
 
 import { seatColor } from './car-view.ts'
 import type { ModeView } from './mode.ts'
@@ -24,6 +25,33 @@ export function islandSummary(map: TerrainMap): string {
   )
 }
 
+/** An island orbited from above, round its middle, never from under it. */
+function islandControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, extent: { x: number; z: number }): OrbitControls {
+  const controls = new OrbitControls(camera, surface)
+  controls.enableDamping = true
+  controls.maxPolarAngle = Math.PI / 2.05
+  controls.target.set(extent.x / 2, 0, extent.z / 2)
+  controls.update()
+  return controls
+}
+
+/** A planet turned about its middle any way at all, and come in to no closer than a little over its surface. */
+function planetControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, radius: number): TrackballControls {
+  const controls = new TrackballControls(camera, surface)
+  controls.target.set(0, 0, 0)
+  controls.rotateSpeed = 2.5
+  controls.zoomSpeed = 1.2
+  controls.noPan = true
+  // No keys: A, S and D are the driving keys, and the seed is typed on this page.
+  controls.keys = ['', '', '']
+  controls.staticMoving = false
+  controls.dynamicDampingFactor = 0.12
+  controls.minDistance = radius * 1.15
+  controls.maxDistance = radius * 6
+  controls.update()
+  return controls
+}
+
 /**
  * Looking over a whole island from above while choosing it: orbit it, with
  * a beacon of light standing over every car on it, driven or not, as the
@@ -39,14 +67,9 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
   if (shape.kind === 'planet') camera.position.set(0, shape.planet.radius * 0.9, shape.planet.radius * 2.6)
   else camera.position.set(extent.x / 2 + worldSize * 0.35, worldSize * 0.8, extent.z / 2 + worldSize * 0.65)
 
-  const controls = new OrbitControls(camera, surface)
-  controls.enableDamping = true
-  controls.maxPolarAngle = Math.PI / 2.05
-  if (shape.kind === 'planet') {
-    controls.target.set(0, 0, 0)
-    controls.maxPolarAngle = Math.PI
-  } else controls.target.set(extent.x / 2, 0, extent.z / 2)
-  controls.update()
+  // A planet is turned about freely, over its poles and all, by quaternions: an orbit keeps its
+  // up the y axis and stops short at each pole. A flat island is orbited, never from under it.
+  const controls = shape.kind === 'planet' ? planetControls(camera, surface, shape.planet.radius) : islandControls(camera, surface, extent)
 
   const beacons = new THREE.Group()
   const shaft = new THREE.CylinderGeometry(BEACON_RADIUS * 0.5, BEACON_RADIUS, BEACON_HEIGHT, 12, 1, true).translate(0, BEACON_HEIGHT / 2, 0)
@@ -70,6 +93,7 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
     resize(aspect) {
       camera.aspect = aspect
       camera.updateProjectionMatrix()
+      if (controls instanceof TrackballControls) controls.handleResize()
     },
     update() {
       controls.update()

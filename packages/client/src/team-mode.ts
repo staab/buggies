@@ -1,7 +1,9 @@
+import { shapeOf } from '@buggies/game'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
+import { bendAround, bendMaterials } from './bend.ts'
 import type { ModeView } from './mode.ts'
 import { joinOnline, type OnlinePlayer, type OnlineView } from './online-mode.ts'
 import type { Sun } from './sun.ts'
@@ -35,6 +37,13 @@ export async function createTeamMode(
   const first = views[0]
   if (first === undefined) throw new Error('nobody to put on the screen')
   const split = views.length > 1
+  // On a planet, what is drawn round each car is bent as though the planet were bigger.
+  const shape = shapeOf(first.map)
+  const radius = shape.kind === 'planet' ? shape.planet.radius : 0
+  const bendFor = (view: OnlineView): void => {
+    bendMaterials(scene)
+    bendAround(radius > 0 ? view.focus : null, radius)
+  }
   const viewport = new THREE.Vector4()
 
   return {
@@ -49,7 +58,9 @@ export async function createTeamMode(
       // The sun's shadows are drawn afresh for each view, around its own car.
       if (!split) {
         sun.follow(first.focus, first.up)
+        bendFor(first)
         renderer.render(scene, first.camera)
+        bendAround(null)
         return
       }
       renderer.getViewport(viewport)
@@ -59,12 +70,14 @@ export async function createTeamMode(
       views.forEach((view, side) => {
         for (const other of views) other.root.visible = other === view
         sun.follow(view.focus, view.up)
+        bendFor(view)
         const left = x + side * each
         renderer.setViewport(left, y, each, height)
         renderer.setScissor(left, y, each, height)
         renderer.render(scene, view.camera)
       })
       for (const view of views) view.root.visible = true
+      bendAround(null)
       renderer.setScissorTest(false)
       renderer.setViewport(viewport)
     },

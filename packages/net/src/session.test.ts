@@ -45,7 +45,15 @@ import type {
   TransportConnection,
   TransportHandlers,
 } from './transport.ts'
-import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_SPIDER_BYTES, SNAPSHOT_UFO_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
+import {
+  SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_SPIDER_BYTES,
+  SNAPSHOT_UFO_BYTES,
+  SNAPSHOT_VEHICLE_BYTES,
+  decodeSnapshot,
+  encodeInput,
+  type SnapshotMessage,
+} from './wire.ts'
 
 /** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
 const TEST_ISLANDS = { islandsMost: 8 }
@@ -308,12 +316,16 @@ function distance(a: { x: number; z: number }, b: { x: number; z: number }): num
  * order, so a message sent before a hanging-up lands before it, as it does
  * over a socket.
  */
-function direct(server: TransportHandlers): ClientTransport {
+/** A client wired straight to a server, every message it is sent shown to `tap` as well. */
+function direct(server: TransportHandlers, tap: (payload: Uint8Array) => void = () => {}): ClientTransport {
   let handlers: ClientTransportHandlers | null = null
   let closed = false
   const connection: TransportConnection = {
     id: 9999,
-    send: (payload) => handlers?.onMessage(payload.slice()),
+    send: (payload) => {
+      tap(payload)
+      handlers?.onMessage(payload.slice())
+    },
     close: (reason) => {
       closed = true
       handlers?.onClose(reason)
@@ -611,6 +623,34 @@ describe('a session', () => {
       client.close('done')
       server.dispose()
     }
+  }, 60_000)
+
+  it('tells each car nobody drives by what its own driver asks of it, never by what a player sent last', async () => {
+    const island = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    const server = new GameServer(() => createArena(island), {}, NPC_CARS)
+    const received: SnapshotMessage[] = []
+    const client = new NetClient(direct(server, (payload) => {
+      const snapshot = decodeSnapshot(payload)
+      if (snapshot !== null) received.push(snapshot)
+    }), () => 0)
+    const welcome = await client.connect('semi', island.seed)
+    const { arena } = server.roomFor(island.seed)!
+    // The player leans on the car's own key and the fire key, tick after tick.
+    for (let tick = 0; tick < 60; tick++) {
+      client.sendInput(tick, { ...NEUTRAL_INPUT, ability: true, fire: true, throttle: 1 })
+      server.advance()
+    }
+    const npcs = arena.seats.filter((seat) => seat.npc).map((seat) => seat.id)
+    expect(npcs.length).toBeGreaterThan(0)
+    const told = received.at(-1)!.vehicles.filter((vehicle) => npcs.includes(vehicle.seat))
+    expect(told.length).toBe(npcs.length)
+    for (const vehicle of told) {
+      expect(vehicle.appliedInput.ability).toBe(false)
+      expect(vehicle.appliedInput.fire).toBe(false)
+    }
+    expect(received.at(-1)!.vehicles.find((vehicle) => vehicle.seat === welcome.seat)!.appliedInput.ability).toBe(true)
+    client.close('done')
+    server.dispose()
   }, 60_000)
 
   it('swaps a player into another vehicle where they are, keeping the seat and its bananas', async () => {

@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
 
 The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
@@ -28,7 +28,7 @@ In **2 players** mode, two people share one keyboard on a split screen, and each
 
 ## The planet
 
-Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera and the sun stand over wherever your car is, so it is always day where you play. The islands keep to a band round the equator, with open sea toward the poles. Away from the equator the land shrinks a little: a street 40° north is about three quarters of the width of one on the equator, while the cars, the bananas and the machines keep their size.
+Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera and the sun stand over wherever your car is, so it is always day where you play. Around your car the world is drawn as though the planet were four times bigger, which puts the horizon about twice as far off; only the drawing is bent, not the game. The islands keep to a band round the equator, with open sea toward the poles. Away from the equator the land shrinks a little: a street 40° north is about three quarters of the width of one on the equator, and at the band's edge, about 52° north or south, about three fifths, while the cars, the bananas and the machines keep their size.
 
 ## Bananas
 
@@ -132,7 +132,7 @@ podman run --rm -p 8787:8787 buggies-server
 
 The land is grown on a 1281 × 1281 grid of cells at a reference scale, then enlarged threefold to a map about 3.8 km across. The roads and everything built along them come afterward, at full size, so they keep their real widths and grades.
 
-The game plays on `PLANET_TERRAIN`, a map 1281 × 641 cells: once round the planet's equator across, and pole to pole down. Its land keeps to a band across the middle, its islands are larger for their map and its mountains smaller, so its cities have room. The map is wrapped round the sphere by Mercator's projection, with heights scaled to match, so every small shape on it comes out the same shape on the planet, only smaller away from the equator. `packages/physics` does the wrapping, and the physics, the game and the drawing each work with the map where it helps and with the sphere where they must.
+The game plays on `PLANET_TERRAIN`, a map 1281 × 641 cells: once round the planet's equator across, and pole to pole down. Its land keeps to a band across the middle, with eight to fifteen islands larger for their map and mountains smaller, so its cities have room. The map is wrapped round the sphere by Mercator's projection, with heights scaled to match, so every small shape on it comes out the same shape on the planet, only smaller away from the equator. `packages/physics` does the wrapping, and the physics, the game and the drawing each work with the map where it helps and with the sphere where they must.
 
 1. **Islands.** The seed picks one to fifteen islands, each anywhere from about 100 m across to the size of the largest island the map holds, and places them anywhere clear of the map's edge. Islands may overlap into one land mass. The first is drawn at least three quarters of the largest size, so every map has room for its cities.
 2. **Mountains.** The seed picks one to twelve mountains. Each is a jittered triangle with a skirt around it, standing near the middle of an island picked in proportion to its area from those big enough to carry one. About half the mountains, and always at least one, get a river.
