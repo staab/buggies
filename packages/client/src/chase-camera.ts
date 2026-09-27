@@ -7,7 +7,6 @@ import * as THREE from 'three'
 import { clamp, type Quat, type Vec3 } from '@buggies/physics'
 import { CHASSIS_FORWARD as CHASSIS_FORWARD_VEC3 } from '@buggies/game'
 import { dampToward, dampVector3Toward } from './damping.ts'
-import { FLAT_GLOBE, type Globe } from './globe.ts'
 
 export interface CameraTuning {
   distance: number
@@ -107,17 +106,21 @@ export function createChaseTarget(): ChaseTarget {
  * What the camera may not pass through at a point: the
  * ground under it, and whatever roof there is over it.
  */
+/** How far from the world's middle the floor and the roof are at a point. */
 export interface CameraBounds {
   floor: number
   ceiling: number
 }
 
 /**
- * The bounds at a point, for a car at height `above`: a
+ * The bounds at a point, for a car this far from the world's middle: a
  * deck counts as a roof only when it is over the car, not when the car is
  * driving on it.
  */
-export type CameraBoundsAt = (x: number, z: number, out: CameraBounds, above: number) => CameraBounds
+export type CameraBoundsAt = (at: THREE.Vector3, out: CameraBounds, above: number) => CameraBounds
+
+/** How far below the ground the middle of level ground is taken to be, for ground with no planet under it. */
+const LEVEL_DEPTH = 1e6
 
 const CHASSIS_FORWARD = new THREE.Vector3(CHASSIS_FORWARD_VEC3.x, CHASSIS_FORWARD_VEC3.y, CHASSIS_FORWARD_VEC3.z)
 const MIN_SPEED_FOR_VELOCITY_BLEND = 1
@@ -148,11 +151,10 @@ export class ChaseCamera {
   private readonly wreckAnchor = new THREE.Vector3()
   private readonly wreckArm = new THREE.Vector3()
   private boundsAt: CameraBoundsAt | null = null
-  /** The way up where the car is, and the world's shape, which the bounds are read on the map of. */
+  /** The way up where the car is, and the middle of the world, which the bounds are measured out from. */
   private readonly up = new THREE.Vector3(0, 1, 0)
-  private globe: Globe = FLAT_GLOBE
-  private readonly onMap = new THREE.Vector3()
-  private readonly targetOnMap = new THREE.Vector3()
+  private readonly middle = new THREE.Vector3()
+  private readonly offset = new THREE.Vector3()
   private readonly bounds: CameraBounds = { floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY }
 
   constructor(tuning: CameraTuning) {
@@ -160,29 +162,30 @@ export class ChaseCamera {
     this.camera = new THREE.PerspectiveCamera(tuning.fovBase, 1, tuning.near, tuning.far)
   }
 
+  /** Level ground, up the y axis, as high as it says at each point: the world's middle far below it. */
   setGroundAt(groundAt: (x: number, z: number) => number): void {
-    this.setBoundsAt((x, z, out) => {
-      out.floor = groundAt(x, z)
-      out.ceiling = Number.POSITIVE_INFINITY
-      return out
-    })
+    this.setBoundsAt(
+      (at, out) => {
+        out.floor = LEVEL_DEPTH + groundAt(at.x, at.z)
+        out.ceiling = Number.POSITIVE_INFINITY
+        return out
+      },
+      new THREE.Vector3(0, -LEVEL_DEPTH, 0),
+    )
   }
 
-  /** Where the camera is kept: above the floor, under the roof, read on the map of a world this shape. */
-  setBoundsAt(boundsAt: CameraBoundsAt, globe: Globe = FLAT_GLOBE): void {
+  /** Where the camera is kept: above the floor and under the roof, as far from the world's middle as they are. */
+  setBoundsAt(boundsAt: CameraBoundsAt, middle: THREE.Vector3 = new THREE.Vector3()): void {
     this.boundsAt = boundsAt
-    this.globe = globe
+    this.middle.copy(middle)
   }
 
-  /** Hold a point between the floor and the roof where it is: on a planet, as high over the map as that allows. */
+  /** Hold a point between the floor and the roof where it is, moving it along the way out from the world's middle. */
   private confinePoint(point: THREE.Vector3): void {
-    if (!this.globe.round) {
-      point.y = this.confine(point.x, point.y, point.z)
-      return
-    }
-    this.globe.toMap(point, this.onMap)
-    this.onMap.y = this.confine(this.onMap.x, this.onMap.y, this.onMap.z)
-    this.globe.toWorld(this.onMap.x, this.onMap.y, this.onMap.z, point)
+    this.offset.subVectors(point, this.middle)
+    const out = this.offset.length()
+    if (out === 0) return
+    point.copy(this.middle).addScaledVector(this.offset, this.confine(point, out) / out)
   }
 
   /**
@@ -191,15 +194,15 @@ export class ChaseCamera {
    * bore too low for both leaves the camera under the roof: better a view
    * skimming the road than one looking through the hill.
    */
-  private confine(x: number, y: number, z: number): number {
-    if (this.boundsAt === null) return y
+  private confine(point: THREE.Vector3, out: number): number {
+    if (this.boundsAt === null) return out
 
-    const above = this.globe.round ? this.globe.toMap(this.targetPosition, this.targetOnMap).y : this.targetPosition.y
-    const { floor, ceiling } = this.boundsAt(x, z, this.bounds, above)
+    const above = this.targetPosition.distanceTo(this.middle)
+    const { floor, ceiling } = this.boundsAt(point, this.bounds, above)
     const lowest = floor + this.tuning.groundClearance
     const highest = ceiling - ROOF_CLEARANCE
 
-    return Math.min(Math.max(y, lowest), Math.max(highest, floor + ROOF_CLEARANCE))
+    return Math.min(Math.max(out, lowest), Math.max(highest, floor + ROOF_CLEARANCE))
   }
 
   snapTo(target: ChaseTarget): void {
@@ -259,8 +262,7 @@ export class ChaseCamera {
   /** Whether there is a roof over the car itself: a bridge deck, or a tunnel. */
   private covered(): boolean {
     if (this.boundsAt === null) return false
-    const { x, y, z } = this.globe.round ? this.globe.toMap(this.targetPosition, this.targetOnMap) : this.targetPosition
-    return Number.isFinite(this.boundsAt(x, z, this.bounds, y).ceiling)
+    return Number.isFinite(this.boundsAt(this.targetPosition, this.bounds, this.targetPosition.distanceTo(this.middle)).ceiling)
   }
 
   private updateDesiredPose(speed: number, speedFractionOfReference: number): void {

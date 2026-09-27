@@ -82,6 +82,9 @@ describe('CarView', () => {
   })
 })
 
+/** How far under level ground its middle is taken to be. */
+const DEPTH = 1e6
+
 describe('ChaseCamera', () => {
   const flat = () => 0
 
@@ -132,11 +135,15 @@ describe('ChaseCamera', () => {
     const camera = new ChaseCamera(createCameraTuning())
     // A bore three meters high, then open sky.
     let roof = 3
-    camera.setBoundsAt((_x, _z, out) => {
-      out.floor = 0
-      out.ceiling = roof
-      return out
-    })
+    // Level ground, measured out from a middle far under it.
+    camera.setBoundsAt(
+      (_at, out) => {
+        out.floor = DEPTH
+        out.ceiling = DEPTH + roof
+        return out
+      },
+      new THREE.Vector3(0, -DEPTH, 0),
+    )
     const target = createChaseTarget()
     target.position = { x: 0, y: 0, z: 0 }
     camera.snapTo(target)
@@ -155,11 +162,14 @@ describe('ChaseCamera under a deck', () => {
     const camera = new ChaseCamera(tuning)
     // A deck five meters up that appears over the car, then goes away.
     let deck = Number.POSITIVE_INFINITY
-    camera.setBoundsAt((_x, _z, out, above) => {
-      out.floor = 0
-      out.ceiling = deck > above + 1.5 ? deck - 0.4 : Number.POSITIVE_INFINITY
-      return out
-    })
+    camera.setBoundsAt(
+      (_at, out, above) => {
+        out.floor = DEPTH
+        out.ceiling = DEPTH + deck > above + 1.5 ? DEPTH + deck - 0.4 : Number.POSITIVE_INFINITY
+        return out
+      },
+      new THREE.Vector3(0, -DEPTH, 0),
+    )
     const target = createChaseTarget()
     target.position = { x: 0, y: 0.5, z: 0 }
     camera.snapTo(target)

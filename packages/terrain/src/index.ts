@@ -17,7 +17,7 @@ export {
 export { computeFlowRouting, findLakes, type FlowRouting } from './flow.ts'
 export { PLANET_TERRAIN, WORLD_SCALE, generateTerrain } from './generate.ts'
 export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
-export { insidePolygon, interchangeZones, meetsInterchange } from './interchanges.ts'
+export { insidePolygon, interchangeZones, meetsInterchange, parkLoop } from './interchanges.ts'
 export { deckSpans, lowestDeckOver, type DeckSpan } from './overhead.ts'
 export { RAMP_FACETS, rampFacets, rampRise } from './ramps.ts'
 export { CURB_HEIGHT, sidewalkMesh, type SidewalkMesh } from './sidewalks.ts'
@@ -137,6 +137,7 @@ export type {
   WorldField,
   WorldLake,
   WorldLot,
+  WorldDecks,
   WorldMesh,
   WorldProp,
   WorldRamp,
@@ -163,3 +164,4 @@ export {
   waterUnder,
 } from './world-queries.ts'
 export { tangentFrame } from './sphere-heights.ts'
+export { DECK_SKIRT } from './decks.ts'

@@ -114,3 +114,35 @@ export function meetsInterchange(zones: Point[][], footprint: Footprint): boolea
   }
   return zones.some((zone) => samples.some((sample) => insidePolygon(zone, sample.x, sample.z)))
 }
+
+/** An interchange park's loop path: this many points around, this far out from the middle toward the ramps. */
+const PARK_LOOP_POINTS = 16
+const PARK_LOOP_IN = 0.55
+
+/**
+ * A path around the inside of an interchange's park: from the middle of
+ * the zone, a point part way out toward its edge in each of a ring of
+ * directions, so the loop follows the shape the ramps enclose.
+ */
+export function parkLoop(zone: Point[]): Point[] {
+  let cx = 0
+  let cz = 0
+  for (const point of zone) {
+    cx += point.x
+    cz += point.z
+  }
+  cx /= zone.length
+  cz /= zone.length
+  if (!insidePolygon(zone, cx, cz)) return []
+  const loop: Point[] = []
+  for (let k = 0; k < PARK_LOOP_POINTS; k++) {
+    const angle = (k / PARK_LOOP_POINTS) * Math.PI * 2
+    const dx = Math.cos(angle)
+    const dz = Math.sin(angle)
+    // Out from the middle to the edge, a meter at a time.
+    let reach = 0
+    while (reach < 400 && insidePolygon(zone, cx + dx * (reach + 1), cz + dz * (reach + 1))) reach += 1
+    loop.push({ x: cx + dx * reach * PARK_LOOP_IN, z: cz + dz * reach * PARK_LOOP_IN })
+  }
+  return loop
+}

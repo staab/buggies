@@ -17,13 +17,12 @@ import {
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import { alongGround, groundDistance, mapExtent, overSurface, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
 import { aimPointOf, hookPointOf } from './car-presence.ts'
-import { Globe, shapeOf } from './globe.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
@@ -165,7 +164,6 @@ export async function joinOnline(
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
   // What lies on the map drawn where that is in the world: round a planet, if the map is one's.
-  const globe = new Globe(shapeOf(map))
 
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.
@@ -187,9 +185,9 @@ export async function joinOnline(
 
   const cameraTuning = createCameraTuning()
   // Far enough to take in the whole island, and the sun beyond it.
-  cameraTuning.far = Math.max(Math.max(mapExtent(map).x, mapExtent(map).z) * 2, SUN_DISTANCE * 1.5)
+  cameraTuning.far = Math.max(4 * Math.PI * mirror.planet.radius, SUN_DISTANCE * 1.5)
   const chase = new ChaseCamera(cameraTuning)
-  chase.setBoundsAt(cameraBounds(map), globe)
+  chase.setBoundsAt(cameraBounds(mirror.planet))
   const target = createChaseTarget()
 
   const onKey = (event: KeyboardEvent): void => {
@@ -213,7 +211,7 @@ export async function joinOnline(
       return prediction.vehicle.frame.position
     },
     get place() {
-      return globe.toMap(prediction.vehicle.frame.position, new THREE.Vector3())
+      return prediction.vehicle.frame.position
     },
     get up() {
       return prediction.vehicle.up

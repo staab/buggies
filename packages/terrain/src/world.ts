@@ -122,6 +122,11 @@ export interface WorldMesh {
   readonly indices: Uint32Array
 }
 
+/** The built roadways, and what each vertex of them is: a `ROAD_*` structure for the roadway, or `DECK_SKIRT` for a shoulder. */
+export interface WorldDecks extends WorldMesh {
+  readonly surfaces: Uint8Array
+}
+
 /** A planet's map, every part of it where it is on the planet. */
 export interface World {
   readonly seed: number
@@ -130,6 +135,8 @@ export interface World {
   readonly ground: SphereGround
   /** The ground's heights with every tunnel bored out of it: what is driven on, where the drawn hill runs on over the bore. */
   readonly bored: Float32Array
+  /** The ground's grid points a tunnel's bore takes, where the ground is not drawn: 1 for each. */
+  readonly holes: Uint8Array
   /** The water's surface over every grid point of the ground, or `DRY`. */
   readonly water: Float32Array
   /** Which district (`DISTRICT_*`) every grid point of the ground lies in. */
@@ -147,7 +154,9 @@ export interface World {
   readonly sidewalks: readonly WorldSidewalk[]
   readonly fields: readonly WorldField[]
   /** The built roadways, the decks of the highway and every bridge, with their shoulders. */
-  readonly decks: WorldMesh
+  readonly decks: WorldDecks
+  /** The gravel paths round the parks the interchanges enclose, each a loop. */
+  readonly paths: readonly (readonly Vec3[])[]
   /** The walls and roof round each tunnel. */
   readonly shells: readonly WorldMesh[]
   /** Every guardrail, as one wall. */

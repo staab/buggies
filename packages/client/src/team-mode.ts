@@ -1,4 +1,3 @@
-import { shapeOf } from './globe.ts'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -37,12 +36,11 @@ export async function createTeamMode(
   const first = views[0]
   if (first === undefined) throw new Error('nobody to put on the screen')
   const split = views.length > 1
-  // On a planet, what is drawn round each car is bent as though the planet were bigger.
-  const shape = shapeOf(first.map)
-  const radius = shape.kind === 'planet' ? shape.planet.radius : 0
+  // What is drawn round each car is bent as though the planet were bigger.
+  const { radius } = first.map.world!
   const bendFor = (view: OnlineView): void => {
     bendMaterials(scene)
-    bendAround(radius > 0 ? view.focus : null, radius)
+    bendAround(view.focus, radius)
   }
   const viewport = new THREE.Vector4()
 

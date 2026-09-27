@@ -1,57 +1,37 @@
-import { shapeOf } from './globe.ts'
+import { qrotate, v3, vdistance, type Vec3 } from '@buggies/physics'
 import {
-  groundIndex,
-  gridDirection,
-  type SphereGround,
-  mapExtent,
-  boatAt,
+  DECK_SKIRT,
   DISTRICT_CITY,
   DISTRICT_SUBURB,
   RIVER_BANK_LAP,
-  RAMP_LANE_REACH,
-  RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_GRADE,
-  ROAD_SKIRT,
   ROAD_TUNNEL,
-  ROAD_WIDTH,
-  STREET_SPACING,
-  STREET_WIDTH,
   TUNNEL_CLEARANCE,
   TUNNEL_WALL_HEIGHT,
-  boreClearance,
-  buildTunnelHoles,
-  cityFrame,
-  insidePolygon,
-  interchangeZones,
-  deckShouldered,
-  heightAt,
-  isSurfaceRoad,
-  railMesh,
-  railRuns,
-  rampFacets,
-  roadLift,
-  sidewalkMesh,
-  skirtFoot,
-  tunnelSegments,
-  tunnelShellMesh,
-  type BoreSegment,
+  gridDirection,
+  gridPlace,
+  groundIndex,
+  heightOver,
+  tangentFrame,
+  worldBoatAt,
   type Building,
   type Field,
-  type Heightfield,
-  type Lake,
-  type Ramp,
-  type River,
-  type Road,
-  type RoadPoint,
-  type TerrainMap,
+  type GridPlace,
   type Rock,
+  type SphereGround,
   type Tree,
+  type World,
+  type WorldDecks,
+  type WorldField,
+  type WorldMesh,
+  type WorldRiver,
+  type WorldRoad,
 } from '@buggies/terrain'
 import * as THREE from 'three'
 
-import { Globe } from './globe.ts'
 import { hullGeometry } from './hull-geometry.ts'
+import { uprightAt } from './stand.ts'
 
 interface ColorStop {
   t: number
@@ -87,9 +67,6 @@ const GRAVEL_COLOR = new THREE.Color('#b9ad93')
 const DASH = { every: 6, length: 3, width: 0.5 } as const
 /** How far past the asphalt a road's lighter curb shows. */
 const CURB_LINE = 0.75
-/** An interchange park's loop path: this many points around, this far out from the middle toward the ramps. */
-const PARK_LOOP_POINTS = 16
-const PARK_LOOP_IN = 0.55
 const ROAD_BRIDGE_COLOR = new THREE.Color('#a8adb3')
 const ROAD_TUNNEL_COLOR = new THREE.Color('#6d5b4a')
 const ROAD_SKIRT_COLOR = new THREE.Color('#6f6152')
@@ -427,8 +404,6 @@ function facadeMaterial(facade: Facade, roughness: number): THREE.MeshStandardMa
   material.customProgramCacheKey = () => 'facade'
   return material
 }
-/** Boundary cells are split this many ways to fit the cut tightly to the bore. */
-const TUNNEL_CUT_SUBDIVISIONS = 4
 
 /**
  * The ground is painted at this many texels per meter: fine enough that a
@@ -483,46 +458,95 @@ interface Canvas {
   size: number
 }
 
-/** One thing painted on the ground, the rectangle of the island it may touch, in meters, and how to paint it onto a canvas. */
-interface Paint {
-  minX: number
-  minZ: number
-  maxX: number
-  maxZ: number
-  paint(canvas: Canvas): void
-}
 
-/** The land's color at every grid corner: as texel values in sRGB, to paint a canvas with, and linear, for a vertex to carry. */
+/** The land's color at every grid point of the planet's ground: as texel values in sRGB, to paint a canvas with, and linear, for a vertex to carry. */
 interface GroundColors {
   srgb: Float32Array
   linear: Float32Array
 }
 
-function groundColors(map: TerrainMap): GroundColors {
-  const { width, depth, heights } = map.heightfield
-  const { seaLevel, districtOf } = map
+function groundColors(world: World): GroundColors {
+  const { heights } = world.ground
   let min = Infinity
   let max = -Infinity
   for (const height of heights) {
     if (height < min) min = height
     if (height > max) max = height
   }
-  const srgb = new Float32Array(width * depth * 3)
-  const linear = new Float32Array(width * depth * 3)
+  const srgb = new Float32Array(heights.length * 3)
+  const linear = new Float32Array(heights.length * 3)
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
-  // The heights and districts cover the field, a value a cell.
-  for (let cell = 0; cell < width * depth; cell++) {
-    terrainColor(heights[cell]!, min, max, seaLevel, districtOf[cell]!, color)
+  for (let at = 0; at < heights.length; at++) {
+    terrainColor(heights[at]!, min, max, world.seaLevel, world.districtOf[at]!, color)
     color.getRGB(rgb, THREE.SRGBColorSpace)
-    srgb[cell * 3] = rgb.r
-    srgb[cell * 3 + 1] = rgb.g
-    srgb[cell * 3 + 2] = rgb.b
-    linear[cell * 3] = color.r
-    linear[cell * 3 + 1] = color.g
-    linear[cell * 3 + 2] = color.b
+    srgb[at * 3] = rgb.r
+    srgb[at * 3 + 1] = rgb.g
+    srgb[at * 3 + 2] = rgb.b
+    linear[at * 3] = color.r
+    linear[at * 3 + 1] = color.g
+    linear[at * 3 + 2] = color.b
   }
   return { srgb, linear }
+}
+
+/**
+ * The plane touching the planet at a tile's middle, which the tile's
+ * ground is painted on: meters east across it, and south down it, as a
+ * map is laid out, from the point under the middle.
+ */
+interface Plane {
+  readonly middle: Vec3
+  readonly east: Vec3
+  readonly north: Vec3
+  readonly radius: number
+}
+
+function planeAt(middle: Vec3, radius: number): Plane {
+  const { east, north } = tangentFrame(middle)
+  return { middle, east, north, radius }
+}
+
+/** Where a point lies on a plane, seen from the planet's middle: east across it, and south down it. */
+function onPlane(plane: Plane, point: Vec3): { x: number; z: number } {
+  const { middle, east, north, radius } = plane
+  const length = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z)
+  const toward = (point.x * middle.x + point.y * middle.y + point.z * middle.z) / length
+  const scale = radius / (toward * length)
+  return {
+    x: (point.x * east.x + point.y * east.y + point.z * east.z) * scale,
+    z: -(point.x * north.x + point.y * north.y + point.z * north.z) * scale,
+  }
+}
+
+/** The way out from the planet's middle through a point of a plane. */
+function offPlane(plane: Plane, x: number, z: number, out: Vec3): Vec3 {
+  const { middle, east, north, radius } = plane
+  out.x = middle.x * radius + east.x * x - north.x * z
+  out.y = middle.y * radius + east.y * x - north.y * z
+  out.z = middle.z * radius + east.z * x - north.z * z
+  const length = Math.sqrt(out.x * out.x + out.y * out.y + out.z * out.z)
+  out.x /= length
+  out.y /= length
+  out.z /= length
+  return out
+}
+
+/** A field as a plane has it: its middle there, and turned as its own x runs across the plane. */
+function fieldOnPlane(plane: Plane, field: WorldField): Field {
+  const { x, z } = onPlane(plane, field.at)
+  const axis = qrotate(v3(), field.turn, { x: 1, y: 0, z: 0 })
+  const east = axis.x * plane.east.x + axis.y * plane.east.y + axis.z * plane.east.z
+  const south = -(axis.x * plane.north.x + axis.y * plane.north.y + axis.z * plane.north.z)
+  // Turned by a yaw, a field's x runs east by its cosine and north by its sine.
+  return { kind: field.kind, x, z, yaw: Math.atan2(-south, east), width: field.width, depth: field.depth, tone: field.tone }
+}
+
+/** One thing painted on the ground: about where it is, how far from there it reaches, and how to paint it onto a tile's canvas. */
+interface Paint {
+  readonly at: Vec3
+  readonly reach: number
+  paint(canvas: Canvas, plane: Plane): void
 }
 
 /**
@@ -532,7 +556,7 @@ function groundColors(map: TerrainMap): GroundColors {
  * each with a lighter curb along it and its center line dashed, and the
  * paved lots last, over any road that runs into them.
  */
-function groundPaints(map: TerrainMap): Paint[] {
+function groundPaints(world: World): Paint[] {
   const rgb = { r: 0, g: 0, b: 0 }
   const texelsOf = (color: THREE.Color): [number, number, number] => {
     color.getRGB(rgb, THREE.SRGBColorSpace)
@@ -543,95 +567,127 @@ function groundPaints(map: TerrainMap): Paint[] {
   const marking = texelsOf(MARKING_COLOR)
   const gravel = texelsOf(GRAVEL_COLOR)
   const paints: Paint[] = []
-  const around = (points: readonly { x: number; z: number }[], reach: number, paint: (canvas: Canvas) => void): void => {
-    let minX = Infinity
-    let minZ = Infinity
-    let maxX = -Infinity
-    let maxZ = -Infinity
-    for (const point of points) {
-      minX = Math.min(minX, point.x)
-      minZ = Math.min(minZ, point.z)
-      maxX = Math.max(maxX, point.x)
-      maxZ = Math.max(maxZ, point.z)
-    }
-    paints.push({ minX: minX - reach, minZ: minZ - reach, maxX: maxX + reach, maxZ: maxZ + reach, paint })
-  }
-  const fieldReach = (field: Field): number => Math.hypot(field.width, field.depth) / 2
+  const middleOf = (a: Vec3, b: Vec3): Vec3 => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 })
+  /** A stretch from one point to another, this wide either side. */
+  const stretch = (a: Vec3, b: Vec3, half: number, color: [number, number, number]): Paint => ({
+    at: middleOf(a, b),
+    reach: vdistance(a, b) / 2 + half + 1,
+    paint: (canvas, plane) => paintSegment(canvas, onPlane(plane, a), onPlane(plane, b), half, color),
+  })
+  const fieldReach = (field: WorldField): number => Math.hypot(field.width, field.depth) / 2
 
-  for (const field of map.fields) {
+  for (const field of world.fields) {
+    if (paved(field)) continue
     const crop = cropOf(field)
-    if (crop !== undefined && !paved(field)) around([field], fieldReach(field), (canvas) => paintField(canvas, field, crop))
+    paints.push({ at: field.at, reach: fieldReach(field), paint: (canvas, plane) => paintField(canvas, fieldOnPlane(plane, field), crop) })
   }
   // A gravel loop around the ground each interchange encloses, now that it
   // is a park, laid before the roads so no path crosses one.
-  for (const zone of interchangeZones(map.roads)) {
-    const loop = parkLoop(zone)
-    for (let i = 0; i < loop.length; i++) {
-      const a = loop[i]!
-      const b = loop[(i + 1) % loop.length]!
-      around([a, b], 2, (canvas) => paintSegment(canvas, a, b, 1.2, gravel))
-    }
+  for (const loop of world.paths) {
+    for (let i = 0; i < loop.length; i++) paints.push(stretch(loop[i]!, loop[(i + 1) % loop.length]!, 1.2, gravel))
   }
-  const gradeSegments = (road: Road): [RoadPoint, RoadPoint][] => {
+  /** Each stretch of a road at grade, and how wide the road is there. */
+  const gradeSegments = (road: WorldRoad): [Vec3, Vec3, number][] => {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    const segments: [RoadPoint, RoadPoint][] = []
-    // Within the road: i runs over its segments, and the point after the last is a loop's first.
+    const segments: [Vec3, Vec3, number][] = []
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_GRADE) continue
-      segments.push([road.points[i]!, road.points[(i + 1) % count]!])
+      segments.push([road.points[i]!, road.points[(i + 1) % count]!, road.widths[i]!])
     }
     return segments
   }
-  // A ramp is painted whole, its first stretch under the deck and all: the
-  // deck is drawn over it, and the lane comes out from under the deck's edge.
-  const surface = map.roads.filter((road) => isSurfaceRoad(road))
+  // A road the ground carries is painted on it, a ramp whole, its first stretch under the deck and all.
+  const surface = world.roads.filter((road) => road.kind !== 'highway')
   for (const road of surface) {
-    const half = road.width / 2 + CURB_LINE
-    for (const [a, b] of gradeSegments(road)) around([a, b], half + 1, (canvas) => paintSegment(canvas, a, b, half, curb))
+    for (const [a, b, width] of gradeSegments(road)) paints.push(stretch(a, b, width / 2 + CURB_LINE, curb))
   }
   for (const road of surface) {
-    const half = road.width / 2
-    for (const [a, b] of gradeSegments(road)) around([a, b], half + 1, (canvas) => paintSegment(canvas, a, b, half, asphalt))
+    for (const [a, b, width] of gradeSegments(road)) paints.push(stretch(a, b, width / 2, asphalt))
   }
-  for (const road of surface) around(road.points, DASH.width + 1, (canvas) => paintDashes(canvas, road, marking))
+  // The dashes are laid by the distance along the road, not the segment, since a road's points come a few meters apart.
+  for (const road of surface) {
+    const count = road.points.length
+    const segmentCount = road.closed ? count : count - 1
+    let traveled = 0
+    for (let i = 0; i < segmentCount; i++) {
+      const a = road.points[i]!
+      const b = road.points[(i + 1) % count]!
+      const length = vdistance(a, b)
+      if (road.structure[i] === ROAD_GRADE && length > 0) {
+        let from = 0
+        while (from < length) {
+          const phase = (traveled + from) % DASH.every
+          const lit = phase < DASH.length
+          const to = Math.min(length, from + (lit ? DASH.length - phase : DASH.every - phase))
+          if (lit) {
+            const start = lerp3(a, b, from / length)
+            const end = lerp3(a, b, to / length)
+            paints.push({
+              at: middleOf(start, end),
+              reach: DASH.length,
+              paint: (canvas, plane) => paintLine(canvas, onPlane(plane, start), onPlane(plane, end), marking, DASH.width),
+            })
+          }
+          from = to
+        }
+      }
+      traveled += length
+    }
+  }
   // A paved lot covers whatever road runs into it: it is painted over the roads, its corners rounded, with a curb around its edge.
-  for (const field of map.fields) {
+  for (const field of world.fields) {
     if (!paved(field)) continue
     const edged = { ...field, width: field.width + 2 * CURB_LINE, depth: field.depth + 2 * CURB_LINE }
-    around([field], fieldReach(edged), (canvas) => {
-      paintField(canvas, edged, { plain: curb, striped: curb })
-      paintField(canvas, field, cropOf(field))
+    paints.push({
+      at: field.at,
+      reach: fieldReach(edged),
+      paint: (canvas, plane) => {
+        paintField(canvas, fieldOnPlane(plane, edged), { plain: curb, striped: curb })
+        paintField(canvas, fieldOnPlane(plane, field), cropOf(field))
+      },
     })
   }
   return paints
 }
 
-/** Fill a canvas with the land's color, blended between the grid corners. */
-function fillCanvas(canvas: Canvas, field: Heightfield, srgb: Float32Array): void {
-  const { width, depth, cellSize } = field
+/** A point part way from `a` to `b`. */
+function lerp3(a: Vec3, b: Vec3, t: number): Vec3 {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }
+}
+
+const place: GridPlace = { face: 0, i: 0, j: 0 }
+
+/** The land's color in a direction, blended between the grid points round it. */
+function groundColorAt(ground: SphereGround, colors: Float32Array, direction: Vec3, out: [number, number, number]): void {
+  const { n } = ground
+  gridPlace(n, direction, place)
+  const i0 = Math.min(Math.max(Math.floor(place.i), 0), n - 1)
+  const j0 = Math.min(Math.max(Math.floor(place.j), 0), n - 1)
+  const fi = Math.min(Math.max(place.i - i0, 0), 1)
+  const fj = Math.min(Math.max(place.j - j0, 0), 1)
+  const a = groundIndex(ground, place.face, i0, j0) * 3
+  const b = groundIndex(ground, place.face, i0 + 1, j0) * 3
+  const c = groundIndex(ground, place.face, i0, j0 + 1) * 3
+  const d = groundIndex(ground, place.face, i0 + 1, j0 + 1) * 3
+  for (let k = 0; k < 3; k++) {
+    out[k] = (colors[a + k]! * (1 - fi) + colors[b + k]! * fi) * (1 - fj) + (colors[c + k]! * (1 - fi) + colors[d + k]! * fi) * fj
+  }
+}
+
+/** Fill a tile's canvas with the land's color, blended between the grid points, as the plane has it. */
+function fillCanvas(canvas: Canvas, plane: Plane, ground: SphereGround, srgb: Float32Array): void {
   const { data, x0, z0, size } = canvas
+  const direction = v3()
+  const color: [number, number, number] = [0, 0, 0]
   for (let row = 0; row < size; row++) {
-    const gz = Math.min(Math.max((z0 + row + 0.5) / TEXELS_PER_METER / cellSize, 0), depth - 1)
-    const fieldRow = Math.min(Math.floor(gz), depth - 2)
-    const tz = gz - fieldRow
     for (let col = 0; col < size; col++) {
-      const gx = Math.min(Math.max((x0 + col + 0.5) / TEXELS_PER_METER / cellSize, 0), width - 1)
-      const fieldCol = Math.min(Math.floor(gx), width - 2)
-      const tx = gx - fieldCol
-      // The four corners of a cell within the field: the row and column were held one short of its edge.
-      const a = (fieldRow * width + fieldCol) * 3
-      const b = a + 3
-      const c = a + width * 3
-      const d = c + 3
-      const wa = (1 - tx) * (1 - tz)
-      const wb = tx * (1 - tz)
-      const wc = (1 - tx) * tz
-      const wd = tx * tz
+      offPlane(plane, (x0 + col + 0.5) / TEXELS_PER_METER, (z0 + row + 0.5) / TEXELS_PER_METER, direction)
+      groundColorAt(ground, srgb, direction, color)
       const at = (row * size + col) * 4
-      data[at] = Math.round((srgb[a]! * wa + srgb[b]! * wb + srgb[c]! * wc + srgb[d]! * wd) * 255)
-      data[at + 1] = Math.round((srgb[a + 1]! * wa + srgb[b + 1]! * wb + srgb[c + 1]! * wc + srgb[d + 1]! * wd) * 255)
-      data[at + 2] = Math.round((srgb[a + 2]! * wa + srgb[b + 2]! * wb + srgb[c + 2]! * wc + srgb[d + 2]! * wd) * 255)
+      data[at] = Math.round(color[0] * 255)
+      data[at + 1] = Math.round(color[1] * 255)
+      data[at + 2] = Math.round(color[2] * 255)
       data[at + 3] = 255
     }
   }
@@ -652,7 +708,7 @@ function canvasTexture(canvas: Canvas): THREE.DataTexture {
 }
 
 /** Whether a field is paved: asphalt, laid over the ground and any road, rather than a crop grown on it. */
-function paved(field: Field): boolean {
+function paved(field: { readonly kind: Field['kind'] }): boolean {
   return field.kind === 'asphalt' || field.kind === 'parkingLot' || field.kind === 'square'
 }
 
@@ -665,7 +721,7 @@ interface Crop {
   striped: [number, number, number]
 }
 
-function cropOf(field: Field): Crop {
+function cropOf(field: { readonly kind: Field['kind']; readonly tone: number }): Crop {
   if (field.kind === 'asphalt' || field.kind === 'parkingLot' || field.kind === 'square') {
     const rgb = { r: 0, g: 0, b: 0 }
     ROAD_GRADE_COLOR.getRGB(rgb, THREE.SRGBColorSpace)
@@ -711,66 +767,6 @@ function paintField(canvas: Canvas, field: Field, crop: Crop): void {
       data[at + 3] = 255
     }
   }
-}
-
-/** A point part way from `a` to `b`. */
-function between(a: { x: number; z: number }, b: { x: number; z: number }, t: number): { x: number; z: number } {
-  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t }
-}
-
-/**
- * A road's dashed center line, along its stretches at grade. The dashes are
- * laid by the distance along the road, not the segment, since a road's
- * points come a few meters apart.
- */
-function paintDashes(canvas: Canvas, road: Road, marking: [number, number, number]): void {
-  const count = road.points.length
-  const segmentCount = road.closed ? count : count - 1
-  let traveled = 0
-  for (let i = 0; i < segmentCount; i++) {
-    const a = road.points[i]!
-    const b = road.points[(i + 1) % count]!
-    const length = Math.hypot(b.x - a.x, b.z - a.z)
-    if (road.structure[i] === ROAD_GRADE && length > 0) {
-      let from = 0
-      while (from < length) {
-        const phase = (traveled + from) % DASH.every
-        const lit = phase < DASH.length
-        const to = Math.min(length, from + (lit ? DASH.length - phase : DASH.every - phase))
-        if (lit) paintLine(canvas, between(a, b, from / length), between(a, b, to / length), marking, DASH.width)
-        from = to
-      }
-    }
-    traveled += length
-  }
-}
-
-/**
- * A path around the inside of an interchange's park: from the middle of
- * the zone, a point part way out toward its edge in each of a ring of
- * directions, so the loop follows the shape the ramps enclose.
- */
-function parkLoop(zone: { x: number; z: number }[]): { x: number; z: number }[] {
-  let cx = 0
-  let cz = 0
-  for (const point of zone) {
-    cx += point.x
-    cz += point.z
-  }
-  cx /= zone.length
-  cz /= zone.length
-  if (!insidePolygon(zone, cx, cz)) return []
-  const loop: { x: number; z: number }[] = []
-  for (let k = 0; k < PARK_LOOP_POINTS; k++) {
-    const angle = (k / PARK_LOOP_POINTS) * Math.PI * 2
-    const dx = Math.cos(angle)
-    const dz = Math.sin(angle)
-    // Out from the middle to the edge, a meter at a time.
-    let reach = 0
-    while (reach < 400 && insidePolygon(zone, cx + dx * (reach + 1), cz + dz * (reach + 1))) reach += 1
-    loop.push({ x: cx + dx * reach * PARK_LOOP_IN, z: cz + dz * reach * PARK_LOOP_IN })
-  }
-  return loop
 }
 
 /**
@@ -847,278 +843,173 @@ function paintSegment(
 }
 
 
-/** A stretch of a ramp's centerline. */
-interface Lane {
-  ax: number
-  az: number
-  bx: number
-  bz: number
-}
+/** How many grid cells a side a tile of the ground is: a tile with nothing painted on it is drawn in the land's colors alone, with no texture. */
+const GROUND_TILE_CELLS = 32
 
 /**
- * The first stretch of every ramp, where it comes out from under the
- * highway's deck: the lane lies under the deck's edge at its mouth and
- * turns out across the skirt, so the skirt there is road, not embankment.
+ * The ground of the planet, the whole of it, in tiles of its grid. The
+ * land's own colors change no faster than the grid does, so they are
+ * carried by the grid's points; only what is painted on the ground, the
+ * roads, the fields and the paths, needs a texture fine enough to read. So
+ * only a tile with something painted on it has a texture, painted on the
+ * plane touching the planet at its middle, and is drawn as a mesh of its
+ * own; every other tile of a face is drawn together, in the land's colors
+ * alone. Along the edge between the two, both blend the same two points the
+ * same way, so there is no seam. A cell a tunnel's bore takes is left out.
  */
-function rampLanes(roads: Road[]): Lane[] {
-  const lanes: Lane[] = []
-  for (const road of roads) {
-    if (road.kind !== 'ramp') continue
-    let traveled = 0
-    for (let i = 0; i + 1 < road.points.length && traveled < RAMP_LANE_REACH; i++) {
-      const a = road.points[i]!
-      const b = road.points[i + 1]!
-      lanes.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z })
-      traveled += Math.hypot(b.x - a.x, b.z - a.z)
-    }
+function buildGround(world: World): THREE.Group {
+  const { ground, holes } = world
+  const { n, radius, heights } = ground
+  const group = new THREE.Group()
+  group.name = 'ground'
+  const colors = groundColors(world)
+  const paints = groundPaints(world)
+  const direction = v3()
+  const position = (at: number, face: number, i: number, j: number, out: number[]): void => {
+    gridDirection(n, face, i, j, direction)
+    const r = radius + heights[at]!
+    out.push(direction.x * r, direction.y * r, direction.z * r)
   }
-  return lanes
-}
+  const textured = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 })
+  const plainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
+  const tiles = Math.ceil(n / GROUND_TILE_CELLS)
+  for (let face = 0; face < 6; face++) {
+    const plainPositions: number[] = []
+    const plainColors: number[] = []
+    const plainIndices: number[] = []
+    for (let tj = 0; tj < tiles; tj++) {
+      for (let ti = 0; ti < tiles; ti++) {
+        const fromI = ti * GROUND_TILE_CELLS
+        const fromJ = tj * GROUND_TILE_CELLS
+        const toI = Math.min(fromI + GROUND_TILE_CELLS, n)
+        const toJ = Math.min(fromJ + GROUND_TILE_CELLS, n)
+        const middle = gridDirection(n, face, (fromI + toI) / 2, (fromJ + toJ) / 2, v3())
+        const plane = planeAt(middle, radius)
+        const center = { x: middle.x * radius, y: middle.y * radius, z: middle.z * radius }
+        // How far the tile reaches from its middle, out to its farthest corner.
+        let reach = 0
+        for (const [i, j] of [[fromI, fromJ], [toI, fromJ], [fromI, toJ], [toI, toJ]] as const) {
+          gridDirection(n, face, i, j, direction)
+          reach = Math.max(reach, vdistance(center, { x: direction.x * radius, y: direction.y * radius, z: direction.z * radius }))
+        }
+        const painted = paints.filter((paint) => vdistance(paint.at, center) < reach + paint.reach + 2)
 
-/** Whether a point lies on a ramp's lane where the lane comes out from under the deck. */
-function onRampLane(lanes: Lane[], x: number, z: number): boolean {
-  const reach = RAMP_WIDTH / 2 + 1
-  for (const lane of lanes) {
-    const vx = lane.bx - lane.ax
-    const vz = lane.bz - lane.az
-    const t = Math.min(Math.max(((x - lane.ax) * vx + (z - lane.az) * vz) / (vx * vx + vz * vz || 1), 0), 1)
-    if (Math.hypot(x - (lane.ax + vx * t), z - (lane.az + vz * t)) <= reach) return true
-  }
-  return false
-}
-
-/** How wide a tile of the ground is, in meters: a tile with nothing painted on it is drawn in the land's colors alone, with no texture. */
-const GROUND_TILE = 192
-
-/** How one piece of the ground is shaded: by a texture over this canvas, or by the land's colors at its corners. */
-type GroundShade = { canvas: Canvas } | { colors: Float32Array }
-
-/**
- * The ground over a block of the field's cells, as one mesh. A cell the
- * tunnel bore takes whole is left out, and one it runs through is split
- * into a finer grid so the cut hugs the bore's wall. Each vertex carries
- * where it is on the piece's canvas, or the land's color where it is.
- */
-function groundPiece(
-  field: Heightfield,
-  hole: Uint8Array,
-  segments: BoreSegment[],
-  margin: number,
-  cells: { fromCol: number; toCol: number; fromRow: number; toRow: number },
-  takes: (col: number, row: number) => boolean,
-  shade: GroundShade,
-): THREE.BufferGeometry | null {
-  const { width, cellSize, heights } = field
-  const positions: number[] = []
-  const shading: number[] = []
-  const colors = 'colors' in shade ? shade.colors : null
-  const canvas = 'canvas' in shade ? shade.canvas : null
-
-  const vertex = (x: number, height: number, z: number): number => {
-    positions.push(x, height, z)
-    if (canvas !== null) {
-      shading.push((x * TEXELS_PER_METER - canvas.x0) / canvas.size, (z * TEXELS_PER_METER - canvas.z0) / canvas.size)
-    } else if (colors !== null) {
-      // The land's color here, blended between the corners of the cell it is in.
-      const gx = Math.min(x / cellSize, width - 1)
-      const gz = Math.min(z / cellSize, field.depth - 1)
-      const col = Math.min(Math.floor(gx), width - 2)
-      const row = Math.min(Math.floor(gz), field.depth - 2)
-      const tx = gx - col
-      const tz = gz - row
-      const a = (row * width + col) * 3
-      for (let channel = 0; channel < 3; channel++) {
-        shading.push(
-          colors[a + channel]! * (1 - tx) * (1 - tz) +
-            colors[a + 3 + channel]! * tx * (1 - tz) +
-            colors[a + width * 3 + channel]! * (1 - tx) * tz +
-            colors[a + width * 3 + 3 + channel]! * tx * tz,
-        )
-      }
-    }
-    return positions.length / 3 - 1
-  }
-
-  // The grid's corners each made once, when a cell first needs them.
-  const span = cells.toCol - cells.fromCol + 1
-  const made = new Int32Array(span * (cells.toRow - cells.fromRow + 1)).fill(-1)
-  const corner = (col: number, row: number): number => {
-    const at = (row - cells.fromRow) * span + (col - cells.fromCol)
-    if (made[at] === -1) made[at] = vertex(col * cellSize, heights[row * width + col]!, row * cellSize)
-    return made[at]!
-  }
-
-  const indices: number[] = []
-  const steps = TUNNEL_CUT_SUBDIVISIONS
-  for (let row = cells.fromRow; row < cells.toRow; row++) {
-    for (let col = cells.fromCol; col < cells.toCol; col++) {
-      if (!takes(col, row)) continue
-      // The cell's four corners, all within the field: the block stops a cell short of its edges.
-      const topLeft = row * width + col
-      const topRight = topLeft + 1
-      const bottomLeft = topLeft + width
-      const bottomRight = bottomLeft + 1
-      const inside =
-        (hole[topLeft] ?? 0) + (hole[topRight] ?? 0) + (hole[bottomLeft] ?? 0) + (hole[bottomRight] ?? 0)
-
-      if (inside === 4) continue
-      if (inside === 0) {
-        const a = corner(col, row)
-        const b = corner(col + 1, row)
-        const c = corner(col, row + 1)
-        const d = corner(col + 1, row + 1)
-        indices.push(a, c, b, b, c, d)
-        continue
-      }
-
-      // This facet straddles the bore. Split it and test each piece, so the cut
-      // hugs the tunnel wall instead of snapping to whole cells. The pieces
-      // are a grid of steps plus one each way, read within that below.
-      const vertices: number[][] = []
-      for (let sv = 0; sv <= steps; sv++) {
-        const line: number[] = []
-        const tz = sv / steps
-        for (let su = 0; su <= steps; su++) {
-          const tx = su / steps
-          const x = (col + tx) * cellSize
-          const z = (row + tz) * cellSize
-          const height =
-            heights[topLeft]! * (1 - tx) * (1 - tz) +
-            heights[topRight]! * tx * (1 - tz) +
-            heights[bottomLeft]! * (1 - tx) * tz +
-            heights[bottomRight]! * tx * tz
-          if (boreClearance(segments, x, z, height) < margin) {
-            line.push(-1)
-            continue
+        const positions = painted.length > 0 ? ([] as number[]) : plainPositions
+        const shading = painted.length > 0 ? ([] as number[]) : plainColors
+        const indices = painted.length > 0 ? ([] as number[]) : plainIndices
+        const base = positions.length / 3
+        const side = toI - fromI + 1
+        const points: number[] = []
+        for (let j = fromJ; j <= toJ; j++) {
+          for (let i = fromI; i <= toI; i++) {
+            const at = groundIndex(ground, face, i, j)
+            points.push(at)
+            position(at, face, i, j, positions)
           }
-          line.push(vertex(x, height, z))
         }
-        vertices.push(line)
-      }
-
-      for (let sv = 0; sv < steps; sv++) {
-        for (let su = 0; su < steps; su++) {
-          const a = vertices[sv]![su]!
-          const b = vertices[sv]![su + 1]!
-          const c = vertices[sv + 1]![su]!
-          const d = vertices[sv + 1]![su + 1]!
-          if (a >= 0 && c >= 0 && b >= 0) indices.push(a, c, b)
-          if (b >= 0 && c >= 0 && d >= 0) indices.push(b, c, d)
+        // A canvas over the tile's plane, reaching a texel past its edge each way.
+        let canvas: Canvas | null = null
+        if (painted.length > 0) {
+          let minX = Infinity
+          let minZ = Infinity
+          let maxX = -Infinity
+          let maxZ = -Infinity
+          const corners: { x: number; z: number }[] = []
+          for (let k = 0; k < points.length; k++) {
+            const corner = onPlane(plane, { x: positions[k * 3]!, y: positions[k * 3 + 1]!, z: positions[k * 3 + 2]! })
+            corners.push(corner)
+            minX = Math.min(minX, corner.x)
+            minZ = Math.min(minZ, corner.z)
+            maxX = Math.max(maxX, corner.x)
+            maxZ = Math.max(maxZ, corner.z)
+          }
+          const x0 = Math.floor(minX * TEXELS_PER_METER) - 1
+          const z0 = Math.floor(minZ * TEXELS_PER_METER) - 1
+          const size = Math.max(Math.ceil(maxX * TEXELS_PER_METER) - x0, Math.ceil(maxZ * TEXELS_PER_METER) - z0) + 2
+          canvas = { data: new Uint8Array(size * size * 4), x0, z0, size }
+          fillCanvas(canvas, plane, ground, colors.srgb)
+          for (const paint of painted) paint.paint(canvas, plane)
+          for (const corner of corners) shading.push((corner.x * TEXELS_PER_METER - x0) / size, (corner.z * TEXELS_PER_METER - z0) / size)
+        } else {
+          for (const at of points) shading.push(colors.linear[at * 3]!, colors.linear[at * 3 + 1]!, colors.linear[at * 3 + 2]!)
         }
+        for (let j = 0; j < toJ - fromJ; j++) {
+          for (let i = 0; i < toI - fromI; i++) {
+            const a = j * side + i
+            const b = a + 1
+            const c = a + side
+            const d = c + 1
+            if (holes[points[a]!] || holes[points[b]!] || holes[points[c]!] || holes[points[d]!]) continue
+            // Wound to face out, away from the planet's middle.
+            indices.push(base + a, base + b, base + c, base + b, base + d, base + c)
+          }
+        }
+        if (canvas === null || indices.length === 0) continue
+        const geometry = new THREE.BufferGeometry()
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(shading, 2))
+        geometry.setIndex(indices)
+        geometry.computeVertexNormals()
+        const material = textured.clone()
+        material.map = canvasTexture(canvas)
+        const mesh = new THREE.Mesh(geometry, material)
+        mesh.name = 'ground'
+        group.add(mesh)
       }
     }
+    if (plainIndices.length === 0) continue
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(plainPositions, 3))
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(plainColors, 3))
+    geometry.setIndex(plainIndices)
+    geometry.computeVertexNormals()
+    const mesh = new THREE.Mesh(geometry, plainMaterial)
+    mesh.name = 'ground'
+    group.add(mesh)
   }
-  if (indices.length === 0) return null
+  textured.dispose()
+  return group
+}
 
+/** A mesh of the world's, with its normals worked out, for drawing. */
+function meshGeometry(mesh: WorldMesh): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute(canvas !== null ? 'uv' : 'color', new THREE.Float32BufferAttribute(shading, canvas !== null ? 2 : 3))
-  geometry.setIndex(indices)
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3))
+  geometry.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1))
   geometry.computeVertexNormals()
   return geometry
 }
 
-/**
- * The ground, cut into tiles. The land's own colors change no faster than
- * the grid does, so they are carried by the grid's corners; only what is
- * painted on the ground, the roads, the fields and the paths, needs a
- * texture fine enough to read. So only a tile with something painted on it
- * has a texture, at full detail, and is drawn as a mesh of its own; every
- * other tile is drawn together, in the land's colors alone. Along the edge
- * between the two, both blend the same two corners the same way, so there
- * is no seam; each tile's texture reaches a texel into its neighbors, so a
- * road runs on from one tile into the next without a break.
- */
-function buildGround(map: TerrainMap, hole: Uint8Array, segments: BoreSegment[], margin: number): THREE.Group {
-  const field = map.heightfield
-  const { width, depth, cellSize } = field
-  const group = new THREE.Group()
-  group.name = 'ground'
-  const colors = groundColors(map)
-  const paints = groundPaints(map)
-
-  // A tile is a whole number of cells, as near the size asked for as that comes.
-  const tileCells = Math.max(1, Math.round(GROUND_TILE / cellSize))
-  const tileMeters = tileCells * cellSize
-  const tilesX = Math.ceil((width * cellSize) / tileMeters)
-  const tilesZ = Math.ceil((depth * cellSize) / tileMeters)
-  const tileTexels = Math.round(tileMeters * TEXELS_PER_METER)
-  // What is painted on each tile, in the order it goes on.
-  const painted: Paint[][] = Array.from({ length: tilesX * tilesZ }, () => [])
-  const border = 1 / TEXELS_PER_METER
-  for (const paint of paints) {
-    const fromCol = Math.max(Math.floor((paint.minX - border) / tileMeters), 0)
-    const toCol = Math.min(Math.floor((paint.maxX + border) / tileMeters), tilesX - 1)
-    const fromRow = Math.max(Math.floor((paint.minZ - border) / tileMeters), 0)
-    const toRow = Math.min(Math.floor((paint.maxZ + border) / tileMeters), tilesZ - 1)
-    for (let row = fromRow; row <= toRow; row++) {
-      for (let col = fromCol; col <= toCol; col++) painted[row * tilesX + col]!.push(paint)
-    }
-  }
-  const tileOf = (col: number, row: number): number =>
-    Math.min(Math.floor(row / tileCells), tilesZ - 1) * tilesX + Math.min(Math.floor(col / tileCells), tilesX - 1)
-
-  const textured = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 })
-  for (let row = 0; row < tilesZ; row++) {
-    for (let col = 0; col < tilesX; col++) {
-      const tile = row * tilesX + col
-      if (painted[tile]!.length === 0) continue
-      const size = tileTexels + 2
-      const canvas: Canvas = { data: new Uint8Array(size * size * 4), x0: col * tileTexels - 1, z0: row * tileTexels - 1, size }
-      fillCanvas(canvas, field, colors.srgb)
-      for (const paint of painted[tile]!) paint.paint(canvas)
-      const cells = {
-        fromCol: Math.min(col * tileCells, width - 1),
-        toCol: Math.min((col + 1) * tileCells, width - 1),
-        fromRow: Math.min(row * tileCells, depth - 1),
-        toRow: Math.min((row + 1) * tileCells, depth - 1),
-      }
-      const geometry = groundPiece(field, hole, segments, margin, cells, () => true, { canvas })
-      if (geometry === null) continue
-      const material = textured.clone()
-      material.map = canvasTexture(canvas)
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.name = 'ground'
-      group.add(mesh)
-    }
-  }
-  textured.dispose()
-  const plain = groundPiece(
-    field,
-    hole,
-    segments,
-    margin,
-    { fromCol: 0, toCol: width - 1, fromRow: 0, toRow: depth - 1 },
-    (col, row) => painted[tileOf(col, row)]!.length === 0,
-    { colors: colors.linear },
-  )
-  if (plain !== null) {
-    const mesh = new THREE.Mesh(plain, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }))
-    mesh.name = 'ground'
-    group.add(mesh)
-  }
-  return group
-}
-
-function quadIndices(base: number): number[] {
-  return [base, base + 2, base + 1, base + 1, base + 2, base + 3]
-}
-
-function buildLakeGeometry(lakes: Lake[], size: number, cellSize: number): THREE.BufferGeometry {
+/** Every lake as its surface over each cell of the grid it covers, at its level. */
+function buildLakeGeometry(world: World): THREE.BufferGeometry {
+  const { ground } = world
+  const { n, radius } = ground
+  const side = n + 1
   const positions: number[] = []
   const indices: number[] = []
-  for (const lake of lakes) {
-    const y = lake.level + 0.05
-    for (const cell of lake.cells) {
-      const col = cell % size
-      const row = Math.floor(cell / size)
-      const x0 = col * cellSize
-      const z0 = row * cellSize
-      const x1 = x0 + cellSize
-      const z1 = z0 + cellSize
+  const direction = v3()
+  for (const lake of world.lakes) {
+    const under = new Set(lake.points)
+    const r = radius + lake.level + 0.05
+    for (const at of lake.points) {
+      const face = Math.floor(at / (side * side))
+      const within = at - face * side * side
+      const i = within % side
+      const j = Math.floor(within / side)
+      if (i >= n || j >= n) continue
+      const corners = [
+        [i, j],
+        [i + 1, j],
+        [i, j + 1],
+        [i + 1, j + 1],
+      ] as const
+      if (!corners.every(([ci, cj]) => under.has(groundIndex(ground, face, ci, cj)))) continue
       const base = positions.length / 3
-      positions.push(x0, y, z0, x1, y, z0, x0, y, z1, x1, y, z1)
-      indices.push(...quadIndices(base))
+      for (const [ci, cj] of corners) {
+        gridDirection(n, face, ci, cj, direction)
+        positions.push(direction.x * r, direction.y * r, direction.z * r)
+      }
+      indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2)
     }
   }
   const geometry = new THREE.BufferGeometry()
@@ -1133,30 +1024,27 @@ const RIVER_STEP = 1.5
 const RIVER_CURVE = 0.5
 
 /**
- * Every river of a map as one ribbon mesh. Each course is drawn as a spline
- * through its points, so it winds smoothly rather than turning at each,
- * its width and surface height carried along it; the ribbon is drawn a
- * little wider than the river so it laps into the cut banks, and the
- * channel is cut to meet the water line at its edge, so the surface sits
- * where it is rather than lifted clear of the ground.
+ * Every river as one ribbon mesh. Each course is drawn as a spline through
+ * its points, so it winds smoothly rather than turning at each, its width
+ * carried along it; the ribbon is drawn a little wider than the river so it
+ * laps into the cut banks.
  */
-function buildRiversGeometry(rivers: readonly River[]): THREE.BufferGeometry {
+function buildRiversGeometry(rivers: readonly WorldRiver[]): THREE.BufferGeometry {
   const positions: number[] = []
   const indices: number[] = []
+  const up = new THREE.Vector3()
+  const across = new THREE.Vector3()
   for (const river of rivers) {
     const points = river.points
     if (points.length < 2) continue
     const curve = new THREE.CatmullRomCurve3(
-      points.map((point) => new THREE.Vector3(point.x, point.y, point.z)),
+      points.map((point) => new THREE.Vector3(point.at.x, point.at.y, point.at.z)),
       false,
       'catmullrom',
       RIVER_CURVE,
     )
-    // A stretch of the curve per river point, sampled every step of the way.
     const along = [0]
-    for (let i = 1; i < points.length; i++) {
-      along.push(along[i - 1]! + Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z))
-    }
+    for (let i = 1; i < points.length; i++) along.push(along[i - 1]! + vdistance(points[i]!.at, points[i - 1]!.at))
     const total = along[along.length - 1]! || 1
     const samples = Math.max(2, Math.ceil(total / RIVER_STEP) + 1)
     const first = positions.length / 3
@@ -1174,15 +1062,14 @@ function buildRiversGeometry(rivers: readonly River[]): THREE.BufferGeometry {
       const share = Math.min(Math.max((distance - along[i - 1]!) / span, 0), 1)
       const width = points[i - 1]!.width + (points[i]!.width - points[i - 1]!.width) * share
       const halfWidth = (width / 2) * (1 + RIVER_BANK_LAP)
-      const length = Math.hypot(ahead.x, ahead.z) || 1
-      const nx = -ahead.z / length
-      const nz = ahead.x / length
-      positions.push(at.x + nx * halfWidth, at.y, at.z + nz * halfWidth)
-      positions.push(at.x - nx * halfWidth, at.y, at.z - nz * halfWidth)
+      up.copy(at).normalize()
+      across.crossVectors(ahead, up).normalize()
+      positions.push(at.x + across.x * halfWidth, at.y + across.y * halfWidth, at.z + across.z * halfWidth)
+      positions.push(at.x - across.x * halfWidth, at.y - across.y * halfWidth, at.z - across.z * halfWidth)
     }
     for (let k = 0; k < samples - 1; k++) {
       const a = first + k * 2
-      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3)
+      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
     }
   }
   const geometry = new THREE.BufferGeometry()
@@ -1193,155 +1080,35 @@ function buildRiversGeometry(rivers: readonly River[]): THREE.BufferGeometry {
 }
 
 /**
- * The deck, plus an embankment skirt that falls from each edge to the ground.
- * Skirts are only drawn where the road is at grade; bridges and tunnels have
- * no ground to fall to. A surface road is the ground where it is at grade and
- * is painted there instead, so only its bridges are drawn; nothing is returned
- * for one with no bridge at all.
+ * The built roadways, the decks the cars drive on: the highway's and every
+ * bridge's, with their shoulders run down to the ground beside the
+ * embankment and out to the wall in a tunnel. Each colored as what it is.
  */
-function buildRoadGeometry(road: Road, field: Heightfield, lanes: Lane[]): THREE.BufferGeometry | null {
-  const points = road.points
-  const count = points.length
-  const segmentCount = road.closed ? count : count - 1
-  const positions: number[] = []
-  const colors: number[] = []
-  const half = road.width / 2
-  const skirt = half + ROAD_SKIRT
-  const shoulder = half + TUNNEL_CLEARANCE
-  const lift = roadLift(road)
-  const painted = isSurfaceRoad(road)
-  const structureColor = (structure: number): THREE.Color =>
-    structure === ROAD_BRIDGE
-      ? ROAD_BRIDGE_COLOR
-      : structure === ROAD_TUNNEL
-        ? ROAD_TUNNEL_COLOR
-        : ROAD_GRADE_COLOR
-
-  const drawn = (segment: number): boolean => !painted || road.structure[segment] !== ROAD_GRADE
-  const isGrade = (segment: number): boolean => drawn(segment) && deckShouldered(road, field, segment)
-  const isTunnel = (segment: number): boolean => road.structure[segment] === ROAD_TUNNEL
-
-  for (const [i, point] of points.entries()) {
-    // Around a loop the neighbors wrap; at the end of an open road they stop at the point.
-    const prev = points[road.closed ? (i - 1 + count) % count : i - 1] ?? point
-    const next = points[road.closed ? (i + 1) % count : i + 1] ?? point
-    let dx = next.x - prev.x
-    let dz = next.z - prev.z
-    const length = Math.hypot(dx, dz) || 1
-    dx /= length
-    dz /= length
-    const nx = -dz
-    const nz = dx
-
-    // Lift the deck clear of the ground so it never z-fights the terrain.
-    const y = point.y + lift
-    // Over a ramp's lane the skirt is road, not embankment: the ramp comes
-    // out from under the deck's edge there. Either way the skirt runs down
-    // to the highest ground across its width, which over the lane is the
-    // lane's own surface, a hair below the deck, and elsewhere its foot.
-    const laneUnder = (side: number): boolean =>
-      road.kind === 'highway' &&
-      (onRampLane(lanes, point.x + nx * side * skirt, point.z + nz * side * skirt) ||
-        onRampLane(lanes, point.x + nx * side * (half + ROAD_SKIRT / 2), point.z + nz * side * (half + ROAD_SKIRT / 2)))
-    const pavedLeft = laneUnder(1)
-    const pavedRight = laneUnder(-1)
-    const leftGround = skirtFoot(field, point.x, point.z, nx, nz, half, y)
-    const rightGround = skirtFoot(field, point.x, point.z, -nx, -nz, half, y)
-
-    // Six points across: the edges, the skirts down to the ground beside an
-    // embankment, and the shoulders out to the wall of a tunnel.
-    positions.push(
-      point.x + nx * half,
-      y,
-      point.z + nz * half,
-      point.x - nx * half,
-      y,
-      point.z - nz * half,
-      point.x + nx * skirt,
-      leftGround,
-      point.z + nz * skirt,
-      point.x - nx * skirt,
-      rightGround,
-      point.z - nz * skirt,
-      point.x + nx * shoulder,
-      y,
-      point.z + nz * shoulder,
-      point.x - nx * shoulder,
-      y,
-      point.z - nz * shoulder,
-    )
-
-    // A point's color is its segment's, the last point taking the last segment's.
-    const color = structureColor(road.structure[Math.min(i, segmentCount - 1)]!)
-    colors.push(color.r, color.g, color.b, color.r, color.g, color.b)
-    const leftSkirt = pavedLeft ? color : ROAD_SKIRT_COLOR
-    const rightSkirt = pavedRight ? color : ROAD_SKIRT_COLOR
-    colors.push(leftSkirt.r, leftSkirt.g, leftSkirt.b, rightSkirt.r, rightSkirt.g, rightSkirt.b)
-    for (let k = 0; k < 2; k++) colors.push(ROAD_SKIRT_COLOR.r, ROAD_SKIRT_COLOR.g, ROAD_SKIRT_COLOR.b)
+function buildDeckGeometry(decks: WorldDecks): THREE.BufferGeometry | null {
+  if (decks.indices.length === 0) return null
+  const geometry = meshGeometry(decks)
+  const colors = new Float32Array(decks.surfaces.length * 3)
+  for (const [k, surface] of decks.surfaces.entries()) {
+    const color =
+      surface === DECK_SKIRT ? ROAD_SKIRT_COLOR : surface === ROAD_BRIDGE ? ROAD_BRIDGE_COLOR : surface === ROAD_TUNNEL ? ROAD_TUNNEL_COLOR : ROAD_GRADE_COLOR
+    colors[k * 3] = color.r
+    colors[k * 3 + 1] = color.g
+    colors[k * 3 + 2] = color.b
   }
-
-  const indices: number[] = []
-  for (let i = 0; i < segmentCount; i++) {
-    if (!drawn(i)) continue
-    const next = (i + 1) % count
-    const a = i * 6
-    const b = next * 6
-    indices.push(a, b, a + 1, a + 1, b, b + 1)
-    if (isGrade(i)) {
-      indices.push(a, a + 2, b, b, a + 2, b + 2)
-      indices.push(a + 1, b + 1, a + 3, a + 3, b + 1, b + 3)
-    } else if (isTunnel(i)) {
-      indices.push(a, a + 4, b, b, a + 4, b + 4)
-      indices.push(a + 1, b + 1, a + 5, a + 5, b + 1, b + 5)
-    }
-  }
-  if (indices.length === 0) return null
-
-  // Cap the embankment wherever a skirt starts or stops, so an at-grade run
-  // between two bridges does not show its hollow end.
-  for (let i = 0; i < count; i++) {
-    const caps =
-      road.closed
-        ? isGrade((i - 1 + count) % count) !== isGrade(i)
-        : (i === 0 && isGrade(0)) || (i === count - 1 && isGrade(count - 2))
-    if (!caps) continue
-    const a = i * 6
-    indices.push(a, a + 1, a + 3, a, a + 3, a + 2)
-  }
-
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
   return geometry
 }
 
-/** The guardrails: the barriers the collider's blocks stand in. */
-function buildRailGeometry(map: TerrainMap): THREE.BufferGeometry | null {
-  const mesh = railMesh(railRuns(map.roads))
-  if (mesh.indices.length === 0) return null
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3))
-  geometry.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1))
-  geometry.computeVertexNormals()
-  return geometry
-}
-
-/** The tunnel shell, the same one the collider is built from. */
 /**
  * Strip lights along the crown of every tunnel, one every few meters: bright
  * panels that need no light of their own to be seen glowing in the dark.
  */
-function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
-  const spots: { x: number; y: number; z: number; dx: number; dz: number }[] = []
+function buildTunnelLights(roads: readonly WorldRoad[]): THREE.InstancedMesh | null {
+  const spots: { at: THREE.Vector3; along: THREE.Vector3 }[] = []
   for (const road of roads) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
-    const crown = TUNNEL_WALL_HEIGHT + road.width / 2 + TUNNEL_CLEARANCE - TUNNEL_LIGHT_DROP
-    const lift = roadLift(road)
     let owed = TUNNEL_LIGHT_SPACING / 2
-    // Within the road: i runs over its segments, and the point after the last is a loop's first.
     for (let i = 0; i < segmentCount; i++) {
       if (road.structure[i] !== ROAD_TUNNEL) {
         owed = TUNNEL_LIGHT_SPACING / 2
@@ -1349,17 +1116,18 @@ function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
       }
       const a = road.points[i]!
       const b = road.points[(i + 1) % count]!
-      const length = Math.hypot(b.x - a.x, b.z - a.z)
+      const length = vdistance(a, b)
       if (length < 1e-6) continue
-      const dx = (b.x - a.x) / length
-      const dz = (b.z - a.z) / length
-      let along = owed
-      while (along <= length) {
-        const t = along / length
-        spots.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t + lift + crown, z: a.z + (b.z - a.z) * t, dx, dz })
-        along += TUNNEL_LIGHT_SPACING
+      const crown = TUNNEL_WALL_HEIGHT + road.widths[i]! / 2 + TUNNEL_CLEARANCE - TUNNEL_LIGHT_DROP
+      const along = new THREE.Vector3(b.x - a.x, b.y - a.y, b.z - a.z).divideScalar(length)
+      let distance = owed
+      while (distance <= length) {
+        const at = lerp3(a, b, distance / length)
+        const up = new THREE.Vector3(at.x, at.y, at.z).normalize()
+        spots.push({ at: new THREE.Vector3(at.x, at.y, at.z).addScaledVector(up, crown), along })
+        distance += TUNNEL_LIGHT_SPACING
       }
-      owed = along - length
+      owed = distance - length
     }
   }
   if (spots.length === 0) return null
@@ -1368,26 +1136,47 @@ function buildTunnelLights(roads: Road[]): THREE.InstancedMesh | null {
   const mesh = new THREE.InstancedMesh(panel, glow, spots.length)
   mesh.name = 'lights'
   const matrix = new THREE.Matrix4()
-  const position = new THREE.Vector3()
+  const basis = new THREE.Matrix4()
+  const up = new THREE.Vector3()
+  const across = new THREE.Vector3()
   const rotation = new THREE.Quaternion()
-  const up = new THREE.Vector3(0, 1, 0)
   const one = new THREE.Vector3(1, 1, 1)
   for (const [i, spot] of spots.entries()) {
-    position.set(spot.x, spot.y, spot.z)
-    rotation.setFromAxisAngle(up, Math.atan2(spot.dx, spot.dz))
-    matrix.compose(position, rotation, one)
+    // Its length along the tunnel, stood up the way up there.
+    up.copy(spot.at).normalize()
+    across.crossVectors(up, spot.along).normalize()
+    basis.makeBasis(across, up, new THREE.Vector3().crossVectors(across, up))
+    rotation.setFromRotationMatrix(basis)
+    matrix.compose(spot.at, rotation, one)
     mesh.setMatrixAt(i, matrix)
   }
   mesh.instanceMatrix.needsUpdate = true
   return mesh
 }
 
-function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
-  const shell = tunnelShellMesh(road)
-  if (shell === null) return null
+/** Every ramp as the solid it is: each facet, from its foot up to its lip, a slice with a top, a bottom, and four sides. */
+function buildRampGeometry(kickers: readonly Float32Array[]): THREE.BufferGeometry {
+  const positions: number[] = []
+  const indices: number[] = []
+  // The corners go foot-left, foot-right, lip-left, lip-right along the top, then the same underneath.
+  const faces = [
+    [0, 2, 3, 1],
+    [4, 5, 7, 6],
+    [0, 1, 5, 4],
+    [2, 6, 7, 3],
+    [0, 4, 6, 2],
+    [1, 3, 7, 5],
+  ]
+  for (const hull of kickers) {
+    for (const face of faces) {
+      const base = positions.length / 3
+      for (const corner of face) positions.push(hull[corner * 3]!, hull[corner * 3 + 1]!, hull[corner * 3 + 2]!)
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    }
+  }
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(shell.positions, 3))
-  geometry.setIndex(new THREE.Uint32BufferAttribute(shell.indices, 1))
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
 }
@@ -1396,7 +1185,7 @@ function buildTunnelGeometry(road: Road): THREE.BufferGeometry | null {
  * A batch of the same shape at many places: one draw call for every building,
  * every roof, every trunk. `place` fills in where each goes and what color it is.
  */
-function instanced<T>(
+function batch<T>(
   geometry: THREE.BufferGeometry,
   material: THREE.Material | THREE.Material[],
   items: T[],
@@ -1487,8 +1276,42 @@ const GAMBREL: [number, number][] = [
 
 /** The buildings, trees and shrubs of a map, as a few instanced meshes. */
 
-function buildStanding(map: TerrainMap): THREE.Object3D[] {
-  const globe = new Globe(shapeOf(map))
+function buildStanding(world: World): THREE.Object3D[] {
+  // Each building, tree and rock is built as though it stood alone at the
+  // origin, on level ground and turned by nothing, and then stood where it
+  // is on the planet: every instance of it placed by its stand there.
+  const stands = new WeakMap<object, THREE.Matrix4>()
+  const standMatrix = (at: Vec3, turn: THREE.Quaternion): THREE.Matrix4 =>
+    new THREE.Matrix4().compose(new THREE.Vector3(at.x, at.y, at.z), turn, new THREE.Vector3(1, 1, 1))
+  const turnOf = (turn: { x: number; y: number; z: number; w: number }): THREE.Quaternion => new THREE.Quaternion(turn.x, turn.y, turn.z, turn.w)
+  const buildings = world.buildings.map((building): Building => {
+    const local: Building = { kind: building.kind, x: 0, z: 0, yaw: 0, width: building.width, depth: building.depth, bottom: 0, top: building.height, tone: building.tone }
+    stands.set(local, standMatrix(building.at, turnOf(building.turn)))
+    return local
+  })
+  /** The stand of whatever an instance belongs to: its own, or that of the building it was made for. */
+  const standOf = (item: unknown): THREE.Matrix4 | undefined => {
+    if (typeof item !== 'object' || item === null) return undefined
+    const own = stands.get(item)
+    if (own !== undefined) return own
+    for (const value of Object.values(item)) {
+      if (typeof value !== 'object' || value === null) continue
+      const found = stands.get(value)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  const instanced = <T,>(
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material | THREE.Material[],
+    items: T[],
+    place: (item: T, matrix: THREE.Matrix4, color: THREE.Color) => void,
+  ): THREE.InstancedMesh | null =>
+    batch(geometry, material, items, (item, matrix, color) => {
+      place(item, matrix, color)
+      const stand = standOf(item)
+      if (stand !== undefined) matrix.premultiply(stand)
+    })
   const box = new THREE.BoxGeometry(1, 1, 1)
   const plain = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 })
   const flatRoof = new THREE.MeshStandardMaterial({ color: '#bdbdb8', roughness: 0.95, metalness: 0 })
@@ -1504,7 +1327,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     wall,
     wall,
   ]
-  const ofKind = (kind: Building['kind']): Building[] => map.buildings.filter((building) => building.kind === kind)
+  const ofKind = (kind: Building['kind']): Building[] => buildings.filter((building) => building.kind === kind)
   const blocks = ofKind('block')
   const houses = ofKind('house')
   const cottages = ofKind('cottage')
@@ -1526,8 +1349,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const tents = ofKind('tent')
   const campers = ofKind('camper')
   const firepits = ofKind('firepit')
-  // Copies, moved about as the game's time goes.
-  const boats = ofKind('boat').map((boat) => ({ ...boat }))
+  // Moved about as the game's time goes: their stands change.
+  const boats = ofKind('boat')
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
   const walls = ofKind('wall')
@@ -1901,7 +1724,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       const time = performance.now() / 1000
       for (const [i, turbine] of turbines.entries()) {
         spin.setFromAxisAngle(axis, time * BLADE_SPIN + i * 0.9)
-        rotors.setMatrixAt(i, globe.bendMatrix(new THREE.Matrix4().compose(hubOf(turbine), facing(turbine).multiply(spin), one), new THREE.Matrix4()))
+        rotors.setMatrixAt(i, new THREE.Matrix4().compose(hubOf(turbine), facing(turbine).multiply(spin), one).premultiply(standOf(turbine)!))
       }
       rotors.instanceMatrix.needsUpdate = true
     }
@@ -2009,9 +1832,14 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     }),
   )
 
-  const trees = map.trees.filter((tree) => tree.kind === 'tree')
-  const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
-  const fruits = map.trees.filter((tree) => tree.kind === 'fruit')
+  const allTrees = world.trees.map((tree): Tree => {
+    const local: Tree = { kind: tree.kind, x: 0, z: 0, bottom: 0, height: tree.height, radius: tree.radius, tone: tree.tone }
+    stands.set(local, standMatrix(tree.at, uprightAt(tree.at, new THREE.Quaternion())))
+    return local
+  })
+  const trees = allTrees.filter((tree) => tree.kind === 'tree')
+  const shrubs = allTrees.filter((tree) => tree.kind === 'shrub')
+  const fruits = allTrees.filter((tree) => tree.kind === 'fruit')
   const trunk = new THREE.CylinderGeometry(TRUNK_RADIUS, TRUNK_RADIUS * 1.3, 1, 6)
   trunk.translate(0, 0.5, 0)
   const crown = new THREE.ConeGeometry(1, 1, 7)
@@ -2051,7 +1879,9 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   // dark boot-top that shows just over the water; a pale deck; a wheelhouse
   // aft with its glass and roof; and a mast forward with a crossbar.
   const { skin, deck } = hullGeometry()
-  const { seaLevel } = map
+  // How high the sea stands over each boat's keel.
+  const homes = world.buildings.filter((building) => building.kind === 'boat')
+  const seaOver = new WeakMap<Building, number>(boats.map((boat, i) => [boat, world.seaLevel - heightOver(world, homes[i]!.at)]))
   const boatParts: [THREE.BufferGeometry, (boat: Building, matrix: THREE.Matrix4, color: THREE.Color) => void][] = [
     [skin, (boat, matrix, color) => {
       upright(boat, matrix, boat.width, boat.top - boat.bottom, boat.depth, boat.bottom)
@@ -2062,7 +1892,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       color.copy(DECK_COLOR)
     }],
     [skin, (boat, matrix, color) => {
-      upright(boat, matrix, boat.width * 1.02, seaLevel + BOOT_TOP_OVER - boat.bottom, boat.depth * 1.02, boat.bottom)
+      upright(boat, matrix, boat.width * 1.02, (seaOver.get(boat) ?? 0) + BOOT_TOP_OVER - boat.bottom, boat.depth * 1.02, boat.bottom)
       color.copy(BOOT_TOP)
     }],
     [box, (boat, matrix, color) => {
@@ -2092,17 +1922,13 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     const fleet = new THREE.Group()
     fleet.name = 'boats'
     for (const mesh of boatMeshes) if (mesh !== null) fleet.add(mesh)
-    const homes = boats.map((boat) => ({ ...boat }))
-    const pose = { x: 0, z: 0, yaw: 0 }
+    const pose = { at: v3(), turn: { x: 0, y: 0, z: 0, w: 1 } }
     const matrix = new THREE.Matrix4()
     const color = new THREE.Color()
     fleet.userData.move = (seconds: number): void => {
       for (const [i, home] of homes.entries()) {
-        boatAt(home, i, seconds, pose)
-        const boat = boats[i]!
-        boat.x = pose.x
-        boat.z = pose.z
-        boat.yaw = pose.yaw
+        worldBoatAt(home, i, seconds, pose)
+        stands.get(boats[i]!)!.compose(new THREE.Vector3(pose.at.x, pose.at.y, pose.at.z), turnOf(pose.turn), new THREE.Vector3(1, 1, 1))
       }
       for (const [k, [, place]] of boatParts.entries()) {
         const mesh = boatMeshes[k]
@@ -2110,8 +1936,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         for (const [i, boat] of boats.entries()) {
           matrix.identity()
           place(boat, matrix, color)
-          globe.bendMatrix(matrix, matrix, false)
-          mesh.setMatrixAt(i, matrix)
+          mesh.setMatrixAt(i, matrix.premultiply(stands.get(boat)!))
         }
         mesh.instanceMatrix.needsUpdate = true
         mesh.computeBoundingSphere()
@@ -2150,11 +1975,10 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     const top = a.top < b.top ? b : a
     // The cable's high points, from the bottom station over each pylon to the top station.
     const posts = [bottom, ...[...pylons].sort((p, q) => p.tone - q.tone), top]
-    const hang = (post: Building, side: number): THREE.Vector3 => {
-      const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), post.yaw)
-      const offset = new THREE.Vector3(0, 0, (side * LIFT.crossbar) / 2).applyQuaternion(turn)
-      return new THREE.Vector3(post.x + offset.x, post.top + LIFT.cableOver, post.z + offset.z)
-    }
+    // Each end of a post's crossbar, where the planet has it.
+    const hang = (post: Building, side: number): THREE.Vector3 =>
+      new THREE.Vector3(0, post.top + LIFT.cableOver, (side * LIFT.crossbar) / 2).applyMatrix4(standOf(post)!)
+    const down = (point: THREE.Vector3, drop: number): THREE.Vector3 => point.addScaledVector(point.clone().normalize(), -drop)
     /** The cable on one side, sagging between each pair of posts, as points a few meters apart. */
     const cable = (side: number): THREE.Vector3[] => {
       const points: THREE.Vector3[] = []
@@ -2164,7 +1988,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         const steps = 6
         for (let k = 0; k < steps; k++) {
           const t = k / steps
-          points.push(from.clone().lerp(to, t).add(new THREE.Vector3(0, -LIFT.sag * Math.sin(t * Math.PI), 0)))
+          points.push(down(from.clone().lerp(to, t), LIFT.sag * Math.sin(t * Math.PI)))
         }
       }
       points.push(hang(posts[posts.length - 1]!, 1 * side))
@@ -2190,17 +2014,17 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         let i = 1
         while (i < run.along.length - 1 && run.along[i]! < d) i++
         const t = (d - run.along[i - 1]!) / (run.along[i]! - run.along[i - 1]! || 1)
-        return run.line[i - 1]!.clone().lerp(run.line[i]!, t).add(new THREE.Vector3(0, -LIFT.chairDrop, 0))
+        return down(run.line[i - 1]!.clone().lerp(run.line[i]!, t), LIFT.chairDrop)
       }
       const one = new THREE.Vector3(1, 1, 1)
-      const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), bottom.yaw)
+      const turn = new THREE.Quaternion().setFromRotationMatrix(standOf(bottom)!)
       const place = (time: number): void => {
         let k = 0
         for (const [r, run] of runs.entries()) {
           const direction = r === 0 ? 1 : -1
           for (let c = 0; c < seats[r]!; c++) {
             const distance = c * LIFT.chairEvery + direction * time * LIFT.speed
-            chairs.setMatrixAt(k, globe.bendMatrix(new THREE.Matrix4().compose(at(run, distance), turn, one), new THREE.Matrix4()))
+            chairs.setMatrixAt(k, new THREE.Matrix4().compose(at(run, distance), turn, one))
             chairs.setColorAt(k, CHAIR_COLOR)
             k++
           }
@@ -2287,7 +2111,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         const along = new THREE.Vector3(Math.sin(angle) * (hand.length / 2), Math.cos(angle) * (hand.length / 2), 0).applyQuaternion(around)
         const out = new THREE.Vector3(0, 0, tower.width / 2 + 0.3).applyQuaternion(around)
         position.set(tower.x + out.x + along.x, faceHeight(tower) + along.y, tower.z + out.z + along.z)
-        mesh.setMatrixAt(i, globe.bendMatrix(matrix.compose(position, around.clone().multiply(turn), scale), matrix))
+        mesh.setMatrixAt(i, matrix.compose(position, around.clone().multiply(turn), scale).premultiply(standOf(tower)!))
       }
       mesh.instanceMatrix.needsUpdate = true
     }
@@ -2348,7 +2172,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         const out = phase * FOUNTAIN.mistSpread
         const up = FOUNTAIN.columnHeight + 0.4 + phase * FOUNTAIN.mistRise * (1 - phase * 0.5)
         matrix.makeTranslation(fountain.x + Math.cos(angle) * out, fountain.top + up, fountain.z + Math.sin(angle) * out)
-        mist.setMatrixAt(i, globe.bendMatrix(matrix, matrix))
+        mist.setMatrixAt(i, matrix.premultiply(standOf(fountain)!))
       }
       mist.instanceMatrix.needsUpdate = true
     }
@@ -2430,10 +2254,11 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   )
   for (const crane of cranes) {
     const color = pick(CRANE_COLORS, crane.tone)
-    // Placed on the ground whole, and the jib and all it carries turning within it.
+    // Stood where the crane is, and the jib and all it carries turning within it.
     const top = new THREE.Group()
-    top.position.set(crane.x, crane.top, crane.z)
-    top.userData.whole = true
+    top.name = 'crane'
+    top.matrixAutoUpdate = false
+    top.matrix.copy(standOf(crane)!).multiply(new THREE.Matrix4().makeTranslation(0, crane.top, 0))
     const turning = new THREE.Group()
     top.add(turning)
     const part = (width: number, height: number, depth: number, x: number, y: number, shade: THREE.Color): THREE.Mesh => {
@@ -2467,8 +2292,13 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
 
   // Rocks: a low-poly lump each, boulders stretched unevenly and turned, scree small and dense.
   const lump = new THREE.IcosahedronGeometry(1, 0)
-  const boulders = map.rocks.filter((rock) => rock.kind === 'boulder')
-  const scree = map.rocks.filter((rock) => rock.kind === 'scree')
+  const rocks = world.rocks.map((rock): Rock => {
+    const local: Rock = { kind: rock.kind, x: 0, z: 0, bottom: 0, size: rock.size, yaw: 0, tone: rock.tone }
+    stands.set(local, standMatrix(rock.at, turnOf(rock.turn)))
+    return local
+  })
+  const boulders = rocks.filter((rock) => rock.kind === 'boulder')
+  const scree = rocks.filter((rock) => rock.kind === 'scree')
   const rockPlace = (rock: Rock, matrix: THREE.Matrix4, color: THREE.Color): void => {
     const half = rock.size / 2
     matrix.makeRotationY(rock.yaw)
@@ -2503,70 +2333,6 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)
 }
 
-const CAR_LENGTH = 4.4
-const CAR_WIDTH = 2
-const CAR_BODY_HEIGHT = 0.7
-const CAR_WHEEL_RADIUS = 0.45
-
-/**
- * The ground round a planet's poles, past where its map reaches: every cell
- * of the planet's own ground with a corner further north or south than the
- * map, so the two overlap by a cell and no gap is left between them. It is
- * the sea floor, drawn as the ground is, by its depth.
- */
-function buildPolarCaps(map: TerrainMap, ground: SphereGround, northing: number): THREE.Mesh | null {
-  // How far north the map reaches: the latitude its edge stands at.
-  const edge = Math.sin(2 * Math.atan(Math.exp(northing)) - Math.PI / 2)
-  const { n, radius, heights } = ground
-  const side = n + 1
-  let min = Infinity
-  let max = -Infinity
-  for (const height of heights) {
-    min = Math.min(min, height)
-    max = Math.max(max, height)
-  }
-  const positions: number[] = []
-  const colors: number[] = []
-  const indices: number[] = []
-  const direction = { x: 0, y: 0, z: 0 }
-  const color = new THREE.Color()
-  const used = new Int32Array(6 * side * side).fill(-1)
-  const vertex = (face: number, i: number, j: number): number => {
-    const at = groundIndex(ground, face, i, j)
-    const known = used[at]!
-    if (known >= 0) return known
-    gridDirection(n, face, i, j, direction)
-    const r = radius + heights[at]!
-    positions.push(direction.x * r, direction.y * r, direction.z * r)
-    terrainColor(heights[at]!, min, max, map.seaLevel, 0, color)
-    colors.push(color.r, color.g, color.b)
-    used[at] = positions.length / 3 - 1
-    return used[at]!
-  }
-  const beyond = (face: number, i: number, j: number): boolean => Math.abs(gridDirection(n, face, i, j, direction).y) > edge
-  for (let face = 0; face < 6; face++) {
-    for (let j = 0; j < n; j++) {
-      for (let i = 0; i < n; i++) {
-        if (!beyond(face, i, j) && !beyond(face, i + 1, j) && !beyond(face, i, j + 1) && !beyond(face, i + 1, j + 1)) continue
-        const a = vertex(face, i, j)
-        const b = vertex(face, i + 1, j)
-        const c = vertex(face, i, j + 1)
-        const d = vertex(face, i + 1, j + 1)
-        indices.push(a, b, c, b, d, c)
-      }
-    }
-  }
-  if (indices.length === 0) return null
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }))
-  mesh.name = 'ground'
-  mesh.receiveShadow = true
-  return mesh
-}
 
 /** Move the boats of a terrain view to where they are this many seconds into the game. */
 export function moveBoats(view: THREE.Object3D, seconds: number): void {
@@ -2575,13 +2341,12 @@ export function moveBoats(view: THREE.Object3D, seconds: number): void {
 }
 
 /**
- * The visual layer for a generated map. Pure presentation: it reads the data
- * layer and builds geometry, and knows nothing about physics or simulation.
+ * The visual layer for a planet. Pure presentation: it reads the world a
+ * map makes and builds geometry, and knows nothing about physics or
+ * simulation. Everything is drawn where it stands on the planet.
  */
-export function createTerrainView(map: TerrainMap): THREE.Group {
+export function createTerrainView(world: World): THREE.Group {
   const group = new THREE.Group()
-  let seaSphere: THREE.Mesh | null = null
-  const extent = mapExtent(map)
   const waterMaterial = new THREE.MeshStandardMaterial({
     color: new THREE.Color('#2f6f9f'),
     transparent: true,
@@ -2591,32 +2356,17 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     side: THREE.DoubleSide,
   })
 
-  const segments = tunnelSegments(map.roads)
-  const hole = buildTunnelHoles(map.heightfield, segments)
-  const lanes = rampLanes(map.roads)
-  group.add(
-    buildGround(map, hole, segments, map.cellSize * 0.5),
-  )
+  group.add(buildGround(world))
 
-  const globe = new Globe(shapeOf(map))
-  if (globe.shape.kind === 'planet') {
-    // The sea round the whole planet, at its level: a sphere, added after the rest is bent, since it is round already.
-    seaSphere = new THREE.Mesh(new THREE.SphereGeometry(globe.shape.planet.radius + map.seaLevel + 0.02, 192, 96), waterMaterial)
-    seaSphere.name = 'water'
-  } else {
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(extent.x, extent.z), waterMaterial)
-    sea.name = 'water'
-    sea.rotation.x = -Math.PI / 2
-    sea.position.set(extent.x / 2, map.seaLevel + 0.02, extent.z / 2)
-    group.add(sea)
-  }
+  // The sea round the whole planet, at its level.
+  const sea = new THREE.Mesh(new THREE.SphereGeometry(world.radius + world.seaLevel + 0.02, 192, 96), waterMaterial)
+  sea.name = 'water'
+  group.add(sea)
+  if (world.lakes.length > 0) group.add(new THREE.Mesh(buildLakeGeometry(world), waterMaterial))
+  if (world.rivers.length > 0) group.add(new THREE.Mesh(buildRiversGeometry(world.rivers), waterMaterial))
 
-  if (map.lakes.length > 0) {
-    group.add(new THREE.Mesh(buildLakeGeometry(map.lakes, map.size, map.cellSize), waterMaterial))
-  }
-  if (map.rivers.length > 0) group.add(new THREE.Mesh(buildRiversGeometry(map.rivers), waterMaterial))
-
-  if (map.roads.length > 0) {
+  const decks = buildDeckGeometry(world.decks)
+  if (decks !== null) {
     const roadMaterial = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 0.7,
@@ -2628,6 +2378,9 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
     })
+    group.add(new THREE.Mesh(decks, roadMaterial))
+  }
+  if (world.shells.length > 0) {
     const tunnelMaterial = new THREE.MeshStandardMaterial({
       color: new THREE.Color('#4a443d'),
       roughness: 0.95,
@@ -2636,74 +2389,38 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
       side: THREE.DoubleSide,
       flatShading: true,
     })
-    for (const road of map.roads) {
-      const deck = buildRoadGeometry(road, map.heightfield, lanes)
-      if (deck) group.add(new THREE.Mesh(deck, roadMaterial))
-      const tunnel = buildTunnelGeometry(road)
-      if (tunnel) group.add(new THREE.Mesh(tunnel, tunnelMaterial))
-    }
-    const lights = buildTunnelLights(map.roads)
-    if (lights) group.add(lights)
-    const rails = buildRailGeometry(map)
-    if (rails) {
-      const railMaterial = new THREE.MeshStandardMaterial({
-        color: RAIL_COLOR,
-        roughness: 0.4,
-        metalness: 0.6,
-        side: THREE.DoubleSide,
-      })
-      group.add(new THREE.Mesh(rails, railMaterial))
-    }
+    for (const shell of world.shells) group.add(new THREE.Mesh(meshGeometry(shell), tunnelMaterial))
+  }
+  const lights = buildTunnelLights(world.roads)
+  if (lights) group.add(lights)
+  if (world.rails.indices.length > 0) {
+    const railMaterial = new THREE.MeshStandardMaterial({ color: RAIL_COLOR, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide })
+    group.add(new THREE.Mesh(meshGeometry(world.rails), railMaterial))
   }
 
-  for (const standing of buildStanding(map)) group.add(standing)
+  for (const standing of buildStanding(world)) group.add(standing)
 
-  if (map.sidewalks.length > 0) {
-    const { positions, indices } = sidewalkMesh(map.heightfield, map.sidewalks)
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1))
-    geometry.computeVertexNormals()
-    const concrete = new THREE.MeshStandardMaterial({
-      color: SIDEWALK_COLOR,
-      roughness: 0.95,
-      metalness: 0,
-      flatShading: true,
-    })
-    group.add(new THREE.Mesh(geometry, concrete))
+  if (world.curbs.indices.length > 0) {
+    const concrete = new THREE.MeshStandardMaterial({ color: SIDEWALK_COLOR, roughness: 0.95, metalness: 0, flatShading: true })
+    group.add(new THREE.Mesh(meshGeometry(world.curbs), concrete))
   }
 
-  if (map.ramps.length > 0) {
-    const rampMaterial = new THREE.MeshStandardMaterial({
-      color: RAMP_COLOR,
-      roughness: 0.9,
-      metalness: 0.05,
-      side: THREE.DoubleSide,
-      flatShading: true,
-    })
-    group.add(new THREE.Mesh(buildRampGeometry(map.ramps), rampMaterial))
+  if (world.kickers.length > 0) {
+    const rampMaterial = new THREE.MeshStandardMaterial({ color: RAMP_COLOR, roughness: 0.9, metalness: 0.05, side: THREE.DoubleSide, flatShading: true })
+    group.add(new THREE.Mesh(buildRampGeometry(world.kickers), rampMaterial))
   }
 
   // Everything on the island takes the sun's shadows; everything but the
   // ground itself, the scree, the water and the tunnel lights throws them.
-  // The ground is one mesh the size of the island, and drawing it into
-  // every shadow map would cost more than its own shadows are worth; the
-  // scree is hundreds of stones too small to throw one worth seeing.
+  // The ground is the size of the planet, and drawing it into every shadow
+  // map would cost more than its own shadows are worth; the scree is
+  // hundreds of stones too small to throw one worth seeing.
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return
     if (node.name === 'lights' || node.material === waterMaterial) return
     node.receiveShadow = true
     node.castShadow = node.name !== 'ground' && node.name !== 'scree'
   })
-
-  // On a planet, all of it carried round onto the sphere, and the sea round it, and the ground
-  // past where the map reaches, round the poles, laid straight from the planet's own.
-  globe.bendAll(group)
-  if (seaSphere !== null) group.add(seaSphere)
-  if (map.world !== undefined && globe.shape.kind === 'planet') {
-    const caps = buildPolarCaps(map, map.world.ground, globe.shape.planet.chartZ / 2 / globe.shape.planet.radius)
-    if (caps !== null) group.add(caps)
-  }
   return group
 }
 
@@ -2714,36 +2431,3 @@ const TUNNEL_LIGHT_COLOR = new THREE.Color('#fff1c4')
 const TUNNEL_LIGHT_SPACING = 9
 const TUNNEL_LIGHT_DROP = 0.3
 
-/** Every ramp as one mesh: a faceted arc to drive up, two sides, and a face under the lip. */
-function buildRampGeometry(ramps: Ramp[]): THREE.BufferGeometry {
-  const positions: number[] = []
-  const indices: number[] = []
-  for (const ramp of ramps) {
-    const sx = -ramp.dz * (ramp.width / 2)
-    const sz = ramp.dx * (ramp.width / 2)
-    const under = ramp.bottom - 1
-    const facets = rampFacets(ramp)
-    const base = positions.length / 3
-    // Four vertices per facet edge: the two top corners and the two under them.
-    for (const facet of facets) {
-      const x = ramp.x + ramp.dx * facet.along
-      const z = ramp.z + ramp.dz * facet.along
-      positions.push(x + sx, facet.height, z + sz, x - sx, facet.height, z - sz, x + sx, under, z + sz, x - sx, under, z - sz)
-    }
-    for (let i = 0; i + 1 < facets.length; i++) {
-      const here = base + i * 4
-      const next = here + 4
-      // Top, then the two sides.
-      indices.push(here, here + 1, next, here + 1, next + 1, next)
-      indices.push(here, next, here + 2, next, next + 2, here + 2)
-      indices.push(here + 1, here + 3, next + 1, next + 1, here + 3, next + 3)
-    }
-    const lip = base + (facets.length - 1) * 4
-    indices.push(lip, lip + 1, lip + 2, lip + 1, lip + 3, lip + 2)
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  return geometry
-}

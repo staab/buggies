@@ -1,222 +1,103 @@
-import { shapeOf } from './globe.ts'
-import { PLANET_TERRAIN, ROAD_SKIRT, WORLD_SCALE, generateTerrain } from '@buggies/terrain'
+import { PLANET_TERRAIN, generateTerrain, type TerrainMap, type World } from '@buggies/terrain'
 import * as THREE from 'three'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 import { createTerrainView } from './terrain-view.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
+let map: TerrainMap
+let world: World
+let view: THREE.Group
 
-function positionValues(group: THREE.Group): number[] {
+/** Every point of every plain mesh under a group, where the world has it. */
+function positionValues(group: THREE.Group): THREE.Vector3[] {
   group.updateMatrixWorld(true)
-  const values: number[] = []
-  const vertex = new THREE.Vector3()
+  const points: THREE.Vector3[] = []
   group.traverse((object) => {
-    if (!(object instanceof THREE.Mesh)) return
+    if (!(object instanceof THREE.Mesh) || object instanceof THREE.InstancedMesh) return
     const attribute = object.geometry.getAttribute('position') as THREE.BufferAttribute
-    for (let i = 0; i < attribute.count; i++) {
-      vertex.fromBufferAttribute(attribute, i).applyMatrix4(object.matrixWorld)
-      values.push(vertex.x, vertex.y, vertex.z)
-    }
+    for (let i = 0; i < attribute.count; i += 7) points.push(new THREE.Vector3().fromBufferAttribute(attribute, i).applyMatrix4(object.matrixWorld))
   })
-  return values
+  return points
 }
 
-describe('createTerrainView', () => {
-  it('builds finite geometry for a generated map', () => {
-    const map = generateTerrain(5, { ...TEST_ISLANDS, size: 257 })
-    const view = createTerrainView(map)
-
-    // Land plus at least the sea plane.
-    expect(view.children.length).toBeGreaterThanOrEqual(2)
-
-    const values = positionValues(view)
-    expect(values.length).toBeGreaterThan(0)
-    expect(values.every((value) => Number.isFinite(value))).toBe(true)
+/** The meshes of the ground. */
+function groundPieces(): THREE.Mesh[] {
+  const pieces: THREE.Mesh[] = []
+  view.getObjectByName('ground')!.traverse((node) => {
+    if (node instanceof THREE.Mesh) pieces.push(node)
   })
+  return pieces
+}
 
-  it('stays within the map bounds', () => {
-    const map = generateTerrain(11, { ...TEST_ISLANDS, size: 257 })
-    const view = createTerrainView(map)
-    const worldSize = map.size * map.cellSize
-    const margin = 20 * WORLD_SCALE
+describe('the planet drawn', () => {
+  beforeAll(() => {
+    // An island with tunnels through its hills.
+    map = generateTerrain(6, PLANET_TERRAIN)
+    world = map.world!
+    view = createTerrainView(world)
+  }, 120_000)
 
-    for (const value of positionValues(view)) {
-      expect(value).toBeGreaterThan(-margin)
-      expect(value).toBeLessThan(worldSize + margin)
+  it('builds finite geometry, all of it on the planet: nothing under its sea floor, nothing flown off', () => {
+    const points = positionValues(view)
+    expect(points.length).toBeGreaterThan(1000)
+    for (const point of points) {
+      expect(Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z)).toBe(true)
+      // The sea sphere and the ground reach the whole way round; nothing else stands far off the ground.
+      expect(point.length() - world.radius).toBeGreaterThan(-80)
+      expect(point.length() - world.radius).toBeLessThan(250)
     }
   })
 
-  it('textures only the tiles with something painted on them, and draws the rest in the land colors alone', () => {
-    const map = generateTerrain(1, { ...TEST_ISLANDS, size: 385 })
-    const view = createTerrainView(map)
-    const pieces: THREE.Mesh[] = []
-    view.getObjectByName('ground')!.traverse((node) => {
-      if (node instanceof THREE.Mesh) pieces.push(node)
-    })
+  it('textures only the tiles with something painted on them, and draws the rest of each face in the land colors alone', () => {
+    const pieces = groundPieces()
     const textured = pieces.filter((piece) => (piece.material as THREE.MeshStandardMaterial).map !== null)
     const plain = pieces.filter((piece) => (piece.material as THREE.MeshStandardMaterial).vertexColors)
-    // The roads are painted on tiles of their own; the open land and the sea are not.
     expect(textured.length).toBeGreaterThan(0)
-    expect(plain).toHaveLength(1)
-    expect(plain[0]!.geometry.getAttribute('color').count).toBe(plain[0]!.geometry.getAttribute('position').count)
-    let texels = 0
-    for (const piece of textured) {
-      const image = (piece.material as THREE.MeshStandardMaterial).map!.image as { width: number; height: number }
-      texels += image.width * image.height
-    }
-    // A good deal less than one texture over the whole island at the same detail.
-    expect(texels).toBeLessThan((map.size * map.cellSize * 2) ** 2)
-    // Every road at grade is on a textured tile.
-    const boxes = textured.map((piece) => {
-      piece.geometry.computeBoundingBox()
-      return piece.geometry.boundingBox!
+    expect(plain.length).toBeLessThanOrEqual(6)
+    for (const piece of plain) expect(piece.geometry.getAttribute('color').count).toBe(piece.geometry.getAttribute('position').count)
+    // Every road at grade the ground carries is on a textured tile.
+    const spheres = textured.map((piece) => {
+      piece.geometry.computeBoundingSphere()
+      return piece.geometry.boundingSphere!
     })
-    for (const road of map.roads) {
+    for (const road of world.roads) {
       if (road.kind === 'highway') continue
       for (const point of road.points) {
-        expect(boxes.some((box) => point.x >= box.min.x - 0.5 && point.x <= box.max.x + 0.5 && point.z >= box.min.z - 0.5 && point.z <= box.max.z + 0.5)).toBe(true)
+        const at = new THREE.Vector3(point.x, point.y, point.z)
+        expect(spheres.some((sphere) => sphere.distanceToPoint(at) <= 1)).toBe(true)
       }
     }
   })
 
-  it('carves a tunnel bore and draws a solid shell through it', () => {
-    const map = generateTerrain(1, { ...TEST_ISLANDS, size: 257 })
-    const view = createTerrainView(map)
-
-    const ground = view.getObjectByName('ground')
-    const pieces: THREE.Mesh[] = []
-    ground?.traverse((node) => {
-      if (node instanceof THREE.Mesh) pieces.push(node)
-    })
-    const tunnel = view.children.find(
-      (child) =>
-        child instanceof THREE.Mesh &&
-        (child.material as THREE.MeshStandardMaterial).flatShading,
-    ) as THREE.Mesh | undefined
-
-    expect(pieces.length).toBeGreaterThan(0)
-    expect(tunnel).toBeDefined()
-
-    // Boundary facets were split to fit the cut, so the carved landscape has
-    // more vertices than the raw grid even though faces were removed.
-    const gridVertices = map.size * map.size
-    const vertices = pieces.reduce((sum, piece) => sum + piece.geometry.getAttribute('position').count, 0)
-    expect(vertices).toBeGreaterThan(gridVertices)
-
-    const position = tunnel!.geometry.getAttribute('position') as THREE.BufferAttribute
-    expect(position.count).toBeGreaterThan(0)
-    for (let i = 0; i < position.count; i++) {
-      expect(Number.isFinite(position.getX(i))).toBe(true)
-      expect(Number.isFinite(position.getY(i))).toBe(true)
-      expect(Number.isFinite(position.getZ(i))).toBe(true)
-    }
+  it('leaves the ground out where a tunnel is bored, and draws a solid shell through it', () => {
+    expect(world.holes.some((hole) => hole === 1)).toBe(true)
+    const cells = 6 * world.ground.n * world.ground.n
+    const triangles = groundPieces().reduce((sum, piece) => sum + piece.geometry.getIndex()!.count / 3, 0)
+    expect(triangles).toBeLessThan(cells * 2)
+    const shells = view.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh && (child.material as THREE.MeshStandardMaterial).flatShading === true)
+    expect(shells.length).toBeGreaterThan(0)
   })
 
-  it('paves the deck skirt in the road color where each ramp runs out from under the deck', () => {
-    const map = generateTerrain(1, TEST_ISLANDS)
-    const view = createTerrainView(map)
-    const highway = map.roads.find((road) => road.kind === 'highway')!
-    const ramps = map.roads.filter((road) => road.kind === 'ramp')
-    expect(ramps.length).toBeGreaterThan(0)
-    const half = highway.width / 2
-    const distanceToHighway = (x: number, z: number): number =>
-      Math.min(...highway.points.map((point) => Math.hypot(point.x - x, point.z - z)))
-    // The highway's deck mesh: six colored vertices per centerline point.
-    const deck = view.children.find(
-      (child): child is THREE.Mesh =>
-        child instanceof THREE.Mesh &&
-        child.geometry.getAttribute('color') !== undefined &&
-        child.geometry.getAttribute('position').count === highway.points.length * 6,
-    )
-    expect(deck).toBeDefined()
-    const colors = deck!.geometry.getAttribute('color')
-    const positions = deck!.geometry.getAttribute('position')
-    let paved = 0
-    for (const ramp of ramps) {
-      // The ramp begins under the deck's edge and comes out across the
-      // skirt: where its lane crosses the skirt's foot, the skirt is road.
-      const mouth = ramp.points.reduce((closest, point) =>
-        Math.abs(distanceToHighway(point.x, point.z) - (half + ROAD_SKIRT)) <
-        Math.abs(distanceToHighway(closest.x, closest.z) - (half + ROAD_SKIRT))
-          ? point
-          : closest,
-      )
-      expect(distanceToHighway(ramp.points[0]!.x, ramp.points[0]!.z)).toBeLessThan(half)
-      let nearest = 0
-      let best = Infinity
-      for (const [i, point] of highway.points.entries()) {
-        const distance = Math.hypot(point.x - mouth.x, point.z - mouth.z)
-        if (distance < best) {
-          best = distance
-          nearest = i
-        }
-      }
-      // Whichever skirt vertex is nearer the mouth is the one beside it.
-      const left = nearest * 6 + 2
-      const right = nearest * 6 + 3
-      const nearer =
-        Math.hypot(positions.getX(left) - mouth.x, positions.getZ(left) - mouth.z) <
-        Math.hypot(positions.getX(right) - mouth.x, positions.getZ(right) - mouth.z)
-          ? left
-          : right
-      const edge = nearest * 6 + (nearer === left ? 0 : 1)
-      const sameColor =
-        Math.abs(colors.getX(nearer) - colors.getX(edge)) < 1e-6 &&
-        Math.abs(colors.getY(nearer) - colors.getY(edge)) < 1e-6 &&
-        Math.abs(colors.getZ(nearer) - colors.getZ(edge)) < 1e-6
-      // The skirt runs down to the lane's surface at its foot, a hair below the deck.
-      const drop = positions.getY(edge) - positions.getY(nearer)
-      if (sameColor && drop >= 0 && drop < 1) paved++
-    }
-    expect(paved).toBe(ramps.length)
-  }, 30_000)
-
-
-
-  it("wraps a planet's island round the sphere: the ground on its surface, what stands on it upright, and the sea a sphere round it all", () => {
-    const map = generateTerrain(1, PLANET_TERRAIN)
-    const shape = shapeOf(map)
-    if (shape.kind !== 'planet') throw new Error('not a planet')
-    const { radius } = shape.planet
-    const view = createTerrainView(map)
-    view.updateMatrixWorld(true)
-    const point = new THREE.Vector3()
-    let grounds = 0
-    view.traverse((node) => {
-      if (!(node instanceof THREE.Mesh) || node instanceof THREE.InstancedMesh || node.name !== 'ground') return
-      grounds++
-      const positions = node.geometry.getAttribute('position')
-      for (let i = 0; i < positions.count; i += 97) {
-        point.fromBufferAttribute(positions, i).applyMatrix4(node.matrixWorld)
-        const height = point.length() - radius
-        expect(height).toBeGreaterThan(-60)
-        expect(height).toBeLessThan(200)
-      }
-    })
-    expect(grounds).toBeGreaterThan(0)
+  it('stands everything upright on the sphere, moving parts too, and the sea a sphere round it all', () => {
     // Whatever moves, moved as a frame is drawn: the cranes' jibs, the rotors, the chairs, the hands, the mist.
     const none = null as never
     view.traverse((node) => node.onBeforeRender(none, none, none, none, none, none))
     view.updateMatrixWorld(true)
-    // Every mesh's points stand on the sphere, a crane's turning top among them.
-    const cranes = map.buildings.filter((building) => building.kind === 'crane').length
+    // A crane's turning top stands on it, its five parts high over the ground.
+    const cranes = world.buildings.filter((building) => building.kind === 'crane').length
     let tops = 0
+    const point = new THREE.Vector3()
     view.traverse((node) => {
-      if (!(node instanceof THREE.Mesh) || node instanceof THREE.InstancedMesh || node.name === 'water') return
-      if (node.parent?.parent?.userData.whole === true) tops++
-      node.geometry.computeBoundingSphere()
-      if (node.geometry.boundingSphere!.radius > radius / 2) return
-      point.copy(node.geometry.boundingSphere!.center).applyMatrix4(node.matrixWorld)
-      expect(point.length() - radius).toBeGreaterThan(-60)
-      expect(point.length() - radius).toBeLessThan(200)
+      if (!(node instanceof THREE.Mesh) || node.parent?.parent?.name !== 'crane') return
+      tops++
+      point.setFromMatrixPosition(node.matrixWorld)
+      expect(point.length() - world.radius).toBeGreaterThan(0)
+      expect(point.length() - world.radius).toBeLessThan(200)
     })
     expect(tops).toBe(cranes * 5)
-    // Every instance of what stands on the island stands on the sphere.
+    // Nearly every instance upright: a few things are built leaning.
     const matrix = new THREE.Matrix4()
     const up = new THREE.Vector3()
-    // Nearly all of it upright: a few things are built leaning, as they are on the flat.
     let seen = 0
     let upright = 0
     view.traverse((node) => {
@@ -225,7 +106,7 @@ describe('createTerrainView', () => {
         node.getMatrixAt(i, matrix)
         point.setFromMatrixPosition(matrix)
         up.set(0, 1, 0).transformDirection(matrix)
-        expect(point.length() - radius).toBeGreaterThan(-60)
+        expect(point.length() - world.radius).toBeGreaterThan(-60)
         seen++
         if (up.dot(point.clone().normalize()) > 0.9) upright++
       }
@@ -234,5 +115,5 @@ describe('createTerrainView', () => {
     expect(upright / seen).toBeGreaterThan(0.95)
     const sea = view.getObjectByName('water') as THREE.Mesh
     expect(sea.geometry).toBeInstanceOf(THREE.SphereGeometry)
-  }, 120_000)
+  })
 })

@@ -1,8 +1,5 @@
-import type { IslandMark } from '@buggies/net'
-import { shapeOf } from './globe.ts'
-import { mapExtent, type TerrainMap } from '@buggies/terrain'
+import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js'
 
 import { seatColor } from './car-view.ts'
@@ -23,16 +20,6 @@ export function islandSummary(map: TerrainMap): string {
     `seed ${map.seed} · ${count(map.districts.length, 'city').replace('citys', 'cities')}, ` +
     `${count(map.roads.length, 'road')}, ${count(map.rivers.length, 'river')}, ${count(map.lakes.length, 'lake')}`
   )
-}
-
-/** An island orbited from above, round its middle, never from under it. */
-function islandControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, extent: { x: number; z: number }): OrbitControls {
-  const controls = new OrbitControls(camera, surface)
-  controls.enableDamping = true
-  controls.maxPolarAngle = Math.PI / 2.05
-  controls.target.set(extent.x / 2, 0, extent.z / 2)
-  controls.update()
-  return controls
 }
 
 /** A planet turned about its middle any way at all, and come in to no closer than a little over its surface. */
@@ -59,17 +46,12 @@ function planetControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, r
  * menu is up, since the menu is what this is for.
  */
 export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView {
-  const extent = mapExtent(map)
-  const worldSize = Math.max(extent.x, extent.z)
-  const shape = shapeOf(map)
-  const camera = new THREE.PerspectiveCamera(55, 1, 0.5, worldSize * 6.5)
-  // Over the island, or round the whole planet, looking at its middle from out over its equator.
-  if (shape.kind === 'planet') camera.position.set(0, shape.planet.radius * 0.9, shape.planet.radius * 2.6)
-  else camera.position.set(extent.x / 2 + worldSize * 0.35, worldSize * 0.8, extent.z / 2 + worldSize * 0.65)
-
-  // A planet is turned about freely, over its poles and all, by quaternions: an orbit keeps its
-  // up the y axis and stops short at each pole. A flat island is orbited, never from under it.
-  const controls = shape.kind === 'planet' ? planetControls(camera, surface, shape.planet.radius) : islandControls(camera, surface, extent)
+  const { radius } = map.world!
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.5, radius * 40)
+  // Round the whole planet, looking at its middle from out over its equator.
+  camera.position.set(0, radius * 0.9, radius * 2.6)
+  // Turned about freely, over its poles and all, by quaternions: an orbit keeps its up the y axis and stops short at each pole.
+  const controls = planetControls(camera, surface, radius)
 
   const beacons = new THREE.Group()
   const shaft = new THREE.CylinderGeometry(BEACON_RADIUS * 0.5, BEACON_RADIUS, BEACON_HEIGHT, 12, 1, true).translate(0, BEACON_HEIGHT / 2, 0)
@@ -93,7 +75,7 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
     resize(aspect) {
       camera.aspect = aspect
       camera.updateProjectionMatrix()
-      if (controls instanceof TrackballControls) controls.handleResize()
+      controls.handleResize()
     },
     update() {
       controls.update()
@@ -107,8 +89,8 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
         const { shaft: glow, cap: head } = paint(mark.kind === 'player' ? seatColor(mark.seat) : NPC_COLOR)
         const beacon = new THREE.Group()
         beacon.position.set(mark.position.x, mark.position.y, mark.position.z)
-        // Standing up where it is: away from a planet's middle, or up the y axis on the flat.
-        if (shape.kind === 'planet') beacon.quaternion.setFromUnitVectors(UP, beacon.position.clone().normalize())
+        // Standing up where it is, away from the planet's middle.
+        beacon.quaternion.setFromUnitVectors(UP, beacon.position.clone().normalize())
         const top = new THREE.Mesh(cap, head)
         top.position.y = BEACON_HEIGHT
         beacon.add(new THREE.Mesh(shaft, glow), top)

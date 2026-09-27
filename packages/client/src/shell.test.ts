@@ -50,7 +50,7 @@ function stubShowroom(): StubShowroom {
 }
 
 function fakeMap(seed: number): TerrainMap {
-  return { seed, size: 8, cellSize: 1, districts: [], roads: [], rivers: [], lakes: [] } as unknown as TerrainMap
+  return { seed, size: 8, cellSize: 1, districts: [], roads: [], rivers: [], lakes: [], world: { radius: 600 } } as unknown as TerrainMap
 }
 
 class StubMenu implements ShellMenu {

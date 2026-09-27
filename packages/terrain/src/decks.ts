@@ -61,9 +61,10 @@ const LANES = 3
  * beside it; in a tunnel the deck runs level to the wall. A surface road is
  * the ground wherever it is at grade, so only its bridges are built.
  */
-export function deckMesh(roads: readonly Road[], field: Heightfield): { positions: number[]; indices: number[] } {
+export function deckMesh(roads: readonly Road[], field: Heightfield): { positions: number[]; indices: number[]; surfaces: number[] } {
   const positions: number[] = []
   const indices: number[] = []
+  const surfaces: number[] = []
   for (const road of roads) {
     const count = road.points.length
     const segmentCount = road.closed ? count : count - 1
@@ -77,6 +78,8 @@ export function deckMesh(roads: readonly Road[], field: Heightfield): { position
       const base = positions.length / 3
       crossSection(road, field, i, positions, shoulder, lift)
       crossSection(road, field, (i + 1) % count, positions, shoulder, lift)
+      // The roadway's edges are the road, of its segment's structure; its shoulders are the skirt, or a tunnel's ledge.
+      for (let k = 0; k < 2; k++) surfaces.push(DECK_SKIRT, structure, structure, DECK_SKIRT)
 
       // Without a shoulder the outer pair sits exactly on the edge pair, and
       // the lanes either side of the roadway come out as zero-area
@@ -94,5 +97,8 @@ export function deckMesh(roads: readonly Road[], field: Heightfield): { position
       }
     }
   }
-  return { positions, indices }
+  return { positions, indices, surfaces }
 }
+
+/** What a deck's vertex is that is none of the `ROAD_*` structures: a shoulder, down to the ground or out to a tunnel's wall. */
+export const DECK_SKIRT = 255

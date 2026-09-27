@@ -1,6 +1,6 @@
 import type { VehicleProfileId } from '@buggies/game'
 import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
-import { mapExtent, type TerrainMap } from '@buggies/terrain'
+import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -61,7 +61,7 @@ export interface ShellModes {
 
 /** The real thing. */
 export const MODES: ShellModes = {
-  terrainView: createTerrainView,
+  terrainView: (map) => createTerrainView(map.world!),
   island: createIslandMode,
   showroom: createShowroomMode,
   rooms: (url) => fetchRooms(new WebSocketClientTransport(url)),
@@ -378,12 +378,11 @@ export class Shell implements MenuHost {
       this.map = made
       this.view = this.modes.terrainView(made)
       this.scene.add(this.view)
-      // View distances ride the world scale so the framing stays the same.
-      const extent = mapExtent(made)
-      const across = Math.max(extent.x, extent.z)
+      // View distances ride the planet's size so the framing stays the same.
+      const across = 2 * Math.PI * made.world!.radius
       this.scene.fog = new THREE.Fog('#a9cbe6', across * 0.65, across * 2.34)
-      // Over the middle of the map, or of the planet it is wrapped round.
-      this.sun.centerOn(made.planet ? { x: 0, y: 0, z: 0 } : { x: extent.x / 2, y: 0, z: extent.z / 2 })
+      // Over the middle of the planet.
+      this.sun.centerOn({ x: 0, y: 0, z: 0 })
       return made
     })
     this.making = { seed, island }

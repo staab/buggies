@@ -1,11 +1,10 @@
 import { GOAL_KINDS, GOAL_LABELS, GOAL_TARGET_MOST, type Goal, type GoalKind, type GoalRequest } from '@buggies/game'
-import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
-import * as THREE from 'three'
+import type { Vec3 } from '@buggies/physics'
+import { onLand, type TerrainMap } from '@buggies/terrain'
 
-import { Globe, shapeOf } from './globe.ts'
-import { drawIsland } from './island-picture.ts'
+import { drawIsland, offPicture, onPicture } from './island-picture.ts'
 
-/** How many pixels a side the island is drawn at to pick a spot on. */
+/** How many pixels across the planet is drawn at to pick a spot on. */
 const MAP_PIXELS = 360
 
 /** What each goal asks for, under its name. */
@@ -24,7 +23,7 @@ export interface GoalHost {
   /** The island being played, or nothing when no game is on. */
   map(): TerrainMap | null
   /** Where the player is, to be shown on the map. */
-  position(): { x: number; z: number } | null
+  position(): Vec3 | null
   /** The goal being played for, if any. */
   goal(): Goal | null
   /** Play for this goal, or for none. */
@@ -56,7 +55,8 @@ export class GoalMenu {
   private readonly setButton: HTMLButtonElement
   private readonly clearButton: HTMLButtonElement
   private kind: GoalKind = 'score'
-  private picked: { x: number; z: number } | null = null
+  /** The way out from the planet's middle through the spot picked. */
+  private picked: Vec3 | null = null
   private island: { seed: number; picture: HTMLCanvasElement } | null = null
 
   constructor(root: HTMLElement, host: GoalHost) {
@@ -149,7 +149,7 @@ export class GoalMenu {
   show(): void {
     if (this.host.map() === null) return
     const goal = this.host.goal()
-    if (goal?.kind === 'location') this.picked = { x: goal.x, z: goal.z }
+    if (goal?.kind === 'location') this.picked = { x: goal.x, y: goal.y, z: goal.z }
     this.root.hidden = false
     this.pick(goal?.kind ?? this.kind)
   }
@@ -183,10 +183,8 @@ export class GoalMenu {
     const map = this.host.map()
     if (map === null) return
     const bounds = this.board.getBoundingClientRect()
-    const extent = mapExtent(map)
-    const x = ((event.clientX - bounds.left) / bounds.width) * extent.x
-    const z = ((event.clientY - bounds.top) / bounds.height) * extent.z
-    this.picked = sampleHeight(map.heightfield, x, z) > map.seaLevel ? { x, z } : null
+    const spot = offPicture((event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)
+    this.picked = onLand(map.world!, spot) ? spot : null
     this.note.textContent = this.picked === null ? 'Pick a spot on land.' : ''
     this.render()
   }
@@ -194,11 +192,7 @@ export class GoalMenu {
   private confirm(): void {
     if (this.kind === 'location') {
       if (this.picked === null) return
-      // The way out from the planet's middle through the spot picked on the map.
-      const map = this.host.map()
-      if (map === null) return
-      const spot = new Globe(shapeOf(map)).toWorld(this.picked.x, 0, this.picked.z, new THREE.Vector3()).normalize()
-      this.host.setGoal({ kind: 'location', target: 0, x: spot.x, y: spot.y, z: spot.z })
+      this.host.setGoal({ kind: 'location', target: 0, ...this.picked })
     } else {
       const target = this.target()
       if (target === null) return
@@ -226,26 +220,27 @@ export class GoalMenu {
     const context = this.board.getContext('2d')
     if (map === null || context === null) return
     if (this.island?.seed !== map.seed) {
-      this.island = { seed: map.seed, picture: drawIsland(map, MAP_PIXELS) }
+      this.island = { seed: map.seed, picture: drawIsland(map.world!, MAP_PIXELS) }
       this.board.width = this.island.picture.width
       this.board.height = this.island.picture.height
     }
     context.drawImage(this.island.picture, 0, 0)
-    const extent = mapExtent(map)
-    const scale = MAP_PIXELS / Math.max(extent.x, extent.z)
+    const { width, height } = this.board
     const here = this.host.position()
     if (here !== null) {
+      const { u, v } = onPicture(here)
       context.fillStyle = '#6fd3c7'
       context.strokeStyle = '#0b1620'
       context.lineWidth = 2
       context.beginPath()
-      context.arc(here.x * scale, here.z * scale, 5, 0, Math.PI * 2)
+      context.arc(u * width, v * height, 5, 0, Math.PI * 2)
       context.fill()
       context.stroke()
     }
     if (this.picked !== null) {
-      const x = this.picked.x * scale
-      const z = this.picked.z * scale
+      const { u, v } = onPicture(this.picked)
+      const x = u * width
+      const z = v * height
       context.strokeStyle = '#ffd24a'
       context.lineWidth = 3
       context.beginPath()

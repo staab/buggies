@@ -7,6 +7,7 @@
 import { vlength, chartFrame, chartToWorld, createChartFrame, qmultiply, quatFromBasis, quatFromYaw, worldToChart, type Planet, type Vec3 } from '@buggies/physics'
 
 import { deckMesh } from './decks.ts'
+import { interchangeZones, parkLoop } from './interchanges.ts'
 import { DISTRICT_COUNTRY } from './districts.ts'
 import { sampleHeight } from './heightfield.ts'
 import type { SphereMountain } from './sphere-heights.ts'
@@ -16,7 +17,7 @@ import { railMesh, railRuns } from './rails.ts'
 import { roadLift } from './roads.ts'
 import { rampFacets } from './ramps.ts'
 import { sidewalkMesh } from './sidewalks.ts'
-import { TUNNEL_WALL, tunnelCutFloors, tunnelSegments, tunnelShellMesh } from './tunnels.ts'
+import { TUNNEL_WALL, buildTunnelHoles, tunnelCutFloors, tunnelSegments, tunnelShellMesh } from './tunnels.ts'
 import type { TerrainMap } from './types.ts'
 import { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
 import type { Stand, World, WorldLake, WorldLot, WorldMesh } from './world.ts'
@@ -79,12 +80,18 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
   // The ground where it is driven on: cut to below the road through every tunnel, and a cell's
   // diagonal beyond the bore either side, so no face of the hill leans in over the ledge.
   const cutMargin = cellSize * Math.SQRT2
-  const floors = tunnelCutFloors(map.heightfield, tunnelSegments(map.roads), cutMargin)
+  const bores = tunnelSegments(map.roads)
+  const floors = tunnelCutFloors(map.heightfield, bores, cutMargin)
   const bored = Float32Array.from(ground.heights)
+  // Where the drawn ground is left out for the bore to be seen into: the cells the bore takes.
+  const boreHoles = buildTunnelHoles(map.heightfield, bores)
+  const holes = new Uint8Array(count)
   for (let at = 0; at < count; at++) {
     const cell = cellOf[at]!
-    const floor = cell < 0 ? NaN : floors[cell]!
+    if (cell < 0) continue
+    const floor = floors[cell]!
     if (!Number.isNaN(floor)) bored[at] = Math.min(bored[at]!, (floor - BORE_BED) * scaleOf[at]!)
+    holes[at] = boreHoles[cell]!
   }
   const shells = map.roads.flatMap((road) => {
     // As thick as a collider as it must be to roof over every face beside a cut cell: the extra is buried in the hill.
@@ -152,6 +159,7 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
     seaLevel: map.seaLevel,
     ground,
     bored,
+    holes,
     water,
     districtOf,
     mountains,
@@ -227,7 +235,12 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
       const { at, turn, scale } = stand(field.x, groundAt(field.x, field.z), field.z, field.yaw)
       return { kind: field.kind, at, turn, width: field.width * scale, depth: field.depth * scale, tone: field.tone }
     }),
-    decks: mesh(decks.positions, decks.indices),
+    decks: { ...mesh(decks.positions, decks.indices), surfaces: Uint8Array.from(decks.surfaces) },
+    // A park's path lies on the ground.
+    paths: interchangeZones(map.roads)
+      .map(parkLoop)
+      .filter((loop) => loop.length > 0)
+      .map((loop) => loop.map((p) => point(p.x, groundAt(p.x, p.z), p.z))),
     shells,
     rails: mesh(rails.positions, rails.indices),
     curbs: mesh(curbs.positions, curbs.indices),
