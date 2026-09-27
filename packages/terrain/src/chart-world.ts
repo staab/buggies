@@ -4,12 +4,12 @@
  * it is and scaled as the chart is there.
  */
 
-import { vlength, chartFrame, chartToWorld, createChartFrame, qmultiply, quatFromBasis, quatFromYaw, worldToChart, type Planet, type Vec3 } from '@buggies/physics'
+import { chartFrame, chartToWorld, createChartFrame, qmultiply, quatFromBasis, quatFromYaw, worldToChart, type Planet, type Vec3 } from '@buggies/physics'
 
 import { deckMesh } from './decks.ts'
 import { interchangeZones, parkLoop } from './interchanges.ts'
-import { DISTRICT_COUNTRY } from './districts.ts'
 import { sampleHeight } from './heightfield.ts'
+import type { SphereDistricts } from './sphere-districts.ts'
 import type { SphereMountain } from './sphere-heights.ts'
 import type { SphereGround } from './sphere.ts'
 import { groundDirections } from './sphere-water.ts'
@@ -31,7 +31,7 @@ import type { Stand, World, WorldLake, WorldLot, WorldMesh } from './world.ts'
 const BORE_BED = 0.6
 
 /** The world a planet's chart map comes to, on the ground it was read off, with the mountains it was raised with. */
-export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Planet, mountains: readonly SphereMountain[]): World {
+export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Planet, mountains: readonly SphereMountain[], cities: SphereDistricts): World {
   const frame = createChartFrame()
   const point = (x: number, height: number, z: number): Vec3 => chartToWorld(planet, x, height, z, { x: 0, y: 0, z: 0 })
   /** How much the chart is scaled at a point of it. */
@@ -122,17 +122,14 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
 
   const levels = buildWaterLevels(map)
   const water = new Float32Array(count)
-  const districtOf = new Uint8Array(count)
   for (let at = 0; at < count; at++) {
     const cell = cellOf[at]!
     if (cell < 0) {
       water[at] = ground.heights[at]! <= map.seaLevel ? map.seaLevel : DRY
-      districtOf[at] = DISTRICT_COUNTRY
       continue
     }
     const level = waterLevelAt(map.heightfield, levels, (cell % width) * cellSize, Math.floor(cell / width) * cellSize)
     water[at] = level === DRY ? DRY : level * scaleOf[at]!
-    districtOf[at] = map.districtOf[cell]!
   }
 
   const lakeOf = new Map<number, number>()
@@ -158,29 +155,17 @@ export function worldOfChart(map: TerrainMap, ground: SphereGround, planet: Plan
     radius: planet.radius,
     seaLevel: map.seaLevel,
     ground,
+    districtOf: cities.districtOf,
     bored,
     holes,
     water,
-    districtOf,
     mountains,
     rivers: map.rivers.map((river) => ({
       id: river.id,
       points: river.points.map((p) => ({ at: point(p.x, p.y, p.z), width: p.width * scaleAt(p.x, p.z) })),
     })),
     lakes,
-    districts: map.districts.map((district) => {
-      const scale = scaleAt(district.cx, district.cz)
-      const center = point(district.cx, 0, district.cz)
-      const length = vlength(center)
-      return {
-        id: district.id,
-        center: { x: center.x / length, y: center.y / length, z: center.z / length },
-        radius: district.radius * scale,
-        suburbWidth: district.suburbWidth * scale,
-        area: district.area,
-        island: district.island,
-      }
-    }),
+    districts: cities.districts,
     roads: map.roads.map((road) => ({
       id: road.id,
       kind: road.kind,

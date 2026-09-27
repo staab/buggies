@@ -113,13 +113,14 @@ export function bendMaterials(root: THREE.Object3D): void {
   })
 }
 
-/** Bend what is drawn round a car here on a planet this big; or, with no planet, bend nothing. */
-export function bendAround(at: { x: number; y: number; z: number } | null, radius = 1): void {
+/** Bend what is drawn round a point here on a planet this big, as though it were this many times bigger; or, with no planet, bend nothing. */
+export function bendAround(at: { x: number; y: number; z: number } | null, radius = 1, scale = BEND_SCALE): void {
   if (at === null) {
     uniforms.bendOn.value = 0
     return
   }
   uniforms.bendOn.value = 1
   uniforms.bendRadius.value = radius
+  uniforms.bendScale.value = scale
   uniforms.bendUp.value.set(at.x, at.y, at.z).normalize()
 }

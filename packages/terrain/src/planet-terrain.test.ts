@@ -7,6 +7,7 @@ import {
   PLANET_TERRAIN,
   RAISED_KINDS,
   ROAD_SURFACE,
+  arcDistance,
   SPHERE_CELLS,
   generateTerrain,
   gridPlace,
@@ -83,9 +84,16 @@ describe("a planet's map", () => {
         }
       }
       const grid = { face: 0, i: 0, j: 0 }
+      // The cities are placed on the planet's own ground: each on land, its middle city, well apart along the ground.
+      expect(world.districts.length).toBeGreaterThanOrEqual(3)
       for (const district of world.districts) {
         gridPlace(ground.n, district.center, grid)
         expect(world.districtOf[groundIndex(ground, grid.face, Math.round(grid.i), Math.round(grid.j))]).toBe(DISTRICT_CITY)
+        expect(sphereHeight(ground, district.center)).toBeGreaterThan(world.seaLevel)
+        expect(district.area).toBeGreaterThan(0)
+        for (const other of world.districts) {
+          if (other !== district) expect(arcDistance(district.center, other.center, world.radius)).toBeGreaterThan(500)
+        }
       }
       for (const pole of [2, 3]) expect(world.water[groundIndex(ground, pole, face, face)]).toBe(world.seaLevel)
     }, 60_000)

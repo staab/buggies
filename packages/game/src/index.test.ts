@@ -1,5 +1,5 @@
 import { vdot, type Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, ROAD_GRADE, ROAD_TUNNEL, generateTerrain, groundUnder, heightOver, type TerrainMap, type World } from '@buggies/terrain'
+import { PLANET_TERRAIN, ROAD_GRADE, ROAD_TUNNEL, alongGround, generateTerrain, groundUnder, heightOver, upOf, type TerrainMap, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -195,7 +195,9 @@ describe('game', () => {
     // The new one starts right where the old one was, heading the same way;
     // the arena itself was not started over.
     expect(apart(after.position, before.position)).toBeLessThan(0.01)
-    expect(vdot(after.forward, before.forward)).toBeGreaterThan(0.99)
+    // Heading the same way along the ground: set down level with the planet, not pitched as the old one was on its slope.
+    const up = upOf(after.position)
+    expect(angleBetween(alongGround(after.forward, up), alongGround(before.forward, up))).toBeLessThan(0.05)
     expect(arena.tick).toBe(tick)
     // And it sits as the new vehicle: on the tank's springs, at the tank's height.
     run(arena, NEUTRAL_INPUT, 1)

@@ -2,6 +2,7 @@ import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js'
 
+import { bendAround, bendMaterials } from './bend.ts'
 import { seatColor } from './car-view.ts'
 import type { ModeView } from './mode.ts'
 
@@ -22,6 +23,9 @@ export function islandSummary(map: TerrainMap): string {
   )
 }
 
+/** How many times bigger than it is the planet is drawn while an island is chosen, round the point facing the camera. */
+const SEED_BEND_SCALE = 4
+
 /** A planet turned about its middle any way at all, and come in to no closer than a little over its surface. */
 function planetControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, radius: number): TrackballControls {
   const controls = new TrackballControls(camera, surface)
@@ -34,7 +38,7 @@ function planetControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, r
   controls.staticMoving = false
   controls.dynamicDampingFactor = 0.12
   controls.minDistance = radius * 1.15
-  controls.maxDistance = radius * 6
+  controls.maxDistance = radius * 10
   controls.update()
   return controls
 }
@@ -52,6 +56,7 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
   camera.position.set(0, radius * 0.9, radius * 2.6)
   // Turned about freely, over its poles and all, by quaternions: an orbit keeps its up the y axis and stops short at each pole.
   const controls = planetControls(camera, surface, radius)
+  const facing = new THREE.Vector3()
 
   const beacons = new THREE.Group()
   const shaft = new THREE.CylinderGeometry(BEACON_RADIUS * 0.5, BEACON_RADIUS, BEACON_HEIGHT, 12, 1, true).translate(0, BEACON_HEIGHT / 2, 0)
@@ -79,6 +84,13 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
     },
     update() {
       controls.update()
+    },
+    render(renderer) {
+      // Drawn as though the planet were bigger round the point facing the camera, so it does not look so sharply curved.
+      bendMaterials(scene)
+      bendAround(facing.copy(camera.position).setLength(radius), radius, SEED_BEND_SCALE)
+      renderer.render(scene, camera)
+      bendAround(null)
     },
     hud() {
       return []

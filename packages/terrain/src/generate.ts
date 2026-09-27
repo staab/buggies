@@ -16,9 +16,11 @@ import { createSphereGround, gridDirection, gridPlace, groundIndex, sphereHeight
 import { onTangentPlane, raiseSphereGround, tangentFrame, type SphereMountain } from './sphere-heights.ts'
 import { findSphereLakes, groundDirections, groundNeighbors, routeSphereFlow, traceSphereRivers, type SphereLake, type SphereRiverPoint } from './sphere-water.ts'
 import { worldOfChart } from './chart-world.ts'
+import { generateSphereDistricts, type SphereDistricts } from './sphere-districts.ts'
 import { generateRoads } from './roads.ts'
 import { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 import type {
+  District,
   Heightfield,
   Lake,
   Mountain,
@@ -826,7 +828,14 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   for (const lake of lakes) {
     for (const cell of lake.cells) water.add(cell)
   }
-  const { districts, districtOf } = generateDistricts(field, seed, seaLevel, water, islandOf, cityCount)
+  // A planet's cities are placed on its own ground, and the map is given them; a flat map places its own.
+  let native: SphereDistricts | null = null
+  let districts: District[]
+  let districtOf: Uint8Array
+  if (planet !== null && ground !== null) {
+    native = generateSphereDistricts(ground, seed, seaLevel * WORLD_SCALE, waterOnSphere(water, field, ground, planet), cityCount)
+    ;({ districts, districtOf } = districtsOnChart(native, ground, field, planet))
+  } else ({ districts, districtOf } = generateDistricts(field, seed, seaLevel, water, islandOf, cityCount))
 
   const map: TerrainMap = {
     seed,
@@ -879,7 +888,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   )
   if (planet !== null && ground !== null && unbuilt !== null) {
     settleSphereOnChart(ground, map.heightfield, unbuilt, planet)
-    map.world = worldOfChart(map, ground, planet, sphereMountains)
+    map.world = worldOfChart(map, ground, planet, sphereMountains, native!)
   }
   return map
 }
@@ -937,6 +946,66 @@ function readChartFromSphere(field: Heightfield, ground: SphereGround, planet: P
       heights[row * width + col] = sphereHeight(ground, direction) / (WORLD_SCALE * place.scale)
     }
   }
+}
+
+/** Which of the planet's grid points the map has under a river or a lake, at the map's reference scale. */
+function waterOnSphere(water: Set<number>, field: Heightfield, ground: SphereGround, planet: Planet): Uint8Array {
+  const flags = new Uint8Array(ground.heights.length)
+  const direction = { x: 0, y: 0, z: 0 }
+  const point = { x: 0, y: 0, z: 0 }
+  const chart = { x: 0, y: 0, z: 0 }
+  const { width, depth, cellSize } = field
+  for (let face = 0; face < 6; face++) {
+    for (let j = 0; j <= ground.n; j++) {
+      for (let i = 0; i <= ground.n; i++) {
+        gridDirection(ground.n, face, i, j, direction)
+        point.x = direction.x * planet.radius
+        point.y = direction.y * planet.radius
+        point.z = direction.z * planet.radius
+        worldToChart(planet, point, chart)
+        const col = Math.round(chart.x / WORLD_SCALE / cellSize)
+        const row = Math.round(chart.z / WORLD_SCALE / cellSize)
+        if (col < 0 || row < 0 || col >= width || row >= depth) continue
+        if (water.has(row * width + col)) flags[groundIndex(ground, face, i, j)] = 1
+      }
+    }
+  }
+  return flags
+}
+
+/**
+ * The planet's cities as the map has them, at its reference scale: each
+ * city's middle where the map has it and its reaches as long as the map
+ * has them there, and each cell's district its nearest grid point's.
+ */
+function districtsOnChart(native: SphereDistricts, ground: SphereGround, field: Heightfield, planet: Planet): { districts: District[]; districtOf: Uint8Array } {
+  const onChart = { x: 0, y: 0, z: 0 }
+  const districts = native.districts.map((city): District => {
+    worldToChart(planet, { x: city.center.x * planet.radius, y: city.center.y * planet.radius, z: city.center.z * planet.radius }, onChart)
+    const shrink = WORLD_SCALE * Math.sqrt(Math.max(1 - city.center.y * city.center.y, 1e-9))
+    return {
+      id: city.id,
+      cx: onChart.x / WORLD_SCALE,
+      cz: onChart.z / WORLD_SCALE,
+      radius: city.radius / shrink,
+      suburbWidth: city.suburbWidth / shrink,
+      area: city.area,
+      island: city.island,
+    }
+  })
+  const { width, depth, cellSize } = field
+  const districtOf = new Uint8Array(width * depth)
+  const place = { longitude: 0, latitude: 0, scale: 1 }
+  const direction = { x: 0, y: 0, z: 0 }
+  const grid = { face: 0, i: 0, j: 0 }
+  for (let row = 0; row < depth; row++) {
+    for (let col = 0; col < width; col++) {
+      placeOf(planet, col * cellSize * WORLD_SCALE, row * cellSize * WORLD_SCALE, place)
+      gridPlace(ground.n, directionOf(place.longitude, place.latitude, direction), grid)
+      districtOf[row * width + col] = native.districtOf[groundIndex(ground, grid.face, Math.round(grid.i), Math.round(grid.j))]!
+    }
+  }
+  return { districts, districtOf }
 }
 
 /** A river on the planet as the map has it: at the map's reference scale, its surface and width smaller than the planet's by the map's scale. */
