@@ -6,7 +6,7 @@ name: Server image
 
 on:
   push:
-    branches: [main, master]
+    branches: [master, 3d]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
