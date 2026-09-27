@@ -28,7 +28,7 @@ In **2 players** mode, two people share one keyboard on a split screen, and each
 
 ## The planet
 
-Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera and the sun stand over wherever your car is, so it is always day where you play. Around your car the world is drawn as though the planet were four times bigger, which puts the horizon about twice as far off; only the drawing is bent, not the game. The islands keep to a band round the equator, with open sea toward the poles. Away from the equator the land shrinks a little: a street 40° north is about three quarters of the width of one on the equator, and at the band's edge, about 52° north or south, about three fifths, while the cars, the bananas and the machines keep their size.
+Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera and the sun stand over wherever your car is, so it is always day where you play. Around your car the world is drawn as though the planet were eight times bigger, which puts the horizon nearly three times as far off; only the drawing is bent, not the game. The islands keep to a band round the equator, with open sea toward the poles. Away from the equator the land shrinks a little: a street 40° north is about three quarters of the width of one on the equator, and at the band's edge, about 52° north or south, about three fifths, while the cars, the bananas and the machines keep their size.
 
 ## Bananas
 

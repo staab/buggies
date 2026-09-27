@@ -2700,8 +2700,8 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
   // past where the map reaches, round the poles, laid straight from the planet's own.
   globe.bendAll(group)
   if (seaSphere !== null) group.add(seaSphere)
-  if (map.ground !== undefined && globe.shape.kind === 'planet') {
-    const caps = buildPolarCaps(map, map.ground, globe.shape.planet.chartZ / 2 / globe.shape.planet.radius)
+  if (map.world !== undefined && globe.shape.kind === 'planet') {
+    const caps = buildPolarCaps(map, map.world.ground, globe.shape.planet.chartZ / 2 / globe.shape.planet.radius)
     if (caps !== null) group.add(caps)
   }
   return group

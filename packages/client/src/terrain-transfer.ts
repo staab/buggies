@@ -11,7 +11,12 @@ export function terrainTransferables(map: TerrainMap): ArrayBuffer[] {
     if (array.buffer instanceof ArrayBuffer) buffers.add(array.buffer)
   }
   add(map.heightfield.heights)
-  if (map.ground !== undefined) add(map.ground.heights)
+  if (map.world !== undefined) {
+    add(map.world.ground.heights)
+    add(map.world.water)
+    add(map.world.districtOf)
+    for (const road of map.world.roads) add(road.widths)
+  }
   add(map.districtOf)
   for (const road of map.roads) add(road.structure)
   return [...buffers]

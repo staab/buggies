@@ -15,6 +15,7 @@ import { fbm2D, ridged2D, smoothstep } from './noise.ts'
 import { createSphereGround, gridDirection, gridPlace, groundIndex, sphereHeight, type SphereGround } from './sphere.ts'
 import { onTangentPlane, raiseSphereGround, tangentFrame, type SphereMountain } from './sphere-heights.ts'
 import { findSphereLakes, groundDirections, groundNeighbors, routeSphereFlow, traceSphereRivers, type SphereLake, type SphereRiverPoint } from './sphere-water.ts'
+import { worldOfChart } from './chart-world.ts'
 import { generateRoads } from './roads.ts'
 import { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 import type {
@@ -878,7 +879,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   )
   if (planet !== null && ground !== null && unbuilt !== null) {
     settleSphereOnChart(ground, map.heightfield, unbuilt, planet)
-    map.ground = ground
+    map.world = worldOfChart(map, ground, planet, sphereMountains)
   }
   return map
 }

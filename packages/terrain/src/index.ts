@@ -129,3 +129,21 @@ export {
   type SphereGround,
 } from './sphere.ts'
 export { SPHERE_CELLS } from './generate.ts'
+export type {
+  Stand,
+  World,
+  WorldBuilding,
+  WorldDistrict,
+  WorldField,
+  WorldLake,
+  WorldLot,
+  WorldProp,
+  WorldRamp,
+  WorldRiver,
+  WorldRiverPoint,
+  WorldRoad,
+  WorldRock,
+  WorldSidewalk,
+  WorldTree,
+} from './world.ts'
+export { groundDirections, groundNeighbors } from './sphere-water.ts'

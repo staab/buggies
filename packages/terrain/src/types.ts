@@ -1,4 +1,4 @@
-import type { SphereGround } from './sphere.ts'
+import type { World } from './world.ts'
 /**
  * A grid of ground heights sampled on the XZ plane. Heights are stored in
  * row-major order, `width * depth` samples total. This is the shared
@@ -338,8 +338,8 @@ export interface TerrainMap {
   depth: number
   /** Whether it is wrapped round a planet, or lies flat. */
   planet: boolean
-  /** A planet's ground, raised on the sphere itself, the whole of it, poles and all. */
-  ground?: SphereGround
+  /** A planet's map as the world has it, every part where it stands on the planet, its ground the whole of it, poles and all. */
+  world?: World
   cellSize: number
   seaLevel: number
   heightfield: Heightfield
