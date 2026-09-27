@@ -1,20 +1,20 @@
 import { qrotate, quat, v3 } from '@buggies/physics'
-import { PLANET_TERRAIN, generateTerrain, groundUnder, worldBoatAt, type TerrainMap } from '@buggies/terrain'
+import { generatePlanet, groundUnder, worldBoatAt, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { advance, createArena, initPhysics } from './index.ts'
 import { apart, between, lifted } from './test-planet.ts'
 
-let map: TerrainMap
+let map: World
 
 describe('boats', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(3, PLANET_TERRAIN)
+    map = generatePlanet(3)
   }, 120_000)
 
   it('meander about where they lie at anchor, their bows the way they go, and stay out on the water', () => {
-    const planet = map.world!
+    const planet = map
     const boats = planet.buildings.filter((building) => building.kind === 'boat')
     expect(boats.length).toBeGreaterThan(0)
     const pose = { at: v3(), turn: quat() }

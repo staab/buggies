@@ -1,5 +1,5 @@
 import { FIXED_TIMESTEP, uprightRotation, v3, vaddScaled, vdistance, vdot } from '@buggies/physics'
-import { DRY, alongGround, heightOver, upOf, waterUnder, type PropKind, type TerrainMap, type World, type WorldProp } from '@buggies/terrain'
+import { DRY, alongGround, heightOver, upOf, waterUnder, type PropKind, type World, type WorldProp } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
@@ -458,8 +458,7 @@ export interface ArenaProp {
  * advanced in place, and every handle in here points into it.
  */
 export interface Arena {
-  readonly map: TerrainMap
-  /** The planet the map makes, everything on it where it is. */
+  /** The planet, everything on it where it is. */
   readonly planet: World
   readonly world: RAPIER.World
   readonly worldTuning: WorldTuning
@@ -489,11 +488,9 @@ export interface Arena {
   mirror: boolean
 }
 
-export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
+export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
   const worldTuning = createWorldTuning()
   const world = createPhysicsWorld(worldTuning)
-  const planet = map.world
-  if (planet === undefined) throw new Error('an arena is made on a planet')
   addTerrain(world, planet)
   const props: ArenaProp[] = planet.props.map((home, id) => ({ id, kind: home.kind, body: addProp(world, home), home }))
 
@@ -549,7 +546,6 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
 
   return {
     props,
-    map,
     planet,
     world,
     worldTuning,
@@ -883,7 +879,7 @@ function armFromBananas(arena: Arena): void {
   for (const seat of arena.seats) {
     if (!seat.occupied || seat.vehicle.wrecked || seat.npc || seat.weapon !== 'none' || seat.score < BANANAS_PER_WEAPON) continue
     seat.score -= BANANAS_PER_WEAPON
-    arm(seat, weaponWon(arena.map.seed, seat.id, arena.tick, seat.score, seat.profile))
+    arm(seat, weaponWon(arena.planet.seed, seat.id, arena.tick, seat.score, seat.profile))
   }
 }
 

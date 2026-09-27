@@ -82,6 +82,7 @@ export function buildGlobeStands(
     // Nothing is built at all on the ground an interchange's ramps enclose.
     clear: (spot, margin) => clearOfRoads(spot, margin) && !meetsRings(zones, spot, radius),
     clearOfRoads,
+    offStreets,
     wet: wetTest(land, rivers, roads),
     offRails: railClearance(globeRailRuns(roads, radius), radius),
     placed: new Placed(radius),

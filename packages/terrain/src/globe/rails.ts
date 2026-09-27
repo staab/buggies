@@ -9,12 +9,30 @@
 import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
-import { RAIL_BASE, RAIL_FLARE, RAIL_HEIGHT, RAIL_THICKNESS } from '../rails.ts'
 import { RAMP_WIDTH, ROAD_BRIDGE, ROAD_TUNNEL, ROAD_WIDTH } from '../roads/constants.ts'
 import type { WorldMesh, WorldRoad } from '../world.ts'
 import { angleBetween, unit } from './lines.ts'
 
 const { cos, sin } = exact
+
+/**
+ * Top of the rail above the road's centerline, so a little less above its
+ * surface: well over the floor of the tallest car, which otherwise rides up
+ * onto the rail where it comes to straddle the rail line.
+ */
+export const RAIL_HEIGHT = 1.2
+/** The rail is a solid barrier from this height above the road surface up: none, so it meets the deck. */
+export const RAIL_BASE = 0
+/** How thick the barrier is, standing on the deck inside its edge. */
+export const RAIL_THICKNESS = 0.4
+/**
+ * Every run ends in a flare, angled away from the road over this length: a
+ * car sliding along the rail runs off the end of it, and one coming the
+ * other way is gathered back in, where a square end would stop it dead. At a
+ * tunnel the flare has to reach right into the wall, end and all, or a car
+ * scraping along the wall meets the end square on as it leaves.
+ */
+export const RAIL_FLARE = 8
 
 /** Shallow, so a car that meets a flare at speed is turned rather than stopped. */
 const RAIL_FLARE_ANGLE = (15 * Math.PI) / 180

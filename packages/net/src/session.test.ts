@@ -27,7 +27,7 @@ import {
   type VehicleProfileId,
 } from '@buggies/game'
 import { uprightRotation, vdistance, type Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, ROAD_TUNNEL, generateTerrain, groundDistance, tangentFrame, upOf, type TerrainMap, type WorldProp } from '@buggies/terrain'
+import { ROAD_TUNNEL, STREET_WIDTH, generatePlanet, groundDistance, tangentFrame, upOf, type World, type WorldProp } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
@@ -60,11 +60,11 @@ import {
 } from './wire.ts'
 
 /** Each seed's planet, made once: making one takes seconds. */
-const planets = new Map<number, TerrainMap>()
-function planetOf(seed: number): TerrainMap {
+const planets = new Map<number, World>()
+function planetOf(seed: number): World {
   let known = planets.get(seed)
   if (known === undefined) {
-    known = generateTerrain(seed, PLANET_TERRAIN)
+    known = generatePlanet(seed)
     planets.set(seed, known)
   }
   return known
@@ -157,7 +157,7 @@ interface Player {
 
 const DELAY_TICKS = 3
 
-let map: TerrainMap
+let map: World
 
 /** A server and a way of putting players on it, all on one fake clock. */
 class Session {
@@ -271,18 +271,24 @@ class Session {
 }
 
 /** How far a position is from the nearest road's centerline on a planet. */
-function offRoad(map: TerrainMap, position: Vec3): number {
+function offRoad(map: World, position: Vec3): number {
+  // Along the ground: every point brought down to the planet's radius, so a car's ride height over the road is no distance from it.
+  const down = (p: Vec3): Vec3 => {
+    const length = Math.hypot(p.x, p.y, p.z)
+    return { x: (p.x / length) * map.radius, y: (p.y / length) * map.radius, z: (p.z / length) * map.radius }
+  }
+  const at = down(position)
   let nearest = Infinity
-  for (const road of map.world!.roads) {
+  for (const road of map.roads) {
     const count = road.closed ? road.points.length : road.points.length - 1
     for (let i = 0; i < count; i++) {
-      const a = road.points[i]!
-      const b = road.points[(i + 1) % road.points.length]!
+      const a = down(road.points[i]!)
+      const b = down(road.points[(i + 1) % road.points.length]!)
       const vx = b.x - a.x
       const vy = b.y - a.y
       const vz = b.z - a.z
-      const t = Math.min(Math.max(((position.x - a.x) * vx + (position.y - a.y) * vy + (position.z - a.z) * vz) / (vx * vx + vy * vy + vz * vz || 1), 0), 1)
-      nearest = Math.min(nearest, vdistance(position, { x: a.x + vx * t, y: a.y + vy * t, z: a.z + vz * t }))
+      const t = Math.min(Math.max(((at.x - a.x) * vx + (at.y - a.y) * vy + (at.z - a.z) * vz) / (vx * vx + vy * vy + vz * vz || 1), 0), 1)
+      nearest = Math.min(nearest, vdistance(at, { x: a.x + vx * t, y: a.y + vy * t, z: a.z + vz * t }))
     }
   }
   return nearest
@@ -578,8 +584,8 @@ describe('a session', () => {
     a.client.requestRespawn()
     session.run(1)
     expect(session.events).toContain('respawned 0 asked')
-    // Back on the road nearest to where it was, not at its spawn, and the prediction there with it.
-    expect(offRoad(session.arena.map, session.serverPositionOf(a))).toBeLessThan(1)
+    // Back on the road nearest to where it was, within its roadway, not at its spawn, and the prediction there with it.
+    expect(offRoad(session.arena.planet, session.serverPositionOf(a))).toBeLessThan(STREET_WIDTH / 2)
     expect(a.prediction.stats.hardResyncs).toBe(resyncs + 1)
     expect(distance(session.predictedPositionOf(a), session.serverPositionOf(a))).toBeLessThan(1)
     session.dispose()
@@ -919,8 +925,8 @@ describe('a session', () => {
 
   it('sends a prop that is on the move to every mirror, and one nobody has touched to none', async () => {
     // A small island may have no props of its own: a few cones are set out on it for the test, and taken away after.
-    const road = map.world!.roads[0]!
-    const props = map.world!.props as WorldProp[]
+    const road = map.roads[0]!
+    const props = map.props as WorldProp[]
     const cones = 3
     for (let k = 0; k < cones; k++) props.push(propAt('cone', road.points[k * 2]!))
     const session = new Session()
@@ -946,9 +952,9 @@ describe('a session', () => {
   }, 120_000)
 
   it('shows a player who joins late the props where they were knocked to, not where the map has them', async () => {
-    const road = map.world!.roads[0]!
+    const road = map.roads[0]!
     const spawn = road.points[0]!
-    const props = map.world!.props as WorldProp[]
+    const props = map.props as WorldProp[]
     props.push(propAt('crate', spawn))
     const session = new Session()
     await session.join()

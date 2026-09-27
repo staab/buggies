@@ -1,5 +1,5 @@
 import { vdot, type Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, alongGround, atHeight, generateTerrain, groundUnder, heightOver, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { alongGround, atHeight, generatePlanet, groundUnder, heightOver, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -80,7 +80,7 @@ import { nearestRoadSpotTo } from './spawns.ts'
 import { ahead, angleBetween, apart, lifted } from './test-planet.ts'
 
 
-let map: TerrainMap
+let map: World
 const FIRE: VehicleInput = { ...NEUTRAL_INPUT, fire: true }
 const ABILITY: VehicleInput = { ...NEUTRAL_INPUT, ability: true }
 
@@ -90,7 +90,7 @@ const ABILITY: VehicleInput = { ...NEUTRAL_INPUT, ability: true }
  * may be up on an embankment or a deck; the ground otherwise.
  */
 function surfaceAt(point: Vec3): Vec3 {
-  const planet = map.world!
+  const planet = map
   const ground = groundUnder(planet, point)
   const spot = nearestRoadSpotTo(planet, point)
   const onRoad = spot !== null && apart(spot.point, point) <= (spot.road.widths[spot.index] ?? 0) / 2 + ROAD_POINT_SLACK
@@ -137,7 +137,7 @@ function pair(arena: Arena, forward: number, aside: number): [Seat, Seat] {
 describe('weapons', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('are bought with bananas, the same one everywhere, by a car carrying nothing', () => {
@@ -499,7 +499,7 @@ function ontoGround(seat: Seat, at: Vec3): void {
 describe("the car's own key", () => {
   beforeAll(() => {
     initPhysics()
-    map ??= generateTerrain(3, PLANET_TERRAIN)
+    map ??= generatePlanet(3)
   }, 60_000)
 
   it('the tank fires a missile from its gun on a press, with the blast of a rocket, and not again until it has cooled down', () => {

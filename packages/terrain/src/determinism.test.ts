@@ -1,41 +1,36 @@
 import { describe, expect, it } from 'vitest'
 
 import { fingerprint } from './fingerprint.ts'
-import { generateTerrain } from './index.ts'
-
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
+import { generatePlanet } from './globe/planet.ts'
 
 /**
- * What these islands hash to, bit for bit. A change here is either a change
+ * What these planets hash to, bit for bit. A change here is either a change
  * to the generator, in which case update the number and say so in the
  * commit, or an engine that computes differently from the one this was
  * taken on, in which case the physics would not agree between server and
  * client and that is the bug.
  */
 const GOLDEN: Record<number, string> = {
-  7: '78712b0a',
-  11: '99bffa3c',
+  7: '8e1d398b',
+  11: '870deedb',
 }
 
-describe('terrain determinism', () => {
+describe('planet determinism', () => {
   for (const [seed, expected] of Object.entries(GOLDEN)) {
-    it(`makes island ${seed} the same to the last bit, on this engine as on the one it was recorded on`, () => {
-      const map = generateTerrain(Number(seed), { size: 513 })
-      expect(fingerprint(map)).toBe(expected)
-    }, 60_000)
+    it(`makes planet ${seed} the same to the last bit, on this engine as on the one it was recorded on`, () => {
+      expect(fingerprint(generatePlanet(Number(seed)))).toBe(expected)
+    }, 120_000)
   }
 
-  it('hashes what the physics reads, and nothing else', () => {
-    const map = generateTerrain(7, { ...TEST_ISLANDS, size: 257 })
-    const before = fingerprint(map)
+  it('hashes what the physics reads', () => {
+    const world = generatePlanet(7)
+    const before = fingerprint(world)
     expect(before).toMatch(/^[0-9a-f]{8}$/)
-    expect(fingerprint(map)).toBe(before)
-    // A single height changed by the least a float can be is a different island.
-    const heights = map.heightfield.heights
+    expect(fingerprint(world)).toBe(before)
+    // A single height changed by the least a float can be is a different planet.
+    const heights = world.ground.heights
     const was = heights[1000]!
     heights[1000] = was + Math.max(Math.abs(was), 1) * 1e-6
-    expect(heights[1000]).not.toBe(was)
-    expect(fingerprint(map)).not.toBe(before)
-  })
+    expect(fingerprint(world)).not.toBe(before)
+  }, 120_000)
 })

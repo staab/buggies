@@ -1,6 +1,6 @@
 import type { IslandMark } from '@buggies/net'
 import type { Goal, GoalRequest, VehicleProfileId } from '@buggies/game'
-import type { TerrainMap } from '@buggies/terrain'
+import type { World } from '@buggies/terrain'
 import type * as THREE from 'three'
 
 import type { HudState } from './hud.ts'
@@ -25,7 +25,7 @@ export interface ModeView {
   /** Put everyone on this screen into these vehicles, one a player, where they are; a mode with no one driving has none. */
   changeVehicles?(profiles: readonly VehicleProfileId[]): void
   /** The island being driven, for a goal to be picked on; a mode with no one driving has none. */
-  readonly map?: TerrainMap
+  readonly map?: World
   /** Where the first player on this screen is. */
   position?(): { x: number; y: number; z: number }
   /** The goal the first player on this screen is playing for, if any. */

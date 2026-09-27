@@ -1,28 +1,26 @@
-import { generateTerrain } from '@buggies/terrain'
+import { generatePlanet } from '@buggies/terrain'
 import { describe, expect, it } from 'vitest'
 
 import { terrainTransferables } from './terrain-transfer.ts'
 
-/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
-const TEST_ISLANDS = { islandsMost: 8 }
-
-describe('a map crossing from its worker', () => {
+describe('a planet crossing from its worker', () => {
   it('arrives whole, with its big buffers handed over rather than copied', () => {
-    const map = generateTerrain(11, { ...TEST_ISLANDS, size: 129 })
-    const transfer = terrainTransferables(map)
-    expect(transfer.length).toBeGreaterThan(2)
+    const world = generatePlanet(11)
+    const transfer = terrainTransferables(world)
+    expect(transfer.length).toBeGreaterThan(5)
     expect(new Set(transfer).size).toBe(transfer.length)
-    const heights = Array.from(map.heightfield.heights.slice(0, 64))
-    const roads = map.roads.length
+    const heights = Array.from(world.ground.heights.slice(0, 64))
+    const roads = world.roads.length
+    const buildings = world.buildings.length
 
-    const arrived = structuredClone(map, { transfer })
+    const arrived = structuredClone(world, { transfer })
     expect(arrived.seed).toBe(11)
     expect(arrived.roads.length).toBe(roads)
-    expect(Array.from(arrived.heightfield.heights.slice(0, 64))).toEqual(heights)
-    expect(arrived.heightfield.heights).toBeInstanceOf(Float32Array)
+    expect(Array.from(arrived.ground.heights.slice(0, 64))).toEqual(heights)
+    expect(arrived.ground.heights).toBeInstanceOf(Float32Array)
     expect(arrived.districtOf).toBeInstanceOf(Uint8Array)
-    expect(arrived.buildings.length).toBe(map.buildings.length)
+    expect(arrived.buildings.length).toBe(buildings)
     // Handed over: the original no longer has it.
-    expect(map.heightfield.heights.byteLength).toBe(0)
-  })
+    expect(world.ground.heights.byteLength).toBe(0)
+  }, 120_000)
 })

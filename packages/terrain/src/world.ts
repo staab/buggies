@@ -12,6 +12,9 @@ import type { SphereGround } from './sphere.ts'
 import type { SphereMountain } from './sphere-heights.ts'
 import type { BuildingKind, PropKind, RoadKind } from './types.ts'
 
+/** The level reported where no water reaches: below every possible surface. */
+export const DRY = Number.NEGATIVE_INFINITY
+
 /** Where something stands: the point at its foot, and how it is turned, its y the way up there. */
 export interface Stand {
   readonly at: Vec3
@@ -46,12 +49,6 @@ export interface WorldDistrict {
   readonly island: number
 }
 
-/** A level rectangle terraced into the ground, `width` along its x and `depth` along its z. */
-export interface WorldLot extends Stand {
-  readonly width: number
-  readonly depth: number
-}
-
 /**
  * A road: the middle of its surface as it is driven on at every point along it, and how wide
  * it is there. `structure` holds a `ROAD_*` code for each segment, from a
@@ -64,7 +61,6 @@ export interface WorldRoad {
   readonly points: readonly Vec3[]
   readonly widths: Float32Array
   readonly structure: Uint8Array
-  readonly lot?: WorldLot
 }
 
 /** A building, standing from its foot, buried below the lowest ground under it, `height` up; `width` along its x, `depth` along its z. */
@@ -102,9 +98,10 @@ export interface WorldRamp extends Stand {
   readonly straight?: true
 }
 
-/** The sidewalk round a block: its middle, half its outer side, how wide its ring is, and which of its four sides are built. */
+/** The sidewalk round a block: its middle, half its outer width along its x and half its outer depth along its z, how wide its ring is, and which of its four sides are built, round from the one at +z. */
 export interface WorldSidewalk extends Stand {
-  readonly half: number
+  readonly halfWidth: number
+  readonly halfDepth: number
   readonly band: number
   readonly sides: readonly [boolean, boolean, boolean, boolean]
 }

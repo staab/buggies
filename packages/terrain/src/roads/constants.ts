@@ -1,5 +1,3 @@
-import type { Road } from '../types.ts'
-
 /**
  * The numbers the road generator runs on: widths, grades, clearances, costs and
  * counts, gathered here so that every stage reads the same ones.
@@ -67,20 +65,8 @@ export const TUNNEL_DEPTH = 1
 /** World units around a sample probed for water, wide enough to catch a river ribbon. */
 export const WATER_PROBE_RADIUS = 3
 
-/** Points on the beltway drawn around a lone city. */
-export const RING_POINTS = 8
-
-/** A city-loop corner wider than this can be bowed; sharper needs a stadium or offset. */
-export const BOW_ANGLE = 30
-
-/** How far the run between two cities bows outward, as a fraction of its length. */
-export const BOW_FRACTION = 0.3
-
 /** The rebuilt loop turns on at least this fraction of the smallest city radius. */
 export const TURN_RADIUS_FRACTION = 0.8
-
-/** Points used to trace each stadium end. */
-export const STADIUM_SEGMENTS = 8
 
 /** One-lane ramp width, in world units. */
 export const RAMP_WIDTH = 8
@@ -182,91 +168,11 @@ export const ARTERIAL_WIDTH = 10
 /** Arterials climb more than highways but must never feel very steep. */
 export const MAX_ARTERIAL_GRADE = 0.08
 
-/**
- * A mountain road: a winding climb from an arterial up a mountainside,
- * traversing the slope at this grade and held to the steeper one. Where the way is barred the road turns back in a
- * hairpin: half an ellipse this far up the slope, carrying on along it
- * as far as lets the road climb the difference at grade, from these
- * choices, allowing the ground to stand this much above or below the
- * road where the loop ends, and refusing any that would stand it further
- * than this.
- */
-export const CLIMBS_MOST = 1
-export const CLIMB_WIDTH = 8
-export const CLIMB_GRADE = 0.13
-export const MAX_CLIMB_GRADE = 0.15
-export const CLIMB_STEP = 6
-export const CLIMB_HAIRPIN = {
-  up: 20,
-  outs: [12, 16, 20, 25, 30, 36],
-  samples: 10,
-  mismatch: 3,
-  misfit: 6,
-} as const
-/**
- * Where a climb ends: this far below the peak, or wherever it can go no
- * further having risen at least this much, cut back to the highest point
- * where the ground (read this far across) falls away at least this
- * steeply, for the view, and no more than this, for the parking, and no
- * other road is within this.
- */
-export const CLIMB_END = { belowPeak: 25, rise: 50, steepLeast: 0.15, steep: 0.45, across: 15, roadKeep: 30 } as const
-/**
- * The lot a climb ends in: the road runs this far into it along its width
- * and this far in from its uphill edge, level from where it enters, and
- * the ground is blended back to the lot's level this far out from its
- * edges. Its valley side is whichever side of the road's end the ground,
- * this far out, has fallen at least this far below the road: the view. No
- * earlier turn of the road may lie within it, but for its last stretch,
- * this long.
- */
-export const CLIMB_LOT = { width: 30, depth: 20, roadAlong: 15, roadIn: 5, blend: 8, look: 30, drop: 3, approach: 30 } as const
-/** Ground no steeper than this many times the grade is climbed straight up rather than traversed, and ground steeper than this is a cliff no road goes on. */
-export const CLIMB_STRAIGHT = 1.4
-export const CLIMB_STEEPEST = 2.2
-/** How far across the ground its lie is read for the road's direction, so that the road pays no mind to bumps smaller than this. */
-export const CLIMB_LOOK = 12
-/** How much of the road's parting from the ground a leg makes up each step, never turning down the slope past this share of the step to do so. */
-export const CLIMB_STEER = 0.3
-export const CLIMB_DIP = 0
-/** The turns tried, in order, to get around something in the way on gentle ground. */
-export const CLIMB_TURNS = [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2] as const
-/** How far a climb keeps from its own earlier legs, all but the stretch this far behind it, and the last hairpin with the stretch this far into it until this far past it. */
-export const CLIMB_SELF_KEEP = { apart: 12, behind: 40, into: 12, after: 60 } as const
-/** The climb is given up past this length or this many hairpins. */
-export const CLIMB_MOST_LENGTH = 3000
-export const CLIMB_MOST_HAIRPINS = 20
-/**
- * Where a climb may start: arterial points this near the peak and this far
- * below it, trying this many, this far apart, and each meter the bank
- * rises off the arterial counting as this many meters further off. The
- * road is level with the arterial until this far out, pays other roads no
- * mind until this far, and leaves the arterial at least this angle off it
- * for this long.
- */
-export const CLIMB_START = {
-  reach: 400,
-  below: 50,
-  tries: 4,
-  apart: 80,
-  level: 14,
-  clear: 100,
-  leave: 20,
-  cos: Math.cos((35 * Math.PI) / 180),
-  sin: Math.sin((35 * Math.PI) / 180),
-  bankCost: 20,
-} as const
-/** How far a climb keeps from every other road once it has left the arterial it starts from. */
-export const CLIMB_ROAD_KEEP = 24
-
 /** Water steps may rise a little faster than the road, as a bridge approach does. */
 export const ARTERIAL_BRIDGE_GRADE = 0.16
 
 /** Bridge deck clears the water by this much. */
 export const ARTERIAL_BRIDGE_CLEARANCE = 2
-
-/** Spacing of the navigation grid arterials are routed on, in world units. */
-export const ARTERIAL_GRID = 32
 
 /** How close a road may come before routing treats the cell as blocked. */
 export const ARTERIAL_HIGHWAY_AVOID = 30
@@ -282,13 +188,6 @@ export const ARTERIAL_WATER_COST = 8
 /** Extra cost for each nav cell of open sea an arterial bridges, so it keeps to land where it can. */
 export const ARTERIAL_SEA_COST = 96
 
-/** Most tries at bridging an outlying land mass to the network before giving it up. */
-export const ARTERIAL_LINK_TRIES = 24
-
-/** Most places tried for a link from one outlying piece to meet the network. */
-export const ARTERIAL_LINK_ARRIVALS = 6
-
-
 /** Cap on cells a single A* may expand, so a bad map can never hang. */
 export const ARTERIAL_MAX_EXPANSIONS = 40000
 
@@ -298,9 +197,6 @@ export const ARTERIAL_DENSITY_COST = 50
 /** Charged for leaving the lens when a dead-end repair needs a detour. */
 export const ARTERIAL_LENS_COST = 80
 
-/** Effectively blocks a cell when a route has to be retried around a clash. */
-export const ARTERIAL_BLOCK_COST = 1e6
-
 /** Spacing of the field nodes the network links, in world units. */
 export const ARTERIAL_FIELD_SPACING = 300
 
@@ -309,15 +205,6 @@ export const ARTERIAL_NEIGHBORS = 2
 
 /** Most arterial roads drawn per map. */
 export const ARTERIAL_MAX_COUNT = 40
-
-/** Distance between finished arterial samples, in world units. */
-export const ARTERIAL_STEP = 24
-
-/** Route cells between spline waypoints; larger means longer, smoother curves. */
-export const ARTERIAL_WAYPOINT_STRIDE = 4
-
-/** Sharpest corner left in a finished arterial, and the fillet used to around it. */
-export const ARTERIAL_MAX_TURN = (12 * Math.PI) / 180
 
 export const ARTERIAL_MIN_RADIUS = 40
 
@@ -333,22 +220,10 @@ export const ARTERIAL_MERGE_REACH = CROSS_REACH
 /** A road still turning sharper than this after smoothing is dropped entirely. */
 export const ARTERIAL_PRUNE_TURN = (30 * Math.PI) / 180
 
-/**
- * Junction alignment is reverted if it leaves a bend sharper than this, over
- * the window turns are judged in: as sharp as a road is allowed to be at all.
- */
-export const ARTERIAL_JUNCTION_TURN = (30 * Math.PI) / 180
-
-/** Cap on samples in one arterial, so fillets cannot explode the geometry. */
-export const ARTERIAL_MAX_POINTS = 400
-
 export const ARTERIAL_SALT = 0x51a2
 
 /** The ground is shaped to a surface road over this much beyond its roadway. */
 export const SURFACE_SHOULDER = 9
-
-/** Turn is judged between samples at least this far apart, so dense fillet samples cannot hide a hairpin. */
-export const TURN_WINDOW = 3
 
 /** City street width, in world units. */
 export const STREET_WIDTH = 10
@@ -387,9 +262,6 @@ export const STREET_ARTERIAL_ANGLE = Math.PI / 4
  * reads — and still counts — as a junction onto it.
  */
 export const STREET_ARTERIAL_TOUCH = (ARTERIAL_WIDTH + STREET_WIDTH) / 2
-
-/** Cell size of the grid road segments are bucketed into, in world units. */
-export const SEGMENT_CELL = 32
 
 /**
  * A bridge deck gets shoulders like an embankment where the ground beside it

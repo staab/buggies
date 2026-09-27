@@ -1,44 +1,19 @@
+export { PLANET_RADIUS, SPHERE_CELLS, generatePlanet } from './globe/planet.ts'
+export { fingerprint } from './fingerprint.ts'
+export { flatHeightfield } from './heightfield.ts'
+export { BOAT_WANDER, worldBoatAt } from './globe/boats.ts'
+export { DECK_SKIRT } from './globe/decks.ts'
+export { RAIL_BASE, RAIL_FLARE, RAIL_HEIGHT, RAIL_THICKNESS } from './globe/rails.ts'
+export { CURB_HEIGHT } from './globe/solids.ts'
+export { TUNNEL_CLEARANCE, TUNNEL_WALL, TUNNEL_WALL_HEIGHT } from './globe/tunnels.ts'
+export { RIVER_BANK_LAP } from './globe/water.ts'
 export {
-  flatHeightfield,
-  groundHeight,
-  heightAt,
-  onGround,
-  sampleHeight,
-  mapExtent,
-} from './heightfield.ts'
-export { BOAT_WANDER, boatAt, generateBuildings, worldBoatAt } from './buildings.ts'
-export {
-  DISTRICT_CITY,
-  DISTRICT_COUNTRY,
-  DISTRICT_SUBURB,
-  generateDistricts,
-  type DistrictMap,
-} from './districts.ts'
-export { computeFlowRouting, findLakes, type FlowRouting } from './flow.ts'
-export { PLANET_TERRAIN, WORLD_SCALE, generateTerrain } from './generate.ts'
-export { fbm2D, ridged2D, smoothstep, valueNoise2D } from './noise.ts'
-export { insidePolygon, interchangeZones, meetsInterchange, parkLoop } from './interchanges.ts'
-export { deckSpans, lowestDeckOver, type DeckSpan } from './overhead.ts'
-export { RAMP_FACETS, rampFacets, rampRise } from './ramps.ts'
-export { CURB_HEIGHT, sidewalkMesh, type SidewalkMesh } from './sidewalks.ts'
-export {
-  ARTERIAL_BRIDGE_GRADE,
   ARTERIAL_WIDTH,
-  CLIMB_END,
-  CLIMB_WIDTH,
   CROSS_WIDTH,
-  INTERCHANGE_CLEAR,
-  INTERCHANGE_SEARCH,
-  INTERCHANGE_SPACING,
   MAX_ARTERIAL_GRADE,
-  MAX_CLIMB_GRADE,
-  MAX_RAMP_CURVATURE,
   MAX_RAMP_GRADE,
   MAX_ROAD_CURVATURE,
   MAX_ROAD_GRADE,
-  RAMP_PLATEAU,
-  RAMP_LANE_REACH,
-  RAMP_ALONG,
   RAMP_WIDTH,
   ROAD_BRIDGE,
   ROAD_GRADE,
@@ -49,72 +24,12 @@ export {
   STREET_CURB,
   STREET_SPACING,
   STREET_WIDTH,
-  SURFACE_SHOULDER,
-  STREET_GRID_LEAST,
-  cityFrame,
-  deckShouldered,
-  skirtFoot,
-  footprintsOverlap,
-  generateRoads,
-  isSurfaceRoad,
-  roadClearance,
-  roadLift,
-  type CityFrame,
-  type Footprint,
-} from './roads.ts'
-export {
-  orientedTriangle,
-  signedDistanceToTriangle,
-  triangleCentroid,
-  triangleInradius,
-} from './mountain.ts'
-export {
-  RAIL_BASE,
-  RAIL_FLARE,
-  RAIL_HEIGHT,
-  RAIL_THICKNESS,
-  railMesh,
-  railRuns,
-  type RailMesh,
-  type RailRun,
-} from './rails.ts'
-export { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
-export {
-  TUNNEL_CLEARANCE,
-  TUNNEL_WALL,
-  TUNNEL_WALL_HEIGHT,
-  boreClearance,
-  boreFloorAt,
-  buildTunnelHoles,
-  tunnelCutFloors,
-  tunnelSegments,
-  tunnelShellMesh,
-  type BoreSegment,
-  type ShellMesh,
-} from './tunnels.ts'
-export { DRY, buildWaterLevels, waterLevelAt } from './water.ts'
+} from './roads/constants.ts'
+export { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './sphere-districts.ts'
+export { fbm3D, smoothstep } from './noise.ts'
+export { orientedTriangle, signedDistanceToTriangle, triangleInradius, type Triangle } from './mountain.ts'
 export { HOUSE_KINDS, RAISED_KINDS, ROUND_KINDS, WATER_KINDS } from './types.ts'
-export type {
-  Building,
-  Field,
-  District,
-  Heightfield,
-  Lake,
-  Mountain,
-  Ramp,
-  River,
-  RiverPoint,
-  Road,
-  RoadKind,
-  RoadPoint,
-  Sidewalk,
-  TerrainMap,
-  TerrainOptions,
-  Tree,
-  Rock,
-  Prop,
-  PropKind,
-} from './types.ts'
+export type { BuildingKind, Heightfield, PropKind, RoadKind } from './types.ts'
 export {
   CUBE_FACES,
   arcDistance,
@@ -128,16 +43,15 @@ export {
   type GridPlace,
   type SphereGround,
 } from './sphere.ts'
-export { SPHERE_CELLS } from './generate.ts'
+export { DRY } from './world.ts'
 export type {
   Stand,
   World,
   WorldBuilding,
+  WorldDecks,
   WorldDistrict,
   WorldField,
   WorldLake,
-  WorldLot,
-  WorldDecks,
   WorldMesh,
   WorldProp,
   WorldRamp,
@@ -152,7 +66,6 @@ export { groundDirections, groundNeighbors } from './sphere-water.ts'
 export {
   alongGround,
   atHeight,
-  districtUnder,
   groundDistance,
   groundUnder,
   heightOver,
@@ -163,5 +76,4 @@ export {
   upOf,
   waterUnder,
 } from './world-queries.ts'
-export { tangentFrame } from './sphere-heights.ts'
-export { DECK_SKIRT } from './decks.ts'
+export { tangentFrame, type SphereMountain } from './sphere-heights.ts'

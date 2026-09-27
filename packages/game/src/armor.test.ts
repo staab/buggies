@@ -1,15 +1,15 @@
-import { PLANET_TERRAIN, generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { generatePlanet, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { DURABILITY, ROCKET_DAMAGE, advance, createArena, harm, initPhysics, takeSeat } from './index.ts'
 
 
-let map: TerrainMap
+let map: World
 
 describe('armor', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('a tougher car takes less of a rocket: the tank least, the sports car the whole of it, the go-kart the most', () => {

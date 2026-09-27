@@ -104,13 +104,6 @@ export function tangentAt(line: readonly Vec3[], i: number, closed: boolean): Ve
   return unit({ x: dx - point.x * rise, y: dy - point.y * rise, z: dz - point.z * rise })
 }
 
-/** The way across a line to its right at a point: the way it runs crossed with the way up. */
-export function rightAt(line: readonly Vec3[], i: number, closed: boolean): Vec3 {
-  const t = tangentAt(line, i, closed)
-  const up = unit(line[i]!)
-  return unit({ x: t.y * up.z - t.z * up.y, y: t.z * up.x - t.x * up.z, z: t.x * up.y - t.y * up.x })
-}
-
 /** A point this far from another along the ground, in this way along it, on a planet this big. */
 export function along(from: Vec3, way: Vec3, distance: number, radius: number): Vec3 {
   const angle = distance / radius

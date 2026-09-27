@@ -1,13 +1,11 @@
 import { FIXED_TIMESTEP, createRng, qrotate, uprightRotation, v3, vdot, vsub, type Quat, type Vec3 } from '@buggies/physics'
 import {
   CURB_HEIGHT,
-  PLANET_TERRAIN,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
   flatHeightfield,
-  generateTerrain,
-  sampleHeight,
+  generatePlanet,
   sphereHeight,
   type Heightfield,
   type World,
@@ -39,6 +37,22 @@ function castDown(world: RAPIER.World, x: number, z: number, from = 400): number
   const ray = new RAPIER.Ray({ x, y: from, z }, { x: 0, y: -1, z: 0 })
   const hit = world.castRay(ray, from * 2, true)
   return hit === null ? null : from - hit.timeOfImpact
+}
+
+/** A heightfield's ground at a point, read across its cell as the drawn mesh would be. */
+function sampleHeight(field: Heightfield, x: number, z: number): number {
+  const { width, depth, cellSize, heights } = field
+  const gx = Math.min(Math.max(x / cellSize, 0), width - 1)
+  const gz = Math.min(Math.max(z / cellSize, 0), depth - 1)
+  const col = Math.floor(gx)
+  const row = Math.floor(gz)
+  const col1 = Math.min(col + 1, width - 1)
+  const row1 = Math.min(row + 1, depth - 1)
+  const tx = gx - col
+  const tz = gz - row
+  const top = heights[row * width + col]! * (1 - tx) + heights[row * width + col1]! * tx
+  const bottom = heights[row1 * width + col]! * (1 - tx) + heights[row1 * width + col1]! * tx
+  return top * (1 - tz) + bottom * tz
 }
 
 describe('terrain colliders', () => {
@@ -123,7 +137,7 @@ describe('a planet as colliders', () => {
   beforeAll(async () => {
     await initPhysics()
     // One whole planet for all of them: roads and bridges are what it is for.
-    planet = generateTerrain(6, PLANET_TERRAIN).world!
+    planet = generatePlanet(6)
     world = createPhysicsWorld()
     const started = Date.now()
     addTerrain(world, planet)
@@ -160,7 +174,7 @@ describe('a planet as colliders', () => {
 
   it('runs a floor through every tunnel, with room above it to drive', () => {
     // A planet of its own, with tunnels through its hills.
-    const tunnelled = generateTerrain(7, PLANET_TERRAIN).world!
+    const tunnelled = generatePlanet(1)
     const bored = createPhysicsWorld()
     addTerrain(bored, tunnelled)
     bored.step()
@@ -278,8 +292,11 @@ describe('a planet as colliders', () => {
     for (const walk of planet.sidewalks) {
       // The middle of one built side's slab, just in from the curb. Sides go round from the one at +z.
       const side = walk.sides.findIndex((built) => built)
-      const reach = walk.half - 0.3
-      const [u, v] = ([[0, reach], [-reach, 0], [0, -reach], [reach, 0]] as [number, number][])[side]!
+      // The ring is laid out by distances along the ground at the planet's radius, and stands higher than that, so as much wider.
+      const scale = Math.hypot(walk.at.x, walk.at.y, walk.at.z) / planet.radius
+      const across = walk.halfWidth * scale - 0.3
+      const down = walk.halfDepth * scale - 0.3
+      const [u, v] = ([[0, down], [-across, 0], [0, -down], [across, 0]] as [number, number][])[side]!
       const point = along(walk.at, walk.turn, u, 0, v)
       const ground = sphereHeight(planet.ground, upOf(point))
       const found = castDownAt(world, planet, point, ground + 1)

@@ -1,6 +1,6 @@
 import { GOAL_KINDS, GOAL_LABELS, GOAL_TARGET_MOST, type Goal, type GoalKind, type GoalRequest } from '@buggies/game'
 import type { Vec3 } from '@buggies/physics'
-import { onLand, type TerrainMap } from '@buggies/terrain'
+import { onLand, type World } from '@buggies/terrain'
 
 import { drawIsland, offPicture, onPicture } from './island-picture.ts'
 
@@ -21,7 +21,7 @@ const GOAL_DEFAULTS: Readonly<Record<Exclude<GoalKind, 'location'>, number>> = {
 /** What the goal panel needs of the game behind it. */
 export interface GoalHost {
   /** The island being played, or nothing when no game is on. */
-  map(): TerrainMap | null
+  map(): World | null
   /** Where the player is, to be shown on the map. */
   position(): Vec3 | null
   /** The goal being played for, if any. */
@@ -184,7 +184,7 @@ export class GoalMenu {
     if (map === null) return
     const bounds = this.board.getBoundingClientRect()
     const spot = offPicture((event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)
-    this.picked = onLand(map.world!, spot) ? spot : null
+    this.picked = onLand(map, spot) ? spot : null
     this.note.textContent = this.picked === null ? 'Pick a spot on land.' : ''
     this.render()
   }
@@ -220,7 +220,7 @@ export class GoalMenu {
     const context = this.board.getContext('2d')
     if (map === null || context === null) return
     if (this.island?.seed !== map.seed) {
-      this.island = { seed: map.seed, picture: drawIsland(map.world!, MAP_PIXELS) }
+      this.island = { seed: map.seed, picture: drawIsland(map, MAP_PIXELS) }
       this.board.width = this.island.picture.width
       this.board.height = this.island.picture.height
     }

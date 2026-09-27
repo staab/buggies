@@ -4,9 +4,6 @@ import {
   CROSS_REACH,
   CROSS_RELIEF,
   CROSS_WIDTH,
-  INTERCHANGE_CLEAR,
-  INTERCHANGE_SEARCH,
-  INTERCHANGE_SPACING,
   MAX_ROAD_GRADE,
   RAMP_ALONG,
   RAMP_DROP,
@@ -19,7 +16,6 @@ import {
   RAMP_UNDER_DECK,
   RAMP_WIDTH,
   ROAD_BRIDGE,
-  ROAD_SKIRT,
   ROAD_SURFACE,
   ROAD_WIDTH,
   SAMPLE_STEP,
@@ -145,65 +141,6 @@ export function findDryCrossing(
     }
   }
   return -1
-}
-
-/**
- * Interchange crossings around the highway loop, one every
- * `INTERCHANGE_SPACING` wherever the ground will carry one, wherever the
- * cities are. A candidate on ground that will not slides along the loop
- * to the nearest that will, but never nearer another crossing than their
- * ramps and decks can stand. Where no site within reach is good, one
- * that is merely drivable is taken.
- */
-export function interchangeCenters(
-  field: Heightfield,
-  seaLevel: number,
-  samples: Vec2[],
-  wet: Uint8Array,
-  buried: Uint8Array,
-  wetAt: (x: number, z: number) => boolean,
-  cum: Float32Array,
-  total: number,
-  deck: Float32Array,
-): number[] {
-  const count = samples.length
-  const step = total / count
-  const search = Math.max(1, Math.round(INTERCHANGE_SEARCH / step))
-  const centers: number[] = []
-
-  /** Shortest way around the loop, in world units, from `c` to the nearest crossing already placed. */
-  const gapTo = (c: number): number => {
-    let gap = Infinity
-    for (const other of centers) {
-      const apart = Math.abs(cum[other]! - cum[c]!)
-      gap = Math.min(gap, apart, total - apart)
-    }
-    return gap
-  }
-
-  for (let distance = 0; distance < total; distance += INTERCHANGE_SPACING) {
-    const index = indexAtDistance(cum, distance)
-    const find = (strict: boolean): number =>
-      findDryCrossing(
-        field,
-        seaLevel,
-        samples,
-        wet,
-        buried,
-        wetAt,
-        deck,
-        cum,
-        total,
-        index,
-        search,
-        (candidate) => gapTo(candidate) >= INTERCHANGE_CLEAR,
-        strict,
-      )
-    let c = find(true)
-    if (c < 0) c = find(false)
-    if (c >= 0) centers.push(c)
-  }
-  return centers
 }
 
 /** Linearly interpolate an open road's profile at a signed offset from its center. */
@@ -390,7 +327,6 @@ export function buildInterchanges(
         const startOffset = ROAD_WIDTH / 2 - RAMP_WIDTH / 2
         const startX = start.x + start.nx * sn * startOffset
         const startZ = start.z + start.nz * sn * startOffset
-        const startY = profile[attach]!
 
         // The ramp turns out from under the deck through one arc and runs
         // straight to the cross road from there: as gentle as the diagonal

@@ -14,7 +14,7 @@ import { arcDistance, gridDirection, groundIndex, type SphereGround } from './sp
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { hypot, log } = exact
+const { hypot } = exact
 
 /** An island on the sphere: the way out to its middle, and how far its land reaches along the surface, in meters. */
 export interface SphereIsland {
@@ -90,9 +90,6 @@ export interface SphereRelief {
   readonly oceanDepth: number
   /** The largest island's radius, which sets how much the plains roll. */
   readonly largest: number
-  /** How far north or south of the equator on the planet's map land reaches, and over how far it fades out before that. */
-  readonly band: number
-  readonly edge: number
 }
 
 /**
@@ -105,7 +102,7 @@ export interface SphereRelief {
  */
 export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): void {
   const { n, radius, heights } = ground
-  const { seed, islands, mountains, oceanDepth, largest, band, edge } = relief
+  const { seed, islands, mountains, oceanDepth, largest } = relief
   const plainsAmplitude = largest * 0.002
   const baseFrequency = 0.008 / 3
   const roughFrequency = 0.03 / 3
@@ -149,10 +146,7 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
           const rise = island.radius * 0.032 * (1 - smoothstep(0, island.radius * 0.85, arcDistance(direction, island.center, radius)))
           dome = k === 0 ? rise : smoothMax(dome, rise, DOME_BLEND)
         }
-        // How far north or south it is on the planet's map, where the band is measured: the inverse Gudermannian of its latitude.
-        const y = Math.min(Math.abs(direction.y), 1 - 1e-12)
-        const northing = 0.5 * log((1 + y) / (1 - y)) * radius
-        const mask = (1 - sea) * smoothstep(0, edge, band - northing)
+        const mask = 1 - sea
         const base = fbm3D(px * baseFrequency, py * baseFrequency, pz * baseFrequency, seed + 1, 2)
         const land = base * plainsAmplitude + dome
 

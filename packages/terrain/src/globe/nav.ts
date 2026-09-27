@@ -7,12 +7,12 @@
 
 import type { Vec3 } from '@buggies/physics'
 
-import { DRY } from '../water.ts'
+import { DRY } from '../world.ts'
 import { createSphereGround, gridPlace, groundIndex, sphereHeight, type GridPlace, type SphereGround } from '../sphere.ts'
 import { groundDirections, groundNeighbors } from '../sphere-water.ts'
 
 /** How many cells a side each face of the routing grid has: about ten meters a cell on a 600 m planet. */
-export const NAV_CELLS = 96
+const NAV_CELLS = 96
 
 export interface Nav {
   readonly grid: SphereGround

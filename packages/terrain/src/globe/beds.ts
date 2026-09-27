@@ -13,7 +13,6 @@ import {
   CUT_CLEARANCE,
   CUT_SLOPE,
   MAX_ARTERIAL_GRADE,
-  MAX_CLIMB_GRADE,
   MAX_RAMP_CURVATURE,
   MAX_RAMP_GRADE,
   MAX_ROAD_CURVATURE,
@@ -31,7 +30,7 @@ import { smoothstep } from '../roads/geometry.ts'
 import { limitSweepGradeAlong, limitVerticalCurvatureAlong } from '../roads/grades.ts'
 import { gridPlace, groundIndex, sphereHeight, type GridPlace, type SphereGround } from '../sphere.ts'
 import type { RoadKind } from '../types.ts'
-import type { WorldLot, WorldRoad } from '../world.ts'
+import type { WorldRoad } from '../world.ts'
 import { lift, runs, slerp, unit } from './lines.ts'
 
 /** A road being settled: its course, the height of its centerline over the planet's radius at each point, and what each segment is built as. */
@@ -43,7 +42,6 @@ export interface BedRoad {
   line: Vec3[]
   heights: Float32Array
   structure: Uint8Array
-  readonly lot?: WorldLot
 }
 
 /** Whether a road is the ground, shaped to it: everything but the highway, which rides its own embankment. */
@@ -62,7 +60,6 @@ export function bedOf(road: WorldRoad, radius: number): BedRoad {
     line: road.points.map(unit),
     heights: Float32Array.from(road.points, (point) => Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z) - radius - drop),
     structure: Uint8Array.from(road.structure),
-    ...(road.lot === undefined ? {} : { lot: road.lot }),
   }
 }
 
@@ -76,7 +73,6 @@ export function roadOfBed(road: BedRoad, radius: number): WorldRoad {
     points: road.line.map((direction, i) => lift(direction, radius, road.heights[i]! + rise)),
     widths: new Float32Array(road.line.length).fill(road.width),
     structure: road.structure,
-    ...(road.lot === undefined ? {} : { lot: road.lot }),
   }
 }
 
@@ -425,7 +421,6 @@ function resampleSurfaceRoad(road: BedRoad, spacing: number, radius: number): vo
 
 function surfaceGradeLimit(road: BedRoad): number {
   if (road.kind === 'ramp') return MAX_RAMP_GRADE
-  if (road.kind === 'climb') return MAX_CLIMB_GRADE
   return road.kind === 'arterial' ? MAX_ARTERIAL_GRADE : MAX_ROAD_GRADE
 }
 

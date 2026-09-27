@@ -151,7 +151,7 @@ export interface SphereRiverPoint {
   readonly width: number
 }
 
-/** Headwaters start almost thread-thin and widen as the river descends, in grid cells, as on a flat map. */
+/** Headwaters start almost thread-thin and widen as the river descends, in river cells. */
 const MIN_WIDTH = 0.8
 const MAX_WIDTH = 6.5
 /** Springs sit this fraction of the mountain's rise below the summit. */
@@ -228,8 +228,8 @@ function traceSphereCourse(ground: SphereGround, directions: Float64Array, routi
 
 /**
  * One river from a spring on each mountain given, down to the sea, `count`
- * at most. `cell` is how wide a grid cell of the flat map is, in meters,
- * which the rivers' widths go by; `least` the smallest core a mountain is
+ * at most. `cell` is how wide a river cell is, in meters, which the
+ * rivers' widths go by; `least` the smallest core a mountain is
  * searched for its spring in.
  */
 export function traceSphereRivers(

@@ -6,7 +6,6 @@
 import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
-import { DISTRICT_COUNTRY } from './districts.ts'
 import { gridPlace, groundIndex, sphereHeight, type GridPlace } from './sphere.ts'
 import type { World } from './world.ts'
 
@@ -51,11 +50,6 @@ function nearestGridPoint(world: World, point: Vec3): number {
 /** The water's surface over the planet's radius under a point, or `DRY`. */
 export function waterUnder(world: World, point: Vec3): number {
   return world.water[nearestGridPoint(world, point)]!
-}
-
-/** Which district (`DISTRICT_*`) a point is in. */
-export function districtUnder(world: World, point: Vec3): number {
-  return world.districtOf[nearestGridPoint(world, point)] ?? DISTRICT_COUNTRY
 }
 
 /** The point this high over the planet's radius in a direction. */

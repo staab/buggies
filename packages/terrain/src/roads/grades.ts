@@ -18,18 +18,6 @@ const GRADE_TOLERANCE = 1e-3
  * points.
  */
 
-/**
- * Relax a height profile until no segment exceeds `maxGrade`, while staying as
- * close to the target as possible. Peaks are cut and dips filled symmetrically,
- * which is what carves a gradual line through a mountain instead of climbing
- * straight over it. Where `floor` is given, no sample is let below it: of a
- * pair too steep with one end already down on its floor, the other end takes
- * the whole of the difference.
- */
-export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: number, floor?: Float32Array): void {
-  limitGradeAlong(heights, runsOf(points, true), maxGrade, floor)
-}
-
 /** How far each point of a run is from the next, round to the first from the last where the run is closed. */
 function runsOf(points: Vec2[], closed: boolean): Float64Array {
   const count = points.length
@@ -68,22 +56,6 @@ export function limitGradeAlong(heights: Float32Array, runs: Float64Array, maxGr
     }
     if (!moved) break
   }
-}
-
-/**
- * Ease every crest and sag along a profile until the grade changes no
- * faster than `maxCurvature` per meter. Each sample is nudged toward the
- * line between its neighbors, half the way to the limit at a time, until
- * every bend is within it. An open road keeps its ends where they are, since
- * they meet other roads there; a closed one bends all the way around.
- */
-export function limitVerticalCurvature(
-  heights: Float32Array,
-  points: Vec2[],
-  maxCurvature: number,
-  closed: boolean,
-): void {
-  limitVerticalCurvatureAlong(heights, runsOf(points, true), maxCurvature, closed)
 }
 
 /** `limitVerticalCurvature` along a run of points this far apart, each from the next. */
@@ -138,15 +110,6 @@ export function limitOpenGradeAlong(heights: Float32Array, runs: Float64Array, m
     }
     if (!moved) break
   }
-}
-
-/**
- * Enforce a grade limit in one pass from each end and average the two feasible
- * profiles. That is O(n) rather than relaxation, and averaging keeps the result
- * close to the original heights (and so to both road ends).
- */
-export function limitSweepGrade(heights: Float32Array, points: Vec2[], maxGrade: number): void {
-  limitSweepGradeAlong(heights, runsOf(points, false), maxGrade)
 }
 
 /** `limitSweepGrade` along an open run of points this far apart, each from the next. */

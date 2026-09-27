@@ -1,38 +1,52 @@
-import type { TerrainMap } from './types.ts'
+import type { World } from './world.ts'
 
 /**
- * A hash of everything about an island that the physics reads, to the
- * last bit: the heights, every road's points and structure, every
- * building, every tree, every rock and every prop where it starts. Two
- * machines that agree on it will agree on where a car lands.
+ * A hash of everything about a planet that the physics reads, to the last
+ * bit: its ground, bored and whole, every road's points and structure, every
+ * building, tree, rock and prop where it starts, and every solid built on
+ * the ground. Two machines that agree on it will agree on where a car lands.
  */
-export function fingerprint(map: TerrainMap): string {
+export function fingerprint(world: World): string {
   const hash = new Fnv1a()
-  hash.numbers(map.heightfield.heights)
-  hash.number(map.seaLevel)
-  for (const road of map.roads) {
+  const point = (p: { x: number; y: number; z: number }): void => hash.numbers([p.x, p.y, p.z])
+  const turn = (q: { x: number; y: number; z: number; w: number }): void => hash.numbers([q.x, q.y, q.z, q.w])
+  hash.numbers(world.ground.heights)
+  hash.numbers(world.bored)
+  hash.number(world.seaLevel)
+  for (const road of world.roads) {
     hash.text(road.kind)
     hash.number(road.closed ? 1 : 0)
-    hash.number(road.width)
-    for (const point of road.points) hash.numbers([point.x, point.y, point.z])
+    hash.numbers(road.widths)
+    for (const p of road.points) point(p)
     hash.bytes(road.structure)
   }
-  for (const building of map.buildings) {
+  for (const building of world.buildings) {
     hash.text(building.kind)
-    hash.numbers([building.x, building.z, building.yaw, building.width, building.depth, building.bottom, building.top])
+    point(building.at)
+    turn(building.turn)
+    hash.numbers([building.width, building.depth, building.height])
   }
-  for (const tree of map.trees) {
+  for (const tree of world.trees) {
     hash.text(tree.kind)
-    hash.numbers([tree.x, tree.z, tree.bottom, tree.height, tree.radius])
+    point(tree.at)
+    hash.numbers([tree.height, tree.radius])
   }
-  for (const rock of map.rocks) {
+  for (const rock of world.rocks) {
     hash.text(rock.kind)
-    hash.numbers([rock.x, rock.z, rock.bottom, rock.size, rock.yaw])
+    point(rock.at)
+    turn(rock.turn)
+    hash.number(rock.size)
   }
-  for (const prop of map.props) {
+  for (const prop of world.props) {
     hash.text(prop.kind)
-    hash.numbers([prop.x, prop.z, prop.bottom, prop.yaw])
+    point(prop.at)
+    turn(prop.turn)
   }
+  for (const mesh of [world.decks, world.rails, world.curbs, ...world.shells]) {
+    hash.numbers(mesh.positions)
+    hash.numbers(mesh.indices)
+  }
+  for (const kicker of world.kickers) hash.numbers(kicker)
   return hash.hex()
 }
 

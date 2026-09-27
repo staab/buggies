@@ -1,5 +1,5 @@
 import type { Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, generateTerrain, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { generatePlanet, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -21,12 +21,12 @@ import {
 import { apart, between, lifted } from './test-planet.ts'
 
 
-let map: TerrainMap
+let map: World
 
 /** How far a point is from the nearest point of any arterial. */
-function offArterials(island: TerrainMap, at: Vec3): number {
+function offArterials(island: World, at: Vec3): number {
   let nearest = Infinity
-  for (const road of island.world!.roads) {
+  for (const road of island.roads) {
     if (road.kind !== 'arterial') continue
     for (const point of road.points) nearest = Math.min(nearest, between(point, at))
   }
@@ -36,7 +36,7 @@ function offArterials(island: TerrainMap, at: Vec3): number {
 describe('cars nobody drives', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('drive slowly along the arterials, staying on the road', () => {

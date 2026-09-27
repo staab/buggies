@@ -1,4 +1,4 @@
-import { PLANET_TERRAIN, atHeight, generateTerrain, heightOver, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { atHeight, generatePlanet, heightOver, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -23,12 +23,12 @@ function eastOf(arena: Arena, ufo: Ufo, point: { x: number; y: number; z: number
 }
 
 
-let map: TerrainMap
+let map: World
 
 describe('flying saucers', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('cruise high over the island, then come down over a car, lift it up the beam and set it down somewhere else', () => {

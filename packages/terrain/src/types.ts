@@ -1,8 +1,7 @@
-import type { World } from './world.ts'
 /**
- * A grid of ground heights sampled on the XZ plane. Heights are stored in
- * row-major order, `width * depth` samples total. This is the shared
- * representation both the client renderer and the server-side simulation read.
+ * A grid of ground heights sampled on the XZ plane, row by row, `width *
+ * depth` samples in all: the ground an interchange is laid out on in its
+ * frame, or a level test ground for the physics.
  */
 export interface Heightfield {
   width: number
@@ -11,63 +10,7 @@ export interface Heightfield {
   heights: Float32Array
 }
 
-/**
- * A mountain with a triangular footprint. The three corners define the base;
- * elevation peaks in the middle and falls to `skirt` around the edges.
- */
-export interface Mountain {
-  ax: number
-  az: number
-  bx: number
-  bz: number
-  cx: number
-  cz: number
-  /** Foothill falloff scale around the triangle. */
-  skirt: number
-  /** Crest rise above the surrounding land. */
-  height: number
-}
-
-/** A single sample along a river's course, in world units. */
-export interface RiverPoint {
-  x: number
-  y: number
-  z: number
-  width: number
-}
-
-export interface River {
-  id: number
-  points: RiverPoint[]
-}
-
-/** A filled basin. Cells are row-major indices into the heightfield. */
-export interface Lake {
-  id: number
-  level: number
-  cells: number[]
-}
-
-/**
- * A city anchor. The core is `radius` wide; suburbs extend `suburbWidth`
- * further out, and everything beyond is country.
- */
-export interface District {
-  id: number
-  /** City center, in world units. */
-  cx: number
-  cz: number
-  /** City core radius, in world units. */
-  radius: number
-  /** How far suburbs reach past the core, in world units. */
-  suburbWidth: number
-  /** Buildable land cells the district covers. */
-  area: number
-  /** Which land mass it is on, numbered from 1 by size, largest first. */
-  island: number
-}
-
-/** A sample along a road centerline, in world units. */
+/** A point of a road laid out in a frame: across it, how high, and down it. */
 export interface RoadPoint {
   x: number
   y: number
@@ -79,42 +22,24 @@ export interface RoadPoint {
  * over the land: an embankment, a bridge, a tunnel. Everything else is the
  * land, shaped to it and painted on.
  */
-export type RoadKind = 'highway' | 'ramp' | 'cross' | 'arterial' | 'street' | 'climb'
+export type RoadKind = 'highway' | 'ramp' | 'cross' | 'arterial' | 'street'
 
 /**
- * A roadway. Highways form closed loops through every city; interchanges
- * add open cross roads and one-lane ramps. `structure` holds one `ROAD_*`
- * code per segment: segment `i` runs from `points[i]` to the next point,
- * wrapping for a closed road, so it is one shorter than `points` when open.
+ * A road laid out in a frame, as an interchange's cross road and ramps are
+ * before they are stood on the planet. `structure` holds one `ROAD_*` code a
+ * segment: segment `i` runs from `points[i]` to the next point, round to
+ * the first on a closed road.
  */
 export interface Road {
   id: number
   kind: RoadKind
   closed: boolean
-  /** Full roadway width, in world units. */
+  /** Full roadway width, in meters. */
   width: number
   points: RoadPoint[]
   structure: Uint8Array
-  /** The level lot a mountain road ends in, terraced into the hillside with the road, for the parking lot built on it. */
-  lot?: Lot
 }
 
-/** A level rectangle terraced into the ground at `y`, turned by `yaw` about its center like a footprint. */
-export interface Lot {
-  x: number
-  y: number
-  z: number
-  yaw: number
-  width: number
-  depth: number
-}
-
-/**
- * A box standing on the ground: a city block's building, or a house. It is
- * turned by `yaw` about its center, `width` along its local X and `depth`
- * along its local Z, and stands from `bottom`, buried below the lowest ground
- * under it, up to `top`.
- */
 /**
  * What a building is: a city block, one of three styles of house, an
  * observatory on a mountain top, a farm's barn or silo, a wind turbine, a
@@ -146,8 +71,6 @@ export type BuildingKind =
   | 'boat'
   | 'pylon'
   | 'station'
-  | 'wall'
-  | 'board'
   | 'site'
   | 'crane'
   | 'fountain'
@@ -167,194 +90,5 @@ export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyram
 /** Kinds that stand in the water rather than on the land: the boats moored off the shore, and a dam across a river. */
 export const WATER_KINDS: readonly BuildingKind[] = ['boat']
 
-/**
- * A rectangle painted on the ground: a farm's field of crop, hedged about, a
- * gas station's asphalt apron, or a parking lot with its bays marked out.
- */
-export interface Field {
-  /** A crop, a paved lot, a parking lot with its bays marked, or a city square paved over. */
-  kind: 'crop' | 'asphalt' | 'parkingLot' | 'square'
-  x: number
-  z: number
-  yaw: number
-  width: number
-  depth: number
-  /** Which crop, and how ripe, for whoever paints it: 0 to 1. */
-  tone: number
-}
-
-export interface Building {
-  kind: BuildingKind
-  x: number
-  z: number
-  yaw: number
-  width: number
-  depth: number
-  bottom: number
-  top: number
-  /** A shade for whoever draws it, 0 to 1. */
-  tone: number
-}
-
-/**
- * A kicker on the shoulder of a road, running along it, for a car to swerve
- * onto at speed and fly off the lip of. Its top curves up from the ground in
- * an arc, gently at the foot and steepest at the lip, so a car meets it with
- * its wheels rather than its nose.
- */
-export interface Ramp {
-  /** The middle of the foot, where the wedge meets the ground. */
-  x: number
-  z: number
-  /** Unit direction it climbs in, in plan: along the road, one way or the other. */
-  dx: number
-  dz: number
-  width: number
-  /** From the foot to the lip, in plan. */
-  length: number
-  /** Ground height at the foot, and the height of the lip. */
-  bottom: number
-  top: number
-  /** A straight climb from foot to lip, rather than a kicker's arc. */
-  straight?: true
-}
-
-/**
- * A tree, or a shrub: on the ground at `bottom`, `radius` wide and `height`
- * tall in all. A tree has a trunk to run into; a shrub is only something to
- * drive through.
- */
-/**
- * The sidewalk around one city block: a square ring, raised a curb's height
- * above the street, from the roadway's edge in under the buildings.
- */
-export interface Sidewalk {
-  /** The block's center. */
-  x: number
-  z: number
-  yaw: number
-  /** Half the ring's outer side, from the block's center to the curb. */
-  half: number
-  /** How wide the ring is, curb to inner edge. */
-  band: number
-  /**
-   * Which of the ring's four sides are built, going around from the side at
-   * +v: a side with no street along it is left out, as is one that a road
-   * other than the block's own streets cuts across, or its curb would be a
-   * step in that road.
-   */
-  sides: [boolean, boolean, boolean, boolean]
-}
-
-export interface Tree {
-  /** A wild or garden tree, a shrub, or a fruit tree of an orchard: smaller and rounder. */
-  kind: 'tree' | 'shrub' | 'fruit'
-  x: number
-  z: number
-  bottom: number
-  height: number
-  radius: number
-  /** A shade for whoever draws it, 0 to 1. */
-  tone: number
-}
-
-export interface TerrainOptions {
-  /** Cells across the map, west to east. */
-  size?: number
-  /** Cells down the map, north to south: as many as across, unless asked for fewer or more. */
-  depth?: number
-  /**
-   * How far from the middle of the map, north and south, the land may reach,
-   * as a share of its depth: half, the whole map, unless asked for a band
-   * across its middle.
-   */
-  landBand?: number
-  /** How big the mountains are, as a share of their full width: small islands want small mountains. */
-  mountainScale?: number
-  /** Whether the map is wrapped round a planet: once round its equator across, and pole to pole down. */
-  planet?: boolean
-  cellSize?: number
-  seaLevel?: number
-  oceanDepth?: number
-  /** Radius of the largest island in world units. Defaults to a fraction of the map. */
-  islandRadius?: number
-  /** Number of islands. Defaults to one to `islandsMost`, by the seed. */
-  islandCount?: number
-  /** The most islands the seed may pick: fifteen, unless asked for fewer. */
-  islandsMost?: number
-  /** The fewest: one, unless asked for more. */
-  islandsLeast?: number
-  /** Number of triangular mountains. Defaults to one to twelve, by the seed. */
-  mountainCount?: number
-  /** Most rivers. Defaults to one for about half the mountains, and at least one. */
-  riverCount?: number
-  /** Number of cities. Defaults to three to five, by the seed. */
-  cityCount?: number
-  /** Depressions smaller than this are not treated as lakes. */
-  minLakeCells?: number
-  /** Depressions shallower than this are not treated as lakes. */
-  minLakeDepth?: number
-}
-
-/** Everything needed to render or simulate a map. Pure data, fully serializable. */
-/**
- * A rock on the bare high ground: a boulder, which a car hits, or a stone
- * of a scree field, which it rattles over. About as tall as it is wide,
- * and standing a little way into the ground.
- */
-export interface Rock {
-  kind: 'boulder' | 'scree'
-  x: number
-  z: number
-  bottom: number
-  /** Across, in meters. */
-  size: number
-  yaw: number
-  /** A shade for whoever draws it, 0 to 1. */
-  tone: number
-}
-
 /** The kinds of thing a car can knock about. */
 export type PropKind = 'crate' | 'barrel' | 'cone' | 'bale'
-
-/**
- * A prop: the one kind of furniture that moves. Where it starts, standing
- * on the ground, turned by `yaw`; the physics owns it from there, and puts
- * it back here if it falls off the map.
- */
-export interface Prop {
-  kind: PropKind
-  x: number
-  z: number
-  /** The ground it stands on. */
-  bottom: number
-  yaw: number
-}
-
-export interface TerrainMap {
-  seed: number
-  /** Cells across the map, west to east, and down it, north to south. */
-  size: number
-  depth: number
-  /** Whether it is wrapped round a planet, or lies flat. */
-  planet: boolean
-  /** A planet's map as the world has it, every part where it stands on the planet, its ground the whole of it, poles and all. */
-  world?: World
-  cellSize: number
-  seaLevel: number
-  heightfield: Heightfield
-  mountains: Mountain[]
-  rivers: River[]
-  lakes: Lake[]
-  districts: District[]
-  /** Row-major district code (`DISTRICT_*`) for every cell. */
-  districtOf: Uint8Array
-  roads: Road[]
-  buildings: Building[]
-  trees: Tree[]
-  rocks: Rock[]
-  props: Prop[]
-  ramps: Ramp[]
-  sidewalks: Sidewalk[]
-  fields: Field[]
-}

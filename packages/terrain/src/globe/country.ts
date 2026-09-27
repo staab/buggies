@@ -9,7 +9,7 @@
 import { randomInt, randomRange, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 
-import { DISTRICT_COUNTRY, DISTRICT_SUBURB } from '../districts.ts'
+import { DISTRICT_COUNTRY, DISTRICT_SUBURB } from '../sphere-districts.ts'
 import { signedDistanceToTriangle } from '../mountain.ts'
 import { smoothstep } from '../noise.ts'
 import { ROAD_GRADE } from '../roads/constants.ts'
@@ -146,7 +146,7 @@ function localAt(p: Vec3, radius: number): Frame {
   return spotFrame(p, tangentFrame(p).east, radius)
 }
 
-/** The first axis of a thing standing at a point of a frame, turned by `yaw` from the frame's east the way a map turns it. */
+/** The first axis of a thing standing at a point of a frame, turned by `yaw` from the frame's east toward its north. */
 function axisOn(frame: Frame, yaw: number, p: Vec3): Vec3 {
   const c = cos(yaw)
   const s = sin(yaw)
@@ -196,7 +196,7 @@ function intoMountain(mountain: SphereMountain, p: Vec3, radius: number): number
 }
 
 /** Whether a point is on a mountain: within its triangle, or the skirt round it. */
-export function onMountain(mountains: readonly SphereMountain[], p: Vec3, radius: number): boolean {
+function onMountain(mountains: readonly SphereMountain[], p: Vec3, radius: number): boolean {
   return mountains.some((mountain) => intoMountain(mountain, p, radius) >= -mountain.skirt)
 }
 

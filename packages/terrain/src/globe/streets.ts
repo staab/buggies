@@ -12,7 +12,7 @@
 import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
-import { DISTRICT_CITY } from '../districts.ts'
+import { DISTRICT_CITY } from '../sphere-districts.ts'
 import {
   ARTERIAL_WIDTH,
   MAX_ROAD_GRADE,
@@ -27,11 +27,10 @@ import {
   STREET_WIDTH,
 } from '../roads/constants.ts'
 import { limitSweepGradeAlong } from '../roads/grades.ts'
-import { STREET_GRID_LEAST } from '../roads/streets.ts'
 import { gridPlace, groundIndex, sphereHeight, type GridPlace } from '../sphere.ts'
 import { tangentFrame } from '../sphere-heights.ts'
 import { groundDirections, groundNeighbors } from '../sphere-water.ts'
-import { DRY } from '../water.ts'
+import { DRY } from '../world.ts'
 import type { WorldDistrict, WorldRoad } from '../world.ts'
 import { waterAt, type Planet } from './highway.ts'
 import { angleBetween, lift, runs, slerp, unit } from './lines.ts'
@@ -43,6 +42,10 @@ const { atan2, cos, sin } = exact
 const CONNECT_REACH = 160
 const CONNECT_BEND = (70 * Math.PI) / 180
 const CONNECT_LOOK = 6
+/** A grid of streets on its own is kept from this many streets up; fewer is a scrap. */
+export const STREET_GRID_LEAST = 4
+/** How far off the middle of its city ground a grid is laid, across and down, in meters: a fraction of a ground cell. */
+const GRID_NUDGE = { x: 0.37, z: 0.61 } as const
 /** A city's grid is laid out only over as many of its points as this. */
 const GRID_LEAST_POINTS = 8
 
@@ -114,10 +117,11 @@ function cityGrid(planet: Planet, city: WorldDistrict, cityPoints: readonly Vec3
     sxz += (p.x - cx) * (p.z - cz)
   }
   const angle = 0.5 * atan2(2 * sxz, sxx - szz)
+  // Off the middle of the city ground by a fraction of a cell, so no street can run exactly down a line of the ground's grid, where a ray down between two of its triangles finds neither.
   const middle = unit({
-    x: city.center.x * radius + east.x * cx + north.x * cz,
-    y: city.center.y * radius + east.y * cx + north.y * cz,
-    z: city.center.z * radius + east.z * cx + north.z * cz,
+    x: city.center.x * radius + east.x * (cx + GRID_NUDGE.x) + north.x * (cz + GRID_NUDGE.z),
+    y: city.center.y * radius + east.y * (cx + GRID_NUDGE.x) + north.y * (cz + GRID_NUDGE.z),
+    z: city.center.z * radius + east.z * (cx + GRID_NUDGE.x) + north.z * (cz + GRID_NUDGE.z),
   })
   const frame = tangentFrame(middle)
   const c = cos(angle)

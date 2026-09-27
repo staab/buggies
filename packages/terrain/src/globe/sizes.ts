@@ -34,8 +34,8 @@ export const INTERCHANGE_SHRUBS = 0.9
 /** Lots left as parks, one in this many. */
 export const PARK_LOT_ODDS = 7
 /**
- * Props, the furniture a car can knock about, no more than this many to an
- * island: barrels stacked this many deep beside a gas station's shop,
+ * Props, the furniture a car can knock about, no more than this many to a
+ * planet: barrels stacked this many deep beside a gas station's shop,
  * crates this many along the strip outside a building site's fencing,
  * a line of this many cones this far apart as roadworks every so far along
  * the suburb roads, and this many bales to a crop field.
@@ -100,8 +100,6 @@ export const ROAD_MARGIN = 1.5
 export const TUNNEL_KEEP_OUT = 20
 /** And this clear of any other building. */
 export const BUILDING_GAP = 1
-/** Buildings are bucketed on this grid to find neighbors, in world units. */
-export const BUCKET = 32
 /** Houses along a suburb's arterials: how far apart, how far from the road's edge, and how big. */
 export const SUBURB_SPACING = { min: 15, max: 22 } as const
 export const HOUSE_SETBACK = { min: 5, max: 9 } as const
@@ -118,7 +116,7 @@ export const VILLA_HEIGHT = { min: 6, max: 7.5 } as const
 /** Which style a house is, by the luck of the draw: the plain one half the time, the others a quarter each. */
 export const HOUSE_STYLES: readonly ('house' | 'cottage' | 'villa')[] = ['house', 'house', 'cottage', 'villa']
 /**
- * As often as not an island has an observatory, one at most, on a mountain
+ * As often as not a planet has an observatory, one at most, on a mountain
  * top: a round tower this wide and this tall over the peak, on ground no
  * more uneven than this across it.
  */
@@ -172,7 +170,7 @@ export const SILO = { radius: 2.4, height: 9 } as const
 export const SILOS = { min: 1, max: 2 } as const
 export const SILO_RELIEF = 5
 /**
- * One wind farm an island, if the open country has room for a line of
+ * One wind farm a planet, if the open country has room for a line of
  * turbines this far apart, at least this many of them, each a tower this
  * wide and tall standing on ground no more uneven than this.
  */
@@ -185,7 +183,7 @@ export const TURBINE_RELIEF = 6
 export const TURBINE_ROAD_MARGIN = 6
 export const TURBINE_GAP = 8
 /**
- * One ring of standing stones an island, on the highest open ground of
+ * One ring of standing stones a planet, on the highest open ground of
  * this many tries: this many stones around a ring this wide, each this big.
  */
 export const STONES_TRIES = 120
@@ -221,7 +219,7 @@ export const LIGHTHOUSE_ROAD_MARGIN = 6
 /**
  * Boats moored off the shore: a few, at random, in water deep enough and
  * with the shore not far off, each turned as it lies at anchor. They throw
- * their own dice, like the observatory, so an island's boats stay put.
+ * their own dice, like the observatory, so a planet's boats stay put.
  */
 export const BOATS_MOST = 8
 export const BOAT_TRIES = 200
@@ -238,7 +236,7 @@ export const BOAT_SWING = 110
  * A chair lift up a mountainside: a station at the foot of the slope, one
  * near the crest, and a line of pylons between them for the cable and the
  * chairs. On a mountain without an observatory for choice, up the side
- * that faces the nearest city. One per island at most.
+ * that faces the nearest city. One per planet at most.
  */
 export const LIFTS_MOST = 1
 export const PYLON = { size: 2, height: 14, spacing: 40, least: 2 } as const
@@ -252,14 +250,6 @@ export const LIFT_FOOT = { grade: 0.12, stretch: 30, step: 5, mostDown: 500 } as
 export const LIFT_ROAD_MARGIN = 4
 export const PYLON_RELIEF = 6
 export const LIFT_STATION_RELIEF = 8
-/**
- * Viewpoint parking lots: the lot a mountain road ends in, painted as a car
- * park, with a low wall along its valley side and an information board at
- * the far end of the wall from where the road comes in.
- */
-export const VIEWPOINTS_MOST = 1
-export const VIEWPOINT_WALL = { thick: 0.5, height: 0.8 } as const
-export const VIEWPOINT_BOARD = { width: 2.4, depth: 0.3, height: 2.2 } as const
 /** How far anything that stands about keeps from anything else that does. */
 export const FURNITURE_GAP = 2
 /** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
@@ -384,7 +374,7 @@ export const FOOTHILL = { from: 0.03, thickest: 0.3, treeline: 0.6 } as const
 export const FOOTHILL_BOOST = 2.2
 /** Ground steeper than this is rock, whatever the noise says. */
 export const WILD_MAX_SLOPE = 0.6
-/** And nothing grows above this fraction of the way from the sea to the island's highest ground. */
+/** And nothing grows above this fraction of the way from the sea to the planet's highest ground. */
 export const TREELINE = 0.65
 export const WILD_SALT = 0x7e11
 /**
@@ -407,8 +397,6 @@ export const SCREE_SIZE = { min: 0.5, max: 1.5 } as const
 export const ROCK_BURY = 0.3
 export const ROCK_ROAD_MARGIN = 1.5
 export const ROCK_SALT = 0x2c9b
-/** The grid rails are looked up in, a cell this wide. */
-export const RAIL_CELL = 16
 /** How far apart the spots a footprint is tried at are, across and along it. */
 export const MOUNTAIN_PROBE = 8
 /** How far in from an orchard's edge the outermost trees stand: a crown's width, clear of the hedge. */

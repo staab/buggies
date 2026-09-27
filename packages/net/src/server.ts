@@ -438,7 +438,7 @@ export class GameServer implements TransportHandlers {
     connection.send(
       encodeWelcome({
         protocolVersion: PROTOCOL_VERSION,
-        seed: arena.map.seed,
+        seed: arena.planet.seed,
         seat: seat.id,
         epoch: seat.epoch,
         tick: arena.tick,

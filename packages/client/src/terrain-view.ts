@@ -15,12 +15,9 @@ import {
   heightOver,
   tangentFrame,
   worldBoatAt,
-  type Building,
-  type Field,
   type GridPlace,
-  type Rock,
   type SphereGround,
-  type Tree,
+  type BuildingKind,
   type World,
   type WorldDecks,
   type WorldField,
@@ -29,6 +26,52 @@ import {
   type WorldRoad,
 } from '@buggies/terrain'
 import * as THREE from 'three'
+
+/** A building laid out flat about its own foot: turned by `yaw`, `width` along its x and `depth` along its z, from `bottom` up to `top`. */
+interface Building {
+  kind: BuildingKind
+  x: number
+  z: number
+  yaw: number
+  width: number
+  depth: number
+  bottom: number
+  top: number
+  tone: number
+}
+
+/** A field laid out on a tile's plane: a crop, a paved lot, a parking lot, or a city square. */
+interface Field {
+  kind: WorldField['kind']
+  x: number
+  z: number
+  yaw: number
+  width: number
+  depth: number
+  tone: number
+}
+
+/** A tree or a shrub laid out about its own foot. */
+interface Tree {
+  kind: 'tree' | 'shrub' | 'fruit'
+  x: number
+  z: number
+  bottom: number
+  height: number
+  radius: number
+  tone: number
+}
+
+/** A rock laid out about its own foot. */
+interface Rock {
+  kind: 'boulder' | 'scree'
+  x: number
+  z: number
+  bottom: number
+  size: number
+  yaw: number
+  tone: number
+}
 
 import { hullGeometry } from './hull-geometry.ts'
 import { uprightAt } from './stand.ts'
@@ -244,10 +287,6 @@ const CRANE_COLORS: [THREE.Color, THREE.Color] = [new THREE.Color('#e3b120'), ne
 const CRANE_CAB = new THREE.Color('#d9dde3')
 const CONCRETE = new THREE.Color('#9a9a94')
 const CRANE = { column: 0.25, brace: 0.12, level: 4, jib: 32, counterJib: 10, cab: 2.6, hookAlong: 0.7, hookDrop: 0.45, turn: 0.06 } as const
-/** A viewpoint's low stone wall and the board on its posts. */
-const WALL_COLOR = new THREE.Color('#a9a59b')
-const BOARD_COLOR = new THREE.Color('#e4dcc6')
-const BOARD_FRAME = new THREE.Color('#6b4f34')
 /** How far a building's bottom is buried below the ground, as the generator does it. */
 const BURY_SHOWN = 1
 const TRUNK_COLOR = new THREE.Color('#5a4030')
@@ -1353,8 +1392,6 @@ function buildStanding(world: World): THREE.Object3D[] {
   const boats = ofKind('boat')
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
-  const walls = ofKind('wall')
-  const boards = ofKind('board')
   const blockWall = facadeMaterial(blockFacade(), 0.6)
   const houseWall = facadeMaterial(houseFacade(), 0.9)
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
@@ -2311,24 +2348,6 @@ function buildStanding(world: World): THREE.Object3D[] {
   const screeMesh = instanced(lump, plain, scree, rockPlace)
   if (screeMesh !== null) screeMesh.name = 'scree'
   meshes.push(boulderMesh, screeMesh)
-
-  // A viewpoint: its low wall as a run of stone, and its board as a panel in a frame on two posts.
-  meshes.push(
-    instanced(box, plain, walls, (wall, matrix, color) => {
-      boxAt(wall, matrix)
-      color.copy(WALL_COLOR)
-    }),
-    ...[-1, 1].map((side) =>
-      instanced(box, plain, boards, (board, matrix, color) => {
-        upright(board, matrix, 0.12, board.top - board.bottom, 0.12, (board.top + board.bottom) / 2, side * (board.width / 2 - 0.2))
-        color.copy(BOARD_FRAME)
-      }),
-    ),
-    instanced(box, plain, boards, (board, matrix, color) => {
-      upright(board, matrix, board.width, 1.2, board.depth * 0.5, board.top - 0.7)
-      color.copy(BOARD_COLOR)
-    }),
-  )
 
   return meshes.filter((mesh): mesh is THREE.Object3D => mesh !== null)
 }

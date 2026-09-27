@@ -8,7 +8,7 @@
 
 import { randomInt, randomRange, type Vec3 } from '@buggies/physics'
 
-import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from '../districts.ts'
+import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from '../sphere-districts.ts'
 import { ROAD_BRIDGE, ROAD_GRADE } from '../roads/constants.ts'
 import type { WorldRoad } from '../world.ts'
 import { tangentFrame } from '../sphere-heights.ts'

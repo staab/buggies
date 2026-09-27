@@ -1,4 +1,4 @@
-import { PLANET_TERRAIN, generateTerrain, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { generatePlanet, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -20,12 +20,12 @@ import {
 import { apart, between, lifted, over } from './test-planet.ts'
 
 
-let map: TerrainMap
+let map: World
 
 describe('robots', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('roll slowly along the arterials, turning off at the junctions', () => {

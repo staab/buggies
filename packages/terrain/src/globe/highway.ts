@@ -39,7 +39,7 @@ import { cumulativeLengths, type Vec2 } from '../roads/geometry.ts'
 import { limitGradeAlong, limitVerticalCurvatureAlong } from '../roads/grades.ts'
 import { gridPlace, groundIndex, sphereHeight, type GridPlace, type SphereGround } from '../sphere.ts'
 import type { WorldDistrict, WorldRoad } from '../world.ts'
-import { DRY } from '../water.ts'
+import { DRY } from '../world.ts'
 import { fieldOnFrame, frameAt, fromFrame, pointOnFrame, toFrame } from './frame.ts'
 import { angleBetween, easeTurns, lift, resample, runs, smooth, slerp } from './lines.ts'
 import type { Nav } from './nav.ts'
@@ -94,7 +94,7 @@ function runCost(planet: Planet, a: WorldDistrict, b: WorldDistrict): number {
 }
 
 /** The cities the highway loop runs through: of every three, the ones it reaches most cheaply. The rest are left to the arterials. */
-export function highwayCities(planet: Planet): WorldDistrict[] {
+function highwayCities(planet: Planet): WorldDistrict[] {
   const { districts } = planet
   if (districts.length <= HIGHWAY_CITIES) return districts.slice()
   let best = districts.slice(0, HIGHWAY_CITIES)
@@ -125,7 +125,7 @@ export function highwayCities(planet: Planet): WorldDistrict[] {
  * loop is simple, meets every city, and never doubles back. With one city,
  * it is a ring round it.
  */
-export function routeLoop(planet: Planet, cities: readonly WorldDistrict[]): Vec3[] {
+function routeLoop(planet: Planet, cities: readonly WorldDistrict[]): Vec3[] {
   const { ground, seaLevel } = planet
   const { radius } = ground
   if (cities.length === 0) return []

@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { ROUND_KINDS, gridDirection, groundIndex, railMesh, type Heightfield, type RailRun, type World, type WorldMesh } from '@buggies/terrain'
+import { ROUND_KINDS, gridDirection, groundIndex, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -68,7 +68,7 @@ function addGroundMesh(world: RAPIER.World, mesh: WorldMesh, friction: number): 
  * chassis corner scraping across a seam otherwise catches on the edge and
  * the car stops dead, however slight the bend.
  */
-function addWall(world: RAPIER.World, mesh: WorldMesh): void {
+export function addWall(world: RAPIER.World, mesh: WorldMesh): void {
   if (mesh.indices.length === 0) return
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   world.createCollider(
@@ -80,12 +80,6 @@ function addWall(world: RAPIER.World, mesh: WorldMesh): void {
       .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min),
     body,
   )
-}
-
-/** Guardrails along the given runs, as the wall their mesh draws. */
-export function addRailRuns(world: RAPIER.World, runs: RailRun[]): void {
-  if (runs.length === 0) return
-  addWall(world, railMesh(runs))
 }
 
 /** A trunk is this wide, whatever the crown; only the trunk is anything to hit. */

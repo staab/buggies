@@ -1,10 +1,10 @@
-import { PLANET_TERRAIN, generateTerrain, type TerrainMap, type World } from '@buggies/terrain'
+import { ROAD_GRADE, generatePlanet, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { createTerrainView } from './terrain-view.ts'
 
-let map: TerrainMap
+let map: World
 let world: World
 let view: THREE.Group
 
@@ -32,8 +32,8 @@ function groundPieces(): THREE.Mesh[] {
 describe('the planet drawn', () => {
   beforeAll(() => {
     // An island with tunnels through its hills.
-    map = generateTerrain(7, PLANET_TERRAIN)
-    world = map.world!
+    map = generatePlanet(1)
+    world = map
     view = createTerrainView(world)
   }, 120_000)
 
@@ -62,7 +62,9 @@ describe('the planet drawn', () => {
     })
     for (const road of world.roads) {
       if (road.kind === 'highway') continue
-      for (const point of road.points) {
+      for (const [i, point] of road.points.entries()) {
+        // A bridge's deck is drawn on its own, over nothing painted.
+        if (road.structure[i - 1] !== ROAD_GRADE && road.structure[i] !== ROAD_GRADE) continue
         const at = new THREE.Vector3(point.x, point.y, point.z)
         expect(spheres.some((sphere) => sphere.distanceToPoint(at) <= 1)).toBe(true)
       }

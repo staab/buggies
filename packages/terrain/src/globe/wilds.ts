@@ -9,7 +9,7 @@
 
 import { randomRange, type Vec3 } from '@buggies/physics'
 
-import { DISTRICT_COUNTRY, DISTRICT_SUBURB } from '../districts.ts'
+import { DISTRICT_COUNTRY, DISTRICT_SUBURB } from '../sphere-districts.ts'
 import { triangleInradius } from '../mountain.ts'
 import { fbm3D, smoothstep } from '../noise.ts'
 import { createSphereGround } from '../sphere.ts'

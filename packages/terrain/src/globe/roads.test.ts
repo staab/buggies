@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { PLANET_TERRAIN, generateTerrain } from '../generate.ts'
 import { MAX_ARTERIAL_GRADE, MAX_RAMP_GRADE, MAX_ROAD_GRADE, ROAD_GRADE } from '../roads/constants.ts'
-import { STREET_GRID_LEAST } from '../roads/streets.ts'
+import { STREET_GRID_LEAST } from './streets.ts'
 import type { WorldRoad } from '../world.ts'
 import { angleBetween, lift, resample, unit } from './lines.ts'
+import { generatePlanet } from './planet.ts'
 
-const world = generateTerrain(6, PLANET_TERRAIN).world!
+const world = generatePlanet(6)
 const { radius } = world
 
 function heightOf(point: { x: number; y: number; z: number }): number {

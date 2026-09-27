@@ -4,11 +4,9 @@
  * paths round the parks the interchanges enclose.
  */
 
+import * as exact from '@buggies/physics'
 import { qrotate, v3, type Vec3 } from '@buggies/physics'
 
-import { parkLoop } from '../interchanges.ts'
-import { rampFacets } from '../ramps.ts'
-import { CURB_HEIGHT } from '../sidewalks.ts'
 import { sphereHeight, type SphereGround } from '../sphere.ts'
 import { tangentFrame } from '../sphere-heights.ts'
 import type { WorldMesh, WorldRamp, WorldSidewalk } from '../world.ts'
@@ -16,6 +14,10 @@ import { fromFrame, toFrame } from './frame.ts'
 import { along, lift, unit } from './lines.ts'
 import { spotFrame } from './placing.ts'
 
+const { cos, sin } = exact
+
+/** How far a sidewalk stands above the street. */
+export const CURB_HEIGHT = 0.15
 /** How far a sidewalk's faces run down into the ground, so no gap shows where the ground dips. */
 const CURB_FOOTING = 0.4
 /** How far apart, along a side, the slab follows the ground. */
@@ -26,13 +28,33 @@ function axesOf(turn: WorldRamp['turn']): { x: Vec3; z: Vec3 } {
   return { x: qrotate(v3(), turn, { x: 1, y: 0, z: 0 }), z: qrotate(v3(), turn, { x: 0, y: 0, z: 1 }) }
 }
 
+/** How many flat facets the arc of a kicker is built from. */
+export const RAMP_FACETS = 6
+
+/** How high a kicker's top stands over its foot, `along` from the foot: on the circle through the foot, tangent to the ground there, that reaches the lip; or straight up a straight ramp. */
+export function rampRise(ramp: { length: number; rise: number; straight?: true }, along: number): number {
+  const reach = Math.min(Math.max(along, 0), ramp.length)
+  if (ramp.straight) return (ramp.rise * reach) / ramp.length
+  const radius = (ramp.length * ramp.length + ramp.rise * ramp.rise) / (2 * ramp.rise)
+  return radius - Math.sqrt(Math.max(radius * radius - reach * reach, 0))
+}
+
+/** The corners of a kicker's facets, foot to lip, as how far along and how high over its foot: each a straight piece of its arc, and the solid under each convex. */
+export function rampFacets(ramp: { length: number; rise: number; straight?: true }): { along: number; height: number }[] {
+  const count = ramp.straight ? 1 : RAMP_FACETS
+  return Array.from({ length: count + 1 }, (_, i) => {
+    const along = (ramp.length * i) / count
+    return { along, height: rampRise(ramp, along) }
+  })
+}
+
 /** Each kicker's facets, foot to lip, as the eight corners of a solid: the facet's top across the kicker's width, and a meter under its foot. */
 export function kickerSolids(ramps: readonly WorldRamp[], radius: number): Float32Array[] {
   return ramps.flatMap((ramp) => {
     const foot = unit(ramp.at)
     const bottom = Math.sqrt(ramp.at.x * ramp.at.x + ramp.at.y * ramp.at.y + ramp.at.z * ramp.at.z) - radius
     const { x, z } = axesOf(ramp.turn)
-    const facets = rampFacets({ x: 0, z: 0, dx: 0, dz: 1, width: ramp.width, length: ramp.length, bottom, top: bottom + ramp.rise, ...(ramp.straight ? { straight: true } : {}) })
+    const facets = rampFacets(ramp).map((facet) => ({ along: facet.along, height: bottom + facet.height }))
     const under = bottom - 1
     const corner = (distance: number, side: number, height: number): Vec3 => lift(along(along(foot, z, distance, radius), x, side * (ramp.width / 2), radius), radius, height)
     return facets.slice(1).map((b, i) => {
@@ -80,39 +102,43 @@ export function curbSolids(ground: SphereGround, sidewalks: readonly WorldSidewa
     const frame = spotFrame(middle, axesOf(walk.turn).x, radius)
     const place = (u: number, v: number): Vec3 => fromFrame(frame, u, v)
     const heightAt = (p: Vec3): number => sphereHeight(ground, p)
-    const outer = walk.half
-    const inner = walk.half - walk.band
+    const hx = walk.halfWidth
+    const hz = walk.halfDepth
+    // In to the inner edge of the ring: each axis by its own share, so the band is the same width all round.
+    const inX = (hx - walk.band) / hx
+    const inZ = (hz - walk.band) / hz
+    const inward = (u: number, v: number, share: number): Vec3 => place(u * (1 - (1 - inX) * share), v * (1 - (1 - inZ) * share))
     const corners: [number, number][] = [
-      [outer, outer],
-      [-outer, outer],
-      [-outer, -outer],
-      [outer, -outer],
+      [hx, hz],
+      [-hx, hz],
+      [-hx, -hz],
+      [hx, -hz],
     ]
     for (let side = 0; side < 4; side++) {
       if (!walk.sides[side]) continue
       const [u0, v0] = corners[side]!
       const [u1, v1] = corners[(side + 1) % 4]!
-      const scale = inner / outer
-      const steps = Math.max(1, Math.ceil((2 * outer) / SIDEWALK_STEP))
+      const length = Math.sqrt((u1 - u0) * (u1 - u0) + (v1 - v0) * (v1 - v0))
+      const steps = Math.max(1, Math.ceil(length / SIDEWALK_STEP))
       // Each station's slab is a curb over the highest ground near it, across the band and half a step either way along it.
       const stations: [number, number, number, number][] = []
-      const reach = (2 * outer) / steps / 2
+      const reach = 0.5 / steps
       for (let k = 0; k <= steps; k++) {
         const t = k / steps
         const ou = u0 + (u1 - u0) * t
         const ov = v0 + (v1 - v0) * t
         const o = place(ou, ov)
-        const i = place(ou * scale, ov * scale)
+        const i = inward(ou, ov, 1)
         let high = -Infinity
-        for (const dt of [-reach / (2 * outer), 0, reach / (2 * outer)]) {
+        for (const dt of [-reach, 0, reach]) {
           const su = u0 + (u1 - u0) * (t + dt)
           const sv = v0 + (v1 - v0) * (t + dt)
-          for (const across of [1, (1 + scale) / 2, scale]) high = Math.max(high, heightAt(place(su * across, sv * across)))
+          for (const share of [0, 0.5, 1]) high = Math.max(high, heightAt(inward(su, sv, share)))
         }
         const top = high + CURB_HEIGHT
         stations.push([push(lift(o, radius, top)), push(lift(i, radius, top)), push(lift(o, radius, heightAt(o) - CURB_FOOTING)), push(lift(i, radius, heightAt(i) - CURB_FOOTING))])
       }
-      const mid = place(((u0 + u1) / 2) * (1 + scale) * 0.5, ((v0 + v1) / 2) * (1 + scale) * 0.5)
+      const mid = inward((u0 + u1) / 2, (v0 + v1) / 2, 0.5)
       const out = { x: mid.x - middle.x, y: mid.y - middle.y, z: mid.z - middle.z }
       for (const [k, [ot, it, ob, ib]] of stations.entries()) {
         const after = stations[k + 1]
@@ -125,6 +151,46 @@ export function curbSolids(ground: SphereGround, sidewalks: readonly WorldSidewa
     }
   }
   return { positions: Float32Array.from(positions), indices: Uint32Array.from(indices) }
+}
+
+/** Whether a point lies inside a polygon on a plane. */
+function insidePolygon(polygon: readonly { x: number; z: number }[], x: number, z: number): boolean {
+  let inside = false
+  let b = polygon.at(-1)
+  if (b === undefined) return false
+  for (const a of polygon) {
+    if (a.z > z !== b.z > z && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside
+    b = a
+  }
+  return inside
+}
+
+/** A park's loop path: this many points round, this far out from the middle toward the ramps. */
+const PARK_LOOP_POINTS = 16
+const PARK_LOOP_IN = 0.55
+
+/** A path round the inside of a ring on a plane: from its middle, a point part way out to its edge in each of a ring of directions. */
+function parkLoop(ring: readonly { x: number; z: number }[]): { x: number; z: number }[] {
+  let cx = 0
+  let cz = 0
+  for (const point of ring) {
+    cx += point.x
+    cz += point.z
+  }
+  cx /= ring.length
+  cz /= ring.length
+  if (!insidePolygon(ring, cx, cz)) return []
+  const loop: { x: number; z: number }[] = []
+  for (let k = 0; k < PARK_LOOP_POINTS; k++) {
+    const angle = (k / PARK_LOOP_POINTS) * Math.PI * 2
+    const dx = cos(angle)
+    const dz = sin(angle)
+    // Out from the middle to the edge, a meter at a time.
+    let reach = 0
+    while (reach < 400 && insidePolygon(ring, cx + dx * (reach + 1), cz + dz * (reach + 1))) reach += 1
+    loop.push({ x: cx + dx * reach * PARK_LOOP_IN, z: cz + dz * reach * PARK_LOOP_IN })
+  }
+  return loop
 }
 
 /** The gravel path round the park each interchange encloses: a loop part way out to the ring's edge, on the ground. */

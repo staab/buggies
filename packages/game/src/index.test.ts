@@ -1,5 +1,5 @@
 import { vdot, type Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, ROAD_GRADE, ROAD_TUNNEL, alongGround, generateTerrain, groundUnder, heightOver, upOf, type TerrainMap, type World } from '@buggies/terrain'
+import { ROAD_GRADE, ROAD_TUNNEL, alongGround, generatePlanet, groundUnder, heightOver, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -28,7 +28,7 @@ import { angleBetween, apart, between, over } from './test-planet.ts'
 
 const FLAT_OUT: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
 
-let map: TerrainMap
+let map: World
 let planet: World
 let SPAWN: VehicleSpawn
 
@@ -58,8 +58,8 @@ function run(arena: Arena, input: VehicleInput, seconds: number): void {
 describe('game', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(1, PLANET_TERRAIN)
-    planet = map.world!
+    map = generatePlanet(1)
+    planet = map
     SPAWN = findSpawns(planet, 1)[0]!
   }, 60_000)
 
@@ -286,8 +286,8 @@ describe('game', () => {
 
   it('drives through a tunnel instead of dropping into the hill', () => {
     // Tunnels are rare enough that many an island has none: this one has a good few.
-    const island = generateTerrain(7, PLANET_TERRAIN)
-    const world = island.world!
+    const island = generatePlanet(1)
+    const world = island
 
     // A road that runs into a tunnel, and a spot on the road before it.
     let found: { road: World['roads'][number]; portal: number } | null = null

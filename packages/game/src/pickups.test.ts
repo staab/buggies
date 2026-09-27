@@ -1,4 +1,4 @@
-import { DRY, PLANET_TERRAIN, generateTerrain, groundUnder, heightOver, tangentFrame, upOf, waterUnder, type TerrainMap, type World } from '@buggies/terrain'
+import { DRY, generatePlanet, groundUnder, heightOver, tangentFrame, upOf, waterUnder, type World } from '@buggies/terrain'
 import type { Vec3 } from '@buggies/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -33,7 +33,7 @@ import {
 import { apart, between, lifted } from './test-planet.ts'
 
 
-let map: TerrainMap
+let map: World
 let planet: World
 
 /** A spawn on the ground under a floating pickup, facing east. */
@@ -44,8 +44,8 @@ function under(point: Vec3): ReturnType<typeof spawnHere> {
 describe('pickups', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
-    planet = map.world!
+    map = generatePlanet(11)
+    planet = map
   }, 60_000)
 
   it('are put out over the planet, above dry land or a road, the same every time', () => {

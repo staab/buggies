@@ -8,10 +8,16 @@
 
 import { createRng, randomRange, type Vec3 } from '@buggies/physics'
 
-import { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB, ISLAND_NONE } from './districts.ts'
 import { arcDistance, createSphereGround, groundIndex, type SphereGround } from './sphere.ts'
 import { groundDirections, groundNeighbors } from './sphere-water.ts'
 import type { WorldDistrict } from './world.ts'
+
+/** Which district a grid point is in. */
+export const DISTRICT_COUNTRY = 0
+export const DISTRICT_SUBURB = 1
+export const DISTRICT_CITY = 2
+/** Which land mass a grid point is land of: none, or its number from 1 for the largest. */
+export const ISLAND_NONE = 0
 
 /** A neighborhood's grade is its slope averaged over this far round it, in meters. */
 const RELIEF_REACH = 36
@@ -53,7 +59,7 @@ export interface SphereDistricts {
 }
 
 /** Which land mass every grid point is on: none, or its number, from 1 for the largest. */
-export function labelSphereLand(ground: SphereGround, neighbors: Int32Array, seaLevel: number): Uint8Array {
+function labelSphereLand(ground: SphereGround, neighbors: Int32Array, seaLevel: number): Uint8Array {
   const { heights } = ground
   const count = heights.length
   const component = new Int32Array(count).fill(-1)

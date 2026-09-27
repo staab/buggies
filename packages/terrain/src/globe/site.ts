@@ -42,6 +42,8 @@ export interface Site {
   readonly clear: Clearance
   /** Clear of every road by the old curb alone. */
   readonly clearOfRoads: Clearance
+  /** Clear of every street's whole roadway. */
+  readonly offStreets: Clearance
   readonly wet: (p: Vec3) => boolean
   readonly offRails: (p: Vec3, reach: number) => boolean
   readonly placed: Placed

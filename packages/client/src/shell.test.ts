@@ -1,5 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
-import type { TerrainMap } from '@buggies/terrain'
+import type { World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -49,8 +49,8 @@ function stubShowroom(): StubShowroom {
   return showroom
 }
 
-function fakeMap(seed: number): TerrainMap {
-  return { seed, size: 8, cellSize: 1, districts: [], roads: [], rivers: [], lakes: [], world: { radius: 600 } } as unknown as TerrainMap
+function fakeMap(seed: number): World {
+  return { seed, size: 8, cellSize: 1, districts: [], roads: [], rivers: [], lakes: [], world: { radius: 600 } } as unknown as World
 }
 
 class StubMenu implements ShellMenu {

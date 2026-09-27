@@ -9,17 +9,17 @@
  */
 
 import * as exact from '@buggies/physics'
-import { qmultiply, quatFromBasis, type Quat, type Vec3 } from '@buggies/physics'
+import { quatFromBasis, type Quat, type Vec3 } from '@buggies/physics'
 
-import { footprintsOverlap, segmentBoxDistance } from '../roads/clearance.ts'
+import { footprintsOverlap, segmentBoxDistance } from './footprints.ts'
 import { ROAD_SKIRT } from '../roads/constants.ts'
-import { RAIL_THICKNESS } from '../rails.ts'
-import { RIVER_BANK_LAP } from '../rivers.ts'
-import { TUNNEL_CLEARANCE } from '../tunnels.ts'
+import { RAIL_THICKNESS } from './rails.ts'
+import { RIVER_BANK_LAP } from './water.ts'
+import { TUNNEL_CLEARANCE } from './tunnels.ts'
 import { ROAD_TUNNEL } from '../roads/constants.ts'
 import { gridPlace, groundIndex, sphereHeight, type GridPlace, type SphereGround } from '../sphere.ts'
 import { tangentFrame } from '../sphere-heights.ts'
-import { DRY } from '../water.ts'
+import { DRY } from '../world.ts'
 import type { WorldRiver, WorldRoad } from '../world.ts'
 import { fromFrame, toFrame, type Frame } from './frame.ts'
 import { angleBetween, unit } from './lines.ts'
@@ -48,21 +48,13 @@ export function spotFrame(at: Vec3, u: Vec3, radius: number): Frame {
   return { middle: at, east, north: { x: -v.x, y: -v.y, z: -v.z }, radius }
 }
 
-/** The way a spot's first axis runs when turned by `yaw` from its planet's east, the way a flat map turns one. */
+/** The way a spot's first axis runs when turned by `yaw` from its planet's east toward its north. */
 export function axisAt(at: Vec3, yaw: number): Vec3 {
   const { east, north } = tangentFrame(at)
   const c = cos(yaw)
   const s = sin(yaw)
   // Turned from east toward north, as a yaw turns x away from a map's z.
   return unit({ x: east.x * c + north.x * s, y: east.y * c + north.y * s, z: east.z * c + north.z * s })
-}
-
-/** A spot's first axis turned by `yaw` about the way up, the way a flat map turns one. */
-export function turnAxis(at: Vec3, u: Vec3, yaw: number): Vec3 {
-  const v = secondAxis(at, u)
-  const c = cos(yaw)
-  const s = sin(yaw)
-  return unit({ x: u.x * c - v.x * s, y: u.y * c - v.y * s, z: u.z * c - v.z * s })
 }
 
 /** The first axis of a thing standing at one way out, carried to another nearby, still along the ground. */
@@ -76,11 +68,6 @@ export function turnOf(at: Vec3, u: Vec3): Quat {
   const x = carryAxis(u, at)
   const v = secondAxis(at, x)
   return quatFromBasis(x.x, x.y, x.z, at.x, at.y, at.z, v.x, v.y, v.z)
-}
-
-/** The same turn, then turned about its own up by a quarter turn times `quarters`, or anything else. */
-export function turnedBy(turn: Quat, spin: Quat): Quat {
-  return qmultiply(turn, spin)
 }
 
 /** The ways out through a spot's corners and middle. */
@@ -243,6 +230,20 @@ function convexHull(points: { x: number; z: number }[]): { x: number; z: number 
   return [...lower.slice(0, -1), ...upper.slice(0, -1)]
 }
 
+const caps = new WeakMap<readonly Vec3[], { middle: Vec3; reach: number }>()
+
+/** The cap of ground a ring lies within: its middle, and how far along the ground its furthest point is from that. */
+export function ringCap(ring: readonly Vec3[], radius: number): { middle: Vec3; reach: number } {
+  const known = caps.get(ring)
+  if (known !== undefined) return known
+  const middle = unit(ring.reduce((sum, p) => ({ x: sum.x + p.x, y: sum.y + p.y, z: sum.z + p.z }), { x: 0, y: 0, z: 0 }))
+  let reach = 0
+  for (const p of ring) reach = Math.max(reach, angleBetween(middle, p) * radius)
+  const cap = { middle, reach }
+  caps.set(ring, cap)
+  return cap
+}
+
 /** Whether a point lies inside a ring of points about it, on the plane touching the planet at the ring's first. */
 export function insideRing(ring: readonly Vec3[], p: Vec3, radius: number): boolean {
   const frame = spotFrame(ring[0]!, tangentFrame(ring[0]!).east, radius)
@@ -257,10 +258,18 @@ export function insideRing(ring: readonly Vec3[], p: Vec3, radius: number): bool
   return inside
 }
 
-/** Whether any corner or the middle of a spot lies inside any of these rings. */
+/** Whether any of a spot lies inside any of these rings: its middle, its corners, or the middle of each side, which is enough for anything smaller than an interchange. */
 export function meetsRings(rings: readonly Vec3[][], spot: Spot, radius: number): boolean {
-  const samples = spotSamples(spot, radius)
-  return rings.some((ring) => angleBetween(ring[0]!, spot.at) * radius < 400 && samples.some((p) => insideRing(ring, p, radius)))
+  const size = Math.sqrt(spot.width * spot.width + spot.depth * spot.depth) / 2
+  const near = rings.filter((ring) => {
+    const { middle, reach } = ringCap(ring, radius)
+    return angleBetween(middle, spot.at) * radius < reach + size
+  })
+  if (near.length === 0) return false
+  const frame = spotFrame(spot.at, spot.u, radius)
+  const samples: Vec3[] = []
+  for (const su of [-1, 0, 1]) for (const sv of [-1, 0, 1]) samples.push(fromFrame(frame, (su * spot.width) / 2, (sv * spot.depth) / 2))
+  return near.some((ring) => samples.some((p) => insideRing(ring, p, radius)))
 }
 
 /** What the ground of a planet is, for placing on: how high, how wet, and which district, at any way out. */

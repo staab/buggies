@@ -1,5 +1,5 @@
 import { vdot, type Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, atHeight, generateTerrain, heightOver, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { atHeight, generatePlanet, heightOver, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -31,7 +31,7 @@ import {
 import { ahead, apart, lifted } from './test-planet.ts'
 
 
-let map: TerrainMap
+let map: World
 
 /** A rocket of this seat's set going right past a machine, after it: coming from two meters west of it, eastward. */
 function rocketAt(arena: Arena, target: number, at: Vec3): void {
@@ -50,7 +50,7 @@ function rocketAt(arena: Arena, target: number, at: Vec3): void {
 describe('the robots and the saucers', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('a robot takes a rocket as a car ten times tougher would, and once brought down comes back whole on another arterial', () => {
@@ -161,10 +161,10 @@ describe('the robots and the saucers', () => {
 
 describe('the spider', () => {
   // A full-size island, as the game plays on: a small one is all cities to a spider.
-  let island: TerrainMap
+  let island: World
   beforeAll(async () => {
     await initPhysics()
-    island = generateTerrain(3, PLANET_TERRAIN)
+    island = generatePlanet(3)
   }, 120_000)
 
   it('a spider strides across the island and lets a bomb fall every thirty seconds, but not in a mirror', () => {

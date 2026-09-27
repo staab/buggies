@@ -17,7 +17,7 @@ import {
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type TerrainMap } from '@buggies/terrain'
+import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
@@ -130,7 +130,7 @@ export interface OnlineView {
   /** Swap into another vehicle where the car is, keeping the seat and its bananas. */
   changeVehicle(profile: VehicleProfileId): void
   /** The island being played. */
-  readonly map: TerrainMap
+  readonly map: World
   /** The goal being played for, as the server last said, if any. */
   goal(): Goal | null
   /** Play for this goal, or for none. */
@@ -151,7 +151,7 @@ export async function joinOnline(
   seed: number,
   player: OnlinePlayer,
   locals: Set<number>,
-  mapFor: (seed: number) => Promise<TerrainMap>,
+  mapFor: (seed: number) => Promise<World>,
   sound: Sound,
 ): Promise<OnlineView> {
   let lost: string | null = null
@@ -163,8 +163,6 @@ export async function joinOnline(
   const welcome = await client.connect(player.profile, seed)
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
-  // What lies on the map drawn where that is in the world: round a planet, if the map is one's.
-
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.
   const mirror = createArena(map)

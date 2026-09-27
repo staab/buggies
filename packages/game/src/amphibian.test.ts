@@ -1,11 +1,11 @@
 import { vdot, type Vec3 } from '@buggies/physics'
-import { PLANET_TERRAIN, atHeight, generateTerrain, groundUnder, heightOver, tangentFrame, type TerrainMap, type World } from '@buggies/terrain'
+import { atHeight, generatePlanet, groundUnder, heightOver, tangentFrame, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT, advance, createArena, initPhysics, isLost, respawn, spawnHere, takeSeat, type Arena, type Seat } from './index.ts'
 import { ahead, angleBetween, apart } from './test-planet.ts'
 
-let map: TerrainMap
+let map: World
 
 /** Somewhere out at sea, deep, with open water all around: a way out from the middle, and the east there. */
 function openSea(planet: World): { point: Vec3; east: Vec3 } {
@@ -32,7 +32,7 @@ function putToSea(arena: Arena, seat: Seat): void {
 describe('the amphibian', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, PLANET_TERRAIN)
+    map = generatePlanet(11)
   }, 60_000)
 
   it('floats at sea, is driven along the water by its throttle, and is never taken for lost there, where a car sinks', () => {

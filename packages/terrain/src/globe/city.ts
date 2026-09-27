@@ -6,9 +6,10 @@
  * a park, a parking lot, a building site with a crane, or the city square.
  */
 
+import * as exact from '@buggies/physics'
 import { randomInt, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 
-import { DISTRICT_CITY } from '../districts.ts'
+import { DISTRICT_CITY } from '../sphere-districts.ts'
 import { STREET_CURB, STREET_SPACING, STREET_WIDTH } from '../roads/constants.ts'
 import type { WorldDistrict, WorldRoad } from '../world.ts'
 import { angleBetween, lift, unit } from './lines.ts'
@@ -60,6 +61,8 @@ import {
 } from './sizes.ts'
 import { gridAxis, gridPoint, type Grid } from './streets.ts'
 
+const { cos } = exact
+
 /** Whole stories, never fewer than the least. */
 function stories(height: number): number {
   return Math.max(STORY * Math.round(height / STORY), BLOCK_HEIGHT.min)
@@ -84,7 +87,7 @@ function cutLots(rng: Rng, from: number, to: number): [number, number][] {
 
 /** A statue on its plinth at a spot, where the ground is free and dry. */
 export function raiseStatue(site: Site, spot: Spot): boolean {
-  if (!site.clear(spot, ROAD_MARGIN) || site.placed.meets(spot, 0)) return false
+  if (!site.clear(spot, ROAD_MARGIN) || !site.offStreets(spot, 0) || site.placed.meets(spot, 0)) return false
   const ground = groundUnder(site.land, site.wet, spot)
   if (ground.wet || ground.high - ground.low > HOUSE_RELIEF) return false
   site.placed.add(spot)
@@ -152,63 +155,74 @@ export function fillCities(
     if (grid === null || grid === undefined) continue
     const point = (u: number, v: number): Vec3 => gridPoint(grid, u, v, radius)
     const axis = (u: number, v: number): Vec3 => gridAxis(grid, u, v, radius)
-    /** A rectangle of the grid, from its middle, as wide and deep as it runs. */
-    const spotOf = (u: number, v: number, width: number, depth: number): Spot => ({ at: point(u, v), u: axis(u, v), width, depth })
     // The lots are laid out from the old curb, whatever the street's width now: the sidewalk fills the difference.
     const edge = STREET_CURB + SIDEWALK
     const half = STREET_SPACING / 2 - STREET_WIDTH / 2
-    /**
-     * Which sides of a block's sidewalk ring have only the block's own
-     * streets beside them, around from the side at +v, and ground level
-     * enough to lay a slab on.
-     */
-    const ringSides = (blockU: number, blockV: number): [boolean, boolean, boolean, boolean] => {
-      const band = SIDEWALK_BAND
-      const gentle = (u: number, v: number, along: boolean): boolean => {
-        let lastMiddle = Number.NaN
-        for (let t = -half; t <= half; t += SIDEWALK_SAMPLE) {
-          const su = along ? u + t : u
-          const sv = along ? v : v + t
-          const outer = heightAt(land, point(along ? su : su + band / 2, along ? sv + band / 2 : sv))
-          const inner = heightAt(land, point(along ? su : su - band / 2, along ? sv - band / 2 : sv))
-          const middle = heightAt(land, point(su, sv))
-          if (Math.abs(outer - inner) > SIDEWALK_CROSS_RELIEF) return false
-          if (!Number.isNaN(lastMiddle) && Math.abs(middle - lastMiddle) > SIDEWALK_ALONG_RELIEF) return false
-          lastMiddle = middle
-        }
-        return true
-      }
-      const sideClear = (du: number, dv: number, along: boolean): boolean => {
-        const u = blockU + du
-        const v = blockV + dv
-        // Only inside the city, and only along a street that is there the whole side long.
-        if (!inCity(point(u, v))) return false
-        const street = STREET_SPACING / 2
-        for (const t of [-(half - 1), 0, half - 1]) {
-          const su = along ? u + t : blockU + Math.sign(du) * street
-          const sv = along ? blockV + Math.sign(dv) * street : v + t
-          if (!onStreet(point(su, sv))) return false
-        }
-        return gentle(u, v, along) && site.clear(spotOf(u, v, along ? 2 * half : band, along ? band : 2 * half), 0)
-      }
-      const inset = half - band / 2
-      return [sideClear(0, inset, true), sideClear(-inset, 0, false), sideClear(0, -inset, true), sideClear(inset, 0, false)]
-    }
+    const band = SIDEWALK_BAND
     const first = (value: number): number => Math.floor(value / STREET_SPACING) * STREET_SPACING
     const heartOf = (p: Vec3): number => 1 - (angleBetween(p, city.center) * radius) / city.radius
     const blocks: Raised[] = []
     const sites: Spot[] = []
     let squared = false
     for (let v0 = first(grid.vMin); v0 < grid.vMax; v0 += STREET_SPACING) {
+      // The streets along the grid's first axis close in on each other away from its middle, as meridians do toward a pole:
+      // a block is as wide as its streets are apart along its far side, and laid out that wide.
+      const narrow = cos(Math.max(Math.abs(v0), Math.abs(v0 + STREET_SPACING)) / radius)
       for (let u0 = first(grid.uMin); u0 < grid.uMax; u0 += STREET_SPACING) {
         const blockU = u0 + STREET_SPACING / 2
         const blockV = v0 + STREET_SPACING / 2
         const block = point(blockU, blockV)
+        /** The point of the block this far across it and down it from its middle, along the ground. */
+        const at = (x: number, y: number): Vec3 => point(blockU + x / cos((blockV + y) / radius), blockV + y)
+        /** A rectangle of the block, from its middle, turned with the grid. */
+        const spotOf = (x: number, y: number, width: number, depth: number): Spot => {
+          const u = blockU + x / cos((blockV + y) / radius)
+          return { at: point(u, blockV + y), u: axis(u, blockV + y), width, depth }
+        }
+        const halfAcross = (STREET_SPACING / 2) * narrow - STREET_WIDTH / 2
+        /**
+         * Which sides of the block's sidewalk ring have only the block's own
+         * streets beside them, round from the side at +y, and ground level
+         * enough to lay a slab on.
+         */
+        const ringSides = (): [boolean, boolean, boolean, boolean] => {
+          const gentle = (x: number, y: number, along: boolean): boolean => {
+            let lastMiddle = Number.NaN
+            const run = along ? halfAcross : half
+            for (let t = -run; t <= run; t += SIDEWALK_SAMPLE) {
+              const sx = along ? x + t : x
+              const sy = along ? y : y + t
+              const outer = heightAt(land, at(along ? sx : sx + Math.sign(x) * (band / 2), along ? sy + Math.sign(y) * (band / 2) : sy))
+              const inner = heightAt(land, at(along ? sx : sx - Math.sign(x) * (band / 2), along ? sy - Math.sign(y) * (band / 2) : sy))
+              const middle = heightAt(land, at(sx, sy))
+              if (Math.abs(outer - inner) > SIDEWALK_CROSS_RELIEF) return false
+              if (!Number.isNaN(lastMiddle) && Math.abs(middle - lastMiddle) > SIDEWALK_ALONG_RELIEF) return false
+              lastMiddle = middle
+            }
+            return true
+          }
+          const sideClear = (x: number, y: number, along: boolean): boolean => {
+            // Only inside the city, and only along a street that is there the whole side long.
+            if (!inCity(at(x, y))) return false
+            const run = along ? halfAcross : half
+            for (const t of [-(run - 1), 0, run - 1]) {
+              const street = along ? at(t, Math.sign(y) * (STREET_SPACING / 2)) : point(blockU + Math.sign(x) * (STREET_SPACING / 2), blockV + t)
+              if (!onStreet(street)) return false
+            }
+            return gentle(x, y, along) && site.clear(spotOf(x, y, along ? 2 * halfAcross : band, along ? band : 2 * half), 0)
+          }
+          return [
+            sideClear(0, half - band / 2, true),
+            sideClear(-(halfAcross - band / 2), 0, false),
+            sideClear(0, -(half - band / 2), true),
+            sideClear(halfAcross - band / 2, 0, false),
+          ]
+        }
         // The ring is decided now, before the lots are cut, and laid only if something is built on the block.
-        const sides = inCity(block) ? ringSides(blockU, blockV) : null
+        const sides = inCity(block) ? ringSides() : null
         let built = 0
-        const lotsU = cutLots(rng, u0 + edge, u0 + STREET_SPACING - edge)
-        const lotsV = cutLots(rng, v0 + edge, v0 + STREET_SPACING - edge)
+        const lotsU = cutLots(rng, -(STREET_SPACING / 2) * narrow + edge, (STREET_SPACING / 2) * narrow - edge)
+        const lotsV = cutLots(rng, -STREET_SPACING / 2 + edge, STREET_SPACING / 2 - edge)
         for (const [vFrom, vTo] of lotsV) {
           for (const [uFrom, uTo] of lotsU) {
             if (randomInt(rng, 1, PARK_LOT_ODDS) === 1) {
@@ -223,8 +237,7 @@ export function fillCities(
                 placed.add(lot)
                 worldField(site, 'square', lot, 0)
                 const basin: Spot = { ...lot, width: FOUNTAIN.width, depth: FOUNTAIN.width }
-                const footing = groundUnder(land, site.wet, basin)
-                raise(site, 'fountain', basin, footing, FOUNTAIN.height)
+                raise(site, 'fountain', basin, groundUnder(land, site.wet, basin), FOUNTAIN.height)
                 squared = true
                 built += 1
                 continue
@@ -270,17 +283,19 @@ export function fillCities(
           }
         }
         if (sides === null || built === 0 || !sides.some((side) => side)) continue
-        const ring = spotOf(blockU, blockV, 2 * half, 2 * half)
-        site.sidewalks.push({ at: lift(block, radius, heightAt(land, block)), turn: turnOf(ring.at, ring.u), half, band: SIDEWALK_BAND, sides })
+        const ring = spotOf(0, 0, 2 * halfAcross, 2 * half)
+        site.sidewalks.push({ at: lift(block, radius, heightAt(land, block)), turn: turnOf(ring.at, ring.u), halfWidth: halfAcross, halfDepth: half, band, sides })
         // Street trees along each laid side of the ring, down the middle of the sidewalk.
-        const mid = half - SIDEWALK_BAND / 2
-        const reach = half - STREET_TREE_SPACING / 2
         for (const [k, laid] of sides.entries()) {
           if (!laid) continue
-          for (let t = -reach; t <= reach + 1e-6; t += STREET_TREE_SPACING) {
-            const u = blockU + (k === 0 || k === 2 ? t : k === 1 ? -mid : mid)
-            const v = blockV + (k === 1 || k === 3 ? t : k === 0 ? mid : -mid)
-            plantStreetTree(point(u, v), axis(u, v))
+          const along = k === 0 || k === 2
+          const run = (along ? halfAcross : half) - STREET_TREE_SPACING / 2
+          const out = (along ? half : halfAcross) - band / 2
+          for (let t = -run; t <= run + 1e-6; t += STREET_TREE_SPACING) {
+            const x = along ? t : k === 1 ? -out : out
+            const y = along ? (k === 0 ? out : -out) : t
+            const spot = spotOf(x, y, 1, 1)
+            plantStreetTree(spot.at, spot.u)
           }
         }
       }

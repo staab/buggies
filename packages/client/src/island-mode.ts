@@ -1,4 +1,4 @@
-import type { TerrainMap } from '@buggies/terrain'
+import type { World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js'
 
@@ -15,7 +15,7 @@ const BEACON_RADIUS = 4
 const NPC_COLOR = 0x9aa0a6
 
 /** A line about an island, for the player choosing one. */
-export function islandSummary(map: TerrainMap): string {
+export function islandSummary(map: World): string {
   const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' : 's'}`
   return (
     `seed ${map.seed} · ${count(map.districts.length, 'city').replace('citys', 'cities')}, ` +
@@ -49,8 +49,8 @@ function planetControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, r
  * server last said. The controls work whether or not the
  * menu is up, since the menu is what this is for.
  */
-export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView {
-  const { radius } = map.world!
+export function createIslandMode(map: World, scene: THREE.Scene, surface: HTMLElement): ModeView {
+  const { radius } = map
   const camera = new THREE.PerspectiveCamera(55, 1, 0.5, radius * 40)
   // Round the whole planet, looking at its middle from out over its equator.
   camera.position.set(0, radius * 0.9, radius * 2.6)

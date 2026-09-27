@@ -1,8 +1,8 @@
-import { flatHeightfield, type Road } from '@buggies/terrain'
+import { RAIL_HEIGHT, RAIL_THICKNESS, flatHeightfield, type WorldMesh } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT } from './input.ts'
-import { addHeightfield, addRailRuns } from './terrain.ts'
+import { addHeightfield, addWall } from './terrain.ts'
 import { createVehicleTuning } from './tuning.ts'
 import { stepVehicle } from './vehicle.ts'
 import { createVehicle, levelSpawn } from './vehicleBody.ts'
@@ -15,6 +15,43 @@ const MIDDLE = (WIDTH * CELL) / 2
 /** A rail down the runway, a little to the right of where the car starts. */
 const RAIL_X = MIDDLE + 4
 
+/**
+ * A guardrail along a line of points on level ground, standing on the right
+ * of a car driving along them: a barrier the rail's height and thickness,
+ * inside the line, each face wound to look out of it and its ends capped.
+ */
+function railOnTheRight(points: { x: number; y: number; z: number }[]): WorldMesh {
+  const positions: number[] = []
+  const indices: number[] = []
+  const quad = (a: number, b: number, c: number, d: number): void => {
+    indices.push(a, b, c, b, d, c)
+  }
+  for (const [i, point] of points.entries()) {
+    const prev = points[i - 1] ?? point
+    const next = points[i + 1] ?? point
+    const dx = next.x - prev.x
+    const dz = next.z - prev.z
+    const length = Math.hypot(dx, dz) || 1
+    // In toward the road, which lies to the rail's left going along it: the road's left, (-dz, dx), turned about.
+    const inX = (-dz / length) * 1
+    const inZ = (dx / length) * 1
+    positions.push(point.x, point.y, point.z, point.x, point.y + RAIL_HEIGHT, point.z)
+    positions.push(point.x + inX * RAIL_THICKNESS, point.y + RAIL_HEIGHT, point.z + inZ * RAIL_THICKNESS)
+    positions.push(point.x + inX * RAIL_THICKNESS, point.y, point.z + inZ * RAIL_THICKNESS)
+  }
+  for (let i = 0; i + 1 < points.length; i++) {
+    const here = i * 4
+    const next = here + 4
+    quad(here, here + 1, next, next + 1)
+    quad(here + 1, here + 2, next + 1, next + 2)
+    quad(here + 2, here + 3, next + 2, next + 3)
+  }
+  const last = (points.length - 1) * 4
+  quad(0, 3, 1, 2)
+  quad(last, last + 1, last + 3, last + 2)
+  return { positions: Float32Array.from(positions), indices: Uint32Array.from(indices) }
+}
+
 describe('guardrails', () => {
   beforeAll(async () => {
     await initPhysics()
@@ -26,15 +63,7 @@ describe('guardrails', () => {
     // The car drives down -Z; a rail on its right is the road's right edge,
     // already alongside it where it starts.
     const points = [{ x: RAIL_X, y: 0, z: 795 }, { x: RAIL_X, y: 0, z: 400 }, { x: RAIL_X, y: 0, z: 50 }]
-    const road: Road = {
-      id: 0,
-      kind: 'highway',
-      closed: false,
-      width: 2 * (RAIL_X - MIDDLE),
-      points: points.map((point) => ({ ...point, x: MIDDLE })),
-      structure: new Uint8Array(points.length - 1),
-    }
-    addRailRuns(world, [{ road, points, side: -1, flaredStart: false, flaredEnd: false }])
+    addWall(world, railOnTheRight(points))
     const tuning = createVehicleTuning('sportsCar')
     const vehicle = createVehicle(world, tuning, levelSpawn({ x: MIDDLE, y: 0, z: 800 }, 0))
     world.step()
@@ -89,15 +118,7 @@ describe('guardrails', () => {
       const last = points[points.length - 1]!
       points.push({ x: last.x - 6 * Math.sin(heading), y: 0, z: last.z - 6 * Math.cos(heading) })
     }
-    const road: Road = {
-      id: 0,
-      kind: 'highway',
-      closed: false,
-      width: 2 * (railX - middle),
-      points: points.map((point) => ({ ...point, x: point.x - (railX - middle) })),
-      structure: new Uint8Array(points.length - 1),
-    }
-    addRailRuns(world, [{ road, points, side: -1, flaredStart: false, flaredEnd: false }])
+    addWall(world, railOnTheRight(points))
     const railAt = (z: number): number => {
       for (let k = 0; k + 1 < points.length; k++) {
         const a = points[k]!

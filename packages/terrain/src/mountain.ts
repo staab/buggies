@@ -1,5 +1,4 @@
 import * as exact from '@buggies/physics'
-import type { Mountain } from './types.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
@@ -15,8 +14,8 @@ export interface Triangle {
 }
 
 /** Counter-clockwise winding, so inside the triangle all edge distances are positive. */
-export function orientedTriangle(mountain: Mountain): Triangle {
-  const { ax, az, bx, bz, cx, cz } = mountain
+export function orientedTriangle(triangle: Triangle): Triangle {
+  const { ax, az, bx, bz, cx, cz } = triangle
   const cross = (bx - ax) * (cz - az) - (bz - az) * (cx - ax)
   return cross >= 0 ? { ax, az, bx, bz, cx, cz } : { ax, az, bx: cx, bz: cz, cx: bx, cz: bz }
 }

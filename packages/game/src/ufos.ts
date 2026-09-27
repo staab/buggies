@@ -1,6 +1,6 @@
 import { createRng, uprightRotation, v3, vaddScaled, vdot, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { atHeight, groundUnder, heightOver, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
+import { atHeight, gridPlace, groundIndex, groundUnder, heightOver, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
 import { addForceAlong, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
 import { nearestRoadSpotTo } from './spawns.ts'
@@ -85,6 +85,47 @@ function ufoSeed(map: World, id: number): number {
 /** The ground under a point, or the sea where that is higher, over the planet's radius. */
 function groundAt(map: World, point: Vec3): number {
   return Math.max(groundUnder(map, point), map.seaLevel)
+}
+
+/** How many cells a side each face of the skyline's grid has: some 15 m a cell. */
+const SKYLINE_CELLS = 64
+const skylines = new WeakMap<World, Float32Array>()
+
+/**
+ * The top of the tallest thing built about a point, over the planet's
+ * radius, or the ground there where nothing is: read off a coarse grid of
+ * the planet, each cell holding the tallest top in it, and taken over the
+ * cell and those round it.
+ */
+function skylineAt(map: World, point: Vec3): number {
+  let tops = skylines.get(map)
+  if (tops === undefined) {
+    tops = new Float32Array(6 * (SKYLINE_CELLS + 1) * (SKYLINE_CELLS + 1)).fill(-Infinity)
+    for (const building of map.buildings) {
+      const at = skylineCell(building.at)
+      tops[at] = Math.max(tops[at]!, heightOver(map, building.at) + building.height)
+    }
+    skylines.set(map, tops)
+  }
+  const place = gridPlace(SKYLINE_CELLS, upOf(point, skyAt), skyPlace)
+  let highest = -Infinity
+  for (let dj = -1; dj <= 1; dj++) {
+    for (let di = -1; di <= 1; di++) {
+      const i = Math.round(place.i) + di
+      const j = Math.round(place.j) + dj
+      if (i < 0 || j < 0 || i > SKYLINE_CELLS || j > SKYLINE_CELLS) continue
+      highest = Math.max(highest, tops[groundIndex({ n: SKYLINE_CELLS }, place.face, i, j)]!)
+    }
+  }
+  return highest
+}
+
+const skyAt = v3()
+const skyPlace = { face: 0, i: 0, j: 0 }
+
+function skylineCell(point: Vec3): number {
+  const place = gridPlace(SKYLINE_CELLS, upOf(point, skyAt), skyPlace)
+  return groundIndex({ n: SKYLINE_CELLS }, place.face, Math.round(place.i), Math.round(place.j))
 }
 
 /** Where a saucer cruises to next: a point on the land, picked by how many it has reached. */
@@ -251,8 +292,12 @@ export function flyUfo(map: World, ufo: Ufo, seats: readonly Abductee[], gravity
       if (ufo.state === 'carry') {
         // Off over the island to where it sets the car down, high enough to clear the ground ahead as well as under it.
         const ahead = v3(position.x + (drop.x - position.x) * 0.05, position.y + (drop.y - position.y) * 0.05, position.z + (drop.z - position.z) * 0.05)
-        const clear = Math.max(groundAt(map, position), groundAt(map, ahead))
-        if (fly(map, ufo, drop, clear + UFO_CRUISE, UFO_CARRY_SPEED, dt, UFO_CARRY_CLIMB) < WAYPOINT_REACH / 4) {
+        // Over the ground, and over whatever is built there, which the car hanging under it would be carried into.
+        const clear = Math.max(groundAt(map, position), groundAt(map, ahead), skylineAt(map, position), skylineAt(map, ahead))
+        // Still climbing to clear it, it goes on over the ground the slower the further below it is, so the car is lifted over what is ahead rather than into it.
+        const below = clear + UFO_CRUISE - heightOver(map, position)
+        const pace = Math.min(Math.max(1 - below / UFO_CRUISE, 0), 1)
+        if (fly(map, ufo, drop, clear + UFO_CRUISE, UFO_CARRY_SPEED * pace, dt, UFO_CARRY_CLIMB) < WAYPOINT_REACH / 4) {
           ufo.state = 'lower'
           ufo.stateTicks = 0
         }
@@ -269,12 +314,15 @@ export function flyUfo(map: World, ufo: Ufo, seats: readonly Abductee[], gravity
   }
 }
 
+/** How much faster than the saucer a car on its beam is drawn in under it. */
+const CATCH_UP = 1.5
+
 const drift = v3()
 const under = v3()
 
 /**
  * Hold a car on the beam this high under a saucer, level and facing the way
- * it was, drawn in under it no faster than the saucer carries it, so it is
+ * it was, drawn in under it a little faster than the saucer carries it, so it is
  * never put anywhere in a blink.
  */
 function hold(map: World, seat: Abductee, ufo: Ufo, height: number, dt: number): void {
@@ -285,7 +333,8 @@ function hold(map: World, seat: Abductee, ufo: Ufo, height: number, dt: number):
   drift.y = under.y - at.y
   drift.z = under.z - at.z
   const off = Math.hypot(drift.x, drift.y, drift.z)
-  const most = UFO_CARRY_SPEED * dt
+  // A little faster than the saucer goes, so a car that has fallen behind it catches up.
+  const most = UFO_CARRY_SPEED * CATCH_UP * dt
   const share = off > most ? most / off : 1
   drift.x *= share / dt
   drift.y *= share / dt

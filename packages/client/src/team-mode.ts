@@ -1,4 +1,4 @@
-import type { TerrainMap } from '@buggies/terrain'
+import type { World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -18,7 +18,7 @@ export async function createTeamMode(
   url: string,
   seed: number,
   players: readonly OnlinePlayer[],
-  mapFor: (seed: number) => Promise<TerrainMap>,
+  mapFor: (seed: number) => Promise<World>,
   sound: Sound,
   sun: Sun,
 ): Promise<ModeView> {
@@ -37,7 +37,7 @@ export async function createTeamMode(
   if (first === undefined) throw new Error('nobody to put on the screen')
   const split = views.length > 1
   // What is drawn round each car is bent as though the planet were bigger.
-  const { radius } = first.map.world!
+  const { radius } = first.map
   const bendFor = (view: OnlineView): void => {
     bendMaterials(scene)
     bendAround(view.focus, radius)

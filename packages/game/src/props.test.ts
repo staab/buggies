@@ -1,11 +1,11 @@
-import { PLANET_TERRAIN, generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { generatePlanet, sphereHeight, tangentFrame, type World } from '@buggies/terrain'
 import { qmultiply, type Vec3 } from '@buggies/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT, advance, createArena, initPhysics, putPropBack, takeSeat, type VehicleInput } from './index.ts'
 
 
-let map: TerrainMap
+let map: World
 const DRIVE: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
 
 /** The way up at a point: away from the planet's middle. */
@@ -38,7 +38,7 @@ function over(a: Vec3, b: Vec3): number {
 describe('the props', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(3, PLANET_TERRAIN)
+    map = generatePlanet(3)
   }, 60_000)
 
   it('stand where the map has them, and come to rest and sleep', () => {
@@ -79,7 +79,17 @@ describe('the props', () => {
   it('a cone knocked onto its side comes to rest rather than rolling in circles', () => {
     for (const spin of [{ x: 0, y: 4, z: 6 }, { x: 3, y: 0, z: -5 }, { x: -6, y: 2, z: 0 }, { x: 0, y: -8, z: 2 }]) {
       const arena = createArena(map)
-      const cone = arena.props.find((prop) => prop.kind === 'cone')!
+      // The cone on the most level ground: one on a hill rolls on down it, however it lands.
+      const slope = (prop: (typeof arena.props)[number]): number => {
+        const up = upOf(prop.home.at)
+        const { east, north } = tangentFrame(up)
+        const at = (e: number, n: number): number => {
+          const p = { x: up.x * map.radius + east.x * e + north.x * n, y: up.y * map.radius + east.y * e + north.y * n, z: up.z * map.radius + east.z * e + north.z * n }
+          return sphereHeight(map.ground, upOf(p))
+        }
+        return Math.hypot(at(3, 0) - at(-3, 0), at(0, 3) - at(0, -3))
+      }
+      const cone = arena.props.filter((prop) => prop.kind === 'cone').sort((a, b) => slope(a) - slope(b))[0]!
       const { home } = cone
       // Laid on its side a little above where it stood, and set spinning.
       cone.body.setTranslation(lifted(home.at, 0.6), true)

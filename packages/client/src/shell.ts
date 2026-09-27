@@ -1,6 +1,6 @@
 import type { VehicleProfileId } from '@buggies/game'
 import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
-import type { TerrainMap } from '@buggies/terrain'
+import type { World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -33,7 +33,7 @@ export interface ShellHud {
 
 /** Where islands come from. */
 export interface IslandSource {
-  generate(seed: number): Promise<TerrainMap>
+  generate(seed: number): Promise<World>
 }
 
 /**
@@ -41,8 +41,8 @@ export interface IslandSource {
  * comings and goings can be tested without a GPU, a keyboard or a server.
  */
 export interface ShellModes {
-  terrainView(map: TerrainMap): THREE.Group
-  island(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView
+  terrainView(map: World): THREE.Group
+  island(map: World, scene: THREE.Scene, surface: HTMLElement): ModeView
   showroom(sound: Sound): ShowroomView
   /** Which islands on the server have people on them, busiest first. */
   rooms(url: string): Promise<RoomSummary[]>
@@ -53,7 +53,7 @@ export interface ShellModes {
     url: string,
     seed: number,
     players: readonly OnlinePlayer[],
-    mapFor: (seed: number) => Promise<TerrainMap>,
+    mapFor: (seed: number) => Promise<World>,
     sound: Sound,
     sun: Sun,
   ): Promise<ModeView>
@@ -61,7 +61,7 @@ export interface ShellModes {
 
 /** The real thing. */
 export const MODES: ShellModes = {
-  terrainView: (map) => createTerrainView(map.world!),
+  terrainView: (map) => createTerrainView(map),
   island: createIslandMode,
   showroom: createShowroomMode,
   rooms: (url) => fetchRooms(new WebSocketClientTransport(url)),
@@ -154,12 +154,12 @@ export class Shell implements MenuHost {
   private readonly settle: (choice: Choice) => void
 
   private choiceNow: Choice
-  private map: TerrainMap | null = null
+  private map: World | null = null
   private view: THREE.Group | null = null
   /** Seconds the screen has run, for what keeps time with no game on. */
   private idle = 0
   /** An island on its way, so that two players joining at once do not each make one. */
-  private making: { seed: number; island: Promise<TerrainMap> } | null = null
+  private making: { seed: number; island: Promise<World> } | null = null
   private game: Game | null = null
   private backdrop: Backdrop | null = null
   /** Each thing asked for outranks the one before: a slow one that lands late is let go. */
@@ -368,7 +368,7 @@ export class Shell implements MenuHost {
    * Generation runs off this thread, so the page keeps drawing and says
    * what it is waiting for.
    */
-  private mapFor(seed: number): Promise<TerrainMap> {
+  private mapFor(seed: number): Promise<World> {
     if (this.map !== null && this.map.seed === seed) return Promise.resolve(this.map)
     if (this.making !== null && this.making.seed === seed) return this.making.island
     this.notice(`generating island ${seed}...`)
@@ -379,7 +379,7 @@ export class Shell implements MenuHost {
       this.view = this.modes.terrainView(made)
       this.scene.add(this.view)
       // View distances ride the planet's size so the framing stays the same.
-      const across = 2 * Math.PI * made.world!.radius
+      const across = 2 * Math.PI * made.radius
       this.scene.fog = new THREE.Fog('#a9cbe6', across * 0.65, across * 2.34)
       // Over the middle of the planet.
       this.sun.centerOn({ x: 0, y: 0, z: 0 })
