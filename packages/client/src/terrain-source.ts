@@ -1,4 +1,4 @@
-import { generateTerrain, type TerrainMap } from '@buggies/terrain'
+import { PLANET_TERRAIN, generateTerrain, type TerrainMap } from '@buggies/terrain'
 
 /**
  * Maps, made off the page's thread so the page keeps drawing while an island
@@ -10,7 +10,7 @@ export class TerrainSource {
   private queue: Promise<unknown> = Promise.resolve()
 
   generate(seed: number): Promise<TerrainMap> {
-    if (typeof Worker === 'undefined') return Promise.resolve(generateTerrain(seed))
+    if (typeof Worker === 'undefined') return Promise.resolve(generateTerrain(seed, PLANET_TERRAIN))
     const worker = (this.worker ??= new Worker(new URL('./terrain.worker.ts', import.meta.url), {
       type: 'module',
     }))

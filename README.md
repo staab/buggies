@@ -1,6 +1,6 @@
 # Buggies
 
-Drive around procedurally generated islands, alone or with whoever else is on the same server.
+Drive around procedurally generated islands on a small planet, alone or with whoever else is on the same server.
 
 ## Run it
 
@@ -25,6 +25,10 @@ The client connects to a server on the same host it was loaded from. To use anot
 | Menu | `Esc` | `Esc` | `Esc` |
 
 In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
+
+## The planet
+
+Every island is wrapped round a planet about 612 m in radius, and you can drive, float or fly all the way round it. Gravity pulls toward the planet's middle, and the chase camera and the sun stand over wherever your car is, so it is always day where you play. The islands keep to a band round the equator, with open sea toward the poles. Away from the equator the land shrinks a little: a street 40° north is about three quarters of the width of one on the equator, while the cars, the bananas and the machines keep their size.
 
 ## Bananas
 
@@ -127,6 +131,8 @@ podman run --rm -p 8787:8787 buggies-server
 `generateTerrain(seed)` in `packages/terrain` builds the whole map from a seed. The server builds it to run the arena, and each client builds it again in a web worker to draw it, so the output is deterministic: the same seed gives byte-identical terrain on every machine. A test checks this by hashing everything the physics reads. `pnpm --filter @buggies/terrain preview <seed>` prints an island as an ASCII map, with a summary of its roads and rivers.
 
 The land is grown on a 1281 × 1281 grid of cells at a reference scale, then enlarged threefold to a map about 3.8 km across. The roads and everything built along them come afterward, at full size, so they keep their real widths and grades.
+
+The game plays on `PLANET_TERRAIN`, a map 1281 × 641 cells: once round the planet's equator across, and pole to pole down. Its land keeps to a band across the middle, its islands are larger for their map and its mountains smaller, so its cities have room. The map is wrapped round the sphere by Mercator's projection, with heights scaled to match, so every small shape on it comes out the same shape on the planet, only smaller away from the equator. `packages/physics` does the wrapping, and the physics, the game and the drawing each work with the map where it helps and with the sphere where they must.
 
 1. **Islands.** The seed picks one to fifteen islands, each anywhere from about 100 m across to the size of the largest island the map holds, and places them anywhere clear of the map's edge. Islands may overlap into one land mass. The first is drawn at least three quarters of the largest size, so every map has room for its cities.
 2. **Mountains.** The seed picks one to twelve mountains. Each is a jittered triangle with a skirt around it, standing near the middle of an island picked in proportion to its area from those big enough to carry one. About half the mountains, and always at least one, get a river.

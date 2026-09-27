@@ -1,6 +1,6 @@
 import { FIXED_TIMESTEP, createArena, initPhysics } from '@buggies/game'
 import { GameServer, SNAPSHOTS_PER_SECOND, TICKS_PER_SECOND } from '@buggies/net'
-import { generateTerrain } from '@buggies/terrain'
+import { PLANET_TERRAIN, generateTerrain } from '@buggies/terrain'
 
 import { WebSocketServerTransport } from './ws-transport.ts'
 
@@ -25,11 +25,12 @@ function log(message: string): void {
 await initPhysics()
 
 // An island is made the first time anyone asks for its seed, in a room of
-// its own. Generation takes a few seconds, during which every room waits.
+// its own, wrapped round a planet. Generation takes a few seconds, during
+// which every room waits.
 const server = new GameServer(
   (seed) => {
     log(`generating seed ${seed}...`)
-    return createArena(generateTerrain(seed))
+    return createArena(generateTerrain(seed, PLANET_TERRAIN))
   },
   {
     onJoined: (seat, connection, seed) => log(`joined seed=${seed} seat=${seat.id} ${seat.profile} connection=${connection}`),

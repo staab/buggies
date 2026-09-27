@@ -3,6 +3,7 @@ import * as THREE from 'three'
 
 /** Where the light comes from: up and a little to one side, as at mid-morning. */
 export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
+const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 /** How far off the disc is drawn, in meters: beyond the island, short of the far plane. */
 export const SUN_DISTANCE = 5000
@@ -32,6 +33,9 @@ export class Sun {
   readonly object = new THREE.Group()
   readonly light: THREE.DirectionalLight
   readonly sky: THREE.HemisphereLight
+  private readonly direction = new THREE.Vector3()
+  private readonly upward = new THREE.Vector3()
+  private readonly tilt = new THREE.Quaternion()
 
   private readonly disc: THREE.Mesh
   private readonly glow: THREE.Mesh
@@ -85,11 +89,21 @@ export class Sun {
     }
   }
 
-  /** Bring the shadows to where the action is. */
-  follow(at: Vec3): void {
+  /**
+   * Bring the shadows to where the action is. With the way up there, on a
+   * planet, the sun stands over it as it stands over the flat: it is
+   * always day where the play is, and the sky is over it.
+   */
+  follow(at: Vec3, up?: Vec3): void {
     this.focus.set(at.x, at.y, at.z)
     this.light.target.position.copy(this.focus)
-    this.light.position.copy(SUN_DIRECTION).multiplyScalar(SHADOW_STANDOFF).add(this.focus)
+    this.direction.copy(SUN_DIRECTION)
+    if (up !== undefined) {
+      this.upward.set(up.x, up.y, up.z)
+      this.direction.applyQuaternion(this.tilt.setFromUnitVectors(WORLD_UP, this.upward))
+      this.sky.position.copy(this.upward)
+    }
+    this.light.position.copy(this.direction).multiplyScalar(SHADOW_STANDOFF).add(this.focus)
     this.light.target.updateMatrixWorld()
   }
 

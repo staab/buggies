@@ -105,6 +105,8 @@ export interface OnlineView {
   /** Where the play is: the car, in the world, and on the map. */
   readonly focus: Vec3
   readonly place: Vec3
+  /** The way up where the car is. */
+  readonly up: Vec3
   resize(aspect: number): void
   update(dt: number, active: boolean): void
   /** The mirror's tick: the game's time, the same on every mirror. */
@@ -197,6 +199,9 @@ export async function joinOnline(
     },
     get place() {
       return prediction.ownSeat.chart.position
+    },
+    get up() {
+      return prediction.vehicle.up
     },
     get tick() {
       return prediction.tick

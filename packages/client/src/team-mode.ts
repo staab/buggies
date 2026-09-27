@@ -48,7 +48,7 @@ export async function createTeamMode(
     render(renderer) {
       // The sun's shadows are drawn afresh for each view, around its own car.
       if (!split) {
-        sun.follow(first.focus)
+        sun.follow(first.focus, first.up)
         renderer.render(scene, first.camera)
         return
       }
@@ -58,7 +58,7 @@ export async function createTeamMode(
       renderer.setScissorTest(true)
       views.forEach((view, side) => {
         for (const other of views) other.root.visible = other === view
-        sun.follow(view.focus)
+        sun.follow(view.focus, view.up)
         const left = x + side * each
         renderer.setViewport(left, y, each, height)
         renderer.setScissor(left, y, each, height)
