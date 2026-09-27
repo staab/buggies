@@ -53,18 +53,30 @@ export async function initPhysics(): Promise<void> {
   wasmReady = true
 }
 
+/** How strong each world's gravity is, and the worlds whose gravity pulls toward their middle, on each body by its owner, rather than down their y axis. */
+const strengths = new WeakMap<RAPIER.World, number>()
+const radial = new WeakSet<RAPIER.World>()
+
 export function applyWorldTuning(world: RAPIER.World, tuning: WorldTuning): void {
+  strengths.set(world, tuning.gravity)
   world.gravity.x = 0
-  world.gravity.y = -tuning.gravity
+  world.gravity.y = radial.has(world) ? 0 : -tuning.gravity
   world.gravity.z = 0
 }
 
+/** How strong a world's gravity is, whichever way it pulls. */
 export function worldGravity(world: RAPIER.World): number {
-  return -world.gravity.y
+  return strengths.get(world) ?? -world.gravity.y
 }
 
-export function createPhysicsWorld(tuning: WorldTuning = DEFAULT_WORLD_TUNING): RAPIER.World {
+/** Whether a world's gravity pulls toward its middle, the owner pulling each body there, rather than down its y axis. */
+export function radialGravity(world: RAPIER.World): boolean {
+  return radial.has(world)
+}
+
+export function createPhysicsWorld(tuning: WorldTuning = DEFAULT_WORLD_TUNING, pullsToMiddle = false): RAPIER.World {
   const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
+  if (pullsToMiddle) radial.add(world)
 
   applyWorldTuning(world, tuning)
 

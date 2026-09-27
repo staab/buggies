@@ -1,11 +1,12 @@
 import * as exact from '@buggies/physics'
-import { FIXED_TIMESTEP, v3 } from '@buggies/physics'
+import { FIXED_TIMESTEP, FLAT, shapeUp, v3, type WorldShape } from '@buggies/physics'
 import { buildWaterLevels, DRY, mapExtent, waterLevelAt, type Prop, type PropKind, type TerrainMap } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
   CONE_SIDES,
   PROP_SHAPES,
+  addForceAlong,
   addProp,
   addTerrain,
   propRise,
@@ -374,6 +375,24 @@ import {
   type Loose,
 } from './pickups.ts'
 
+const pulled = v3()
+
+/**
+ * On a planet, the world's own gravity is none, and every car and prop is
+ * pulled toward its middle here instead, by its own weight. On the flat,
+ * the world's gravity pulls everything down its y axis, and this does nothing.
+ */
+function pullToMiddle(arena: Arena, gravity: number): void {
+  if (arena.shape.kind === 'flat') return
+  const pull = (body: RAPIER.RigidBody): void => {
+    if (!body.isEnabled() || !body.isDynamic()) return
+    shapeUp(arena.shape, body.translation(), pulled)
+    addForceAlong(body, pulled, -body.mass() * gravity)
+  }
+  for (const seat of arena.seats) if (seat.occupied) pull(seat.vehicle.body)
+  for (const prop of arena.props) pull(prop.body)
+}
+
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
 export const MAX_PLAYERS = 32
 
@@ -483,11 +502,13 @@ export interface Arena {
   tick: number
   /** A client's copy of the server's arena: nothing in it is wrecked or brought down but on the server's word. */
   mirror: boolean
+  /** What shape the world is: flat, or the map wrapped round a planet. */
+  readonly shape: WorldShape
 }
 
-export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
+export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS, shape: WorldShape = FLAT): Arena {
   const worldTuning = createWorldTuning()
-  const world = createPhysicsWorld(worldTuning)
+  const world = createPhysicsWorld(worldTuning, shape.kind === 'planet')
   addTerrain(world, map)
   const props: ArenaProp[] = map.props.map((home, id) => ({ id, kind: home.kind, body: addProp(world, home), home }))
 
@@ -560,6 +581,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     ufos: createUfos(map),
     tick: 0,
     mirror: false,
+    shape,
   }
 }
 
@@ -679,8 +701,10 @@ export function advance(
 ): void {
   applyWorldTuning(arena.world, arena.worldTuning)
   const gravity = worldGravity(arena.world)
+  pullToMiddle(arena, gravity)
   for (const seat of arena.seats) {
     seat.vehicle.spared = arena.mirror
+    shapeUp(arena.shape, seat.vehicle.frame.position, seat.vehicle.up)
     if (!seat.occupied) continue
     // A stunned car takes no driving.
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)

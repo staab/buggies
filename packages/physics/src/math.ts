@@ -1,7 +1,7 @@
 // Vectors and quaternions, without allocation: every operation writes into
 // an `out` it is given.
 
-import { cos, sin } from './transcendental.ts'
+import { atan2, cos, sin } from './transcendental.ts'
 
 export { acos, atan2, cos, exp, hypot, log, sin, tan } from './transcendental.ts'
 
@@ -173,4 +173,65 @@ export function qnlerp(out: Quat, a: Quat, b: Quat, t: number): Quat {
   out.w = w / length
 
   return out
+}
+
+/**
+ * The rotation that stands a car upright on `up`, facing as near `forward`
+ * as it can along the ground: its own right, up and back axes, the car
+ * facing down its -Z as every car does. With up the y axis itself, it is
+ * the turn about it, the same to the last bit as `quatFromYaw`.
+ */
+export function uprightRotation(up: Vec3, forward: Vec3): Quat {
+  if (up.x === 0 && up.y === 1 && up.z === 0) return quatFromYaw(atan2(-forward.x, -forward.z))
+  // Forward along the ground: its part along the up taken out, or any way along the ground if it points straight up or down.
+  const along = forward.x * up.x + forward.y * up.y + forward.z * up.z
+  let fx = forward.x - up.x * along
+  let fy = forward.y - up.y * along
+  let fz = forward.z - up.z * along
+  let length = Math.sqrt(fx * fx + fy * fy + fz * fz)
+  if (length < 1e-9) {
+    // Across the up from whichever world axis it is least along.
+    const helper = Math.abs(up.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 }
+    fx = helper.y * up.z - helper.z * up.y
+    fy = helper.z * up.x - helper.x * up.z
+    fz = helper.x * up.y - helper.y * up.x
+    length = Math.sqrt(fx * fx + fy * fy + fz * fz)
+  }
+  fx /= length
+  fy /= length
+  fz /= length
+  // Right is forward across up; back is forward reversed.
+  const rx = fy * up.z - fz * up.y
+  const ry = fz * up.x - fx * up.z
+  const rz = fx * up.y - fy * up.x
+  return quatFromBasis(rx, ry, rz, up.x, up.y, up.z, -fx, -fy, -fz)
+}
+
+/** The rotation taking the x, y and z axes to these three orthonormal columns. */
+export function quatFromBasis(
+  m00: number,
+  m10: number,
+  m20: number,
+  m01: number,
+  m11: number,
+  m21: number,
+  m02: number,
+  m12: number,
+  m22: number,
+): Quat {
+  const trace = m00 + m11 + m22
+  if (trace > 0) {
+    const s = Math.sqrt(trace + 1) * 2
+    return { w: 0.25 * s, x: (m21 - m12) / s, y: (m02 - m20) / s, z: (m10 - m01) / s }
+  }
+  if (m00 > m11 && m00 > m22) {
+    const s = Math.sqrt(1 + m00 - m11 - m22) * 2
+    return { w: (m21 - m12) / s, x: 0.25 * s, y: (m01 + m10) / s, z: (m02 + m20) / s }
+  }
+  if (m11 > m22) {
+    const s = Math.sqrt(1 + m11 - m00 - m22) * 2
+    return { w: (m02 - m20) / s, x: (m01 + m10) / s, y: 0.25 * s, z: (m12 + m21) / s }
+  }
+  const s = Math.sqrt(1 + m22 - m00 - m11) * 2
+  return { w: (m10 - m01) / s, x: (m02 + m20) / s, y: (m12 + m21) / s, z: 0.25 * s }
 }

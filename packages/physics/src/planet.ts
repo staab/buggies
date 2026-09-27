@@ -126,3 +126,54 @@ export function upAt(point: Vec3, out: Vec3): Vec3 {
   out.z = point.z / r
   return out
 }
+
+/**
+ * What shape the world is: flat, its chart the world itself and up the same
+ * everywhere, or a planet, its chart wrapped round a sphere.
+ */
+export type WorldShape = { readonly kind: 'flat' } | { readonly kind: 'planet'; readonly planet: Planet }
+
+export const FLAT: WorldShape = Object.freeze({ kind: 'flat' })
+
+/** The way up at a world point: straight up the y axis on the flat, away from the center on a planet. */
+export function shapeUp(shape: WorldShape, point: Vec3, out: Vec3): Vec3 {
+  if (shape.kind === 'planet') return upAt(point, out)
+  out.x = 0
+  out.y = 1
+  out.z = 0
+  return out
+}
+
+/** A chart point, this high over the chart's ground, as a world point. */
+export function shapeToWorld(shape: WorldShape, x: number, height: number, z: number, out: Vec3): Vec3 {
+  if (shape.kind === 'planet') return chartToWorld(shape.planet, x, height, z, out)
+  out.x = x
+  out.y = height
+  out.z = z
+  return out
+}
+
+/** A world point as a chart point: across, how high over the chart's ground, and down. */
+export function shapeToChart(shape: WorldShape, point: Vec3, out: Vec3): Vec3 {
+  if (shape.kind === 'planet') return worldToChart(shape.planet, point, out)
+  out.x = point.x
+  out.y = point.y
+  out.z = point.z
+  return out
+}
+
+/** The frame of the chart's axes at a chart point: on the flat, the world's own axes at full scale. */
+export function shapeFrame(shape: WorldShape, x: number, z: number, out: ChartFrame): ChartFrame {
+  if (shape.kind === 'planet') return chartFrame(shape.planet, x, z, out)
+  out.east.x = 1
+  out.east.y = 0
+  out.east.z = 0
+  out.up.x = 0
+  out.up.y = 1
+  out.up.z = 0
+  out.south.x = 0
+  out.south.y = 0
+  out.south.z = 1
+  out.scale = 1
+  return out
+}

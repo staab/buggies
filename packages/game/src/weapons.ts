@@ -5,6 +5,7 @@ import {
   v3,
   vaddScaled,
   vcopy,
+  vcross,
   vdot,
   vlength,
   vnormalize,
@@ -15,7 +16,6 @@ import {
 } from '@buggies/physics'
 import { mapExtent, sampleHeight, type TerrainMap } from '@buggies/terrain'
 import {
-  WORLD_UP,
   addForceAlong,
   addTorqueAbout,
   hurtVehicle,
@@ -766,8 +766,8 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
   }
   const lifted = lifting(seat)
   if (lifted) {
-    const climb = clamp(1 - frame.linearVelocity.y / WINGS_CLIMB_SPEED, 0, 1)
-    addForceAlong(body, WORLD_UP, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
+    const climb = clamp(1 - vdot(frame.linearVelocity, vehicle.up) / WINGS_CLIMB_SPEED, 0, 1)
+    addForceAlong(body, vehicle.up, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
     // The pedals drive it along, forward or back, wherever it is: harder for a car that flies of its own.
     const thrust = ownAction(seat).kind === 'fly' && !using(seat, 'wings', command) ? FLY_THRUST : WINGS_THRUST
     addForceAlong(body, frame.forward, tuning.mass * thrust * (command.throttle - command.brake))
@@ -794,37 +794,53 @@ export function wingsTurnRadius(tuning: VehicleTuning): number {
  */
 function bank(seat: Gunner): void {
   const { vehicle, tuning } = seat
-  const { body, frame, command, lean } = vehicle
-  const { linearVelocity: velocity } = frame
-  const speed = hypot(velocity.x, velocity.z)
+  const { body, frame, command, lean, up } = vehicle
+  // The way it is going along the ground: its velocity less its part up or down.
+  vaddScaled(level, frame.linearVelocity, up, -vdot(frame.linearVelocity, up))
+  const speed = vlength(level)
   body.angvel(spin)
-  const yawRate = spin.y
+  const yawRate = vdot(spin, up)
   if (speed < WINGS_TURN_MIN_SPEED) {
     vset(lean, 0, 0, 0)
-    addTorqueAbout(body, WORLD_UP, -command.steer * tuning.airPitchTorque * WINGS_HOVER_TURN - yawRate * tuning.airLevelDamping)
+    addTorqueAbout(body, up, -command.steer * tuning.airPitchTorque * WINGS_HOVER_TURN - yawRate * tuning.airLevelDamping)
     return
   }
   // Aside from the way it is going, the steering's way: where the turn pulls it, and what it leans toward.
   const turn = command.steer
-  vset(aside, -velocity.z / speed, 0, velocity.x / speed)
+  vcross(aside, level, up)
+  vscale(aside, aside, 1 / speed)
   addForceAlong(body, aside, (tuning.mass * speed * speed * turn) / wingsTurnRadius(tuning))
-  vset(lean, aside.x * WINGS_LEAN * turn, 0, aside.z * WINGS_LEAN * turn)
+  vscale(lean, aside, WINGS_LEAN * turn)
   // The nose is put on the way the car is going: the car is turned about
-  // the world's up by however far its nose is off the motion, its bank and
+  // the way up by however far its nose is off the motion, its bank and
   // pitch kept as they are, and whatever yaw it had is taken out of its spin.
   const { forward, rotation } = frame
-  const flat = hypot(forward.x, forward.z) || 1
-  const error = atan2(
-    (forward.x * velocity.z - forward.z * velocity.x) / (flat * speed),
-    (forward.x * velocity.x + forward.z * velocity.z) / (flat * speed),
-  )
-  // A turn about +Y takes the nose the other way from the error's sense, so it is turned back by it.
+  vaddScaled(nose, forward, up, -vdot(forward, up))
+  const flat = vlength(nose) || 1
+  vcross(across, nose, level)
+  const error = atan2(-vdot(across, up) / (flat * speed), vdot(nose, level) / (flat * speed))
+  // A turn about the up by the error's opposite, put before the car's own turn.
   const s = sine(-error / 2)
   const c = cosine(-error / 2)
+  const ax = up.x * s
+  const ay = up.y * s
+  const az = up.z * s
   const { x, y, z, w } = rotation
-  body.setRotation({ x: c * x + s * z, y: c * y + s * w, z: c * z - s * x, w: c * w - s * y }, true)
-  body.setAngvel({ x: spin.x, y: 0, z: spin.z }, true)
+  body.setRotation(
+    {
+      x: c * x + ax * w + (ay * z - az * y),
+      y: c * y + ay * w + (az * x - ax * z),
+      z: c * z + az * w + (ax * y - ay * x),
+      w: c * w - (ax * x + ay * y + az * z),
+    },
+    true,
+  )
+  vaddScaled(spin, spin, up, -yawRate)
+  body.setAngvel(spin, true)
 }
+const level = v3()
+const nose = v3()
+const across = v3()
 
 export function disarm(seat: Gunner): void {
   seat.weapon = 'none'
@@ -1159,7 +1175,7 @@ function harvest(arena: Battlefield, seat: Gunner, kind: LooseKind, most: number
 function plow(arena: Battlefield, seat: Gunner): void {
   const { frame } = seat.vehicle
   const { tuning } = seat
-  vaddScaled(shove, frame.forward, WORLD_UP, PLOW_LIFT)
+  vaddScaled(shove, frame.forward, seat.vehicle.up, PLOW_LIFT)
   vnormalize(shove, shove)
   const thrown = (position: Vec3, velocity: Vec3, halfLength: number, halfWidth: number): number => {
     vsub(toward, position, frame.position)

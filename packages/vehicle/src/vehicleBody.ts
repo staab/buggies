@@ -3,7 +3,7 @@
 
 import * as RAPIER from '@dimforge/rapier3d-compat'
 
-import { quat, quatFromYaw, v3, vset, type Vec3 } from '@buggies/physics'
+import { quat, quatFromYaw, v3, vset, type Quat, type Vec3 } from '@buggies/physics'
 import { createChassisFrame, readChassisFrame, type ChassisFrame } from './chassisFrame.ts'
 import { createDriverCommand, readDriverCommand, NEUTRAL_INPUT, type DriverCommand } from './input.ts'
 import type { VehicleTuning } from './tuning.ts'
@@ -77,6 +77,8 @@ export interface Vehicle {
   readonly lastLinearVelocity: Vec3
   /** A copy of a car the server owns: its knocks and hits add up, but only the server's word wrecks it. */
   spared: boolean
+  /** The way up where the car is: up the y axis on a flat world, away from a planet's middle on one, as its owner says. */
+  readonly up: Vec3
 
   rideHeight: number
   steerAngle: number
@@ -109,6 +111,9 @@ export interface Vehicle {
 export interface VehicleSpawn {
   position: Vec3
   yaw: number
+  /** On a round world, the way up at the spawn and the car's whole turn there, standing on it: the yaw alone turns it about the y axis. */
+  up?: Vec3
+  rotation?: Quat
 }
 
 type WheelFrame =
@@ -177,6 +182,7 @@ type VehicleRig =
   | 'command'
   | 'lastLinearVelocity'
   | 'spared'
+  | 'up'
   | 'rideHeight'
 
 type VehicleMotion = Omit<Vehicle, VehicleRig>
@@ -243,7 +249,9 @@ export function restingRideHeight(tuning: VehicleTuning, gravity: number): numbe
 const restingPosition = v3()
 
 function chassisRestingPosition(out: Vec3, vehicle: Vehicle, spawn: VehicleSpawn): Vec3 {
-  return vset(out, spawn.position.x, spawn.position.y + vehicle.rideHeight, spawn.position.z)
+  const { up } = spawn
+  if (up === undefined) return vset(out, spawn.position.x, spawn.position.y + vehicle.rideHeight, spawn.position.z)
+  return vset(out, spawn.position.x + up.x * vehicle.rideHeight, spawn.position.y + up.y * vehicle.rideHeight, spawn.position.z + up.z * vehicle.rideHeight)
 }
 
 export function adoptVehicle(
@@ -266,6 +274,7 @@ export function adoptVehicle(
     command: createDriverCommand(),
     lastLinearVelocity: v3(),
     spared: false,
+    up: v3(0, 1, 0),
     rideHeight: restingRideHeight(tuning, worldGravity(world)),
     ...NEUTRAL_VEHICLE_MOTION,
   }
@@ -360,8 +369,9 @@ export function activateVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
 export function resetVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
   const { body } = vehicle
 
+  if (spawn.up !== undefined) vset(vehicle.up, spawn.up.x, spawn.up.y, spawn.up.z)
   body.setTranslation(chassisRestingPosition(restingPosition, vehicle, spawn), true)
-  body.setRotation(quatFromYaw(spawn.yaw), true)
+  body.setRotation(spawn.rotation ?? quatFromYaw(spawn.yaw), true)
   body.setLinvel({ x: 0, y: 0, z: 0 }, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   body.resetForces(true)

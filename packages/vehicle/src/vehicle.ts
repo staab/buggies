@@ -117,8 +117,13 @@ function noteImpacts(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTunin
  * met square costs a lot.
  */
 function takeDamage(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
-  const { frame, lastLinearVelocity } = vehicle
-  const jolt = Math.hypot(frame.linearVelocity.x - lastLinearVelocity.x, frame.linearVelocity.z - lastLinearVelocity.z)
+  const { frame, lastLinearVelocity, up } = vehicle
+  // The change in its velocity, less its part up or down.
+  const dx = frame.linearVelocity.x - lastLinearVelocity.x
+  const dy = frame.linearVelocity.y - lastLinearVelocity.y
+  const dz = frame.linearVelocity.z - lastLinearVelocity.z
+  const rise = dx * up.x + dy * up.y + dz * up.z
+  const jolt = Math.hypot(dx - up.x * rise, dy - up.y * rise, dz - up.z * rise)
   vcopy(lastLinearVelocity, frame.linearVelocity)
   const knock = jolt - tuning.damageAcceleration * dt
   if (knock <= 0) return

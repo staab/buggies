@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { chartFrame, chartToWorld, createChartFrame, createPlanet, exp, log, upAt, v3, vcross, vdot, vlength, vsub, worldToChart } from './index.ts'
+import { chartFrame, qrotate, quatFromYaw, uprightRotation, chartToWorld, createChartFrame, createPlanet, exp, log, upAt, v3, vcross, vdot, vlength, vsub, worldToChart } from './index.ts'
 
 // A planet's chart, as the terrain lays it out: once round a 612 m planet across, and pole to pole down.
 const planet = createPlanet(3843, 1923)
@@ -79,5 +79,18 @@ describe('the planet', () => {
     const west = chartToWorld(planet, 0.001, 0, 900, v3())
     const east = chartToWorld(planet, planet.chartX - 0.001, 0, 900, v3())
     expect(vlength(vsub(v3(), west, east))).toBeLessThan(0.01)
+  })
+
+  it('stands a car upright on any up, facing along the ground, and on the y axis just as a yaw would', () => {
+    const forward = { x: 0.6, y: 0, z: -0.8 }
+    expect(uprightRotation({ x: 0, y: 1, z: 0 }, forward)).toEqual(quatFromYaw(Math.atan2(-0.6, 0.8)))
+    const frame = createChartFrame()
+    chartFrame(planet, 2000, 700, frame)
+    const heading = { x: frame.east.x * 0.6 + frame.south.x * -0.8, y: frame.east.y * 0.6 + frame.south.y * -0.8, z: frame.east.z * 0.6 + frame.south.z * -0.8 }
+    const turn = uprightRotation(frame.up, heading)
+    const carUp = qrotate(v3(), turn, { x: 0, y: 1, z: 0 })
+    const carForward = qrotate(v3(), turn, { x: 0, y: 0, z: -1 })
+    expect(vdot(carUp, frame.up)).toBeCloseTo(1, 9)
+    expect(vdot(carForward, heading)).toBeCloseTo(1, 9)
   })
 })

@@ -153,7 +153,6 @@ function giveUp(ufo: Ufo, wait: number): void {
 }
 
 const to = { x: 0, z: 0 }
-const up = v3(0, 1, 0)
 const across = v3()
 
 /**
@@ -213,7 +212,7 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
       const { body } = target.vehicle
       const mass = target.tuning.mass
       const rising = Math.min(Math.max(1 - linearVelocity.y / LIFT_RISE, 0), 1)
-      if (position.y < ufo.position.y - 4) addForceAlong(body, up, mass * (gravity + LIFT_PULL * rising))
+      if (position.y < ufo.position.y - 4) addForceAlong(body, target.vehicle.up, mass * (gravity + LIFT_PULL * rising))
       across.x = (ufo.position.x - position.x) * 2 - linearVelocity.x * 1.5
       across.y = 0
       across.z = (ufo.position.z - position.z) * 2 - linearVelocity.z * 1.5

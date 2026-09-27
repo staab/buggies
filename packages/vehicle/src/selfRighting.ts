@@ -4,8 +4,7 @@
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import {
-  atan2,
-  quatFromYaw,
+  uprightRotation,
   v3,
   vaddScaled,
   vcopy,
@@ -13,13 +12,11 @@ import {
   vdot,
   vlength,
   vscale,
-  vset,
   type Vec3,
 } from '@buggies/physics'
 import { addTorqueAbout } from './bodyForces.ts'
 import type { VehicleTuning } from './tuning.ts'
 import type { Vehicle } from './vehicleBody.ts'
-import { WORLD_UP } from './world.ts'
 
 const SELF_RIGHT_AXIS_EPSILON = 1e-4
 
@@ -43,12 +40,8 @@ function chassisHasContact(world: RAPIER.World, vehicle: Vehicle): boolean {
   return chassisContactPartners > 0
 }
 
-function yawFromForward(forward: Vec3): number {
-  return atan2(-forward.x, -forward.z)
-}
-
 function applySelfRightTorque(vehicle: Vehicle, tuning: VehicleTuning): void {
-  vcross(selfRightAxis, vehicle.frame.up, WORLD_UP)
+  vcross(selfRightAxis, vehicle.frame.up, vehicle.up)
 
   const axisMagnitude = vlength(selfRightAxis)
 
@@ -62,24 +55,19 @@ function applySelfRightTorque(vehicle: Vehicle, tuning: VehicleTuning): void {
 }
 
 function applySelfRightLift(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const { body, frame } = vehicle
+  const { body, frame, up } = vehicle
 
-  vset(
-    selfRightLiftVelocity,
-    frame.linearVelocity.x,
-    frame.linearVelocity.y + tuning.selfRightLiftSpeed,
-    frame.linearVelocity.z,
-  )
+  vaddScaled(selfRightLiftVelocity, frame.linearVelocity, up, tuning.selfRightLiftSpeed)
   body.setLinvel(selfRightLiftVelocity, true)
 }
 
 function snapUpright(vehicle: Vehicle, tuning: VehicleTuning): void {
   const { body, frame } = vehicle
 
-  vaddScaled(selfRightSnapPosition, frame.position, WORLD_UP, tuning.selfRightSnapLift)
+  vaddScaled(selfRightSnapPosition, frame.position, vehicle.up, tuning.selfRightSnapLift)
 
   body.setTranslation(selfRightSnapPosition, true)
-  body.setRotation(quatFromYaw(yawFromForward(frame.forward)), true)
+  body.setRotation(uprightRotation(vehicle.up, frame.forward), true)
   body.setLinvel(ZERO_VELOCITY, true)
   body.setAngvel(ZERO_VELOCITY, true)
 }
@@ -103,7 +91,7 @@ export function updateSelfRighting(
 
   body.angvel(angularVelocity)
   const angularSpeed = vlength(angularVelocity)
-  const uprightDot = vdot(frame.up, WORLD_UP)
+  const uprightDot = vdot(frame.up, vehicle.up)
 
   if (vehicle.selfRighting) {
     vehicle.selfRightElapsed += dt

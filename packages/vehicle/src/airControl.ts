@@ -9,7 +9,6 @@ import { WHEEL_RAY_GROUPS } from './groups.ts'
 import type { DriverCommand } from './input.ts'
 import type { VehicleTuning } from './tuning.ts'
 import type { Vehicle } from './vehicleBody.ts'
-import { WORLD_UP } from './world.ts'
 
 const MIN_FALL_SPEED_FOR_LANDING_PREDICTION = 1e-3
 
@@ -45,13 +44,14 @@ function inputAuthority(command: DriverCommand, tuning: VehicleTuning): number {
  * the car lands square on a slope.
  */
 function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): number {
-  const { body, frame, landingRay } = vehicle
-  const fallSpeed = -frame.linearVelocity.y
-  vcopy(targetUp, WORLD_UP)
+  const { body, frame, landingRay, up } = vehicle
+  const fallSpeed = -vdot(frame.linearVelocity, up)
+  vcopy(targetUp, up)
 
   if (fallSpeed <= MIN_FALL_SPEED_FOR_LANDING_PREDICTION) return 1
 
   vcopy(landingRay.origin, frame.position)
+  vscale(landingRay.dir, up, -1)
 
   const hit = world.castRayAndGetNormal(
     landingRay,
@@ -70,7 +70,7 @@ function landing(world: RAPIER.World, vehicle: Vehicle, tuning: VehicleTuning): 
   const approach = 1 - inverseLerpClamped(secondsToImpact, 0, tuning.airLevelLandingLookahead)
   // Only ground that is roughly level is worth landing square on: the car is
   // not going to land on a wall.
-  if (hit.normal.y > 0.5) {
+  if (vdot(hit.normal, up) > 0.5) {
     vset(targetUp, hit.normal.x, hit.normal.y, hit.normal.z)
     vnormalize(targetUp, targetUp)
   }
@@ -94,8 +94,8 @@ const WINGS_LEVEL = 2.5
  * lean, so that it leans into a turn and rights itself out of one.
  */
 export function holdLevel(vehicle: Vehicle, tuning: VehicleTuning): void {
-  const { body, frame, lean } = vehicle
-  vset(bankedUp, lean.x, 1, lean.z)
+  const { body, frame, lean, up } = vehicle
+  vaddScaled(bankedUp, lean, up, 1)
   vnormalize(bankedUp, bankedUp)
   vcross(uprightError, frame.up, bankedUp)
   body.angvel(angularVelocity)
