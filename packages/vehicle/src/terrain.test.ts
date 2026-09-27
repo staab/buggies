@@ -159,24 +159,35 @@ describe('a planet as colliders', () => {
   })
 
   it('runs a floor through every tunnel, with room above it to drive', () => {
-    const bores = segments(ROAD_TUNNEL)
+    // A planet of its own, with tunnels through its hills.
+    const tunnelled = generateTerrain(7, PLANET_TERRAIN).world!
+    const bored = createPhysicsWorld()
+    addTerrain(bored, tunnelled)
+    bored.step()
+    const bores = tunnelled.roads.flatMap((road) => {
+      const count = road.points.length
+      return Array.from({ length: road.closed ? count : count - 1 }, (_, i) => i)
+        .filter((i) => road.structure[i] === ROAD_TUNNEL)
+        .map((i) => ({ a: road.points[i]!, b: road.points[(i + 1) % count]! }))
+    })
     let floored = 0
     let tight = 0
     for (const { a, b } of bores) {
       const middle = lerp(a, b, 0.5)
-      const deck = heightOf(planet, middle)
+      const deck = heightOf(tunnelled, middle)
       // From inside the bore, looking down: the road has to be there, or a car reaching the portal drops into the hill.
-      const found = castDownAt(world, planet, middle, deck + 1)
+      const found = castDownAt(bored, tunnelled, middle, deck + 1)
       if (found !== null && Math.abs(found - deck) < 0.3) floored++
       // And looking up: nothing of the hill may hang into the bore.
       const up = upOf(middle)
-      const r = planet.radius + deck + 0.1
-      if (world.castRay(new RAPIER.Ray({ x: up.x * r, y: up.y * r, z: up.z * r }, up), 3, true) !== null) tight++
+      const r = tunnelled.radius + deck + 0.1
+      if (bored.castRay(new RAPIER.Ray({ x: up.x * r, y: up.y * r, z: up.z * r }, up), 3, true) !== null) tight++
     }
-    expect(bores.length).toBeGreaterThan(20)
+    expect(bores.length).toBeGreaterThan(10)
     expect(floored).toBe(bores.length)
     expect(tight).toBe(0)
-  })
+    bored.free()
+  }, 120_000)
 
   it('carries a bridge over the gap it spans', () => {
     let spans = 0

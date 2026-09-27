@@ -1,4 +1,4 @@
-import { uprightRotation, v3, vdistance, vlength, type Vec3 } from '@buggies/physics'
+import { uprightRotation, v3, vdistance, vlength, vscale, type Vec3 } from '@buggies/physics'
 import { ROAD_GRADE, ROAD_TUNNEL, atHeight, upOf, type World, type WorldRoad } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
 
@@ -40,9 +40,10 @@ export function spawnFacing(spot: RoadSpot, forward: Vec3): VehicleSpawn {
   const { road, index, point } = spot
   const ahead = pointOf(road, index + FACING_REACH)
   const behind = pointOf(road, index - FACING_REACH)
-  let way = v3(ahead.x - point.x, ahead.y - point.y, ahead.z - point.z)
-  if (way.x * forward.x + way.y * forward.y + way.z * forward.z < 0) way = v3(point.x - behind.x, point.y - behind.y, point.z - behind.z)
+  // The way the road runs through the spot, from behind it to ahead of it, however near an end it is.
+  const way = v3(ahead.x - behind.x, ahead.y - behind.y, ahead.z - behind.z)
   if (vlength(way) < 1e-6) return spawnAt(spot)
+  if (way.x * forward.x + way.y * forward.y + way.z * forward.z < 0) vscale(way, way, -1)
   return spawnHere(point, way)
 }
 

@@ -201,8 +201,11 @@ function segmentFootprintDistance(footprint: Footprint, segment: ClaimedSegment)
   const av = ax * sin + az * cos
   const bu = bx * cos - bz * sin
   const bv = bx * sin + bz * cos
-  const halfU = footprint.width / 2
-  const halfV = footprint.depth / 2
+  return segmentBoxDistance(footprint.width / 2, footprint.depth / 2, au, av, bu, bv)
+}
+
+/** The distance from the segment between two points to a box of these half sizes about the origin, exactly. */
+export function segmentBoxDistance(halfU: number, halfV: number, au: number, av: number, bu: number, bv: number): number {
   if (crossesBox(halfU, halfV, au, av, bu, bv)) return 0
   return Math.min(
     boxDistance(halfU, halfV, au, av),

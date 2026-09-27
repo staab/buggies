@@ -32,6 +32,227 @@ import {
 import { HOUSE_KINDS } from './types.ts'
 import { tangentFrame } from './sphere-heights.ts'
 import type { WorldBuilding } from './world.ts'
+import {
+  BUILDING_SALT,
+  SIDEWALK,
+  SIDEWALK_BAND,
+  SIDEWALK_CROSS_RELIEF,
+  SIDEWALK_ALONG_RELIEF,
+  SIDEWALK_SAMPLE,
+  LOT_MIN,
+  LOT_INSET,
+  PARKING_LOT_ODDS,
+  STREET_TREE_SPACING,
+  STREET_TREE_RADIUS,
+  STREET_TREE_HEIGHT,
+  CITY_VERGE_SETBACK,
+  CITY_SHOULDER_SPACING,
+  INTERCHANGE_TREES,
+  INTERCHANGE_SHRUBS,
+  PARK_LOT_ODDS,
+  PROPS_MOST,
+  PROP_SALT,
+  STATION_BARRELS,
+  SITE_CRATES,
+  ROADWORKS,
+  FIELD_BALES,
+  SQUARE_CORE,
+  FOUNTAIN,
+  STATUE,
+  CLOCK_TOWER,
+  SITE_CORE,
+  SITE_ODDS,
+  SITES_MOST,
+  FENCE_INSET,
+  FENCE_HEIGHT,
+  CRANE_BASE,
+  CRANE_OVER,
+  CRANE_REACH,
+  CRANE_HEIGHT_LEAST,
+  STORY,
+  BLOCK_HEIGHT,
+  TOWER_HEIGHT,
+  TOWER_FLOOR,
+  BURY,
+  BLOCK_RELIEF,
+  HOUSE_RELIEF,
+  ROAD_MARGIN,
+  TUNNEL_KEEP_OUT,
+  BUILDING_GAP,
+  BUCKET,
+  SUBURB_SPACING,
+  HOUSE_SETBACK,
+  HOUSE_WIDTH,
+  HOUSE_DEPTH,
+  HOUSE_HEIGHT,
+  COTTAGE_WIDTH,
+  COTTAGE_DEPTH,
+  COTTAGE_HEIGHT,
+  VILLA_WIDTH,
+  VILLA_DEPTH,
+  VILLA_HEIGHT,
+  HOUSE_STYLES,
+  OBSERVATORY_ODDS,
+  OBSERVATORY_SALT,
+  OBSERVATORY_SIZE,
+  OBSERVATORY_HEIGHT,
+  OBSERVATORY_RELIEF,
+  PYRAMID,
+  FARMS_MOST,
+  FARM_TRIES,
+  FARM_APART,
+  BARNS_APART,
+  FIELDS_PER_FARM,
+  FIELD_LENGTH,
+  FIELD_WIDTH,
+  FIELD_GAP,
+  FIELD_RELIEF,
+  FIELD_ROAD_MARGIN,
+  HEDGE_SPACING,
+  HEDGE_OUT,
+  BARN,
+  BARN_OFF,
+  SILO,
+  SILOS,
+  SILO_RELIEF,
+  WIND_FARM_TRIES,
+  TURBINES,
+  TURBINES_LEAST,
+  TURBINE_SPACING,
+  TURBINE,
+  TURBINE_RELIEF,
+  TURBINE_ROAD_MARGIN,
+  TURBINE_GAP,
+  STONES_TRIES,
+  STONES,
+  STONE_RING,
+  STONE,
+  ALTAR,
+  LINTEL_ODDS,
+  LINTEL,
+  STONES_RELIEF,
+  STONES_ROAD_MARGIN,
+  LIGHTHOUSES_MOST,
+  LIGHTHOUSE,
+  LIGHTHOUSE_APART,
+  SHORE,
+  HEADLAND_REACH,
+  HEADLAND_SAMPLES,
+  HEADLAND_SEA,
+  COAST_STEP,
+  LIGHTHOUSE_RELIEF,
+  LIGHTHOUSE_ROAD_MARGIN,
+  BOATS_MOST,
+  BOAT_TRIES,
+  BOAT_SALT,
+  BOAT,
+  BOAT_WATER,
+  BOATS_APART,
+  BOAT_ROAD_MARGIN,
+  BOAT_SWING,
+  LIFTS_MOST,
+  PYLON,
+  LIFT_STATION,
+  LIFT_GRADE,
+  LIFT_ENDS,
+  LIFT_FOOT,
+  LIFT_ROAD_MARGIN,
+  PYLON_RELIEF,
+  LIFT_STATION_RELIEF,
+  VIEWPOINTS_MOST,
+  VIEWPOINT_WALL,
+  VIEWPOINT_BOARD,
+  FURNITURE_GAP,
+  FEATURE_APART,
+  WATER_TOWERS_APART,
+  ORCHARD_ODDS,
+  ORCHARDS_ALONE,
+  ORCHARD_TRIES,
+  ORCHARD_SIZE,
+  ORCHARD_ALONG,
+  ORCHARD_ROW,
+  FRUIT_RADIUS,
+  FRUIT_HEIGHT,
+  VILLAGE_HOUSES,
+  VILLAGE_REACH,
+  CHURCH_APART,
+  CHURCHES_MOST,
+  NAVE,
+  TOWER,
+  CHURCH_SETBACK,
+  GREEN_TREES,
+  WATER_TOWER,
+  WATER_TOWER_TRIES,
+  WATER_TOWER_IN,
+  STATION_APART,
+  STATION_LOT,
+  STATION_RELIEF,
+  SHOP,
+  CANOPY,
+  POST,
+  SIGN,
+  CAMPS_MOST,
+  CAMP_TRIES,
+  CAMP_SALT,
+  CAMP_NEAR_ROAD,
+  CLEARING_RADIUS,
+  TENTS,
+  TENT_RING,
+  TENT,
+  CAMPERS,
+  CAMPER,
+  FIRE_PIT,
+  RIM_TREES,
+  RAMP_SPACING,
+  RAMP_LENGTH,
+  RAMP_RISE,
+  RAMP_WIDTH,
+  RAMP_LANDING,
+  RAMP_SHOULDER,
+  RAMP_RELIEF,
+  TREE_SPACING,
+  TREE_SETBACK,
+  TREE_BACK_SETBACK,
+  TREE_RADIUS,
+  TREE_HEIGHT,
+  TREE_GAP_ODDS,
+  COUNTRY_HOUSE_SPACING,
+  CLEARING,
+  SHRUB_RADIUS,
+  SHRUB_HEIGHT,
+  PARK_TREES,
+  PARK_SHRUBS,
+  PARK_TRIES,
+  GARDEN_SHRUBS,
+  GARDEN_TREES,
+  WILD_SPACING,
+  WOOD_FREQUENCY,
+  WOOD_EDGE,
+  WOOD_TREES,
+  WOOD_SHRUBS,
+  LONE_TREES,
+  LONE_SHRUBS,
+  SUBURB_WOODS,
+  FOOTHILL,
+  FOOTHILL_BOOST,
+  WILD_MAX_SLOPE,
+  TREELINE,
+  WILD_SALT,
+  ROCK_FREQUENCY,
+  ROCK_FIELD,
+  BOULDER_ODDS,
+  BOULDER_MAX_SLOPE,
+  BOULDER_SIZE,
+  SCREE_SLOPE,
+  SCREE_ODDS,
+  SCREE_SIZE,
+  ROCK_BURY,
+  ROCK_ROAD_MARGIN,
+  ROCK_SALT,
+  RAIL_CELL,
+  MOUNTAIN_PROBE,
+  ORCHARD_IN,
+} from './globe/sizes.ts'
 import type {
   Building,
   District,
@@ -53,51 +274,6 @@ import type {
 // is several times slower under the test runner's module loader, and these run hot.
 const { atan2, cos: cosine, hypot, sin: sine } = exact
 
-const BUILDING_SALT = 0x6b1d
-
-/** Ground kept clear between a street's edge and the lots along it. */
-const SIDEWALK = 2
-/** How far in from the street's edge the sidewalk reaches, under the fronts of the buildings. */
-const SIDEWALK_BAND = 2
-/**
- * The most the ground under a sidewalk may rise or fall: across its band,
- * and from one sample to the next along it. A slab over steeper ground would
- * stand off it like a wall, so such a side is left out.
- */
-const SIDEWALK_CROSS_RELIEF = 0.35
-const SIDEWALK_ALONG_RELIEF = 0.5
-const SIDEWALK_SAMPLE = 4
-/** No lot narrower than this: a block is cut into as many lots as leave each this wide. */
-const LOT_MIN = 9
-/** A building stands this far inside its lot at most, on each side. */
-const LOT_INSET = { min: 0.5, max: 3.5 } as const
-/** An open lot is this often a parking lot rather than a park. */
-const PARKING_LOT_ODDS = 0.35
-/** Street trees along the sidewalks, this far apart, this big: the trunk on the sidewalk and the crown over the street. */
-const STREET_TREE_SPACING = 14
-const STREET_TREE_RADIUS = { min: 1.6, max: 2.2 } as const
-const STREET_TREE_HEIGHT = { min: 6, max: 8 } as const
-/** Trees along the shoulder of the main roads through a city, this far from the road, this far apart. */
-const CITY_VERGE_SETBACK = 5.5
-const CITY_SHOULDER_SPACING = 12
-/** How thickly the ground an interchange's ramps enclose is planted, per hundred square meters. */
-const INTERCHANGE_TREES = 0.6
-const INTERCHANGE_SHRUBS = 0.9
-/** Lots left as parks, one in this many. */
-const PARK_LOT_ODDS = 7
-/**
- * Props, the furniture a car can knock about, no more than this many to an
- * island: barrels stacked this many deep beside a gas station's shop,
- * crates this many along the strip outside a building site's fencing,
- * a line of this many cones this far apart as roadworks every so far along
- * the suburb roads, and this many bales to a crop field.
- */
-const PROPS_MOST = 250
-const PROP_SALT = 0x5a1d
-const STATION_BARRELS = 4
-const SITE_CRATES = 3
-const ROADWORKS = { cones: 6, apart: 2.2, every: 450 } as const
-const FIELD_BALES = { min: 2, max: 4 } as const
 /**
  * Building sites: an open lot this near the heart of a city (as a share of
  * the way in from the core's edge) is this often fenced around, this far
@@ -106,89 +282,6 @@ const FIELD_BALES = { min: 2, max: 4 } as const
  * this far above the tallest block within this reach of it, and never
  * lower than this.
  */
-/**
- * The city square: the first open lot this near the heart of a city is
- * paved over, with a fountain in the middle, its basin this wide and this
- * high; one to a city. Statues stand on plinths this wide and this tall,
- * one in the middle of every park big enough to hold one this far in from
- * its edges, and one on the shoulder where an arterial comes into a city,
- * this far beyond the shoulder trees' line.
- */
-const SQUARE_CORE = 0.55
-const FOUNTAIN = { width: 8, height: 1 } as const
-const STATUE = { width: 2, height: 2.5, parkInset: 6, shoulderOut: 1.5 } as const
-/**
- * The clock tower: one to a city, on the block lot nearest the city's
- * center within this reach of it, which it takes over: this wide, this
- * tall, and standing at least this far above every block within this.
- */
-const CLOCK_TOWER = { reach: 60, width: 10, height: 60, over: 10, lookout: 100 } as const
-const SITE_CORE = 0.45
-const SITE_ODDS = 0.35
-const SITES_MOST = 3
-const FENCE_INSET = 1
-const FENCE_HEIGHT = 2.5
-const CRANE_BASE = 3
-const CRANE_OVER = 12
-const CRANE_REACH = 50
-const CRANE_HEIGHT_LEAST = 30
-/** Stories are this tall, and every building is a whole number of them. */
-const STORY = 3
-/** A block's building is at least this tall, and this much taller again at random. */
-const BLOCK_HEIGHT = { min: 9, spread: 12 } as const
-/**
- * The tallest a building rises over that at the heart of a city. It falls off
- * toward the edge, steeply, so the skyline is a cluster of towers in the
- * middle over a spread of mid-rise blocks.
- */
-const TOWER_HEIGHT = 96
-/** A tower in the heart of a city is at least this fraction of its full rise. */
-const TOWER_FLOOR = 0.4
-/** A footprint is buried this far below the lowest ground under it, so no corner hangs in the air. */
-const BURY = 1
-/** Ground that rises more than this across a footprint is too steep to build on. */
-const BLOCK_RELIEF = 4
-const HOUSE_RELIEF = 2.5
-/** Every building keeps this clear of any road. */
-const ROAD_MARGIN = 1.5
-/**
- * And this far off a tunnel's centerline: the shell around a bore is built
- * far thicker than it is drawn, to roof over the ground cut away around the
- * bore, and near a portal it stands out of the hillside, so nothing is
- * planted where it would be buried in it.
- */
-const TUNNEL_KEEP_OUT = 20
-/** And this clear of any other building. */
-const BUILDING_GAP = 1
-/** Buildings are bucketed on this grid to find neighbors, in world units. */
-const BUCKET = 32
-
-/** Houses along a suburb's arterials: how far apart, how far from the road's edge, and how big. */
-const SUBURB_SPACING = { min: 15, max: 22 } as const
-const HOUSE_SETBACK = { min: 5, max: 9 } as const
-const HOUSE_WIDTH = { min: 8, max: 12 } as const
-const HOUSE_DEPTH = { min: 7, max: 10 } as const
-const HOUSE_HEIGHT = { min: 3.5, max: 6.5 } as const
-/** A cottage is small and low under a steep roof; a villa is broad, and two stories. */
-const COTTAGE_WIDTH = { min: 6, max: 8.5 } as const
-const COTTAGE_DEPTH = { min: 5, max: 7 } as const
-const COTTAGE_HEIGHT = { min: 3, max: 3.6 } as const
-const VILLA_WIDTH = { min: 11, max: 14 } as const
-const VILLA_DEPTH = { min: 9, max: 12 } as const
-const VILLA_HEIGHT = { min: 6, max: 7.5 } as const
-/** Which style a house is, by the luck of the draw: the plain one half the time, the others a quarter each. */
-const HOUSE_STYLES: readonly ('house' | 'cottage' | 'villa')[] = ['house', 'house', 'cottage', 'villa']
-
-/**
- * As often as not an island has an observatory, one at most, on a mountain
- * top: a round tower this wide and this tall over the peak, on ground no
- * more uneven than this across it.
- */
-const OBSERVATORY_ODDS = 0.5
-const OBSERVATORY_SALT = 0x0b5e_4a70
-const OBSERVATORY_SIZE = 12
-const OBSERVATORY_HEIGHT = 11
-const OBSERVATORY_RELIEF = 8
 
 /**
  * Farms in the open country, this many at most out of this many tries: a
@@ -196,120 +289,9 @@ const OBSERVATORY_RELIEF = 8
  * than this across it, hedged about, with a barn and a silo or two off the
  * end of the row.
  */
-/**
- * The pyramid: tiers this tall, the first the tallest, each set this far in
- * from the edges of the one below and the top this wide, so the base is
- * as wide as all of it. A tunnel this wide and this high runs through the
- * first tier one way; the other way, a straight ramp this long runs up
- * either side from the ground to the top, over the ledges between. The ground is leveled under it and this far around,
- * blended back to the land over this much more, or this many times as
- * far as the land rises and falls across it if that is more, and the site is looked
- * for this many times, on country ground that rises and falls no more than
- * this across it, or failing that no more than this.
- */
-const PYRAMID = {
-  tiers: [8, 5, 5, 5],
-  ledge: 10,
-  top: 16,
-  tunnel: { width: 14, height: 6 },
-  ramp: 60,
-  apron: 36,
-  blend: 12,
-  tries: 400,
-  relief: [8, 16],
-  easing: 5,
-} as const
-const FARMS_MOST = 5
-const FARM_TRIES = 150
-/** Farms keep this far from one another, so they do not bunch up. */
-const FARM_APART = 200
-/** How far apart two barns stand, at the least. */
-const BARNS_APART = 160
-const FIELDS_PER_FARM = { min: 2, max: 4 } as const
-const FIELD_LENGTH = { min: 45, max: 75 } as const
-const FIELD_WIDTH = { min: 28, max: 45 } as const
-const FIELD_GAP = 3
-const FIELD_RELIEF = 8
-const FIELD_ROAD_MARGIN = 4
-const HEDGE_SPACING = 3.5
-/** How far outside the crop the hedge stands: a shrub's width, so it does not sit in the field it hedges. */
-const HEDGE_OUT = 1.9
-const BARN = { width: 14, depth: 9, height: 6.5 } as const
-/** How far past the end of the row the barn stands: beyond the hedge, with room to walk around. */
-const BARN_OFF = 6
-const SILO = { radius: 2.4, height: 9 } as const
-const SILOS = { min: 1, max: 2 } as const
-const SILO_RELIEF = 5
-
-/**
- * One wind farm an island, if the open country has room for a line of
- * turbines this far apart, at least this many of them, each a tower this
- * wide and tall standing on ground no more uneven than this.
- */
-const WIND_FARM_TRIES = 120
-const TURBINES = { min: 5, max: 7 } as const
-const TURBINES_LEAST = 4
-const TURBINE_SPACING = 48
-const TURBINE = { radius: 1.3, height: 42 } as const
-const TURBINE_RELIEF = 6
-const TURBINE_ROAD_MARGIN = 6
-const TURBINE_GAP = 8
-
-/**
- * One ring of standing stones an island, on the highest open ground of
- * this many tries: this many stones around a ring this wide, each this big.
- */
-const STONES_TRIES = 120
-const STONES = 12
-const STONE_RING = 14
-const STONE = { width: 2.4, depth: 1.3, height: { min: 5.5, max: 8 } } as const
-/** The altar in the middle of the ring: a slab lying this long, wide and high. */
-const ALTAR = { width: 4.5, depth: 2.2, height: 1.1 } as const
-/**
- * A lintel across two stones side by side, as often as not: this thick and
- * tall, reaching this far past each, and let this far into their tops. The
- * two under it are made the same height to carry it.
- */
-const LINTEL_ODDS = 0.5
-const LINTEL = { depth: 1.2, height: 1.1, overhang: 0.5, seat: 0.15 } as const
-const STONES_RELIEF = 7
-const STONES_ROAD_MARGIN = 6
-
-/**
- * A lighthouse on a headland, one at most: a tower this wide and tall on a
- * shore this far above the sea, where at least this much of the ground
- * within this reach is sea. Were there more, they would keep this far apart.
- */
-const LIGHTHOUSES_MOST = 1
-const LIGHTHOUSE = { radius: 4.5, height: 34 } as const
-const LIGHTHOUSE_APART = 400
-const SHORE = { over: 1.5, under: 14 } as const
-const HEADLAND_REACH = 30
-const HEADLAND_SAMPLES = 16
-const HEADLAND_SEA = 0.45
-const COAST_STEP = 3
-const LIGHTHOUSE_RELIEF = 7
-const LIGHTHOUSE_ROAD_MARGIN = 6
-
-/**
- * Boats moored off the shore: a few, at random, in water deep enough and
- * with the shore not far off, each turned as it lies at anchor. They throw
- * their own dice, like the observatory, so an island's boats stay put.
- */
-const BOATS_MOST = 8
-const BOAT_TRIES = 200
-const BOAT_SALT = 0x0b0a_7e5d
-/** A boat's length and beam, how deep it sits and how high it stands over the water. */
-const BOAT = { length: { min: 7, max: 12 }, beam: { min: 2.6, max: 3.6 }, draft: 0.8, freeboard: 0.9 } as const
-/** The water a boat lies in: this deep at least, with no land nearer than the one distance and some within the other. */
-const BOAT_WATER = { depth: 2, offshore: 25, nearShore: 120 } as const
-const BOATS_APART = 45
-/** A boat keeps this far from any road: a bridge deck over the water is a road too. */
-const BOAT_ROAD_MARGIN = 6
 
 /** How far a boat drifts from where it lies at anchor, either way along each axis, and how long its slowest swing takes, in seconds. */
 export const BOAT_WANDER = 10
-const BOAT_SWING = 110
 
 /**
  * Where a boat is at this time, and which way it heads: meandering about
@@ -359,189 +341,6 @@ export function worldBoatAt(boat: WorldBuilding, index: number, seconds: number,
   out.turn.w = turned.w
   return out
 }
-
-/**
- * A chair lift up a mountainside: a station at the foot of the slope, one
- * near the crest, and a line of pylons between them for the cable and the
- * chairs. On a mountain without an observatory for choice, up the side
- * that faces the nearest city. One per island at most.
- */
-const LIFTS_MOST = 1
-const PYLON = { size: 2, height: 14, spacing: 40, least: 2 } as const
-const LIFT_STATION = { width: 10, depth: 8, height: 6 } as const
-/** The lift's line must climb this steeply at the least and at the most, rise over run: these mountains are steep. */
-const LIFT_GRADE = { min: 0.25, max: 1 } as const
-/** The top station stands this far below the peak, and the bottom one this far short of the foot of the slope. */
-const LIFT_ENDS = { belowPeak: 15, aboveFoot: 10 } as const
-/** The foot of the slope is where the ground has eased to this grade over a stretch, foothills and all. */
-const LIFT_FOOT = { grade: 0.12, stretch: 30, step: 5, mostDown: 500 } as const
-const LIFT_ROAD_MARGIN = 4
-const PYLON_RELIEF = 6
-const LIFT_STATION_RELIEF = 8
-
-/**
- * Viewpoint parking lots: the lot a mountain road ends in, painted as a car
- * park, with a low wall along its valley side and an information board at
- * the far end of the wall from where the road comes in.
- */
-const VIEWPOINTS_MOST = 1
-const VIEWPOINT_WALL = { thick: 0.5, height: 0.8 } as const
-const VIEWPOINT_BOARD = { width: 2.4, depth: 0.3, height: 2.2 } as const
-
-/** How far anything that stands about keeps from anything else that does. */
-const FURNITURE_GAP = 2
-/** How far apart two of the same thing keep, farm from farm, camp from camp; water towers further. */
-const FEATURE_APART = 100
-const WATER_TOWERS_APART = 300
-
-/**
- * An orchard: a field planted with fruit trees on a grid instead of a crop,
- * the last field of a farm this often, and a couple more on their own. The
- * trees stand this far apart along a row and the rows this far apart.
- */
-const ORCHARD_ODDS = 0.34
-const ORCHARDS_ALONE = 2
-const ORCHARD_TRIES = 60
-const ORCHARD_SIZE = { width: 42, depth: 30 } as const
-const ORCHARD_ALONG = 6
-const ORCHARD_ROW = 7
-const FRUIT_RADIUS = { min: 2, max: 2.8 } as const
-const FRUIT_HEIGHT = { min: 3.5, max: 4.5 } as const
-
-/**
- * A church wherever the houses along a road are thick enough to be a
- * village: this many within this reach of one of them, no other church
- * nearer than this. The nave and its tower are this big, set this far
- * back from the road behind a green with a few trees on it.
- */
-const VILLAGE_HOUSES = 5
-const VILLAGE_REACH = 80
-const CHURCH_APART = 600
-const CHURCHES_MOST = 4
-const NAVE = { width: 26, depth: 12, height: 8 } as const
-const TOWER = { size: 6, height: 16 } as const
-const CHURCH_SETBACK = 14
-const GREEN_TREES = 4
-
-/** A water tower at the edge of each suburb: a column this wide carrying a tank this wide, this tall. */
-const WATER_TOWER = { column: 2.4, tank: 8, height: 22 } as const
-const WATER_TOWER_TRIES = 24
-const WATER_TOWER_IN = 30
-
-/**
- * A gas station every so far along the suburb stretches of the main
- * roads: a lot this big against the road, paved, with the shop at the back,
- * a canopy on posts over the pumps this high, and a sign by the road.
- */
-const STATION_APART = 700
-const STATION_LOT = { width: 30, depth: 20 } as const
-const STATION_RELIEF = 5
-const SHOP = { width: 10, depth: 6, height: 4 } as const
-const CANOPY = { width: 16, depth: 10, over: 4.5, thick: 0.5 } as const
-const POST = 0.4
-const SIGN = { width: 0.5, depth: 2, height: 7 } as const
-
-/**
- * Camp sites, this many at most: a clearing this wide in the country near
- * a road but off it, tents on a ring around a fire, campers off to one side
- * and trees around the rim.
- */
-const CAMPS_MOST = 3
-const CAMP_TRIES = 80
-const CAMP_SALT = 0x0ca3_9e51
-const CAMP_NEAR_ROAD = { min: 28, max: 60 } as const
-const CLEARING_RADIUS = 20
-const TENTS = 6
-const TENT_RING = 11
-const TENT = { width: 3, depth: 2.5, height: 1.8 } as const
-const CAMPERS = 2
-const CAMPER = { width: 6, depth: 2.4, height: 2.6 } as const
-const FIRE_PIT = { size: 1.6, height: 0.4 } as const
-const RIM_TREES = 24
-/** How far apart the ramps stand along a road, out of the cities. */
-const RAMP_SPACING = { min: 140, max: 300 } as const
-/** A ramp's run and rise: an arc ending near a quarter grade, enough to fly off at speed. */
-const RAMP_LENGTH = 13
-const RAMP_RISE = 3
-const RAMP_WIDTH = 5
-/** The shoulder past the lip is kept clear this far, for the car to come down on. */
-const RAMP_LANDING = 50
-/** The ramp's near edge stands this far out from the road's edge, on the shoulder. */
-const RAMP_SHOULDER = 0.7
-/** The ground under a ramp may not rise or fall more than this from foot to lip. */
-const RAMP_RELIEF = 0.6
-
-/** Country: trees this far apart along the arterial, standing this far off it, and this big. */
-const TREE_SPACING = { min: 4, max: 9 } as const
-const TREE_SETBACK = { min: 4, max: 14 } as const
-/** Behind the roadside trees a second row stands further back, at half the slots. */
-const TREE_BACK_SETBACK = { min: 14, max: 30 } as const
-const TREE_RADIUS = { min: 1.8, max: 3.5 } as const
-const TREE_HEIGHT = { min: 6, max: 12 } as const
-/** Not every slot along the road gets a tree, one in this many stays open. */
-const TREE_GAP_ODDS = 4
-/** A country house every so often along the road, with a clearing around it. */
-const COUNTRY_HOUSE_SPACING = { min: 70, max: 160 } as const
-const CLEARING = 12
-/** Shrubs are this big. */
-const SHRUB_RADIUS = { min: 0.7, max: 1.6 } as const
-const SHRUB_HEIGHT = { min: 0.9, max: 2 } as const
-/** A park gets this many trees and this many shrubs for every hundred square meters, at most. */
-const PARK_TREES = 1.2
-const PARK_SHRUBS = 1.8
-/** How often a planting is tried before the park is called full. */
-const PARK_TRIES = 3
-/** A garden: shrubs along the front of a house, and trees beside and behind it. */
-const GARDEN_SHRUBS = { min: 1, max: 3 } as const
-const GARDEN_TREES = { min: 0, max: 2 } as const
-
-/** The wilds are tried at spots this far apart, each nudged about at random. */
-const WILD_SPACING = 5
-/** Woods and clearings come from noise this coarse: features a few hundred meters across. */
-const WOOD_FREQUENCY = 0.004
-/** Below this the noise is open ground, above it deep wood, and it thickens between. */
-const WOOD_EDGE = { open: 0.42, deep: 0.62 } as const
-/** How likely a spot is to get a tree, or a shrub, in deep wood; scaled down toward open ground. */
-const WOOD_TREES = 0.14
-const WOOD_SHRUBS = 0.12
-/** Open ground still gets the odd lone tree or bush. */
-const LONE_TREES = 0.006
-const LONE_SHRUBS = 0.012
-/** The suburbs, between the gardens, get this fraction of the country's woods. */
-const SUBURB_WOODS = 0.3
-/**
- * The foothills: how far a mountain's rise has come, from nothing at the
- * foot of its skirt to full on its crest. Trees thicken on the lower slopes
- * and thin out above them, to a treeline on the bare upper mountain.
- */
-const FOOTHILL = { from: 0.03, thickest: 0.3, treeline: 0.6 } as const
-/** How much thicker than the woods the foothills are planted, at their thickest. */
-const FOOTHILL_BOOST = 2.2
-/** Ground steeper than this is rock, whatever the noise says. */
-const WILD_MAX_SLOPE = 0.6
-/** And nothing grows above this fraction of the way from the sea to the island's highest ground. */
-const TREELINE = 0.65
-const WILD_SALT = 0x7e11
-/**
- * Rocks, on the bare ground the wilds leave: boulders, come in fields from
- * noise this coarse (open ground below the lower mark, a field above the
- * upper), this likely at a spot in a field and this likely on open bare
- * ground, no steeper than this, and this big across; scree, lying thick on
- * the bare slopes steeper than this, this likely at a spot no boulder
- * takes, and this small. A rock stands this much of its size into the
- * ground, and keeps this far off a road.
- */
-const ROCK_FREQUENCY = 0.007
-const ROCK_FIELD = { open: 0.45, deep: 0.62 } as const
-const BOULDER_ODDS = { lone: 0.01, field: 0.12 } as const
-const BOULDER_MAX_SLOPE = 0.7
-const BOULDER_SIZE = { min: 2, max: 5 } as const
-const SCREE_SLOPE = 0.45
-const SCREE_ODDS = 0.4
-const SCREE_SIZE = { min: 0.5, max: 1.5 } as const
-const ROCK_BURY = 0.3
-const ROCK_ROAD_MARGIN = 1.5
-const ROCK_SALT = 0x2c9b
 
 /**
  * What has been placed so far, bucketed so a footprint is only ever tested
@@ -696,8 +495,6 @@ type Planter = (x: number, z: number, kind: Tree['kind'], wet: (x: number, z: nu
  * building and every other crown, and off the roads; a shrub only has to
  * find open ground.
  */
-/** The grid rails are looked up in, a cell this wide. */
-const RAIL_CELL = 16
 
 /**
  * Whether a point stands clear of every guardrail by this much: a rail runs
@@ -1788,9 +1585,6 @@ function onMountain(mountains: Mountain[], x: number, z: number): boolean {
   return mountains.some((mountain) => signedDistanceToTriangle(x, z, orientedTriangle(mountain)) >= -mountain.skirt)
 }
 
-/** How far apart the spots a footprint is tried at are, across and along it. */
-const MOUNTAIN_PROBE = 8
-
 /** Whether any of a footprint is on a mountain, tried at spots across the whole of it. */
 function footprintOnMountain(mountains: Mountain[], footprint: Footprint): boolean {
   const { ux, uz, vx, vz } = axesOf(footprint.yaw)
@@ -1911,9 +1705,6 @@ function hedge(stands: Stands, footprint: Footprint, plant: Planter): void {
     for (const u of [-halfU, halfU]) plant(footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, 'shrub', stands.wet)
   }
 }
-
-/** How far in from an orchard's edge the outermost trees stand: a crown's width, clear of the hedge. */
-const ORCHARD_IN = 3.5
 
 /** Where an orchard's trees would stand on a footprint: a grid along its rows, in from the hedge. */
 function orchardGrid(footprint: Footprint): { x: number; z: number }[] {

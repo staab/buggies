@@ -27,12 +27,25 @@ const GRADE_TOLERANCE = 1e-3
  * the whole of the difference.
  */
 export function limitGrade(heights: Float32Array, points: Vec2[], maxGrade: number, floor?: Float32Array): void {
+  limitGradeAlong(heights, runsOf(points, true), maxGrade, floor)
+}
+
+/** How far each point of a run is from the next, round to the first from the last where the run is closed. */
+function runsOf(points: Vec2[], closed: boolean): Float64Array {
+  const count = points.length
+  const runs = new Float64Array(count)
+  for (let i = 0; i < (closed ? count : count - 1); i++) {
+    const next = (i + 1) % count
+    runs[i] = hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z)
+  }
+  return runs
+}
+
+/** `limitGrade` along a closed run of points this far apart, each from the next, round to the first from the last. */
+export function limitGradeAlong(heights: Float32Array, runs: Float64Array, maxGrade: number, floor?: Float32Array): void {
   const count = heights.length
   const maxDelta = new Float32Array(count)
-  for (let i = 0; i < count; i++) {
-    const next = (i + 1) % count
-    maxDelta[i] = maxGrade * hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z)
-  }
+  for (let i = 0; i < count; i++) maxDelta[i] = maxGrade * runs[i]!
   if (floor !== undefined) for (let i = 0; i < count; i++) heights[i] = Math.max(heights[i]!, floor[i]!)
 
   const cap = count * 50 + 50
@@ -70,13 +83,14 @@ export function limitVerticalCurvature(
   maxCurvature: number,
   closed: boolean,
 ): void {
+  limitVerticalCurvatureAlong(heights, runsOf(points, true), maxCurvature, closed)
+}
+
+/** `limitVerticalCurvature` along a run of points this far apart, each from the next. */
+export function limitVerticalCurvatureAlong(heights: Float32Array, runs: Float64Array, maxCurvature: number, closed: boolean): void {
   const count = heights.length
   if (count < 3) return
-  const lengths = new Float32Array(count)
-  for (let i = 0; i < count; i++) {
-    const next = (i + 1) % count
-    lengths[i] = Math.max(hypot(points[next]!.x - points[i]!.x, points[next]!.z - points[i]!.z), 1e-3)
-  }
+  const lengths = Float32Array.from(runs, (run) => Math.max(run, 1e-3))
   const first = closed ? 0 : 1
   const last = closed ? count - 1 : count - 2
   const cap = count * 20 + 50
@@ -104,11 +118,16 @@ export function limitVerticalCurvature(
 
 /** Relax an open profile until no segment exceeds `maxGrade`. */
 export function limitOpenGrade(heights: Float32Array, points: Vec2[], maxGrade: number): void {
+  limitOpenGradeAlong(heights, runsOf(points, false), maxGrade)
+}
+
+/** `limitOpenGrade` along an open run of points this far apart, each from the next. */
+export function limitOpenGradeAlong(heights: Float32Array, runs: Float64Array, maxGrade: number): void {
   const count = heights.length
   for (let pass = 0; pass < count * 20; pass++) {
     let moved = false
     for (let i = 0; i + 1 < count; i++) {
-      const run = hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
+      const run = runs[i]!
       const diff = heights[i + 1]! - heights[i]!
       const excess = Math.abs(diff) - maxGrade * run
       if (excess <= 1e-6) continue
@@ -127,19 +146,24 @@ export function limitOpenGrade(heights: Float32Array, points: Vec2[], maxGrade: 
  * close to the original heights (and so to both road ends).
  */
 export function limitSweepGrade(heights: Float32Array, points: Vec2[], maxGrade: number): void {
+  limitSweepGradeAlong(heights, runsOf(points, false), maxGrade)
+}
+
+/** `limitSweepGrade` along an open run of points this far apart, each from the next. */
+export function limitSweepGradeAlong(heights: Float32Array, runs: Float64Array, maxGrade: number): void {
   const count = heights.length
   if (count < 2) return
   const forward = Float32Array.from(heights)
   const backward = Float32Array.from(heights)
   for (let i = 1; i < count; i++) {
-    const maxDelta = maxGrade * hypot(points[i]!.x - points[i - 1]!.x, points[i]!.z - points[i - 1]!.z)
+    const maxDelta = maxGrade * runs[i - 1]!
     const high = forward[i - 1]! + maxDelta
     const low = forward[i - 1]! - maxDelta
     if (forward[i]! > high) forward[i] = high
     else if (forward[i]! < low) forward[i] = low
   }
   for (let i = count - 2; i >= 0; i--) {
-    const maxDelta = maxGrade * hypot(points[i + 1]!.x - points[i]!.x, points[i + 1]!.z - points[i]!.z)
+    const maxDelta = maxGrade * runs[i]!
     const high = backward[i + 1]! + maxDelta
     const low = backward[i + 1]! - maxDelta
     if (backward[i]! > high) backward[i] = high

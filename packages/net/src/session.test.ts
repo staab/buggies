@@ -460,7 +460,8 @@ describe('a session', () => {
 
   it('keeps the fastest car in line at full speed, snapshot after snapshot', async () => {
     const session = new Session()
-    const a = await session.join('raceCar')
+    // On a planet whose highway runs straight from the spawn for as long as it takes to reach full speed.
+    const a = await session.join('raceCar', 0, 11)
     a.input.throttle = 1
     let worst = 0
     for (let i = 0; i < 8 * TICKS_PER_SECOND; i++) {

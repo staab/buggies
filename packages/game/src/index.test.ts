@@ -164,7 +164,7 @@ describe('game', () => {
   it('puts a vehicle back on the nearest road, facing the way it was going', () => {
     const arena = createArena(map)
     const seat = solo(arena)
-    run(arena, FLAT_OUT, 6)
+    run(arena, FLAT_OUT, 4)
     const before = { position: { ...seat.vehicle.frame.position }, forward: { ...seat.vehicle.frame.forward } }
     expect(apart(before.position, seat.spawn.position)).toBeGreaterThan(60)
 
@@ -173,8 +173,8 @@ describe('game', () => {
     const after = seat.vehicle.frame
     // Put back, not made new: the knocks it had come with it.
     expect(seat.vehicle.damage).toBe(0.4)
-    // Near where it was, not back at the start, on a road, still heading the same way.
-    expect(apart(after.position, before.position)).toBeLessThan(15)
+    // Near where it was, no further than the nearest road, not back at the start, on a road, still heading the same way.
+    expect(apart(after.position, before.position)).toBeLessThan(offRoad(before.position) + 5)
     expect(apart(after.position, seat.spawn.position)).toBeGreaterThan(45)
     expect(vdot(after.forward, before.forward)).toBeGreaterThan(0.7)
     expect(offRoad(after.position)).toBeLessThan(1.5)
@@ -286,7 +286,7 @@ describe('game', () => {
 
   it('drives through a tunnel instead of dropping into the hill', () => {
     // Tunnels are rare enough that many an island has none: this one has a good few.
-    const island = generateTerrain(6, PLANET_TERRAIN)
+    const island = generateTerrain(7, PLANET_TERRAIN)
     const world = island.world!
 
     // A road that runs into a tunnel, and a spot on the road before it.

@@ -10,15 +10,17 @@ import {
   triangleInradius,
   type Triangle,
 } from './mountain.ts'
-import { sampleHeight } from './heightfield.ts'
 import { fbm2D, ridged2D, smoothstep } from './noise.ts'
 import { createSphereGround, gridDirection, gridPlace, groundIndex, sphereHeight, type SphereGround } from './sphere.ts'
 import { onTangentPlane, raiseSphereGround, tangentFrame, type SphereMountain } from './sphere-heights.ts'
 import { findSphereLakes, groundDirections, groundNeighbors, routeSphereFlow, traceSphereRivers, type SphereLake, type SphereRiverPoint } from './sphere-water.ts'
-import { worldOfChart } from './chart-world.ts'
+import { riversOfChart, waterOfChart, worldOfChart } from './chart-world.ts'
+import { buildGlobeStands } from './globe/buildings.ts'
+import { buildGlobeRoads } from './globe/roads.ts'
 import { generateSphereDistricts, type SphereDistricts } from './sphere-districts.ts'
-import { generateRoads } from './roads.ts'
-import { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
+import { ROAD_SURFACE, generateRoads } from './roads.ts'
+import { traceRivers } from './rivers.ts'
+import type { WorldRoad } from './world.ts'
 import type {
   District,
   Heightfield,
@@ -26,13 +28,14 @@ import type {
   Mountain,
   River,
   RiverPoint,
+  Road,
   TerrainMap,
   TerrainOptions,
 } from './types.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { atan2, cos, hypot, sin } = exact
+const { cos, hypot, sin } = exact
 
 const DEFAULTS = {
   size: 1281,
@@ -860,35 +863,21 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     fields: [],
   }
   scaleWorld(map, WORLD_SCALE)
-  // What the map is before the roads and the buildings level and cut it, to tell what they changed.
-  const unbuilt = ground === null ? null : Float32Array.from(map.heightfield.heights)
-  map.roads = generateRoads(
-    map.heightfield,
-    map.seaLevel,
-    map.districts,
-    map.rivers,
-    map.lakes,
-    seed,
-    map.districtOf,
-    map.mountains,
-  )
-  Object.assign(
-    map,
-    generateBuildings(
-      map.heightfield,
-      map.seaLevel,
-      map.districts,
-      map.districtOf,
-      map.roads,
-      map.rivers,
-      map.lakes,
-      map.mountains,
-      seed,
-    ),
-  )
-  if (planet !== null && ground !== null && unbuilt !== null) {
-    settleSphereOnChart(ground, map.heightfield, unbuilt, planet)
-    map.world = worldOfChart(map, ground, planet, sphereMountains, native!)
+  if (planet !== null && ground !== null && native !== null) {
+    // A planet's roads and everything standing on its land are laid out on its own ground.
+    const water = waterOfChart(map, ground, planet)
+    const { roads, grids } = buildGlobeRoads(ground, water, map.seaLevel, native.districts, native.districtOf, seed)
+    const stands = buildGlobeStands(ground, water, native.districtOf, map.seaLevel, native.districts, grids, roads, riversOfChart(map, planet), sphereMountains, seed)
+    // The decks and the tunnels are still built on the map: it is given the roads, and read off the ground they shaped.
+    map.roads = roadsOnChart(roads, planet)
+    readChartFromSphere(map.heightfield, ground, planet, 1)
+    map.world = worldOfChart(map, ground, planet, sphereMountains, native, roads, water, stands)
+  } else {
+    map.roads = generateRoads(map.heightfield, map.seaLevel, map.districts, map.rivers, map.lakes, seed, map.districtOf, map.mountains)
+    Object.assign(
+      map,
+      generateBuildings(map.heightfield, map.seaLevel, map.districts, map.districtOf, map.roads, map.rivers, map.lakes, map.mountains, seed),
+    )
   }
   return map
 }
@@ -935,15 +924,15 @@ function sphereMountain(planet: Planet, mountain: Mountain): SphereMountain {
  * cell, the planet's height there, as the map has heights there, smaller than
  * the planet's by the map's scale and by how much the map is to be enlarged.
  */
-function readChartFromSphere(field: Heightfield, ground: SphereGround, planet: Planet): void {
+function readChartFromSphere(field: Heightfield, ground: SphereGround, planet: Planet, enlarge = WORLD_SCALE): void {
   const { width, depth, cellSize, heights } = field
   const place = { longitude: 0, latitude: 0, scale: 1 }
   const direction = { x: 0, y: 0, z: 0 }
   for (let row = 0; row < depth; row++) {
     for (let col = 0; col < width; col++) {
-      placeOf(planet, col * cellSize * WORLD_SCALE, row * cellSize * WORLD_SCALE, place)
+      placeOf(planet, col * cellSize * enlarge, row * cellSize * enlarge, place)
       directionOf(place.longitude, place.latitude, direction)
-      heights[row * width + col] = sphereHeight(ground, direction) / (WORLD_SCALE * place.scale)
+      heights[row * width + col] = sphereHeight(ground, direction) / (enlarge * place.scale)
     }
   }
 }
@@ -1057,32 +1046,19 @@ function lakesOnChart(lakes: readonly SphereLake[], ground: SphereGround, field:
   return lakes.flatMap((_, id) => (cells[id]!.length === 0 ? [] : [{ id, level: levels[id]!, cells: cells[id]! }]))
 }
 
-/**
- * Carry back onto the planet's ground what the roads and the buildings
- * made of the map: every grid point among cells they levelled, cut or
- * raised takes the map's height there, as the planet has heights there.
- */
-function settleSphereOnChart(ground: SphereGround, field: Heightfield, unbuilt: Float32Array, planet: Planet): void {
-  const { width, depth, cellSize, heights } = field
-  const direction = { x: 0, y: 0, z: 0 }
-  const point = { x: 0, y: 0, z: 0 }
+/** A planet's roads as the map has them, for the buildings to be laid out along. */
+function roadsOnChart(roads: readonly WorldRoad[], planet: Planet): Road[] {
   const chart = { x: 0, y: 0, z: 0 }
-  for (let face = 0; face < 6; face++) {
-    for (let j = 0; j <= ground.n; j++) {
-      for (let i = 0; i <= ground.n; i++) {
-        gridDirection(ground.n, face, i, j, direction)
-        point.x = direction.x * planet.radius
-        point.y = direction.y * planet.radius
-        point.z = direction.z * planet.radius
-        worldToChart(planet, point, chart)
-        const col = Math.floor(chart.x / cellSize)
-        const row = Math.floor(chart.z / cellSize)
-        if (col < 0 || row < 0 || col + 1 >= width || row + 1 >= depth) continue
-        const cells = [row * width + col, row * width + col + 1, (row + 1) * width + col, (row + 1) * width + col + 1]
-        if (!cells.some((cell) => Math.abs(heights[cell]! - unbuilt[cell]!) > 1e-4)) continue
-        const scale = Math.sqrt(Math.max(1 - direction.y * direction.y, 0))
-        ground.heights[groundIndex(ground, face, i, j)] = sampleHeight(field, chart.x, chart.z) * scale
-      }
-    }
-  }
+  return roads.map((road) => {
+    const drop = road.kind === 'highway' ? ROAD_SURFACE : 0
+    let shrink = 0
+    const points = road.points.map((point) => {
+      worldToChart(planet, point, chart)
+      const length = Math.sqrt(point.x * point.x + point.y * point.y + point.z * point.z) || 1
+      shrink += Math.sqrt(Math.max(1 - (point.y / length) * (point.y / length), 1e-9))
+      return { x: chart.x, y: chart.y - drop, z: chart.z }
+    })
+    return { id: road.id, kind: road.kind, closed: road.closed, width: road.widths[0]! / (shrink / points.length), points, structure: Uint8Array.from(road.structure) }
+  })
 }
+

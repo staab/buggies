@@ -53,7 +53,7 @@ const { hypot } = exact
  * coastline rather than dropping it — and past ground already spoken for,
  * rather than giving up on the first site that happens to be taken.
  */
-function findDryCrossing(
+export function findDryCrossing(
   field: Heightfield,
   seaLevel: number,
   samples: Vec2[],

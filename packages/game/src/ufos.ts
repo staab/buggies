@@ -290,7 +290,7 @@ function hold(map: World, seat: Abductee, ufo: Ufo, height: number, dt: number):
   drift.x *= share / dt
   drift.y *= share / dt
   drift.z *= share / dt
-  body.setTranslation({ x: at.x + drift.x * dt, y: at.y + drift.y * dt, z: at.z + drift.z * dt }, true)
+  // Carried by its velocity alone: moved as well as given it, a step would carry it twice as far.
   body.setRotation(uprightRotation(up, frame.forward), true)
   body.setLinvel(drift, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)

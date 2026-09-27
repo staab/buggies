@@ -32,7 +32,7 @@ function groundPieces(): THREE.Mesh[] {
 describe('the planet drawn', () => {
   beforeAll(() => {
     // An island with tunnels through its hills.
-    map = generateTerrain(6, PLANET_TERRAIN)
+    map = generateTerrain(7, PLANET_TERRAIN)
     world = map.world!
     view = createTerrainView(world)
   }, 120_000)
