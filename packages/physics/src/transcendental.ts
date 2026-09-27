@@ -271,3 +271,86 @@ export function acos(x: number): number {
   if (x !== x || x > 1 || x < -1) return NaN
   return atan2(Math.sqrt((1 - x) * (1 + x)), x)
 }
+
+const LN2_HIGH = 6.93147180369123816490e-1
+const LN2_LOW = 1.90821492927058770002e-10
+const INVERSE_LN2 = 1.44269504088896338700
+const EXP_1 = 1.66666666666666019037e-1
+const EXP_2 = -2.77777777770155933842e-3
+const EXP_3 = 6.61375632143793436117e-5
+const EXP_4 = -1.65339022054652515390e-6
+const EXP_5 = 4.13813679705723846039e-8
+const LOG_1 = 6.666666666666735130e-1
+const LOG_2 = 3.999999999940941908e-1
+const LOG_3 = 2.857142874366239149e-1
+const LOG_4 = 2.222219843214978396e-1
+const LOG_5 = 1.818357216161805012e-1
+const LOG_6 = 1.531383769920937332e-1
+const LOG_7 = 1.479819860511658591e-1
+
+// A double's bits, to scale by a power of two, and to take one apart into its exponent and what is left.
+const bits = new DataView(new ArrayBuffer(8))
+
+/** Two to a whole power, built from its bits: exact everywhere. */
+function powerOfTwo(k: number): number {
+  bits.setUint32(0, ((k + 1023) << 20) >>> 0)
+  bits.setUint32(4, 0)
+  return bits.getFloat64(0)
+}
+
+/**
+ * e to a power, reduced to a remainder within half of ln 2 of nothing and a
+ * whole power of two, the remainder by a rational fit: plain arithmetic, so
+ * the same to the last bit on every engine.
+ */
+export function exp(x: number): number {
+  if (x !== x) return NaN
+  if (x > 709) return Infinity
+  if (x < -745) return 0
+  const k = Math.round(x * INVERSE_LN2)
+  const high = x - k * LN2_HIGH
+  const low = k * LN2_LOW
+  const r = high - low
+  const t = r * r
+  const c = r - t * (EXP_1 + t * (EXP_2 + t * (EXP_3 + t * (EXP_4 + t * EXP_5))))
+  const y = 1 - (low - (r * c) / (2 - c) - high)
+  // Past the range a double's exponent holds, in two halves.
+  if (k > 1023) return y * powerOfTwo(1023) * powerOfTwo(k - 1023)
+  if (k < -1022) return y * powerOfTwo(-1022) * powerOfTwo(k + 1022)
+  return y * powerOfTwo(k)
+}
+
+/**
+ * The natural logarithm, the number split into a power of two and a part
+ * between the root of a half and the root of two, that part by a rational
+ * fit: plain arithmetic, so the same to the last bit on every engine.
+ */
+export function log(x: number): number {
+  if (x !== x || x < 0) return NaN
+  if (x === 0) return -Infinity
+  if (x === Infinity) return Infinity
+  let scaled = x
+  let k = 0
+  // A subnormal first brought up into the normal range.
+  if (scaled < 2.2250738585072014e-308) {
+    scaled *= powerOfTwo(54)
+    k -= 54
+  }
+  bits.setFloat64(0, scaled)
+  const high = bits.getUint32(0)
+  k += ((high >>> 20) & 0x7ff) - 1023
+  bits.setUint32(0, (high & 0x000fffff) | 0x3ff00000)
+  let m = bits.getFloat64(0)
+  if (m > Math.SQRT2) {
+    m /= 2
+    k += 1
+  }
+  const f = m - 1
+  const s = f / (2 + f)
+  const z = s * s
+  const w = z * z
+  const odd = w * (LOG_2 + w * (LOG_4 + w * LOG_6))
+  const even = z * (LOG_1 + w * (LOG_3 + w * (LOG_5 + w * LOG_7)))
+  const halfSquare = 0.5 * f * f
+  return k * LN2_HIGH - (halfSquare - (s * (halfSquare + even + odd) + k * LN2_LOW) - f)
+}
