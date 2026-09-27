@@ -3,12 +3,15 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { advance, createArena, initPhysics } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 describe('boats', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(3)
+    map = generateTerrain(3, TEST_ISLANDS)
   }, 120_000)
 
   it('meander about where they lie at anchor, their bows the way they go, and stay out on the water', () => {

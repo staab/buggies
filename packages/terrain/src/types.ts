@@ -264,8 +264,10 @@ export interface TerrainOptions {
   oceanDepth?: number
   /** Radius of the largest island in world units. Defaults to a fraction of the map. */
   islandRadius?: number
-  /** Number of islands. Defaults to one to eight, by the seed. */
+  /** Number of islands. Defaults to one to `islandsMost`, by the seed. */
   islandCount?: number
+  /** The most islands the seed may pick: fifteen, unless asked for fewer. */
+  islandsMost?: number
   /** Number of triangular mountains. Defaults to one to twelve, by the seed. */
   mountainCount?: number
   /** Most rivers. Defaults to one for about half the mountains, and at least one. */

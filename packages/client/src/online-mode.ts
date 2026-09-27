@@ -240,7 +240,8 @@ export async function joinOnline(
       // The keys, told with what this car does of its own.
       const controls = player.keys.controls(OWN_ACTIONS[profile].label)
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
-      if (lost !== null) return { title, state: `disconnected: ${lost}` }
+      // Cut off from the server, there is nothing more to show but that, and what to do about it.
+      if (lost !== null) return { title, goal: `Disconnected from the server (${lost}). Pick the island again from the menu to rejoin.` }
       const { stats } = prediction
       const sync =
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +

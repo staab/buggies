@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest'
 
 import { terrainTransferables } from './terrain-transfer.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 describe('a map crossing from its worker', () => {
   it('arrives whole, with its big buffers handed over rather than copied', () => {
-    const map = generateTerrain(11, { size: 129 })
+    const map = generateTerrain(11, { ...TEST_ISLANDS, size: 129 })
     const transfer = terrainTransferables(map)
     expect(transfer.length).toBeGreaterThan(2)
     expect(new Set(transfer).size).toBe(transfer.length)

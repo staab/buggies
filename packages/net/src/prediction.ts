@@ -448,6 +448,8 @@ export class LocalPrediction {
       vcopy(spider.position, known.position)
       spider.heading = known.heading
       spider.legs = known.legs
+      spider.target.x = known.target.x
+      spider.target.z = known.target.z
       spider.stride = known.stride
       spider.bombTicks = known.bombTicks
       spider.damage = known.damage

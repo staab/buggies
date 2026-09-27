@@ -1,5 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
-import { fetchRooms, type RoomSummary } from '@buggies/net'
+import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -46,6 +46,8 @@ export interface ShellModes {
   showroom(sound: Sound): ShowroomView
   /** Which islands on the server have people on them, busiest first. */
   rooms(url: string): Promise<RoomSummary[]>
+  /** Where everyone and everything is on one island on the server. */
+  peek(url: string, seed: number): Promise<IslandMark[]>
   play(
     scene: THREE.Scene,
     url: string,
@@ -63,6 +65,7 @@ export const MODES: ShellModes = {
   island: createIslandMode,
   showroom: createShowroomMode,
   rooms: (url) => fetchRooms(new WebSocketClientTransport(url)),
+  peek: (url, seed) => fetchPeek(new WebSocketClientTransport(url), seed),
   play: createTeamMode,
 }
 
@@ -243,6 +246,13 @@ export class Shell implements MenuHost {
   /** Which islands have people on them, busiest first; none if the server cannot say. */
   listRooms(): Promise<RoomSummary[]> {
     return this.modes.rooms(this.server).catch(() => [])
+  }
+
+  /** Show who and what is on the island being looked over, if it is still the one asked after. */
+  async peekIsland(seed: number): Promise<void> {
+    const marks = await this.modes.peek(this.server, seed).catch(() => [])
+    const { backdrop } = this
+    if (backdrop?.kind === 'island' && backdrop.seed === seed) backdrop.mode.showMarks?.(marks)
   }
 
   /** Put this vehicle on show, turning on the spot. */

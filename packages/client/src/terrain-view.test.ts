@@ -2,7 +2,10 @@ import { ROAD_SKIRT, WORLD_SCALE, generateTerrain } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
-import { createScaleCar, createTerrainView } from './terrain-view.ts'
+import { createTerrainView } from './terrain-view.ts'
+
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
 
 function positionValues(group: THREE.Group): number[] {
   group.updateMatrixWorld(true)
@@ -21,7 +24,7 @@ function positionValues(group: THREE.Group): number[] {
 
 describe('createTerrainView', () => {
   it('builds finite geometry for a generated map', () => {
-    const map = generateTerrain(5, { size: 257 })
+    const map = generateTerrain(5, { ...TEST_ISLANDS, size: 257 })
     const view = createTerrainView(map)
 
     // Land plus at least the sea plane.
@@ -33,7 +36,7 @@ describe('createTerrainView', () => {
   })
 
   it('stays within the map bounds', () => {
-    const map = generateTerrain(11, { size: 257 })
+    const map = generateTerrain(11, { ...TEST_ISLANDS, size: 257 })
     const view = createTerrainView(map)
     const worldSize = map.size * map.cellSize
     const margin = 20 * WORLD_SCALE
@@ -45,7 +48,7 @@ describe('createTerrainView', () => {
   })
 
   it('textures only the tiles with something painted on them, and draws the rest in the land colors alone', () => {
-    const map = generateTerrain(1, { size: 385 })
+    const map = generateTerrain(1, { ...TEST_ISLANDS, size: 385 })
     const view = createTerrainView(map)
     const pieces: THREE.Mesh[] = []
     view.getObjectByName('ground')!.traverse((node) => {
@@ -78,7 +81,7 @@ describe('createTerrainView', () => {
   })
 
   it('carves a tunnel bore and draws a solid shell through it', () => {
-    const map = generateTerrain(1, { size: 257 })
+    const map = generateTerrain(1, { ...TEST_ISLANDS, size: 257 })
     const view = createTerrainView(map)
 
     const ground = view.getObjectByName('ground')
@@ -111,7 +114,7 @@ describe('createTerrainView', () => {
   })
 
   it('paves the deck skirt in the road color where each ramp runs out from under the deck', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const view = createTerrainView(map)
     const highway = map.roads.find((road) => road.kind === 'highway')!
     const ramps = map.roads.filter((road) => road.kind === 'ramp')
@@ -170,18 +173,4 @@ describe('createTerrainView', () => {
   }, 30_000)
 
 
-  it('places the scale car on the highway', () => {
-    const map = generateTerrain(5, { size: 257 })
-    const road = map.roads[0]
-    expect(road).toBeDefined()
-
-    const car = createScaleCar(map)
-    const index = Math.floor(road!.points.length * 0.25)
-    const point = road!.points[index]!
-
-    expect(car.position.x).toBeCloseTo(point.x, 5)
-    expect(car.position.y).toBeCloseTo(point.y + 0.2, 5)
-    expect(car.position.z).toBeCloseTo(point.z, 5)
-    expect(Number.isFinite(car.rotation.y)).toBe(true)
-  })
 })

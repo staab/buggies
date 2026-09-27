@@ -94,6 +94,15 @@ export interface VehicleTuning {
   damageAcceleration: number
   /** How much level speed change, in m/s over all its knocks, wrecks the car. */
   damageToWreck: number
+  /**
+   * A hull that floats, for a vehicle that goes on the water as well as the
+   * land: how many times its weight the water holds up when the chassis is
+   * under, so it floats that far down; how hard the water drags on it,
+   * along and up and down, so it settles rather than bobbing; and, afloat,
+   * how hard its throttle drives it on and its steering turns it, per
+   * kilogram, and how hard it rights itself.
+   */
+  hull?: { buoyancy: number; drag: number; heave: number; thrust: number; turn: number; righting: number }
   airLevelInputYield: number
   airLevelLandingCastDistance: number
   airLevelLandingLookahead: number
@@ -1058,6 +1067,59 @@ const DUNE_BUGGY_TUNING: Readonly<VehicleTuning> = Object.freeze({
 } satisfies VehicleTuning)
 
 /**
+ * An amphibian: a boat's hull on four wheels. On the land it drives like a
+ * heavy four-by-four, slow and sure; driven into the water it floats with
+ * its hull half under, and its throttle and steering drive it along like a
+ * boat's screw and rudder.
+ */
+const AMPHIBIAN_TUNING: Readonly<VehicleTuning> = Object.freeze({
+  ...DUNE_BUGGY_TUNING,
+  chassisHalfWidth: 1.0,
+  chassisHalfHeight: 0.65,
+  chassisHalfLength: 2.4,
+  mass: 1500,
+  centerOfMassOffsetY: -0.35,
+  centerOfMassOffsetZ: 0,
+
+  halfTrackWidth: 0.95,
+  frontAxleZ: -1.5,
+  rearAxleZ: 1.5,
+  suspensionMountY: -0.3,
+  wheelRadius: 0.5,
+
+  suspensionRestLength: 0.4,
+  suspensionStiffness: 36000,
+  suspensionDamping: 2600,
+  maxSuspensionForce: 90000,
+  bumpStopStiffness: 320000,
+  antiRollStiffnessFront: 14000,
+  antiRollStiffnessRear: 14000,
+  groundStickStiffness: 14000,
+
+  maxSteerAngle: 0.55,
+  steerAtHighSpeed: 0.3,
+  engineForce: 17000,
+  driveSplit: 0.5,
+  maxSpeed: 30,
+  brakeForce: 30000,
+  handbrakeForce: 10000,
+  rollingResistance: 14,
+  dragCoefficient: 2.4,
+  downforce: 0.2,
+  yawAssistTorque: 4000,
+  airPitchTorque: 5000,
+  airLevelTorque: 30000,
+  airLevelDamping: 10000,
+  damageAcceleration: 80,
+  damageToWreck: 110,
+
+  hull: { buoyancy: 2.2, drag: 0.5, heave: 6, thrust: 7, turn: 2.2, righting: 6 },
+
+  ...selfRightTuning(1500),
+  ...SHARED_DAMPING_TUNING,
+} satisfies VehicleTuning)
+
+/**
  * A rocket ship: no wheels, but four thrusters that hold it half a meter
  * over the ground, set far down from the hull and sprung smooth. It is the
  * fastest thing on the island and the worst at turning: a slow, short
@@ -1157,6 +1219,7 @@ export type VehicleProfileId =
   | 'semi'
   | 'goKart'
   | 'duneBuggy'
+  | 'amphibian'
   | 'rocketShip'
 
 export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
@@ -1172,6 +1235,7 @@ export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
   'goKart',
   'duneBuggy',
   'rocketShip',
+  'amphibian',
 ]
 
 export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> = Object.freeze({
@@ -1186,6 +1250,7 @@ export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> 
   semi: 'Semi truck',
   goKart: 'Go-kart',
   duneBuggy: 'Dune buggy',
+  amphibian: 'Amphibian',
   rocketShip: 'Rocket ship',
 })
 
@@ -1201,6 +1266,7 @@ export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<Vehicl
   semi: SEMI_TUNING,
   goKart: GO_KART_TUNING,
   duneBuggy: DUNE_BUGGY_TUNING,
+  amphibian: AMPHIBIAN_TUNING,
   rocketShip: ROCKET_SHIP_TUNING,
 })
 

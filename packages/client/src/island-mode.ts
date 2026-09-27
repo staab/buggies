@@ -1,11 +1,21 @@
-import { DEFAULT_WORLD_TUNING, createVehicleTuning, restingRideHeight } from '@buggies/game'
+import type { IslandMark, IslandMarkKind } from '@buggies/net'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
-import { CarView, profileColor } from './car-view.ts'
+import { seatColor } from './car-view.ts'
 import type { ModeView } from './mode.ts'
-import { createScaleCar } from './terrain-view.ts'
+
+/** How tall and wide a beacon over something on the island is, to be seen from high over the whole of it. */
+const BEACON_HEIGHT = 90
+const BEACON_RADIUS = 4
+/** The colors things are marked in, as on the map: a player's car in its seat's own. */
+const MARK_COLORS: Readonly<Record<Exclude<IslandMarkKind, 'player'>, number>> = {
+  npc: 0x9aa0a6,
+  robot: 0xff3030,
+  ufo: 0x5cff8a,
+  spider: 0xc15cff,
+}
 
 /** A line about an island, for the player choosing one. */
 export function islandSummary(map: TerrainMap): string {
@@ -17,9 +27,10 @@ export function islandSummary(map: TerrainMap): string {
 }
 
 /**
- * Looking over a whole island from above while choosing it: orbit it, and
- * park one car on it for scale. The controls work whether or not the menu
- * is up, since the menu is what this is for.
+ * Looking over a whole island from above while choosing it: orbit it, with
+ * a beacon of light standing over every car on it, driven or not, and every
+ * machine, as the server last said. The controls work whether or not the
+ * menu is up, since the menu is what this is for.
  */
 export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView {
   const worldSize = map.size * map.cellSize
@@ -32,14 +43,22 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
   controls.target.set(worldSize / 2, 0, worldSize / 2)
   controls.update()
 
-  // A sports car parked on the highway, to judge the roads by.
-  const tuning = createVehicleTuning('sportsCar')
-  const view = new CarView('sportsCar', profileColor('sportsCar'))
-  view.syncDimensions(tuning)
-  view.applyRollingWheels(tuning, 0)
-  view.object.position.y = restingRideHeight(tuning, DEFAULT_WORLD_TUNING.gravity)
-  const car = createScaleCar(map, view.object)
-  scene.add(car)
+  const beacons = new THREE.Group()
+  const shaft = new THREE.CylinderGeometry(BEACON_RADIUS * 0.5, BEACON_RADIUS, BEACON_HEIGHT, 12, 1, true).translate(0, BEACON_HEIGHT / 2, 0)
+  const cap = new THREE.SphereGeometry(BEACON_RADIUS * 2, 16, 10)
+  const paints = new Map<number, { shaft: THREE.MeshBasicMaterial; cap: THREE.MeshBasicMaterial }>()
+  const paint = (color: number): { shaft: THREE.MeshBasicMaterial; cap: THREE.MeshBasicMaterial } => {
+    let made = paints.get(color)
+    if (made === undefined) {
+      made = {
+        shaft: new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
+        cap: new THREE.MeshBasicMaterial({ color }),
+      }
+      paints.set(color, made)
+    }
+    return made
+  }
+  scene.add(beacons)
 
   return {
     camera,
@@ -53,10 +72,27 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
     hud() {
       return []
     },
+    showMarks(marks) {
+      beacons.clear()
+      for (const mark of marks) {
+        const { shaft: glow, cap: head } = paint(mark.kind === 'player' ? seatColor(mark.seat) : MARK_COLORS[mark.kind])
+        const beacon = new THREE.Group()
+        beacon.position.set(mark.position.x, mark.position.y, mark.position.z)
+        const top = new THREE.Mesh(cap, head)
+        top.position.y = BEACON_HEIGHT
+        beacon.add(new THREE.Mesh(shaft, glow), top)
+        beacons.add(beacon)
+      }
+    },
     dispose() {
       controls.dispose()
-      scene.remove(car)
-      view.dispose()
+      scene.remove(beacons)
+      shaft.dispose()
+      cap.dispose()
+      for (const { shaft: glow, cap: head } of paints.values()) {
+        glow.dispose()
+        head.dispose()
+      }
     },
   }
 }

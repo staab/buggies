@@ -76,6 +76,9 @@ import {
 } from './index.ts'
 import { nearestRoadSpotTo } from './spawns.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 const FIRE: VehicleInput = { ...NEUTRAL_INPUT, fire: true }
 const ABILITY: VehicleInput = { ...NEUTRAL_INPUT, ability: true }
@@ -119,7 +122,7 @@ function pair(arena: Arena, ahead: number, aside: number): [Seat, Seat] {
 describe('weapons', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { size: 513 })
+    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
   }, 60_000)
 
   it('are bought with bananas, the same one everywhere, by a car carrying nothing', () => {
@@ -499,7 +502,7 @@ function ontoGround(seat: Seat, at: { x: number; z: number }): void {
 describe("the car's own key", () => {
   beforeAll(() => {
     initPhysics()
-    map ??= generateTerrain(3)
+    map ??= generateTerrain(3, TEST_ISLANDS)
   }, 60_000)
 
   it('the tank fires a missile from its gun on a press, with the blast of a rocket, and not again until it has cooled down', () => {
@@ -740,7 +743,8 @@ describe("the car's own key", () => {
     const arena = createArena(map)
     const a = takeSeat(arena, 0, 'pickup')
     for (let i = 0; i < 30; i++) advance(arena)
-    const bombs = (): number[] => arena.loose.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)
+    // Its own bombs: the spider lets its own fall meanwhile.
+    const bombs = (): number[] => arena.loose.filter((loose) => loose.kind === 'bomb' && loose.owner === a.id).map((loose) => loose.id)
     press(arena, a)
     expect(bombs()).toHaveLength(1)
     expect(arena.loose[0]!.power).toBe(OWN_BOMB_POWER)

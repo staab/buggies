@@ -27,6 +27,9 @@ import {
   type Seat,
 } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 /** A rocket of this seat's set going right past a machine, after it. */
@@ -45,7 +48,7 @@ function rocketAt(arena: Arena, target: number, at: { x: number; y: number; z: n
 describe('the robots and the saucers', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { size: 513 })
+    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
   }, 60_000)
 
   it('a robot takes a rocket as a car ten times tougher would, and once brought down comes back whole on another arterial', () => {
@@ -154,10 +157,19 @@ describe('the robots and the saucers', () => {
       arena.world.free()
     })
   }
+})
+
+describe('the spider', () => {
+  // A full-size island, as the game plays on: a small one is all cities to a spider.
+  let island: TerrainMap
+  beforeAll(async () => {
+    await initPhysics()
+    island = generateTerrain(3, TEST_ISLANDS)
+  }, 120_000)
 
   it('a spider strides across the island and lets a bomb fall every thirty seconds, but not in a mirror', () => {
     for (const mirror of [false, true]) {
-      const arena = createArena(map)
+      const arena = createArena(island)
       arena.mirror = mirror
       takeSeat(arena, 0, 'sportsCar')
       const [spider] = arena.spiders
@@ -173,7 +185,7 @@ describe('the robots and the saucers', () => {
   })
 
   it('a spider takes a rocket as the robots do, and once brought down comes back whole somewhere else', () => {
-    const arena = createArena(map)
+    const arena = createArena(island)
     takeSeat(arena, 0, 'sportsCar')
     advance(arena)
     const [spider] = arena.spiders
@@ -190,4 +202,20 @@ describe('the robots and the saucers', () => {
     expect(Math.hypot(spider!.position.x - before.x, spider!.position.z - before.z)).toBeGreaterThan(20)
     arena.world.free()
   })
+
+  it('a spider keeps out of the cities', () => {
+    const arena = createArena(island)
+    const [spider] = arena.spiders
+    expect(island.districts.length).toBeGreaterThan(0)
+    let nearest = Infinity
+    for (let i = 0; i < 60 * 60 * 10; i++) {
+      advance(arena)
+      if (i % 30 !== 0) continue
+      for (const city of island.districts) {
+        nearest = Math.min(nearest, Math.hypot(spider!.position.x - city.cx, spider!.position.z - city.cz) - city.radius - city.suburbWidth)
+      }
+    }
+    expect(nearest).toBeGreaterThan(0)
+    arena.world.free()
+  }, 120_000)
 })

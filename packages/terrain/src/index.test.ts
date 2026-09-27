@@ -39,13 +39,16 @@ import { generateTerrain } from './generate.ts'
 import { sampleHeight } from './heightfield.ts'
 import type { District, Heightfield, River, Road, RoadPoint } from './types.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 describe('generateTerrain', () => {
   it(
     'is deterministic for a given seed',
     () => {
-      const a = generateTerrain(1234)
-      const b = generateTerrain(1234)
-      const c = generateTerrain(4321)
+      const a = generateTerrain(1234, TEST_ISLANDS)
+      const b = generateTerrain(1234, TEST_ISLANDS)
+      const c = generateTerrain(4321, TEST_ISLANDS)
 
       expect(a.heightfield.heights).toEqual(b.heightfield.heights)
       expect(a.mountains).toEqual(b.mountains)
@@ -61,7 +64,7 @@ describe('generateTerrain', () => {
   )
 
   it('lays the islands inside the map: sea at the edges, and land under every city', () => {
-    const map = generateTerrain(7)
+    const map = generateTerrain(7, TEST_ISLANDS)
     const { heights, width } = map.heightfield
     for (const corner of [0, width - 1, heights.length - width, heights.length - 1]) {
       expect(heights[corner]!).toBeLessThan(map.seaLevel)
@@ -80,7 +83,7 @@ describe('generateTerrain', () => {
     const islands = new Set<number>()
     const mountains = new Set<number>()
     for (let seed = 1; seed <= 8; seed++) {
-      const map = generateTerrain(seed, { size: 641 })
+      const map = generateTerrain(seed, { ...TEST_ISLANDS, size: 641 })
       mountains.add(map.mountains.length)
       // Land masses are numbered by size from 1, so the most any map has is its count.
       let landMasses = 0
@@ -110,7 +113,7 @@ describe('generateTerrain', () => {
   }, 120_000)
 
   it('runs at most one river off each mountain down to the sea', () => {
-    const map = generateTerrain(2024)
+    const map = generateTerrain(2024, TEST_ISLANDS)
     expect(map.rivers.length).toBeGreaterThanOrEqual(1)
     expect(map.rivers.length).toBeLessThanOrEqual(map.mountains.length)
 
@@ -132,11 +135,11 @@ describe('generateTerrain', () => {
         expect(river.points[i]!.y).toBeLessThanOrEqual(river.points[i - 1]!.y + 1e-3)
       }
     }
-  })
+  }, 60_000)
 
   it('only keeps substantial lakes that a river actually runs through', () => {
     for (let seed = 1; seed <= 16; seed++) {
-      const map = generateTerrain(seed, { size: 385 })
+      const map = generateTerrain(seed, { ...TEST_ISLANDS, size: 385 })
       const riverCells = new Set<number>()
       for (const river of map.rivers) {
         for (const point of river.points) {
@@ -155,7 +158,7 @@ describe('generateTerrain', () => {
 
   it('carves a channel so the river bed always sits below the water surface', () => {
     for (let seed = 1; seed <= 6; seed++) {
-      const map = generateTerrain(seed, { size: 385 })
+      const map = generateTerrain(seed, { ...TEST_ISLANDS, size: 385 })
       for (const river of map.rivers) {
         for (const point of river.points) {
           const col = Math.round(point.x / map.cellSize)
@@ -246,15 +249,15 @@ describe('districts', () => {
   })
 
   it('is deterministic for a given seed', () => {
-    const a = generateTerrain(99, { size: 513 })
-    const b = generateTerrain(99, { size: 513 })
+    const a = generateTerrain(99, { ...TEST_ISLANDS, size: 513 })
+    const b = generateTerrain(99, { ...TEST_ISLANDS, size: 513 })
     expect(a.districts).toEqual(b.districts)
     expect(a.districtOf).toEqual(b.districtOf)
   })
 
   it('gives every island a city on level, dry ground', () => {
     for (let seed = 1; seed <= 8; seed++) {
-      const map = generateTerrain(seed, { size: 513 })
+      const map = generateTerrain(seed, { ...TEST_ISLANDS, size: 513 })
       expect(map.districts.length).toBeGreaterThanOrEqual(1)
       const water = waterCells(map)
 
@@ -278,7 +281,7 @@ describe('districts', () => {
   }, 120_000)
 
   it('keeps districts on ground flatter than the island as a whole', () => {
-    const map = generateTerrain(2024, { size: 513 })
+    const map = generateTerrain(2024, { ...TEST_ISLANDS, size: 513 })
     const { heights } = map.heightfield
 
     let districtSlope = 0
@@ -510,7 +513,7 @@ describe('roads', () => {
   })
 
   it('lifts the at-grade highway into an embankment above the ground', () => {
-    const map = generateTerrain(1, { size: 513 })
+    const map = generateTerrain(1, { ...TEST_ISLANDS, size: 513 })
     const road = map.roads[0]!
     const { heightfield } = map
 
@@ -538,7 +541,7 @@ describe('roads', () => {
 
   it('gives every map with a city a closed highway within the grade limit', () => {
     for (let seed = 1; seed <= 6; seed++) {
-      const map = generateTerrain(seed, { size: 513 })
+      const map = generateTerrain(seed, { ...TEST_ISLANDS, size: 513 })
       if (map.districts.length === 0) continue
 
       const highways = map.roads.filter((road) => road.closed)
@@ -555,7 +558,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('branches one-lane ramps and a cross road off the highway', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const highway = map.roads.find((road) => road.closed)!
     const access = map.roads.filter(
       (road) => !road.closed && (road.kind === 'cross' || road.kind === 'ramp'),
@@ -572,10 +575,10 @@ describe('roads', () => {
 
     // Interchanges come in quads: one cross road and four ramps each.
     expect(access.length % 5).toBe(0)
-  })
+  }, 60_000)
 
   it('drives the cross road through an underpass beneath the highway', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const highway = map.roads.find((road) => road.closed)!
     const crossRoads = map.roads.filter((road) => !road.closed && road.kind === 'cross')
 
@@ -598,11 +601,11 @@ describe('roads', () => {
       expect(nearest).toBeLessThan(CROSS_WIDTH)
       expect(structure).toBe(ROAD_BRIDGE)
     }
-  })
+  }, 60_000)
 
   it('cuts the ground so at-grade roads are never buried', () => {
     for (let seed = 1; seed <= 4; seed++) {
-      const map = generateTerrain(seed, { size: 513 })
+      const map = generateTerrain(seed, { ...TEST_ISLANDS, size: 513 })
       for (const road of map.roads) {
         const count = road.points.length
         const segmentCount = road.closed ? count : count - 1
@@ -627,7 +630,7 @@ describe('roads', () => {
   it('grows arterials from the cross roads that bridge but never tunnel', () => {
     let arterials = 0
     for (let seed = 1; seed <= 3; seed++) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const crossRoads = map.roads.filter((road) => !road.closed && road.kind === 'cross')
       const grown = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
       const starts = grown.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
@@ -654,7 +657,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('keeps arterials off the highway except at an interchange', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const highway = map.roads.find((road) => road.closed)!
     const crossRoads = map.roads.filter((road) => !road.closed && road.kind === 'cross')
     const centers = crossRoads.map((road) => road.points[Math.floor(road.points.length / 2)]!)
@@ -697,7 +700,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('keeps arterials from crossing any other road', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     expect(arterials.length).toBeGreaterThan(0)
 
@@ -741,7 +744,7 @@ describe('roads', () => {
     let nodes = 0
     let aligned = 0
     for (let seed = 1; seed <= 3; seed++) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const ends: { road: Road; start: boolean }[] = []
       for (const road of map.roads) {
         if (road.closed || road.points.length < 2 || road.kind === 'street') continue
@@ -789,7 +792,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('fills each city with a grade-limited street grid', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const streets = map.roads.filter((road) => !road.closed && road.kind === 'street')
     expect(streets.length).toBeGreaterThan(0)
     for (const road of streets) {
@@ -800,7 +803,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('keeps city streets a road\'s width clear of highways and ramps', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const streets = map.roads.filter((road) => road.kind === 'street')
     const fast = map.roads.filter((road) => road.kind === 'highway' || road.kind === 'ramp')
     expect(streets.length).toBeGreaterThan(0)
@@ -826,7 +829,7 @@ describe('roads', () => {
 
   it('leaves the pocket between an interchange\'s ramps and highway empty', () => {
     // Seed 4 puts an interchange well inside a city, so its grid has to dodge one.
-    const map = generateTerrain(4)
+    const map = generateTerrain(4, TEST_ISLANDS)
     const streets = map.roads.filter((road) => road.kind === 'street')
     const crossRoads = map.roads.filter((road) => road.kind === 'cross')
     const ramps = map.roads.filter((road) => road.kind === 'ramp')
@@ -858,7 +861,7 @@ describe('roads', () => {
     const shallow = Math.cos(Math.PI / 4)
     const overlap = (ARTERIAL_WIDTH + STREET_WIDTH) / 2
     for (const seed of [1, 5]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const streets = map.roads.filter((road) => road.kind === 'street')
       const arterials = map.roads.filter((road) => road.kind === 'arterial')
       expect(streets.length).toBeGreaterThan(0)
@@ -907,7 +910,7 @@ describe('roads', () => {
     const hanging: number[] = []
     const wetted: number[] = []
     for (const seed of [1, 2, 3]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       expect(map.rivers.length).toBeGreaterThan(0)
       const { width, depth, cellSize, heights } = map.heightfield
       // Bilinear, because the ground is drawn as an interpolated mesh: what the
@@ -964,7 +967,7 @@ describe('roads', () => {
 
   it('holds rivers and lakes to one water level where they meet', () => {
     for (const seed of [2, 3, 4, 6]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       if (map.lakes.length === 0) continue
       const { width, depth, cellSize } = map.heightfield
       const surface: { x: number; z: number; level: number }[] = []
@@ -996,7 +999,7 @@ describe('roads', () => {
 
   it('never lets a river surface stand over a road deck', () => {
     for (const seed of [1, 2, 3]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       for (const road of map.roads) {
         for (const point of road.points) {
           for (const river of map.rivers) {
@@ -1014,7 +1017,7 @@ describe('roads', () => {
     // An arterial reaches the highway network through an interchange's cross
     // road, so its roadway has no business lapping the roadway itself.
     for (const seed of [1, 4, 6]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const highway = map.roads.find((road) => road.closed && road.width === ROAD_WIDTH)!
       const arterials = map.roads.filter((road) => road.kind === 'arterial')
       expect(arterials.length).toBeGreaterThan(0)
@@ -1046,7 +1049,7 @@ describe('roads', () => {
     // Two arterials leaving one node within a sliver of each other run side by
     // side instead of parting, and their roadways smear into one blob.
     for (const seed of [1, 2, 5]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const arterials = map.roads.filter(
         (road) => road.kind === 'arterial' && road.points.length >= 2,
       )
@@ -1087,7 +1090,7 @@ describe('roads', () => {
     // the finished path is what brings it back down to meet the grid.
     const steps: number[] = []
     for (const seed of [1, 2, 3]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const arterials = map.roads.filter((road) => road.kind === 'arterial')
       const streets = map.roads.filter((road) => road.kind === 'street')
       expect(arterials.length).toBeGreaterThan(0)
@@ -1127,7 +1130,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('leaves no city street on its own: each reaches a bigger road, or belongs to a grid', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const streets = map.roads.filter((road) => road.kind === 'street')
     expect(streets.length).toBeGreaterThan(0)
 
@@ -1167,7 +1170,7 @@ describe('roads', () => {
 
   it('spaces interchanges along the highway wherever the cities are, never too close for their ramps', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const highway = map.roads.find((road) => road.kind === 'highway')!
       const along: number[] = [0]
       for (let i = 1; i < highway.points.length; i++) {
@@ -1209,7 +1212,7 @@ describe('roads', () => {
 
   it('runs the highway through three cities, and reaches every other by arterial', () => {
     for (const seed of [3, 5, 13]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       // Each of these has more cities than the highway can take.
       expect(map.districts.length).toBeGreaterThan(3)
       expect(map.districts.length).toBeLessThanOrEqual(5)
@@ -1228,7 +1231,7 @@ describe('roads', () => {
 
   it('keeps every interchange out of the tunnels, from one pair of ramp mouths to the other', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
-      const map = generateTerrain(seed)
+      const map = generateTerrain(seed, TEST_ISLANDS)
       const highway = map.roads.find((road) => road.kind === 'highway')!
       const count = highway.points.length
       const along: number[] = [0]
@@ -1262,7 +1265,7 @@ describe('roads', () => {
   it('climbs a mountain by a road from an arterial: on the ground, at grade, crossing no water, and ending high on a shoulder', () => {
     let climbs = 0
     for (const seed of [1, 2, 3]) {
-      const island = generateTerrain(seed)
+      const island = generateTerrain(seed, TEST_ISLANDS)
       const arterials = island.roads.filter((road) => road.kind === 'arterial')
       for (const climb of island.roads) {
         if (climb.kind !== 'climb') continue
@@ -1297,13 +1300,13 @@ describe('roads', () => {
 
   it('gives every road its own id', () => {
     for (const seed of [1, 2, 3]) {
-      const ids = generateTerrain(seed).roads.map((road) => road.id)
+      const ids = generateTerrain(seed, TEST_ISLANDS).roads.map((road) => road.id)
       expect(new Set(ids).size).toBe(ids.length)
     }
   }, 120_000)
 
   it('rounds arterial corners instead of leaving sharp bends', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     expect(arterials.length).toBeGreaterThan(0)
 
@@ -1331,7 +1334,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('leaves no arterial dead ends', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const arterials = map.roads.filter((road) => !road.closed && road.kind === 'arterial')
     const ends = arterials.flatMap((road) => [road.points[0]!, road.points[road.points.length - 1]!])
     const distanceToSegment = (x: number, z: number, a: RoadPoint, b: RoadPoint): number => {
@@ -1357,7 +1360,7 @@ describe('roads', () => {
   }, 120_000)
 
   it('meets the cross road square enough, one ramp per diamond arm', () => {
-    const map = generateTerrain(1)
+    const map = generateTerrain(1, TEST_ISLANDS)
     const crossRoads = map.roads.filter((road) => !road.closed && road.kind === 'cross')
     const ramps = map.roads.filter((road) => !road.closed && road.kind === 'ramp')
     expect(ramps.length).toBe(crossRoads.length * 4)

@@ -2562,75 +2562,16 @@ const CAR_WIDTH = 2
 const CAR_BODY_HEIGHT = 0.7
 const CAR_WHEEL_RADIUS = 0.45
 
-/** A small blocky car, origin at the contact patch, nose toward local +Z. */
-function buildCar(): THREE.Group {
-  const car = new THREE.Group()
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color: '#c0392b', roughness: 0.35, metalness: 0.25 })
-  const wheelMaterial = new THREE.MeshStandardMaterial({ color: '#181818', roughness: 0.85 })
-
-  const body = new THREE.Mesh(new THREE.BoxGeometry(CAR_WIDTH, CAR_BODY_HEIGHT, CAR_LENGTH), bodyMaterial)
-  body.position.y = CAR_WHEEL_RADIUS + CAR_BODY_HEIGHT / 2
-  car.add(body)
-
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 2), bodyMaterial)
-  cabin.position.set(0, CAR_WHEEL_RADIUS + CAR_BODY_HEIGHT + 0.3, -0.2)
-  car.add(cabin)
-
-  const wheelGeometry = new THREE.CylinderGeometry(CAR_WHEEL_RADIUS, CAR_WHEEL_RADIUS, 0.4, 12)
-  for (const [x, z] of [
-    [-1.0, 1.4],
-    [1.0, 1.4],
-    [-1.0, -1.4],
-    [1.0, -1.4],
-  ] as const) {
-    const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial)
-    wheel.rotation.z = Math.PI / 2
-    wheel.position.set(x, CAR_WHEEL_RADIUS, z)
-    car.add(wheel)
-  }
-
-  return car
-}
-
-/**
- * A single car parked on the highway (or the first city, or the map center) so
- * the size of roads, cities and features can be judged at a glance. Given a
- * car to park, in the chassis frame (its front toward -Z, its wheels below
- * its origin), that one is parked, facing along the road.
- */
-export function createScaleCar(map: TerrainMap, passenger: THREE.Object3D = buildCar()): THREE.Group {
-  const car = new THREE.Group()
-  car.add(passenger)
-  const road = map.roads[0]
-
-  if (road && road.points.length > 1) {
-    // A quarter of the way along, and the point after: both within the road, whose length was just checked.
-    const index = Math.floor(road.points.length * 0.25)
-    const point = road.points[index]!
-    const next = road.points[(index + 1) % road.points.length]!
-    car.position.set(point.x, point.y + roadLift(road), point.z)
-    car.rotation.y = Math.atan2(-(next.x - point.x), -(next.z - point.z))
-    return car
-  }
-
-  const district = map.districts[0]
-  const x = district?.cx ?? (map.size * map.cellSize) / 2
-  const z = district?.cz ?? (map.size * map.cellSize) / 2
-  const ground = heightAt(map.heightfield, Math.floor(x / map.cellSize), Math.floor(z / map.cellSize))
-  car.position.set(x, ground, z)
-  return car
-}
-
-/**
- * The visual layer for a generated map. Pure presentation: it reads the data
- * layer and builds geometry, and knows nothing about physics or simulation.
- */
 /** Move the boats of a terrain view to where they are this many seconds into the game. */
 export function moveBoats(view: THREE.Object3D, seconds: number): void {
   const fleet = view.getObjectByName('boats')
   ;(fleet?.userData.move as ((seconds: number) => void) | undefined)?.(seconds)
 }
 
+/**
+ * The visual layer for a generated map. Pure presentation: it reads the data
+ * layer and builds geometry, and knows nothing about physics or simulation.
+ */
 export function createTerrainView(map: TerrainMap): THREE.Group {
   const group = new THREE.Group()
   const worldSize = map.size * map.cellSize

@@ -16,6 +16,7 @@ import {
   type Arena,
   type Seat,
   type VehicleInput,
+  NO_TARGET,
 } from '@buggies/game'
 import { InputTimeline } from './input-timeline.ts'
 import {
@@ -49,6 +50,9 @@ import {
   encodeWelcome,
   isRespawn,
   isRoomsRequest,
+  decodePeekRequest,
+  encodePeek,
+  type IslandMark,
   messageTypeOf,
   withAck,
 } from './wire.ts'
@@ -176,6 +180,21 @@ export class GameServer implements TransportHandlers {
   }
 
   /** The islands with the most people on them, busiest first, and the lower seed among equals. */
+  /** Where everyone and everything is on an island: nothing, if nobody is on it. */
+  peek(seed: number): IslandMark[] {
+    const room = this.rooms.get(seed)
+    if (room === undefined) return []
+    const { arena } = room
+    const marks: IslandMark[] = []
+    for (const seat of arena.seats) {
+      if (seat.occupied) marks.push({ kind: seat.npc ? 'npc' : 'player', seat: seat.id, position: { ...seat.vehicle.frame.position } })
+    }
+    for (const robot of arena.robots) marks.push({ kind: 'robot', seat: NO_TARGET, position: { ...robot.position } })
+    for (const ufo of arena.ufos) marks.push({ kind: 'ufo', seat: NO_TARGET, position: { ...ufo.position } })
+    for (const spider of arena.spiders) marks.push({ kind: 'spider', seat: NO_TARGET, position: { ...spider.position } })
+    return marks
+  }
+
   popularRooms(limit = ROOMS_LISTED): RoomSummary[] {
     return [...this.rooms.values()]
       .map((room) => ({ seed: room.seed, players: room.players.size }))
@@ -363,6 +382,14 @@ export class GameServer implements TransportHandlers {
 
   private completeHandshake(connection: TransportConnection, payload: Uint8Array): void {
     // Someone only asking which islands are busy is told, and let go.
+    // Or where everything is on one island.
+    const peeked = decodePeekRequest(payload)
+    if (peeked !== null) {
+      this.handshaking.delete(connection.id)
+      connection.send(encodePeek(this.peek(peeked)))
+      connection.close('peeked')
+      return
+    }
     if (isRoomsRequest(payload)) {
       this.handshaking.delete(connection.id)
       connection.send(encodeRooms(this.popularRooms()))

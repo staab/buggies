@@ -156,9 +156,24 @@ export function railRuns(roads: Road[]): RailRun[] {
     const segmentCount = road.closed ? count : count - 1
     const half = road.width / 2
     const lift = roadLift(road)
-    // The roads that end on this one, their ends on its deck.
+    // The roads that end on this one, their ends on its deck: only a surface road's bridges are railed, so only those look.
+    const bridged = isSurfaceRoad(road) && road.structure.includes(ROAD_BRIDGE)
+    let minX = Infinity
+    let maxX = -Infinity
+    let minZ = Infinity
+    let maxZ = -Infinity
+    if (bridged) {
+      for (const point of road.points) {
+        minX = Math.min(minX, point.x)
+        maxX = Math.max(maxX, point.x)
+        minZ = Math.min(minZ, point.z)
+        maxZ = Math.max(maxZ, point.z)
+      }
+    }
     const joining = junctions.filter((junction) => {
-      if (junction.road === road) return false
+      if (!bridged || junction.road === road) return false
+      const { x, z } = junction.end
+      if (x < minX - half - 1 || x > maxX + half + 1 || z < minZ - half - 1 || z > maxZ + half + 1) return false
       for (let i = 0; i < segmentCount; i++) {
         if (beside(junction.end.x, junction.end.z, road.points[i]!, road.points[(i + 1) % count]!).distance <= half + 1) return true
       }

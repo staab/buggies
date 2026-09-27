@@ -12,12 +12,15 @@ import {
   takeSeat,
 } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 describe('flying saucers', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { size: 513 })
+    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
   }, 60_000)
 
   it('cruise high over the island, then come down over a car, lift it up the beam and set it down somewhere else', () => {

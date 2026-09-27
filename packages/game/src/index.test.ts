@@ -31,6 +31,9 @@ import {
   type VehicleSpawn,
 } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 const FLAT_OUT: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
 
 let map: TerrainMap
@@ -62,7 +65,7 @@ function run(arena: Arena, input: VehicleInput, seconds: number): void {
 describe('game', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(7, { size: 513 })
+    map = generateTerrain(7, { ...TEST_ISLANDS, size: 513 })
     SPAWN = findSpawns(map, 1)[0]!
   }, 60_000)
 
@@ -308,7 +311,7 @@ describe('game', () => {
 
   it('drives through a tunnel instead of dropping into the hill', () => {
     // Tunnels are rare enough that a cut-down island may have none.
-    const island = generateTerrain(3)
+    const island = generateTerrain(3, TEST_ISLANDS)
     const bores = tunnelSegments(island.roads)
     expect(bores.length).toBeGreaterThan(10)
 

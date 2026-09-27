@@ -3,13 +3,16 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT, advance, createArena, initPhysics, putPropBack, takeSeat, type VehicleInput } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 const DRIVE: VehicleInput = { ...NEUTRAL_INPUT, throttle: 1 }
 
 describe('the props', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(3)
+    map = generateTerrain(3, TEST_ISLANDS)
   }, 60_000)
 
   it('stand where the map has them, and come to rest and sleep', () => {

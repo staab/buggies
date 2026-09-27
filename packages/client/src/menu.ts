@@ -29,6 +29,8 @@ export interface MenuHost {
   showIsland(seed: number): Promise<string>
   /** Which islands have people on them, busiest first; none if the server cannot say. */
   listRooms(): Promise<RoomSummary[]>
+  /** Show who and what is on the island with this seed, behind the panel, as the server has them now. */
+  peekIsland(seed: number): Promise<void>
   /** Put this vehicle behind the panel, turning on the spot. */
   showVehicle(vehicle: VehicleProfileId): void
   /** Set off. */
@@ -50,6 +52,8 @@ const MODE_NOTES: Record<Mode, { name: string; note: string }> = {
 export const POPULAR_ISLANDS = 4
 /** How often the islands are asked after while the island page is up, so the count on the chosen one stays fresh. */
 const ROOMS_REFRESH_MS = 5000
+/** How often the island behind the panel is shown who is on it. */
+const PEEK_REFRESH_MS = 1500
 
 const STEP_NAMES: Record<Step, string> = {
   mode: 'Players',
@@ -70,6 +74,7 @@ const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
   semi: 'The tractor, bobtail. Slow to turn, slower to stop.',
   goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
   duneBuggy: 'Light and springy. Bounds over everything, and keeps bouncing.',
+  amphibian: 'A boat on wheels. Slow on the road, but drive it into the sea and it floats.',
   rocketShip: 'Hovers, flies, and outruns everything. Turns like a barge.',
 }
 
@@ -157,6 +162,7 @@ export class Menu {
   /** The islands with people on them, as last heard from the server. */
   private rooms: RoomSummary[] = []
   private watching: ReturnType<typeof setInterval> | null = null
+  private peeking: ReturnType<typeof setInterval> | null = null
   private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
   private readonly vehicleButtons = new Map<VehicleProfileId, HTMLButtonElement>()
   private readonly pages: Record<Step, HTMLElement>
@@ -294,10 +300,13 @@ export class Menu {
   private watchRooms(on: boolean): void {
     if (!on && this.watching !== null) {
       clearInterval(this.watching)
+      clearInterval(this.peeking ?? undefined)
       this.watching = null
+      this.peeking = null
     }
     if (on && this.watching === null) {
       this.watching = setInterval(() => void this.listPopular(), ROOMS_REFRESH_MS)
+      this.peeking = setInterval(() => void this.host.peekIsland(this.choice.seed), PEEK_REFRESH_MS)
     }
   }
 
@@ -358,6 +367,7 @@ export class Menu {
     this.generating = false
     if (this.step === 'map') this.notice(about)
     this.render()
+    void this.host.peekIsland(seed)
   }
 
   /** Ask which islands have people on them, offer the busiest few, and say how many are on the one chosen; the cards go when there are none. */
