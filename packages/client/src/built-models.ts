@@ -144,3 +144,54 @@ export function buildRocketShip(tuning: VehicleTuning): THREE.Group {
   group.add(ground)
   return group
 }
+
+/**
+ * An amphibian: a boat's hull, a bow raked up at the front and a flat
+ * transom behind, with a gunwale round it, a windscreen and a low cabin,
+ * and four wheels half tucked into wells in its sides.
+ */
+export function buildAmphibian(tuning: VehicleTuning): THREE.Group {
+  const group = new THREE.Group()
+  const w = tuning.chassisHalfWidth
+  const l = tuning.chassisHalfLength
+  const h = tuning.chassisHalfHeight
+  const r = tuning.wheelRadius
+  const hull = material('#2f8f6a', { metalness: 0.2, roughness: 0.5 })
+  const keel = material('#1f3b33', { roughness: 0.7 })
+  const trim = material('#e8e2cf', { roughness: 0.6 })
+  const glass = material('#9fd8f0', { metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.7 })
+  const rubber = material('#1d1d1d', { roughness: 0.95 })
+  const hub = material('#c9ccd1', { metalness: 0.7, roughness: 0.3 })
+
+  const floor = r * 0.7
+  // The hull: a box for the body, and the bow as a wedge raked up ahead of it.
+  group.add(box([w * 2, h * 1.4, l * 1.4], [0, floor + h * 0.7, -l * 0.3], hull))
+  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, w, l * 0.6, 4, 1).rotateY(Math.PI / 4).rotateX(-Math.PI / 2).scale(1, h * 1.4 / w / 1.42, 1), hull)
+  bow.position.set(0, floor + h * 0.75, l * 0.7)
+  group.add(bow)
+  group.add(box([w * 1.9, 0.12, l * 1.6], [0, floor + 0.06, -l * 0.15], keel))
+  // The gunwale round the top, the windscreen and the cabin roof.
+  group.add(box([w * 2.04, 0.1, l * 1.4], [0, floor + h * 1.42, -l * 0.3], trim))
+  const screen = box([w * 1.7, 0.6, 0.06], [0, floor + h * 1.4 + 0.3, l * 0.2], glass)
+  screen.rotation.x = -0.35
+  group.add(screen)
+  group.add(box([w * 1.5, 0.08, l * 0.5], [0, floor + h * 1.4 + 0.75, -l * 0.1], trim))
+  for (const side of [-1, 1]) group.add(box([0.06, 0.75, 0.06], [side * w * 0.72, floor + h * 1.4 + 0.37, -l * 0.3], trim))
+
+  // Four wheels, on the axles, half in their wells.
+  const tire = new THREE.CylinderGeometry(r, r, 0.36, 20).rotateZ(Math.PI / 2)
+  const rim = new THREE.CylinderGeometry(r * 0.5, r * 0.5, 0.38, 12).rotateZ(Math.PI / 2)
+  for (const [name, x, z] of [
+    ['wheel-front-left', 1, -tuning.frontAxleZ],
+    ['wheel-front-right', -1, -tuning.frontAxleZ],
+    ['wheel-back-left', 1, -tuning.rearAxleZ],
+    ['wheel-back-right', -1, -tuning.rearAxleZ],
+  ] as const) {
+    const wheel = new THREE.Group()
+    wheel.name = name
+    wheel.position.set(x * tuning.halfTrackWidth, r, z)
+    wheel.add(new THREE.Mesh(tire, rubber), new THREE.Mesh(rim, hub))
+    group.add(wheel)
+  }
+  return group
+}

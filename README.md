@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car and machine on the island, as the server has them, in the colors of the map. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
 
 The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
@@ -43,7 +43,7 @@ A flying saucer cruises high over every island, shown in green on the mini-map. 
 
 ## Spider
 
-A giant spider, its body ten meters up on legs nearly twenty meters long, walks slowly across every island from one spot on the land to the next, high enough for a car to drive under it between its legs. Every thirty seconds a bomb falls from its belly. It is shown in purple on the mini-map, and can be shot down as a robot can, coming back somewhere else.
+A giant spider, its body ten meters up on legs nearly twenty meters long, walks slowly across every island from one spot on the land to the next, keeping out of the cities, high enough for a car to drive under it between its legs. Every thirty seconds a bomb falls from its belly. It is shown in purple on the mini-map, and can be shot down as a robot can, coming back somewhere else.
 
 ## Traffic
 
@@ -95,6 +95,7 @@ Each vehicle has its own armor, which sets how much it takes from crashes and we
 - **Heavy pickup** drops a bomb behind with the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
 - **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets. It fires three rockets in a fan, as the triple rocket power-up does, every thirty seconds.
 - **Rocket ship** has no wheels: it hovers on thrusters, is faster than the race car, and turns wide. Holding its key lifts it off to fly, with the pedals driving it along and the steering banking it into turns, as the wings power-up does.
+- **Amphibian** is a boat's hull on four wheels: slow on the road, but it floats, and in the water its throttle and steering drive it like a boat. It is never put back on shore. Its own key burns the car ahead with a laser while held, with the bite of the laser power-up, so it is never given the laser.
 - **Police car, ambulance and fire truck** turn their lights on or off. While the lights are on, every car within 30 meters is slowed by half. As a passive ability, none of them is slowed by sirens or lights. The ambulance also repairs 1% of its health every five seconds, the fire truck takes a tenth of the damage from bombs, and the police car takes half damage from machine guns.
 
 ## Docker
@@ -157,4 +158,4 @@ The tests cover terrain, driving, the wire format, and a full session with two p
 
 ## Credits
 
-The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a [tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a [cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). The dune buggy and the rocket ship are built in code. See `CREDITS.md`.
+The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a [tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a [cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). The dune buggy, the rocket ship and the amphibian are built in code. See `CREDITS.md`.

@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 29
+export const PROTOCOL_VERSION = 30
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND
@@ -29,11 +29,14 @@ export const CLIENT_ROOMS = 0x04
 export const CLIENT_CHANGE_VEHICLE = 0x05
 /** A goal to play for, or none: free play again. */
 export const CLIENT_GOAL = 0x06
+/** Instead of a hello: where everyone and everything is on one island. The answer ends the connection. */
+export const CLIENT_PEEK = 0x07
 
 export const SERVER_WELCOME = 0x81
 export const SERVER_REJECT = 0x82
 export const SERVER_SNAPSHOT = 0x83
 export const SERVER_ROOMS = 0x84
+export const SERVER_PEEK = 0x85
 
 /** How many islands the server tells of: every one with anyone on it, up to what the wire counts in a byte. */
 export const ROOMS_LISTED = 255

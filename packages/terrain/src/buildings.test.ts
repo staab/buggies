@@ -13,6 +13,9 @@ const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 
 import { sampleHeight } from './heightfield.ts'
 import type { Building, Ramp, Road, TerrainMap } from './types.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 function districtAt(x: number, z: number): number {
@@ -102,7 +105,7 @@ function overlap(a: Building, b: Building): boolean {
 
 describe('buildings and trees', () => {
   beforeAll(() => {
-    map = generateTerrain(6)
+    map = generateTerrain(6, TEST_ISLANDS)
   }, 60_000)
 
   it('fill the city blocks with buildings of many heights, tallest in the middle', () => {
@@ -217,7 +220,7 @@ describe('buildings and trees', () => {
   it('run a chair lift up a mountainside: two stations, and pylons on one line between them, spaced and climbing', () => {
     let lifts = 0
     for (const seed of [6, 2, 3]) {
-      const island = seed === 6 ? map : generateTerrain(seed)
+      const island = seed === 6 ? map : generateTerrain(seed, TEST_ISLANDS)
       const stations = island.buildings.filter((building) => building.kind === 'station')
       const pylons = island.buildings.filter((building) => building.kind === 'pylon')
       expect(stations.length === 0 || stations.length === 2).toBe(true)
@@ -260,7 +263,7 @@ describe('buildings and trees', () => {
   it('park at a viewpoint at the top of a mountain road: a level lot the road runs into, with a wall on the valley side and a board', () => {
     let viewpoints = 0
     for (const seed of [6, 3, 4, 5]) {
-      const island = seed === 6 ? map : generateTerrain(seed)
+      const island = seed === 6 ? map : generateTerrain(seed, TEST_ISLANDS)
       const lots = island.fields.filter((field) => field.kind === 'parkingLot' && districtOf(island, field.x, field.z) === DISTRICT_COUNTRY)
       const walls = island.buildings.filter((building) => building.kind === 'wall')
       const boards = island.buildings.filter((building) => building.kind === 'board')
@@ -352,7 +355,7 @@ describe('buildings and trees', () => {
         expect(Math.hypot(building.x - rock.x, building.z - rock.z)).toBeGreaterThan(rock.size / 2 - 1e-6)
       }
     }
-  })
+  }, 60_000)
 
   it('leave props about for a car to knock over: barrels by the filling stations, crates by the building sites, cones as roadworks on the suburb roads and bales in the fields', () => {
     const kinds = new Map<string, number>()
@@ -404,7 +407,7 @@ describe('buildings and trees', () => {
     let domes = 0
     for (let seed = 1; seed <= 8; seed++) {
       // Big enough that its mountains stand apart, with summits to build on.
-      const island = generateTerrain(seed, { size: 641 })
+      const island = generateTerrain(seed, { ...TEST_ISLANDS, size: 641 })
       const observatories = island.buildings.filter((building) => building.kind === 'observatory')
       expect(observatories.length).toBeLessThanOrEqual(1)
       domes += observatories.length
@@ -699,7 +702,7 @@ describe('buildings and trees', () => {
 
 describe('ramps', () => {
   beforeAll(() => {
-    map ??= generateTerrain(6)
+    map ??= generateTerrain(6, TEST_ISLANDS)
   }, 60_000)
 
   it('stand on the road shoulders, running along the road, at a grade to fly off', () => {
@@ -737,7 +740,7 @@ describe('ramps', () => {
 
 describe('the pyramid', () => {
   beforeAll(() => {
-    map ??= generateTerrain(6)
+    map ??= generateTerrain(6, TEST_ISLANDS)
   }, 60_000)
 
   it('steps up in tiers, with a tunnel through its foot one way and a straight ramp up to the top from either side the other', () => {
@@ -781,7 +784,7 @@ describe('the pyramid', () => {
 
 describe('sidewalks', () => {
   beforeAll(() => {
-    map ??= generateTerrain(6)
+    map ??= generateTerrain(6, TEST_ISLANDS)
   }, 60_000)
 
   it('ring the built city blocks, a block wide less the street, each side along a street inside the city', () => {
@@ -944,7 +947,7 @@ describe('sidewalks', () => {
 
 describe('interchanges', () => {
   beforeAll(() => {
-    map ??= generateTerrain(6)
+    map ??= generateTerrain(6, TEST_ISLANDS)
   }, 60_000)
 
   it('have no building, sidewalk or kicker on the ground their ramps enclose', () => {

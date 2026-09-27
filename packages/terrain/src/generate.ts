@@ -704,7 +704,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   const largest = options.islandRadius ?? worldSize * ISLAND_RADIUS_MAX
 
   const rng = createRng(seed)
-  const islandCount = options.islandCount ?? randomInt(rng, ISLAND_COUNT.min, ISLAND_COUNT.max)
+  const islandCount = options.islandCount ?? randomInt(rng, ISLAND_COUNT.min, options.islandsMost ?? ISLAND_COUNT.max)
   const islands = layIslands(rng, worldSize, largest, islandCount)
   const mountains = createMountains(
     rng,

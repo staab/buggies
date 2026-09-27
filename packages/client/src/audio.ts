@@ -33,6 +33,7 @@ export const ENGINE_TIMBRES: Readonly<Record<VehicleProfileId, EngineTimbre>> = 
   goKart: { wave: 'square', idle: 120, span: 620, cutoff: 3200, volume: 0.28, chug: 0, chugRate: 0 },
   duneBuggy: { wave: 'sawtooth', idle: 70, span: 320, cutoff: 1500, volume: 0.32, chug: 0.2, chugRate: 16 },
   rocketShip: { wave: 'triangle', idle: 140, span: 700, cutoff: 4200, volume: 0.24, chug: 0, chugRate: 0 },
+  amphibian: { wave: 'square', idle: 38, span: 120, cutoff: 600, volume: 0.38, chug: 0.45, chugRate: 15 },
 })
 
 /** How far away a sound can be heard from at all, in meters. */

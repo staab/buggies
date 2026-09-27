@@ -1029,7 +1029,8 @@ export function isLost(arena: Arena, seat: Seat): boolean {
   const worldSize = arena.map.size * arena.map.cellSize
   return (
     seat.vehicle.wrecked ||
-    seat.submersion > SUNK ||
+    // A hull that floats is where it means to be on the water, however far out.
+    (seat.submersion > SUNK && seat.tuning.hull === undefined) ||
     y < arena.map.seaLevel - ABYSS ||
     x < 0 ||
     z < 0 ||

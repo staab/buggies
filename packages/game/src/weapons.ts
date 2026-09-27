@@ -254,7 +254,7 @@ export const MINES_DEEP = 4
  * besides whatever it carries, and as strong as the power-up it is like.
  * Nothing is mounted over the roof for it, and the HUD makes nothing of it.
  */
-export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'oil' | 'horn' | 'bomb' | 'tripleRocket' | 'fly'
+export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'laser' | 'oil' | 'horn' | 'bomb' | 'tripleRocket' | 'fly'
 export interface OwnAction {
   kind: OwnActionKind
   label: string
@@ -312,6 +312,13 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
     activeTicks: 0,
     cooldownTicks: 0,
   },
+  amphibian: {
+    kind: 'laser',
+    label: 'Laser',
+    about: 'Burns the car ahead while held, with the bite of the laser power-up.',
+    activeTicks: 0,
+    cooldownTicks: 0,
+  },
   smallCar: {
     kind: 'oil',
     label: 'Oil slick',
@@ -335,7 +342,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   },
 }
 /** The actions that go on while the key is held. */
-const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'fly']
+const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'laser', 'fly']
 /** The hop: this much speed straight up, from the ground, which carries the kart a few meters into the air. */
 export const HOP_SPEED = 8
 /** The race car's boost: the rocket engine's push. */
@@ -384,6 +391,7 @@ export const NATURE_NOTES: Readonly<Record<VehicleProfileId, readonly string[]>>
   goKart: [],
   duneBuggy: [],
   rocketShip: ['Hovers over the ground on its thrusters, with no wheels to grip it.'],
+  amphibian: ['Floats, and drives on the water like a boat: it is never taken for lost there.'],
 }
 
 /** Whether a siren or lights slow a vehicle: not an emergency vehicle. */
@@ -646,6 +654,7 @@ export const NATIVE_POWER_UPS: Readonly<Record<VehicleProfileId, readonly Weapon
   goKart: [],
   duneBuggy: ['tripleRocket'],
   rocketShip: ['wings'],
+  amphibian: ['laser'],
 }
 
 /** What a vehicle can win: everything but what it has of its own. */
@@ -976,12 +985,13 @@ function inPlay(seat: Gunner, other: Gunner): boolean {
  * neither, it is trained on nothing.
  */
 function trainGun(arena: Battlefield, seat: Gunner): void {
-  const laser = seat.weapon === 'laser'
-  const carried = seat.weapon === 'machineGun' || laser
-  if (!carried && !(ownAction(seat).kind === 'gun' && acting(seat))) {
+  const carried = seat.weapon === 'machineGun' || seat.weapon === 'laser'
+  const own = ownAction(seat).kind
+  if (!carried && !((own === 'gun' || own === 'laser') && acting(seat))) {
     seat.aimTarget = NO_TARGET
     return
   }
+  const laser = carried ? seat.weapon === 'laser' : own === 'laser'
   muzzlePoint(muzzle, seat, !carried)
   seat.aimTarget = pickOut(arena, seat, muzzle, laser ? LASER_RANGE : MACHINE_GUN_RANGE, MACHINE_GUN_SWEEP_COS)
 }
@@ -1286,6 +1296,9 @@ function act(arena: Battlefield, seat: Gunner, pressed: boolean): void {
       return
     case 'gun':
       if (acting(seat) && arena.tick % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat, OWN_GUN_POWER, true)
+      return
+    case 'laser':
+      if (acting(seat)) shoot(arena, seat, 1, true, 'laser')
       return
     default:
       // The boost and the flight are read off the key as the car is stepped.

@@ -18,6 +18,9 @@ import {
   takeSeat,
 } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 /** How far a point is from the nearest point of any arterial. */
@@ -33,7 +36,7 @@ function offArterials(island: TerrainMap, x: number, z: number): number {
 describe('cars nobody drives', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { size: 513 })
+    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
   }, 60_000)
 
   it('drive slowly along the arterials, staying on the road', () => {

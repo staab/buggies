@@ -24,10 +24,12 @@ import {
   CLIENT_INPUT,
   CLIENT_RESPAWN,
   CLIENT_ROOMS,
+  CLIENT_PEEK,
   NO_TICK,
   PROTOCOL_VERSION,
   SERVER_REJECT,
   SERVER_ROOMS,
+  SERVER_PEEK,
   SERVER_SNAPSHOT,
   SERVER_WELCOME,
   UNACKNOWLEDGED_INPUT_TICK,
@@ -50,6 +52,9 @@ export const GOAL_BYTES = 12
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
+export const PEEK_REQUEST_BYTES = 5
+export const PEEK_HEADER_BYTES = 3
+export const PEEK_MARK_BYTES = 14
 export const SNAPSHOT_HEADER_BYTES = 24
 export const SNAPSHOT_VEHICLE_BYTES = 118
 export const SNAPSHOT_PICKUP_BYTES = 6
@@ -59,7 +64,7 @@ export const SNAPSHOT_ROCKET_BYTES = 31
 export const SNAPSHOT_PROP_BYTES = 54
 export const SNAPSHOT_ROBOT_BYTES = 16
 export const SNAPSHOT_UFO_BYTES = 25
-export const SNAPSHOT_SPIDER_BYTES = 27
+export const SNAPSHOT_SPIDER_BYTES = 35
 
 /** What a goal is, by the byte that says so: none first. */
 const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
@@ -182,6 +187,7 @@ export interface SpiderSnapshot {
   position: Vec3
   heading: number
   legs: number
+  target: { x: number; z: number }
   stride: number
   bombTicks: number
   damage: number
@@ -668,6 +674,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.vec3(spider.position)
     writer.f32(spider.heading)
     writer.u16(spider.legs & 0xffff)
+    writer.f32(spider.target.x)
+    writer.f32(spider.target.z)
     writer.f32(spider.stride)
     writer.u16(Math.min(Math.max(spider.bombTicks, 0), 0xffff))
     writer.u8(Math.round(Math.min(Math.max(spider.damage, 0), 1) * 255))
@@ -894,6 +902,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       position: reader.vec3(),
       heading: reader.f32(),
       legs: reader.u16(),
+      target: { x: reader.f32(), z: reader.f32() },
       stride: reader.f32(),
       bombTicks: reader.u16(),
       damage: reader.u8() / 255,
@@ -915,4 +924,59 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     ufos,
     spiders,
   }
+}
+
+/** Something on an island, for a peek at it from the menu: a car, driven or not, and which seat, or a machine. */
+export interface IslandMark {
+  kind: IslandMarkKind
+  /** The seat of a car, for its color; nothing for a machine. */
+  seat: number
+  position: Vec3
+}
+export type IslandMarkKind = 'player' | 'npc' | 'robot' | 'ufo' | 'spider'
+const MARK_KINDS: readonly IslandMarkKind[] = ['player', 'npc', 'robot', 'ufo', 'spider']
+
+export function encodePeekRequest(seed: number): Uint8Array {
+  const writer = new Writer(PEEK_REQUEST_BYTES)
+  writer.u8(CLIENT_PEEK)
+  writer.u32(seed >>> 0)
+  return writer.bytes
+}
+
+/** The island a peek asks after, or `null` if it is not a peek. */
+export function decodePeekRequest(payload: Uint8Array): number | null {
+  if (payload.length !== PEEK_REQUEST_BYTES || messageTypeOf(payload) !== CLIENT_PEEK) return null
+  const reader = new Reader(payload)
+  reader.u8()
+  return reader.u32()
+}
+
+export function encodePeek(marks: readonly IslandMark[]): Uint8Array {
+  const count = Math.min(marks.length, 0xffff)
+  const writer = new Writer(PEEK_HEADER_BYTES + count * PEEK_MARK_BYTES)
+  writer.u8(SERVER_PEEK)
+  writer.u16(count)
+  for (const mark of marks.slice(0, count)) {
+    writer.u8(MARK_KINDS.indexOf(mark.kind))
+    writer.u8(mark.seat === NO_TARGET ? NOBODY_BYTE : mark.seat)
+    writer.vec3(mark.position)
+  }
+  return writer.bytes
+}
+
+export function decodePeek(payload: Uint8Array): IslandMark[] | null {
+  if (payload.length < PEEK_HEADER_BYTES || messageTypeOf(payload) !== SERVER_PEEK) return null
+  const reader = new Reader(payload)
+  reader.u8()
+  const count = reader.u16()
+  if (payload.length !== PEEK_HEADER_BYTES + count * PEEK_MARK_BYTES) return null
+  const marks: IslandMark[] = []
+  for (let i = 0; i < count; i++) {
+    const kind = MARK_KINDS[reader.u8()]
+    const seat = reader.u8()
+    const position = reader.vec3()
+    if (kind === undefined) return null
+    marks.push({ kind, seat: seat === NOBODY_BYTE ? NO_TARGET : seat, position })
+  }
+  return marks
 }

@@ -108,9 +108,9 @@ export function buildSpider(): { model: THREE.Group; legs: Leg[] } {
 function pose(legs: Leg[], stride: number): void {
   for (const leg of legs) {
     const phase = (stride / (STEP * 2)) * Math.PI * 2 + leg.half * Math.PI
-    // Planted, a foot slides back as the body goes on; lifted, it swings forward for the next.
+    // Lifted, a foot swings forward, toward -Z, for the next step; planted, it slides back as the body goes on, a step's length each half stride.
     foot.copy(leg.rest)
-    foot.z += Math.sin(phase) * STEP
+    foot.z -= Math.sin(phase) * (STEP / 2)
     foot.y = Math.max(Math.cos(phase), 0) * LIFT
     knee.addVectors(leg.hip, foot).multiplyScalar(0.5)
     out.subVectors(foot, leg.hip).setY(0)

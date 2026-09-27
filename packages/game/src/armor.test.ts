@@ -3,12 +3,15 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { DURABILITY, ROCKET_DAMAGE, advance, createArena, harm, initPhysics, takeSeat } from './index.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 describe('armor', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(11, { size: 513 })
+    map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
   }, 60_000)
 
   it('a tougher car takes less of a rocket: the tank least, the sports car the whole of it, the go-kart the most', () => {

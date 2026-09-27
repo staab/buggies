@@ -17,7 +17,7 @@ export {
   rejectLabel,
 } from './protocol.ts'
 export { BananaLedger, type KnownPickup } from './ledger.ts'
-export { fetchRooms } from './rooms.ts'
+export { fetchPeek, fetchRooms } from './rooms.ts'
 export { GameServer, type GameServerEvents, type GameServerStats } from './server.ts'
 export {
   INTERPOLATION_DELAY_MS,
@@ -35,6 +35,8 @@ export {
   decodeSnapshot,
   decodeWelcome,
   encodeSnapshot,
+  type IslandMark,
+  type IslandMarkKind,
   type RocketSnapshot,
   type RoomSummary,
   type SnapshotMessage,

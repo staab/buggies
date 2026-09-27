@@ -122,6 +122,7 @@ function build(refuse: string | null = null) {
       showrooms.push(showroom)
       return showroom
     },
+    peek: async () => [],
     rooms: async (url) => {
       if (refuse !== null) throw new Error(refuse)
       return [{ seed: url.length, players: 3 }]

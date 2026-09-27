@@ -1,3 +1,4 @@
+import type { IslandMark } from '@buggies/net'
 import type { Goal, GoalRequest, VehicleProfileId } from '@buggies/game'
 import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
@@ -34,5 +35,7 @@ export interface ModeView {
   setGoal?(goal: GoalRequest | null): void
   /** Where everything is, for the overview of the island, from the first player on this screen. */
   marks?(): readonly OverviewMark[]
+  /** Show where everyone and everything is on the island being looked over, as the server last said. */
+  showMarks?(marks: readonly IslandMark[]): void
   dispose(): void
 }

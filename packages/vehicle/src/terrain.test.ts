@@ -21,6 +21,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { addHeightfield, addTerrain } from './terrain.ts'
 import { createPhysicsWorld, initPhysics } from './world.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 /** Deliberately not square, and sloping along one axis only, so a transposed
  * heightfield or a swapped scale cannot pass unnoticed. */
 function ramped(width: number, depth: number, cellSize: number): Heightfield {
@@ -106,7 +109,7 @@ describe('terrain colliders', () => {
     beforeAll(() => {
       // One full-size island for both: roads and bridges are what it is for,
       // and a small map has too few of either to say anything.
-      map = generateTerrain(3)
+      map = generateTerrain(3, TEST_ISLANDS)
       world = createPhysicsWorld()
       addTerrain(world, map)
       world.step()
@@ -176,15 +179,17 @@ describe('terrain colliders', () => {
 
     it('stands every building on the map as a solid to drive into, and every tree as a trunk', () => {
       expect(map.buildings.length).toBeGreaterThan(100)
+      // A boat is a body of the game's, which moves it; the ground holds everything else.
+      const standing = map.buildings.filter((building) => building.kind !== 'boat')
       let roofed = 0
-      for (const building of map.buildings) {
+      for (const building of standing) {
         const found = castDown(world, building.x, building.z, building.top + 5)
         if (found === null) continue
         // A standing stone may carry a lintel, a post a canopy, a site a crane and a pyramid's tier the one above, whose top is what is met above it.
         const carried = (building.kind === 'stone' || building.kind === 'post' || building.kind === 'site' || building.kind === 'pyramid') && found > building.top
         if (Math.abs(found - building.top) < 0.01 || carried) roofed++
       }
-      expect(roofed).toBe(map.buildings.length)
+      expect(roofed).toBe(standing.length)
       const trees = map.trees.filter((tree) => tree.kind === 'tree')
       const shrubs = map.trees.filter((tree) => tree.kind === 'shrub')
       expect(trees.length).toBeGreaterThan(50)

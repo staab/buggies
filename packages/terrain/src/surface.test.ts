@@ -14,6 +14,9 @@ import {
 } from './roads.ts'
 import type { TerrainMap } from './types.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 /**
@@ -109,7 +112,7 @@ function kinkAt(island: TerrainMap, cell: number): number {
 
 describe('the ground under the roads', () => {
   beforeAll(() => {
-    map = generateTerrain(1)
+    map = generateTerrain(1, TEST_ISLANDS)
   }, 60_000)
 
   it('keeps the plains flat enough that nothing on them is a jump', () => {

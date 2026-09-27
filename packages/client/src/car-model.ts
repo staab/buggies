@@ -9,7 +9,7 @@ import {
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
-import { buildDuneBuggy, buildRocketShip } from './built-models.ts'
+import { buildAmphibian, buildDuneBuggy, buildRocketShip } from './built-models.ts'
 
 /** Who made a model, for the credits. */
 export interface ModelCredit {
@@ -116,6 +116,7 @@ export const CAR_MODELS: Readonly<Record<VehicleProfileId, CarModelSpec>> = Obje
   duneBuggy: { build: buildDuneBuggy, scale: 1, hidden: [], wheels: /^wheel-/ },
   // No wheels, and its parts have no names, so nothing at all is taken for one: it rides on its thrusters.
   rocketShip: { build: buildRocketShip, scale: 1, hidden: [], wheels: /(?!)/ },
+  amphibian: { build: buildAmphibian, scale: 1, hidden: [], wheels: /^wheel-/ },
 })
 
 /** One of a model's wheels, ready to be drawn where the simulation has it. */

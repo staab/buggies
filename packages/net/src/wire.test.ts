@@ -8,6 +8,10 @@ import {
 } from './protocol.ts'
 import {
   INPUT_BYTES,
+  decodePeek,
+  decodePeekRequest,
+  encodePeek,
+  encodePeekRequest,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_PROP_BYTES,
   SNAPSHOT_ROBOT_BYTES,
@@ -162,7 +166,7 @@ const snapshot: SnapshotMessage = {
       deaths: 1,
     },
   ],
-  spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, heading: 1.5, legs: 4, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],
+  spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, heading: 1.5, legs: 4, target: { x: 1000.5, z: 700.25 }, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],
 }
 
 describe('wire', () => {
@@ -327,5 +331,15 @@ describe('wire', () => {
     const wrongType = encodeInput(1, snapshot.vehicles[0]!.appliedInput)
     wrongType[0] = CLIENT_INPUT + 40
     expect(decodeInput(wrongType, { ...snapshot.vehicles[0]!.appliedInput })).toBeNull()
+  })
+
+  it('round-trips a peek at an island, the question and the answer', () => {
+    expect(decodePeekRequest(encodePeekRequest(4_000_000_000))).toBe(4_000_000_000)
+    const marks = [
+      { kind: 'player' as const, seat: 3, position: { x: 100.5, y: 12.25, z: 900.75 } },
+      { kind: 'npc' as const, seat: 31, position: { x: 1.5, y: 2.5, z: 3.5 } },
+      { kind: 'spider' as const, seat: -1, position: { x: 800, y: 20, z: 600 } },
+    ]
+    expect(decodePeek(encodePeek(marks))).toEqual(marks)
   })
 })

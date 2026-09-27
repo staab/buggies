@@ -6,6 +6,7 @@ import {
   GOAL_PRIZE,
   MAX_PLAYERS,
   NPC_CARS,
+  SPIDERS,
   UFOS,
   armorShare,
   DURABILITY,
@@ -44,10 +45,13 @@ import type {
   TransportConnection,
   TransportHandlers,
 } from './transport.ts'
-import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_UFO_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
+import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_SPIDER_BYTES, SNAPSHOT_UFO_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
 
-/** What every snapshot carries whatever else changes: the header and the saucers. There are no robots on these small islands. */
-const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
+/** What every snapshot carries whatever else changes: the header, the saucers and the spiders. There are no robots on these small islands. */
+const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES + SPIDERS * SNAPSHOT_SPIDER_BYTES
 
 /**
  * A wire made of queues. Messages are delivered when `deliver` is called,
@@ -145,7 +149,7 @@ class Session {
 
   constructor() {
     this.server = new GameServer(
-      (seed) => createArena(seed === map.seed ? map : generateTerrain(seed, { size: 257 })),
+      (seed) => createArena(seed === map.seed ? map : generateTerrain(seed, { ...TEST_ISLANDS, size: 257 })),
       {
         onJoined: (seat) => this.events.push(`joined ${seat.id}`),
         onLeft: (seat) => this.events.push(`left ${seat.id}`),
@@ -183,7 +187,7 @@ class Session {
       this.step([wire])
     }
     const welcome = await welcoming
-    const mirror = createArena(welcome.seed === map.seed ? map : generateTerrain(welcome.seed, { size: 257 }))
+    const mirror = createArena(welcome.seed === map.seed ? map : generateTerrain(welcome.seed, { ...TEST_ISLANDS, size: 257 }))
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
     const player: Player = {
@@ -335,7 +339,7 @@ function direct(server: TransportHandlers): ClientTransport {
 describe('a session', () => {
   beforeAll(async () => {
     await initPhysics()
-    map = generateTerrain(5, { size: 257 })
+    map = generateTerrain(5, { ...TEST_ISLANDS, size: 257 })
   }, 60_000)
 
   it('seats two players who each see the other driving', async () => {
@@ -564,7 +568,7 @@ describe('a session', () => {
   })
 
   it('fills the seats nobody takes with cars nobody drives, and gives one up to a newcomer when the island is full', async () => {
-    const island = generateTerrain(11, { size: 513 })
+    const island = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
     for (const npcs of [NPC_CARS, MAX_PLAYERS]) {
       const server = new GameServer(() => createArena(island), {}, npcs)
       const client = new NetClient(direct(server), () => 0)
@@ -640,6 +644,18 @@ describe('a session', () => {
     expect(session.events).toContain('rejected: server is full')
     session.dispose()
   }, 60_000)
+
+  it('tells anyone peeking at an island where everyone and everything on it is, and of an empty one, nothing', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    session.run(0.5)
+    const marks = session.server.peek(map.seed)
+    const own = marks.find((mark) => mark.kind === 'player' && mark.seat === a.client.welcome!.seat)
+    expect(own).toBeDefined()
+    expect(marks.some((mark) => mark.kind === 'ufo')).toBe(true)
+    expect(session.server.peek(map.seed + 99)).toEqual([])
+    session.dispose()
+  })
 
   it('seats players by seed, a room each, and closes a room behind the last to leave', async () => {
     const session = new Session()

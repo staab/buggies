@@ -5,6 +5,9 @@ import { RAIL_BASE, RAIL_FLARE, RAIL_HEIGHT, RAIL_THICKNESS, railMesh, railRuns 
 import { RAMP_LANE_REACH, RAMP_WIDTH, ROAD_BRIDGE, ROAD_GRADE, ROAD_TUNNEL, isSurfaceRoad } from './roads.ts'
 import type { Road, RoadPoint, TerrainMap } from './types.ts'
 
+/** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
+const TEST_ISLANDS = { islandsMost: 8 }
+
 let map: TerrainMap
 
 function nearestRunDistance(runs: ReturnType<typeof railRuns>, x: number, z: number): number {
@@ -30,7 +33,7 @@ function segmentMidpoints(road: Road, structure: number): { x: number; z: number
 
 describe('guardrails', () => {
   beforeAll(() => {
-    map = generateTerrain(1)
+    map = generateTerrain(1, TEST_ISLANDS)
   }, 60_000)
 
   it('line the highway wherever it is in the open, and every bridge', () => {

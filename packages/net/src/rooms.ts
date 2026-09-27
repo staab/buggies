@@ -1,5 +1,5 @@
 import type { ClientTransport } from './transport.ts'
-import { decodeRooms, encodeRoomsRequest, type RoomSummary } from './wire.ts'
+import { decodePeek, decodeRooms, encodePeekRequest, encodeRoomsRequest, type IslandMark, type RoomSummary } from './wire.ts'
 
 /**
  * Ask a server which islands have people on them, busiest first. One short
@@ -27,6 +27,37 @@ export async function fetchRooms(transport: ClientTransport): Promise<RoomSummar
       })
       .then(
         () => transport.send(encodeRoomsRequest()),
+        () => finish([]),
+      )
+  })
+}
+
+/**
+ * Ask a server where everyone and everything is on one island: the cars,
+ * driven or not, and the machines. One short connection, like the rooms;
+ * an island nobody is on, or a server that does not answer, has nothing.
+ */
+export async function fetchPeek(transport: ClientTransport, seed: number): Promise<IslandMark[]> {
+  return new Promise<IslandMark[]>((resolve) => {
+    let settled = false
+    const finish = (marks: IslandMark[]): void => {
+      if (settled) return
+      settled = true
+      resolve(marks)
+    }
+    transport
+      .connect({
+        onMessage: (payload) => {
+          const marks = decodePeek(payload)
+          if (marks !== null) {
+            finish(marks)
+            transport.close('peeked')
+          }
+        },
+        onClose: () => finish([]),
+      })
+      .then(
+        () => transport.send(encodePeekRequest(seed)),
         () => finish([]),
       )
   })
