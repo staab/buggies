@@ -1901,7 +1901,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
       const time = performance.now() / 1000
       for (const [i, turbine] of turbines.entries()) {
         spin.setFromAxisAngle(axis, time * BLADE_SPIN + i * 0.9)
-        rotors.setMatrixAt(i, new THREE.Matrix4().compose(hubOf(turbine), facing(turbine).multiply(spin), one))
+        rotors.setMatrixAt(i, globe.bendMatrix(new THREE.Matrix4().compose(hubOf(turbine), facing(turbine).multiply(spin), one), new THREE.Matrix4()))
       }
       rotors.instanceMatrix.needsUpdate = true
     }
@@ -2200,7 +2200,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
           const direction = r === 0 ? 1 : -1
           for (let c = 0; c < seats[r]!; c++) {
             const distance = c * LIFT.chairEvery + direction * time * LIFT.speed
-            chairs.setMatrixAt(k, new THREE.Matrix4().compose(at(run, distance), turn, one))
+            chairs.setMatrixAt(k, globe.bendMatrix(new THREE.Matrix4().compose(at(run, distance), turn, one), new THREE.Matrix4()))
             chairs.setColorAt(k, CHAIR_COLOR)
             k++
           }
@@ -2287,7 +2287,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         const along = new THREE.Vector3(Math.sin(angle) * (hand.length / 2), Math.cos(angle) * (hand.length / 2), 0).applyQuaternion(around)
         const out = new THREE.Vector3(0, 0, tower.width / 2 + 0.3).applyQuaternion(around)
         position.set(tower.x + out.x + along.x, faceHeight(tower) + along.y, tower.z + out.z + along.z)
-        mesh.setMatrixAt(i, matrix.compose(position, around.clone().multiply(turn), scale))
+        mesh.setMatrixAt(i, globe.bendMatrix(matrix.compose(position, around.clone().multiply(turn), scale), matrix))
       }
       mesh.instanceMatrix.needsUpdate = true
     }
@@ -2348,7 +2348,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         const out = phase * FOUNTAIN.mistSpread
         const up = FOUNTAIN.columnHeight + 0.4 + phase * FOUNTAIN.mistRise * (1 - phase * 0.5)
         matrix.makeTranslation(fountain.x + Math.cos(angle) * out, fountain.top + up, fountain.z + Math.sin(angle) * out)
-        mist.setMatrixAt(i, matrix)
+        mist.setMatrixAt(i, globe.bendMatrix(matrix, matrix))
       }
       mist.instanceMatrix.needsUpdate = true
     }
@@ -2430,13 +2430,17 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   )
   for (const crane of cranes) {
     const color = pick(CRANE_COLORS, crane.tone)
+    // Placed on the ground whole, and the jib and all it carries turning within it.
     const top = new THREE.Group()
     top.position.set(crane.x, crane.top, crane.z)
+    top.userData.whole = true
+    const turning = new THREE.Group()
+    top.add(turning)
     const part = (width: number, height: number, depth: number, x: number, y: number, shade: THREE.Color): THREE.Mesh => {
       const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color: shade, roughness: 0.85, metalness: 0.05 }))
       mesh.scale.set(width, height, depth)
       mesh.position.set(x, y, 0)
-      top.add(mesh)
+      turning.add(mesh)
       return mesh
     }
     part(CRANE.cab, CRANE.cab * 0.9, CRANE.cab, CRANE.cab * 0.6, CRANE.cab * 0.45, CRANE_CAB)
@@ -2445,7 +2449,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     part(2, 2.5, 2, -CRANE.counterJib + 1, -0.9, CONCRETE)
     const drop = (crane.top - crane.bottom) * CRANE.hookDrop
     const along = CRANE.jib * CRANE.hookAlong
-    top.add(
+    turning.add(
       new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(along, 0, 0), new THREE.Vector3(along, -drop, 0)]),
         new THREE.LineBasicMaterial({ color: CABLE_COLOR }),
@@ -2456,7 +2460,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
     const pace = CRANE.turn * (0.7 + crane.tone * 0.6)
     const phase = crane.tone * Math.PI * 2
     jib.onBeforeRender = () => {
-      top.rotation.y = crane.yaw + phase + (performance.now() / 1000) * pace
+      turning.rotation.y = crane.yaw + phase + (performance.now() / 1000) * pace
     }
     meshes.push(top)
   }

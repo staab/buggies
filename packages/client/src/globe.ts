@@ -92,15 +92,26 @@ export class Globe {
   /**
    * Bend everything under a root laid out on the map onto the world: every
    * mesh's own points, and every instance of an instanced one placed whole,
-   * upright and scaled where it stands. Nothing is done on the flat.
+   * upright and scaled where it stands. A node marked `whole` is placed
+   * whole, as an instance is, and what is under it is left as it is, free to
+   * move within it. Nothing is done on the flat.
    */
   bendAll(root: THREE.Object3D): void {
     if (!this.round) return
     root.updateMatrixWorld(true)
     const meshes: THREE.Object3D[] = []
+    const wholes: THREE.Object3D[] = []
+    const within = (node: THREE.Object3D): boolean => node.parent !== null && node !== root && (wholes.includes(node.parent) || within(node.parent))
     root.traverse((node) => {
-      if (node instanceof THREE.InstancedMesh || node instanceof THREE.Mesh || node instanceof THREE.Line) meshes.push(node)
+      if (within(node)) return
+      if (node.userData.whole === true) wholes.push(node)
+      else if (node instanceof THREE.InstancedMesh || node instanceof THREE.Mesh || node instanceof THREE.Line) meshes.push(node)
     })
+    for (const node of wholes) {
+      const parent = node.parent === null ? new THREE.Matrix4() : node.parent.matrixWorld.clone().invert()
+      node.matrix.copy(parent.multiply(this.bendMatrix(node.matrixWorld, instance)))
+      node.matrixAutoUpdate = false
+    }
     for (const node of meshes) {
       if (node instanceof THREE.InstancedMesh) this.bendInstances(node)
       else this.bendPoints(node as THREE.Mesh | THREE.Line)

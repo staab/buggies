@@ -15,7 +15,7 @@ import * as THREE from 'three'
 // where the bend is nothing, and a little off further out.
 
 /** How many times bigger than it is the planet is drawn round the camera. */
-export const BEND_SCALE = 4
+export const BEND_SCALE = 8
 
 /** What every material bends by: whether it bends at all, the planet's radius, how much bigger it is drawn, and the way up at the car. */
 const uniforms = {

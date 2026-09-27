@@ -196,6 +196,23 @@ describe('createTerrainView', () => {
       }
     })
     expect(grounds).toBeGreaterThan(0)
+    // Whatever moves, moved as a frame is drawn: the cranes' jibs, the rotors, the chairs, the hands, the mist.
+    const none = null as never
+    view.traverse((node) => node.onBeforeRender(none, none, none, none, none, none))
+    view.updateMatrixWorld(true)
+    // Every mesh's points stand on the sphere, a crane's turning top among them.
+    const cranes = map.buildings.filter((building) => building.kind === 'crane').length
+    let tops = 0
+    view.traverse((node) => {
+      if (!(node instanceof THREE.Mesh) || node instanceof THREE.InstancedMesh || node.name === 'water') return
+      if (node.parent?.parent?.userData.whole === true) tops++
+      node.geometry.computeBoundingSphere()
+      if (node.geometry.boundingSphere!.radius > radius / 2) return
+      point.copy(node.geometry.boundingSphere!.center).applyMatrix4(node.matrixWorld)
+      expect(point.length() - radius).toBeGreaterThan(-60)
+      expect(point.length() - radius).toBeLessThan(200)
+    })
+    expect(tops).toBe(cranes * 5)
     // Every instance of what stands on the island stands on the sphere.
     const matrix = new THREE.Matrix4()
     const up = new THREE.Vector3()

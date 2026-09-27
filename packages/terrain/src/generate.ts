@@ -12,8 +12,9 @@ import {
 } from './mountain.ts'
 import { sampleHeight } from './heightfield.ts'
 import { fbm2D, ridged2D, smoothstep } from './noise.ts'
-import { createSphereGround, gridDirection, groundIndex, sphereHeight, type SphereGround } from './sphere.ts'
+import { createSphereGround, gridDirection, gridPlace, groundIndex, sphereHeight, type SphereGround } from './sphere.ts'
 import { onTangentPlane, raiseSphereGround, tangentFrame, type SphereMountain } from './sphere-heights.ts'
+import { findSphereLakes, groundDirections, groundNeighbors, routeSphereFlow, traceSphereRivers, type SphereLake, type SphereRiverPoint } from './sphere-water.ts'
 import { generateRoads } from './roads.ts'
 import { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
 import type {
@@ -766,6 +767,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   // A planet's ground is raised on the sphere, and the map is read off it; a flat map is raised as it is.
   const planet = options.planet ? createPlanet(size * cellSize * WORLD_SCALE, depth * cellSize * WORLD_SCALE) : null
   const ground = planet === null ? null : createSphereGround(SPHERE_CELLS, planet.radius)
+  const sphereMountains = planet === null ? [] : mountains.map((mountain) => sphereMountain(planet, mountain))
   if (planet !== null && ground !== null) {
     raiseSphereGround(ground, {
       seed,
@@ -774,7 +776,7 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
         // As big on the planet as on the map, where the map is enlarged by its scale.
         return { center, radius: island.radius * WORLD_SCALE * Math.sqrt(Math.max(1 - center.y * center.y, 0)) }
       }),
-      mountains: mountains.map((mountain) => sphereMountain(planet, mountain)),
+      mountains: sphereMountains,
       oceanDepth: oceanDepth * WORLD_SCALE,
       largest: largest * WORLD_SCALE,
       band: band * WORLD_SCALE,
@@ -786,11 +788,33 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
   }
   const islandOf = labelLandMasses(field, seaLevel)
 
-  const routing = computeFlowRouting(field, seaLevel)
-  const rivers = traceRivers(field, routing, springs, options.riverCount ?? springs.length, seaLevel)
+  // On a planet the water runs on the planet's own ground, and the map is given what it made; on the flat it runs on the map.
+  let rivers: River[]
+  let found: Lake[]
+  if (planet !== null && ground !== null) {
+    const directions = groundDirections(ground)
+    const neighbors = groundNeighbors(ground)
+    const routing = routeSphereFlow(ground, neighbors, seaLevel * WORLD_SCALE)
+    const courses = traceSphereRivers(
+      ground,
+      directions,
+      routing,
+      springs.map((spring) => sphereMountains[mountains.indexOf(spring)]!),
+      options.riverCount ?? springs.length,
+      seaLevel * WORLD_SCALE,
+      cellSize * WORLD_SCALE,
+      15 * WORLD_SCALE,
+    )
+    rivers = courses.map((course, id) => ({ id, points: riverOnChart(course, planet) }))
+    found = lakesOnChart(findSphereLakes(ground, neighbors, routing, seaLevel * WORLD_SCALE), ground, field, planet)
+  } else {
+    const routing = computeFlowRouting(field, seaLevel)
+    rivers = traceRivers(field, routing, springs, options.riverCount ?? springs.length, seaLevel)
+    found = findLakes(field, routing, seaLevel)
+  }
   const lakes = selectLakes(
     field,
-    findLakes(field, routing, seaLevel),
+    found,
     rivers,
     options.minLakeCells ?? 12,
     options.minLakeDepth ?? 1,
@@ -912,6 +936,55 @@ function readChartFromSphere(field: Heightfield, ground: SphereGround, planet: P
       heights[row * width + col] = sphereHeight(ground, direction) / (WORLD_SCALE * place.scale)
     }
   }
+}
+
+/** A river on the planet as the map has it: at the map's reference scale, its surface and width smaller than the planet's by the map's scale. */
+function riverOnChart(course: readonly SphereRiverPoint[], planet: Planet): RiverPoint[] {
+  const point = { x: 0, y: 0, z: 0 }
+  const chart = { x: 0, y: 0, z: 0 }
+  return course.map(({ direction, level, width }) => {
+    point.x = direction.x * planet.radius
+    point.y = direction.y * planet.radius
+    point.z = direction.z * planet.radius
+    worldToChart(planet, point, chart)
+    const shrink = WORLD_SCALE * Math.sqrt(Math.max(1 - direction.y * direction.y, 1e-9))
+    return { x: chart.x / WORLD_SCALE, y: level / shrink, z: chart.z / WORLD_SCALE, width: width / shrink }
+  })
+}
+
+/**
+ * The planet's lakes as the map has them: the map's cells whose nearest
+ * grid point is under a lake and whose ground is below its surface, at
+ * the level the lake stands at on the map where its middle is.
+ */
+function lakesOnChart(lakes: readonly SphereLake[], ground: SphereGround, field: Heightfield, planet: Planet): Lake[] {
+  const lakeOf = new Int32Array(ground.heights.length).fill(-1)
+  const levels = lakes.map((lake, id) => {
+    let y = 0
+    for (const at of lake.points) {
+      lakeOf[at] = id
+      const face = Math.floor(at / ((ground.n + 1) * (ground.n + 1)))
+      const within = at - face * (ground.n + 1) * (ground.n + 1)
+      y += gridDirection(ground.n, face, within % (ground.n + 1), Math.floor(within / (ground.n + 1)), { x: 0, y: 0, z: 0 }).y
+    }
+    y /= lake.points.length
+    return lake.level / (WORLD_SCALE * Math.sqrt(Math.max(1 - y * y, 1e-9)))
+  })
+  const cells: number[][] = lakes.map(() => [])
+  const { width, depth, cellSize, heights } = field
+  const place = { longitude: 0, latitude: 0, scale: 1 }
+  const direction = { x: 0, y: 0, z: 0 }
+  const grid = { face: 0, i: 0, j: 0 }
+  for (let row = 0; row < depth; row++) {
+    for (let col = 0; col < width; col++) {
+      placeOf(planet, col * cellSize * WORLD_SCALE, row * cellSize * WORLD_SCALE, place)
+      gridPlace(ground.n, directionOf(place.longitude, place.latitude, direction), grid)
+      const id = lakeOf[groundIndex(ground, grid.face, Math.round(grid.i), Math.round(grid.j))]!
+      if (id < 0 || heights[row * width + col]! >= levels[id]!) continue
+      cells[id]!.push(row * width + col)
+    }
+  }
+  return lakes.flatMap((_, id) => (cells[id]!.length === 0 ? [] : [{ id, level: levels[id]!, cells: cells[id]! }]))
 }
 
 /**
