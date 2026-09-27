@@ -101,8 +101,7 @@ body {
 }
 /* A speaker in the corner, crossed out when muted, and a trophy beside it for setting a goal. */
 #mute,
-#goal,
-#overview-button {
+#goal {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -119,16 +118,11 @@ body {
 #goal {
   right: 58px;
 }
-#overview-button {
-  right: 104px;
-}
-#goal[hidden],
-#overview-button[hidden] {
+#goal[hidden] {
   display: none;
 }
 #mute svg,
-#goal svg,
-#overview-button svg {
+#goal svg {
   width: 20px;
   height: 20px;
 }
@@ -556,48 +550,4 @@ kbd {
   border: 1px solid var(--edge);
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.3);
-}
-
-/* The live overview of the island: a square in the middle of the screen, the game going on around it. */
-#overview {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-  z-index: 12;
-}
-#overview[hidden] {
-  display: none;
-}
-.overview {
-  width: min(82vmin, 720px);
-  padding: 12px;
-  border: 1px solid var(--edge);
-  border-radius: 12px;
-  /* Solid, so nothing of the game behind shows through the map. */
-  background: rgb(8, 20, 30);
-  pointer-events: auto;
-}
-.overview canvas {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 8px;
-}
-.overview .legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--dim);
-}
-.overview .legend i {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
-  border-radius: 50%;
-  vertical-align: -1px;
 }

@@ -223,6 +223,28 @@ export interface ShellMesh {
  * driven against. Every face is wound to look out of the shell, into the
  * bore or into the hill, so a collider can treat it as a solid.
  */
+/** How far past the bore's width the shell reaches out of a portal: at least a cell of the ground, which is cut a cell at a time. */
+const PORTAL_OVERHANG = 4
+
+/**
+ * The samples a shell runs on out of a portal, from the one past it, this
+ * way along the road, until it is `radius` and the overhang beyond the
+ * portal, or the road ends; nearest the portal last going back, first going on.
+ */
+function portalReach(road: Road, portal: number, step: 1 | -1, radius: number): number[] {
+  const count = road.points.length
+  const from = road.points[portal]!
+  const reached: number[] = []
+  for (let k = 1; k < count; k++) {
+    const index = road.closed ? (portal + step * k + count) % count : portal + step * k
+    const point = road.points[index]
+    if (point === undefined) break
+    reached.push(index)
+    if (hypot(point.x - from.x, point.z - from.z) >= radius + PORTAL_OVERHANG) break
+  }
+  return step < 0 ? reached.reverse() : reached
+}
+
 export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | null {
   const count = road.points.length
   const segmentCount = road.closed ? count : count - 1
@@ -286,16 +308,10 @@ export function tunnelShellMesh(road: Road, wall = TUNNEL_WALL): ShellMesh | nul
   const width = inside.length
 
   for (const run of runs) {
-    // Overhang a sample into the hillside at each portal so the shell meets the
-    // landscape without a gap.
-    const samples =
-      run.length === count
-        ? run
-        : [
-            (at(run, 0, 'tunnel run sample') - 1 + count) % count,
-            ...run,
-            (at(run, run.length - 1, 'tunnel run sample') + 1) % count,
-          ]
+    // Out of each portal as far as the ground is cut away before it, the
+    // bore's width and a cell more, so the shell meets the landscape without
+    // a gap: short of that, the hill is seen to stop short of the tunnel.
+    const samples = run.length === count ? run : [...portalReach(road, at(run, 0, 'tunnel run sample'), -1, outerRadius), ...run, ...portalReach(road, at(run, run.length - 1, 'tunnel run sample'), 1, outerRadius)]
 
     const base = positions.length / 3
     // Every sample is one of the road's points, and its neighbors wrap around the loop.

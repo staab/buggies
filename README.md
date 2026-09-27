@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car and machine on the island, as the server has them, in the colors of the map. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
 
 The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
@@ -22,10 +22,9 @@ The client connects to a server on the same host it was loaded from. To use anot
 | Fire the power-up | `F` | `X` | `.` |
 | Active ability | `D` | `Shift` | `M` |
 | Respawn on the road | `R` | `Q` | `Enter` |
-| Map of the island | `Tab` | `Tab` | `Tab` |
 | Menu | `Esc` | `Esc` | `Esc` |
 
-The map shows the whole island live, with every car, the traffic, the robots, the saucer, the spider and the spot a goal is set for; the button beside the trophy opens it too. In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
+In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
 
 ## Bananas
 
@@ -47,7 +46,7 @@ A giant spider, its body ten meters up on legs nearly twenty meters long, walks 
 
 ## Traffic
 
-Three cars nobody drives potter slowly around the arterials of every island in the seats players leave empty. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They keep to the right-hand lane, carry no weapons, take no bananas or health packs, and set off any bomb or mine they drive onto. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back a little further along its road if it goes nowhere for six seconds.
+Twenty cars nobody drives potter slowly around the arterials of every island in the seats players leave empty: small cars, sports cars, pickups, semis, police cars, ambulances and fire trucks. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They keep to the right-hand lane, carry no weapons, take no bananas or health packs, and set off any bomb or mine they drive onto. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back a little further along its road if it goes nowhere for six seconds.
 
 ## Goals
 
@@ -89,8 +88,8 @@ Each vehicle has its own armor, which sets how much it takes from crashes and we
 - **Tank** fires a missile from its gun with the blast of the rocket power-up, every eight seconds. Its rocket, triple rocket and machine gun power-ups also fire from its gun, with nothing mounted over its roof.
 - **Go-kart** jumps into the air whenever it is on the ground.
 - **Race car** boosts with the force of the rocket engine power-up while the key is held.
-- **Sports car** fires a machine gun from its nose at the car ahead while the key is held, with the damage of the machine gun power-up.
-- **Small car** drops an oil slick behind, as slippery as the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.
+- **Sports car** drops an oil slick behind, as slippery as the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.
+- **Small car** fires a machine gun from its nose at the car ahead while the key is held, with the damage of the machine gun power-up.
 - **Semi truck** honks its horn, stunning every car within 30 meters for five seconds, every five seconds.
 - **Heavy pickup** drops a bomb behind with the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
 - **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets. It fires three rockets in a fan, as the triple rocket power-up does, every thirty seconds.

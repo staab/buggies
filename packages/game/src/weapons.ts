@@ -305,7 +305,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   police: LIGHTS,
   ambulance: LIGHTS,
   firetruck: LIGHTS,
-  sportsCar: {
+  smallCar: {
     kind: 'gun',
     label: 'Machine gun',
     about: 'Fires at the car ahead while held, with the damage of the machine gun power-up.',
@@ -319,7 +319,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
     activeTicks: 0,
     cooldownTicks: 0,
   },
-  smallCar: {
+  sportsCar: {
     kind: 'oil',
     label: 'Oil slick',
     about: 'Drops an oil slick behind, as slippery as the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.',
@@ -647,8 +647,8 @@ export const NATIVE_POWER_UPS: Readonly<Record<VehicleProfileId, readonly Weapon
   police: ['siren'],
   ambulance: ['siren'],
   firetruck: ['siren'],
-  sportsCar: ['machineGun'],
-  smallCar: ['oil'],
+  sportsCar: ['oil'],
+  smallCar: ['machineGun'],
   semi: ['shockwave'],
   pickup: ['bomb'],
   goKart: [],

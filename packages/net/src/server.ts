@@ -16,7 +16,6 @@ import {
   type Arena,
   type Seat,
   type VehicleInput,
-  NO_TARGET,
 } from '@buggies/game'
 import { InputTimeline } from './input-timeline.ts'
 import {
@@ -180,7 +179,7 @@ export class GameServer implements TransportHandlers {
   }
 
   /** The islands with the most people on them, busiest first, and the lower seed among equals. */
-  /** Where everyone and everything is on an island: nothing, if nobody is on it. */
+  /** Where every car on an island is, driven or not: none, if nobody is on it. */
   peek(seed: number): IslandMark[] {
     const room = this.rooms.get(seed)
     if (room === undefined) return []
@@ -189,9 +188,6 @@ export class GameServer implements TransportHandlers {
     for (const seat of arena.seats) {
       if (seat.occupied) marks.push({ kind: seat.npc ? 'npc' : 'player', seat: seat.id, position: { ...seat.vehicle.frame.position } })
     }
-    for (const robot of arena.robots) marks.push({ kind: 'robot', seat: NO_TARGET, position: { ...robot.position } })
-    for (const ufo of arena.ufos) marks.push({ kind: 'ufo', seat: NO_TARGET, position: { ...ufo.position } })
-    for (const spider of arena.spiders) marks.push({ kind: 'spider', seat: NO_TARGET, position: { ...spider.position } })
     return marks
   }
 

@@ -11,7 +11,6 @@ import './styles.css'
 import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
 import { GoalMenu } from './goal-menu.ts'
-import { MapOverview } from './map-overview.ts'
 import { Hud } from './hud.ts'
 import { Menu, type Choice, type Mode } from './menu.ts'
 import { Shell } from './shell.ts'
@@ -129,17 +128,6 @@ goalButton.addEventListener('click', () => {
   goalButton.blur()
 })
 
-// A map beside the trophy, or the Tab key, opens a live overview of the island and everything on it.
-const overview = new MapOverview(element('overview'), {
-  map: () => shell.played?.map ?? null,
-  marks: () => shell.played?.marks?.() ?? [],
-})
-const overviewButton = element('overview-button') as HTMLButtonElement
-overviewButton.addEventListener('click', () => {
-  overview.toggle()
-  overviewButton.blur()
-})
-
 // The physics engine is a wasm module, so it has to be ready before anything
 // can be driven. It loads in well under a frame, and getting it out of the way
 // up front beats a loading state in the middle of a session. The vehicles'
@@ -150,16 +138,9 @@ await Promise.all([initPhysics(), loadCarModels()])
 shell.welcome()
 
 window.addEventListener('keydown', (event) => {
-  if (event.key === 'Tab') {
-    // Tab is the overview's, not the browser's: nothing on the page is to be tabbed through while driving.
-    event.preventDefault()
-    if (shell.played?.marks !== undefined && !shell.menu.open) overview.toggle()
-    return
-  }
   if (event.key !== 'Escape') return
-  // Escape shuts the overview or the goal panel first, if one is open, and only then opens the menu.
-  if (overview.open) overview.hide()
-  else if (goals.open) goals.hide()
+  // Escape shuts the goal panel first, if it is open, and only then opens the menu.
+  if (goals.open) goals.hide()
   else shell.toggleMenu()
 })
 
@@ -176,10 +157,6 @@ function frame(now: number): void {
   const goalable = shell.played?.setGoal !== undefined && !shell.menu.open
   goalButton.hidden = !goalable
   if (!goalable && goals.open) goals.hide()
-  const viewable = shell.played?.marks !== undefined && !shell.menu.open
-  overviewButton.hidden = !viewable
-  if (!viewable && overview.open) overview.hide()
-  overview.update(dt)
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

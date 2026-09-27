@@ -1,6 +1,8 @@
 import { DEFAULT_WORLD_TUNING, restingRideHeight, type VehicleTuning } from '@buggies/game'
 import * as THREE from 'three'
 
+import { hullGeometry } from './hull-geometry.ts'
+
 /**
  * Vehicles with no model file, built here instead, the way a model file is:
  * front toward +Z, left toward +X, the ground at y = 0, a meter to a unit,
@@ -146,9 +148,9 @@ export function buildRocketShip(tuning: VehicleTuning): THREE.Group {
 }
 
 /**
- * An amphibian: a boat's hull, a bow raked up at the front and a flat
- * transom behind, with a gunwale round it, a windscreen and a low cabin,
- * and four wheels half tucked into wells in its sides.
+ * An amphibian: a boat's hull, its bow forward, a dark band along its
+ * waterline and a pale deck, a wheelhouse amidships with its glass and
+ * roof, and four wheels half tucked into the hull's sides.
  */
 export function buildAmphibian(tuning: VehicleTuning): THREE.Group {
   const group = new THREE.Group()
@@ -156,29 +158,34 @@ export function buildAmphibian(tuning: VehicleTuning): THREE.Group {
   const l = tuning.chassisHalfLength
   const h = tuning.chassisHalfHeight
   const r = tuning.wheelRadius
-  const hull = material('#2f8f6a', { metalness: 0.2, roughness: 0.5 })
-  const keel = material('#1f3b33', { roughness: 0.7 })
-  const trim = material('#e8e2cf', { roughness: 0.6 })
+  const paint = material('#2f8f6a', { metalness: 0.2, roughness: 0.5 })
+  const band = material('#1f2b28', { roughness: 0.8 })
+  const planking = material('#d8c9a3', { roughness: 0.8 })
+  const cabin = material('#f0ece0', { roughness: 0.6 })
   const glass = material('#9fd8f0', { metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.7 })
   const rubber = material('#1d1d1d', { roughness: 0.95 })
   const hub = material('#c9ccd1', { metalness: 0.7, roughness: 0.3 })
 
-  const floor = r * 0.7
-  // The hull: a box for the body, and the bow as a wedge raked up ahead of it.
-  group.add(box([w * 2, h * 1.4, l * 1.4], [0, floor + h * 0.7, -l * 0.3], hull))
-  const bow = new THREE.Mesh(new THREE.CylinderGeometry(0.01, w, l * 0.6, 4, 1).rotateY(Math.PI / 4).rotateX(-Math.PI / 2).scale(1, h * 1.4 / w / 1.42, 1), hull)
-  bow.position.set(0, floor + h * 0.75, l * 0.7)
-  group.add(bow)
-  group.add(box([w * 1.9, 0.12, l * 1.6], [0, floor + 0.06, -l * 0.15], keel))
-  // The gunwale round the top, the windscreen and the cabin roof.
-  group.add(box([w * 2.04, 0.1, l * 1.4], [0, floor + h * 1.42, -l * 0.3], trim))
-  const screen = box([w * 1.7, 0.6, 0.06], [0, floor + h * 1.4 + 0.3, l * 0.2], glass)
-  screen.rotation.x = -0.35
+  // The hull, a meter long along X with its bow at +X, turned to run nose to tail along +Z and stretched to the chassis.
+  const { skin, deck } = hullGeometry()
+  const keel = r * 0.35
+  const depth = h * 2 + r * 0.4
+  const fit = (geometry: THREE.BufferGeometry, height: number, grow = 1): THREE.BufferGeometry =>
+    geometry.clone().rotateY(-Math.PI / 2).scale(w * 2 * grow, height, l * 2).translate(0, keel, 0)
+  group.add(new THREE.Mesh(fit(skin, depth), paint))
+  group.add(new THREE.Mesh(fit(deck, depth), planking))
+  // The band along the waterline, just proud of the hull's sides.
+  group.add(new THREE.Mesh(fit(skin, depth * 0.45, 1.02), band))
+  // The wheelhouse, a little aft of amidships: posts, glass all round the front, and a roof.
+  const top = keel + depth
+  group.add(box([w * 1.1, 0.5, l * 0.55], [0, top + 0.25, -l * 0.15], cabin))
+  const screen = box([w * 1.05, 0.55, 0.06], [0, top + 0.72, l * 0.12], glass)
+  screen.rotation.x = -0.3
   group.add(screen)
-  group.add(box([w * 1.5, 0.08, l * 0.5], [0, floor + h * 1.4 + 0.75, -l * 0.1], trim))
-  for (const side of [-1, 1]) group.add(box([0.06, 0.75, 0.06], [side * w * 0.72, floor + h * 1.4 + 0.37, -l * 0.3], trim))
+  for (const side of [-1, 1]) group.add(box([0.06, 0.55, l * 0.45], [side * w * 0.53, top + 0.72, -l * 0.2], glass))
+  group.add(box([w * 1.2, 0.08, l * 0.62], [0, top + 1.03, -l * 0.17], cabin))
 
-  // Four wheels, on the axles, half in their wells.
+  // Four wheels, on the axles, half in the hull's sides.
   const tire = new THREE.CylinderGeometry(r, r, 0.36, 20).rotateZ(Math.PI / 2)
   const rim = new THREE.CylinderGeometry(r * 0.5, r * 0.5, 0.38, 12).rotateZ(Math.PI / 2)
   for (const [name, x, z] of [

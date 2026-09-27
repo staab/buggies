@@ -926,15 +926,15 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   }
 }
 
-/** Something on an island, for a peek at it from the menu: a car, driven or not, and which seat, or a machine. */
+/** A car on an island, for a peek at it from the menu: driven or not, and which seat. */
 export interface IslandMark {
   kind: IslandMarkKind
-  /** The seat of a car, for its color; nothing for a machine. */
+  /** Its seat, for its color. */
   seat: number
   position: Vec3
 }
-export type IslandMarkKind = 'player' | 'npc' | 'robot' | 'ufo' | 'spider'
-const MARK_KINDS: readonly IslandMarkKind[] = ['player', 'npc', 'robot', 'ufo', 'spider']
+export type IslandMarkKind = 'player' | 'npc'
+const MARK_KINDS: readonly IslandMarkKind[] = ['player', 'npc']
 
 export function encodePeekRequest(seed: number): Uint8Array {
   const writer = new Writer(PEEK_REQUEST_BYTES)

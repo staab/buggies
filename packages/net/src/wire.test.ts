@@ -338,7 +338,6 @@ describe('wire', () => {
     const marks = [
       { kind: 'player' as const, seat: 3, position: { x: 100.5, y: 12.25, z: 900.75 } },
       { kind: 'npc' as const, seat: 31, position: { x: 1.5, y: 2.5, z: 3.5 } },
-      { kind: 'spider' as const, seat: -1, position: { x: 800, y: 20, z: 600 } },
     ]
     expect(decodePeek(encodePeek(marks))).toEqual(marks)
   })

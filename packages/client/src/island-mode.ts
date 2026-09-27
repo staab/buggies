@@ -1,4 +1,4 @@
-import type { IslandMark, IslandMarkKind } from '@buggies/net'
+import type { IslandMark } from '@buggies/net'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -9,13 +9,8 @@ import type { ModeView } from './mode.ts'
 /** How tall and wide a beacon over something on the island is, to be seen from high over the whole of it. */
 const BEACON_HEIGHT = 90
 const BEACON_RADIUS = 4
-/** The colors things are marked in, as on the map: a player's car in its seat's own. */
-const MARK_COLORS: Readonly<Record<Exclude<IslandMarkKind, 'player'>, number>> = {
-  npc: 0x9aa0a6,
-  robot: 0xff3030,
-  ufo: 0x5cff8a,
-  spider: 0xc15cff,
-}
+/** The color a car nobody drives is marked in; a player's is in its seat's own. */
+const NPC_COLOR = 0x9aa0a6
 
 /** A line about an island, for the player choosing one. */
 export function islandSummary(map: TerrainMap): string {
@@ -28,8 +23,8 @@ export function islandSummary(map: TerrainMap): string {
 
 /**
  * Looking over a whole island from above while choosing it: orbit it, with
- * a beacon of light standing over every car on it, driven or not, and every
- * machine, as the server last said. The controls work whether or not the
+ * a beacon of light standing over every car on it, driven or not, as the
+ * server last said. The controls work whether or not the
  * menu is up, since the menu is what this is for.
  */
 export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView {
@@ -75,7 +70,7 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
     showMarks(marks) {
       beacons.clear()
       for (const mark of marks) {
-        const { shaft: glow, cap: head } = paint(mark.kind === 'player' ? seatColor(mark.seat) : MARK_COLORS[mark.kind])
+        const { shaft: glow, cap: head } = paint(mark.kind === 'player' ? seatColor(mark.seat) : NPC_COLOR)
         const beacon = new THREE.Group()
         beacon.position.set(mark.position.x, mark.position.y, mark.position.z)
         const top = new THREE.Mesh(cap, head)

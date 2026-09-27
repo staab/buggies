@@ -645,14 +645,14 @@ describe('a session', () => {
     session.dispose()
   }, 60_000)
 
-  it('tells anyone peeking at an island where everyone and everything on it is, and of an empty one, nothing', async () => {
+  it('tells anyone peeking at an island where its cars are, and of an empty one, nothing', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
     session.run(0.5)
     const marks = session.server.peek(map.seed)
     const own = marks.find((mark) => mark.kind === 'player' && mark.seat === a.client.welcome!.seat)
     expect(own).toBeDefined()
-    expect(marks.some((mark) => mark.kind === 'ufo')).toBe(true)
+    expect(marks.every((mark) => mark.kind === 'player' || mark.kind === 'npc')).toBe(true)
     expect(session.server.peek(map.seed + 99)).toEqual([])
     session.dispose()
   })

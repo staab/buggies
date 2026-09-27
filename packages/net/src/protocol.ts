@@ -29,7 +29,7 @@ export const CLIENT_ROOMS = 0x04
 export const CLIENT_CHANGE_VEHICLE = 0x05
 /** A goal to play for, or none: free play again. */
 export const CLIENT_GOAL = 0x06
-/** Instead of a hello: where everyone and everything is on one island. The answer ends the connection. */
+/** Instead of a hello: where every car on one island is. The answer ends the connection. */
 export const CLIENT_PEEK = 0x07
 
 export const SERVER_WELCOME = 0x81

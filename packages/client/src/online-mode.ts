@@ -29,7 +29,6 @@ import { cameraBounds } from './driver-hud.ts'
 import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
 import type { DriverKeys } from './keys.ts'
-import type { OverviewMark } from './map-overview.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import { PredictedCar } from './predicted-car.ts'
 import type { RadarBlip, RadarState } from './radar.ts'
@@ -116,8 +115,6 @@ export interface OnlineView {
   goal(): Goal | null
   /** Play for this goal, or for none. */
   setGoal(goal: GoalRequest | null): void
-  /** Where everything is, for the overview of the island. */
-  marks(): OverviewMark[]
   dispose(): void
 }
 
@@ -263,21 +260,6 @@ export async function joinOnline(
     },
     setGoal(goal) {
       client.setGoal(goal)
-    },
-    marks() {
-      const own = prediction.ownSeat
-      const marks: OverviewMark[] = []
-      for (const seat of prediction.seats) {
-        if (!seat.occupied) continue
-        const { position, forward } = seat.vehicle.frame
-        if (seat.id === own.id) marks.push({ kind: 'you', x: position.x, z: position.z, forward: { x: forward.x, z: forward.z } })
-        else marks.push({ kind: seat.npc ? 'npc' : 'player', x: position.x, z: position.z, color: seatColor(seat.id) })
-      }
-      for (const robot of prediction.robots) marks.push({ kind: 'robot', x: robot.position.x, z: robot.position.z })
-      for (const ufo of prediction.ufos) marks.push({ kind: 'ufo', x: ufo.position.x, z: ufo.position.z })
-      for (const spider of prediction.spiders) marks.push({ kind: 'spider', x: spider.position.x, z: spider.position.z })
-      if (own.goal?.kind === 'location') marks.push({ kind: 'goal', x: own.goal.x, z: own.goal.z })
-      return marks
     },
     dispose() {
       window.removeEventListener('keydown', onKey)
