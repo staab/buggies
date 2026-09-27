@@ -1,4 +1,4 @@
-import type { Shot } from '@buggies/game'
+import { shapeOf, type Shot } from '@buggies/game'
 import type { TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -6,6 +6,7 @@ import type { Sound } from './audio.ts'
 import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import { Explosions } from './explosion.ts'
+import { FLAT_GLOBE, Globe } from './globe.ts'
 import { PickupField, type PickupSource } from './pickups-view.ts'
 import { PropsView, type PropSource } from './props-view.ts'
 import { RobotsView, type RobotSource } from './robots-view.ts'
@@ -45,16 +46,22 @@ export class ArenaView {
   constructor(source: ArenaSource, sound: Sound | null, ear: Ear, map: TerrainMap | null = null) {
     this.source = source
     this.effects = { explosions: this.explosions, smoke: this.smoke, sound }
-    this.pickups = new PickupField(source, (at) => {
-      this.explosions.burst(at)
-      sound?.boom(distanceFrom(ear, at))
-    })
-    this.rockets = new RocketsView(source, this.effects, ear)
-    this.tracers = new Tracers(sound, ear)
+    // What lies on the map is drawn where that is in the world: round a planet, if the map is one's.
+    const globe = map === null ? FLAT_GLOBE : new Globe(shapeOf(map))
+    this.pickups = new PickupField(
+      source,
+      (at) => {
+        this.explosions.burst(at)
+        sound?.boom(distanceFrom(ear, at))
+      },
+      globe,
+    )
+    this.rockets = new RocketsView(source, this.effects, ear, globe)
+    this.tracers = new Tracers(sound, ear, globe)
     this.props = new PropsView(source)
-    this.robots = new RobotsView(source, this.effects, ear)
-    this.ufos = new UfosView(source, map, this.effects, ear)
-    this.spiders = new SpidersView(source, this.effects, ear)
+    this.robots = new RobotsView(source, this.effects, ear, globe)
+    this.ufos = new UfosView(source, map, this.effects, ear, globe)
+    this.spiders = new SpidersView(source, this.effects, ear, globe)
     this.object.add(
       this.explosions.object,
       this.smoke.object,

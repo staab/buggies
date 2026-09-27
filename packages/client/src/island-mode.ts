@@ -1,10 +1,13 @@
 import type { IslandMark } from '@buggies/net'
+import { shapeOf } from '@buggies/game'
 import { mapExtent, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
 import { seatColor } from './car-view.ts'
 import type { ModeView } from './mode.ts'
+
+const UP = new THREE.Vector3(0, 1, 0)
 
 /** How tall and wide a beacon over something on the island is, to be seen from high over the whole of it. */
 const BEACON_HEIGHT = 90
@@ -30,13 +33,19 @@ export function islandSummary(map: TerrainMap): string {
 export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: HTMLElement): ModeView {
   const extent = mapExtent(map)
   const worldSize = Math.max(extent.x, extent.z)
+  const shape = shapeOf(map)
   const camera = new THREE.PerspectiveCamera(55, 1, 0.5, worldSize * 6.5)
-  camera.position.set(extent.x / 2 + worldSize * 0.35, worldSize * 0.8, extent.z / 2 + worldSize * 0.65)
+  // Over the island, or round the whole planet, looking at its middle from out over its equator.
+  if (shape.kind === 'planet') camera.position.set(0, shape.planet.radius * 0.9, shape.planet.radius * 2.6)
+  else camera.position.set(extent.x / 2 + worldSize * 0.35, worldSize * 0.8, extent.z / 2 + worldSize * 0.65)
 
   const controls = new OrbitControls(camera, surface)
   controls.enableDamping = true
   controls.maxPolarAngle = Math.PI / 2.05
-  controls.target.set(extent.x / 2, 0, extent.z / 2)
+  if (shape.kind === 'planet') {
+    controls.target.set(0, 0, 0)
+    controls.maxPolarAngle = Math.PI
+  } else controls.target.set(extent.x / 2, 0, extent.z / 2)
   controls.update()
 
   const beacons = new THREE.Group()
@@ -74,6 +83,8 @@ export function createIslandMode(map: TerrainMap, scene: THREE.Scene, surface: H
         const { shaft: glow, cap: head } = paint(mark.kind === 'player' ? seatColor(mark.seat) : NPC_COLOR)
         const beacon = new THREE.Group()
         beacon.position.set(mark.position.x, mark.position.y, mark.position.z)
+        // Standing up where it is: away from a planet's middle, or up the y axis on the flat.
+        if (shape.kind === 'planet') beacon.quaternion.setFromUnitVectors(UP, beacon.position.clone().normalize())
         const top = new THREE.Mesh(cap, head)
         top.position.y = BEACON_HEIGHT
         beacon.add(new THREE.Mesh(shaft, glow), top)

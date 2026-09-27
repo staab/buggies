@@ -1,3 +1,4 @@
+import { shapeOf } from '@buggies/game'
 import {
   mapExtent,
   boatAt,
@@ -46,6 +47,7 @@ import {
 } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { Globe } from './globe.ts'
 import { hullGeometry } from './hull-geometry.ts'
 
 interface ColorStop {
@@ -1483,6 +1485,7 @@ const GAMBREL: [number, number][] = [
 /** The buildings, trees and shrubs of a map, as a few instanced meshes. */
 
 function buildStanding(map: TerrainMap): THREE.Object3D[] {
+  const globe = new Globe(shapeOf(map))
   const box = new THREE.BoxGeometry(1, 1, 1)
   const plain = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05 })
   const flatRoof = new THREE.MeshStandardMaterial({ color: '#bdbdb8', roughness: 0.95, metalness: 0 })
@@ -2104,6 +2107,7 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
         for (const [i, boat] of boats.entries()) {
           matrix.identity()
           place(boat, matrix, color)
+          globe.bendMatrix(matrix, matrix, false)
           mesh.setMatrixAt(i, matrix)
         }
         mesh.instanceMatrix.needsUpdate = true
@@ -2509,6 +2513,7 @@ export function moveBoats(view: THREE.Object3D, seconds: number): void {
  */
 export function createTerrainView(map: TerrainMap): THREE.Group {
   const group = new THREE.Group()
+  let seaSphere: THREE.Mesh | null = null
   const extent = mapExtent(map)
   const waterMaterial = new THREE.MeshStandardMaterial({
     color: new THREE.Color('#2f6f9f'),
@@ -2526,11 +2531,18 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     buildGround(map, hole, segments, map.cellSize * 0.5),
   )
 
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(extent.x, extent.z), waterMaterial)
-  sea.name = 'water'
-  sea.rotation.x = -Math.PI / 2
-  sea.position.set(extent.x / 2, map.seaLevel + 0.02, extent.z / 2)
-  group.add(sea)
+  const globe = new Globe(shapeOf(map))
+  if (globe.shape.kind === 'planet') {
+    // The sea round the whole planet, at its level: a sphere, added after the rest is bent, since it is round already.
+    seaSphere = new THREE.Mesh(new THREE.SphereGeometry(globe.shape.planet.radius + map.seaLevel + 0.02, 192, 96), waterMaterial)
+    seaSphere.name = 'water'
+  } else {
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(extent.x, extent.z), waterMaterial)
+    sea.name = 'water'
+    sea.rotation.x = -Math.PI / 2
+    sea.position.set(extent.x / 2, map.seaLevel + 0.02, extent.z / 2)
+    group.add(sea)
+  }
 
   if (map.lakes.length > 0) {
     group.add(new THREE.Mesh(buildLakeGeometry(map.lakes, map.size, map.cellSize), waterMaterial))
@@ -2617,6 +2629,9 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     node.castShadow = node.name !== 'ground' && node.name !== 'scree'
   })
 
+  // On a planet, all of it carried round onto the sphere, and the sea round it.
+  globe.bendAll(group)
+  if (seaSphere !== null) group.add(seaSphere)
   return group
 }
 

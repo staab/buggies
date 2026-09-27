@@ -3,6 +3,7 @@ import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
 import { distanceFrom, type Ear } from './ear.ts'
+import { FLAT_GLOBE, type Globe } from './globe.ts'
 
 /** How long a tracer is seen, in seconds. */
 export const TRACER_LIFE = 0.1
@@ -39,9 +40,12 @@ export class Tracers {
   private readonly spare: { line: THREE.Mesh; material: THREE.MeshBasicMaterial }[] = []
   private lastTick = -1
 
-  constructor(sound: Sound | null, ear: Ear) {
+  private readonly globe: Globe
+
+  constructor(sound: Sound | null, ear: Ear, globe: Globe = FLAT_GLOBE) {
     this.sound = sound
     this.ear = ear
+    this.globe = globe
   }
 
   get shown(): number {
@@ -52,7 +56,15 @@ export class Tracers {
   fire(shots: readonly Shot[], tick: number): void {
     if (tick === this.lastTick) return
     this.lastTick = tick
-    for (const shot of shots) {
+    for (const fired of shots) {
+      // From and to where the map has them, drawn where that is in the world.
+      const shot = this.globe.round
+        ? {
+            ...fired,
+            from: this.globe.toWorld(fired.from.x, fired.from.y, fired.from.z, new THREE.Vector3()),
+            to: this.globe.toWorld(fired.to.x, fired.to.y, fired.to.z, new THREE.Vector3()),
+          }
+        : fired
       if (shot.kind === 'laser') {
         this.beam(shot)
         continue

@@ -13,6 +13,8 @@ import {
 import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
+import { FLAT_GLOBE, UPRIGHT, type Globe } from './globe.ts'
+
 /** Tip to tip, in meters: big enough to be seen from a chase camera. */
 export const BANANA_LENGTH = 3.9
 /** How fast a banana turns on the spot, in radians a second. */
@@ -250,12 +252,15 @@ export class PickupField {
   private readonly seen: number[]
   private readonly wasOut: boolean[]
   private readonly lastPositions: THREE.Vector3[]
+  private readonly globe: Globe
+  private readonly bent = new THREE.Matrix4()
   private pops: Pop[] = []
   private time = 0
 
-  constructor(source: PickupSource, onBomb: (at: Vec3) => void = () => {}) {
+  constructor(source: PickupSource, onBomb: (at: Vec3) => void = () => {}, globe: Globe = FLAT_GLOBE) {
     this.source = source
     this.onBomb = onBomb
+    this.globe = globe
     const kinds = source.pickups.map((_, slot) => pickupKind(slot))
     const bananaCount = kinds.filter((kind) => kind === 'banana').length
     this.bananas = new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, Math.max(bananaCount, 1))
@@ -308,7 +313,7 @@ export class PickupField {
       this.placer.rotation.set(0, this.time * SPIN_RATE + slot * 0.9, mesh === this.bananas ? TILT : 0, 'YXZ')
       this.placer.scale.setScalar(out ? 1 : 0)
       this.placer.updateMatrix()
-      mesh.setMatrixAt(index, this.placer.matrix)
+      mesh.setMatrixAt(index, this.globe.bendMatrix(this.placer.matrix, this.bent, false))
       this.lastPositions[slot]!.copy(this.placer.position)
       this.wasOut[slot] = out
     }
@@ -353,7 +358,7 @@ export class PickupField {
         this.place(thing, slot)
       }
       this.placer.updateMatrix()
-      this.loose[kind].setMatrixAt(slot, this.placer.matrix)
+      this.loose[kind].setMatrixAt(slot, this.globe.bendMatrix(this.placer.matrix, this.bent, false))
       drawn[kind] += 1
       const known = this.looseSeen.get(thing.id)
       const at = known?.position ?? new THREE.Vector3()
@@ -362,7 +367,7 @@ export class PickupField {
     }
     for (const [id, known] of this.looseSeen) {
       if (seen.has(id)) continue
-      if (known.kind === 'bomb' || known.kind === 'mine') this.onBomb(known.position)
+      if (known.kind === 'bomb' || known.kind === 'mine') this.onBomb(this.globe.toWorld(known.position.x, known.position.y, known.position.z, new THREE.Vector3()))
       else if (known.kind === 'banana' && tick < known.goneTick) this.pop(known.position)
     }
     this.looseSeen = seen
@@ -416,7 +421,8 @@ export class PickupField {
 
   private pop(at: THREE.Vector3, health = false): void {
     const group = new THREE.Group()
-    group.position.copy(at)
+    // Where it was on the map, stood upright there in the world.
+    this.globe.place(group, at, UPRIGHT)
     const prizeMaterial = (health ? this.healthMaterial : this.bananaMaterial).clone()
     prizeMaterial.transparent = true
     const prize = new THREE.Mesh(health ? this.healthShape : this.bananaShape, prizeMaterial)

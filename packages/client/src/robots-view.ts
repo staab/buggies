@@ -3,6 +3,7 @@ import * as THREE from 'three'
 
 import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
+import { FLAT_GLOBE, type Globe } from './globe.ts'
 
 /** Where the robots are: an arena, or a mirror of one. */
 export interface RobotSource {
@@ -61,6 +62,10 @@ interface Shown {
 /** How badly a machine has to be hurt before it smokes, and how hard it smokes when all but down. */
 export const MACHINE_SMOKING = 0.5
 const STILL = { x: 0, y: 0, z: 0 }
+/** The way up a model stands, and scratch for placing one. */
+export const Y = new THREE.Vector3(0, 1, 0)
+const at = new THREE.Vector3()
+const turn = new THREE.Quaternion()
 
 /** The robots, each drawn where the simulation has it, its eyes blazing while it burns a car. */
 export class RobotsView {
@@ -69,10 +74,12 @@ export class RobotsView {
   private readonly source: RobotSource
   private readonly effects: PresenceEffects | null
   private readonly ear: Ear | null
+  private readonly globe: Globe
   private readonly shown = new Map<number, Shown>()
 
-  constructor(source: RobotSource, effects: PresenceEffects | null = null, ear: Ear | null = null) {
+  constructor(source: RobotSource, effects: PresenceEffects | null = null, ear: Ear | null = null, globe: Globe = FLAT_GLOBE) {
     this.source = source
+    this.globe = globe
     this.effects = effects
     this.ear = ear
     this.update(0)
@@ -89,16 +96,17 @@ export class RobotsView {
       }
       if (robot.deaths !== view.deaths) {
         view.deaths = robot.deaths
-        const where = { x: view.model.position.x, y: view.model.position.y + ROBOT_SIZE.halfHeight, z: view.model.position.z }
+        const where = view.model.localToWorld(new THREE.Vector3(0, ROBOT_SIZE.halfHeight, 0))
         this.effects?.explosions.burst(where)
         if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
       }
       if (robot.damage > MACHINE_SMOKING) {
-        const head = { x: robot.position.x, y: robot.position.y + ROBOT_EYES, z: robot.position.z }
+        const head = this.globe.toWorld(robot.position.x, robot.position.y + ROBOT_EYES, robot.position.z, new THREE.Vector3())
         this.effects?.smoke.trail(head, STILL, (robot.damage - MACHINE_SMOKING) * 2, dt)
       }
-      view.model.position.set(robot.position.x, robot.position.y, robot.position.z)
-      view.model.rotation.set(0, robot.heading, 0)
+      at.set(robot.position.x, robot.position.y, robot.position.z)
+      this.globe.place(view.model, at, turn.setFromAxisAngle(Y, robot.heading))
+      view.model.updateMatrixWorld()
       view.eyes.emissiveIntensity = robot.beamTicks > 0 ? EYES_BURNING : EYES_IDLE
     }
   }

@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { clamp, type Quat, type Vec3 } from '@buggies/physics'
 import { CHASSIS_FORWARD as CHASSIS_FORWARD_VEC3 } from '@buggies/game'
 import { dampToward, dampVector3Toward } from './damping.ts'
+import { FLAT_GLOBE, type Globe } from './globe.ts'
 
 export interface CameraTuning {
   distance: number
@@ -86,6 +87,8 @@ export interface ChaseTarget {
   rotation: Quat
   velocity: Vec3
   speed: number
+  /** The way up where the car is: up the y axis on the flat, away from a planet's middle on one. */
+  up?: Vec3
   /** Blown up, and being watched from well back until it is put back. */
   wrecked: boolean
 }
@@ -116,7 +119,6 @@ export interface CameraBounds {
  */
 export type CameraBoundsAt = (x: number, z: number, out: CameraBounds, above: number) => CameraBounds
 
-const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const CHASSIS_FORWARD = new THREE.Vector3(CHASSIS_FORWARD_VEC3.x, CHASSIS_FORWARD_VEC3.y, CHASSIS_FORWARD_VEC3.z)
 const MIN_SPEED_FOR_VELOCITY_BLEND = 1
 const MIN_FOV_SPEED_REFERENCE = 1e-3
@@ -146,6 +148,11 @@ export class ChaseCamera {
   private readonly wreckAnchor = new THREE.Vector3()
   private readonly wreckArm = new THREE.Vector3()
   private boundsAt: CameraBoundsAt | null = null
+  /** The way up where the car is, and the world's shape, which the bounds are read on the map of. */
+  private readonly up = new THREE.Vector3(0, 1, 0)
+  private globe: Globe = FLAT_GLOBE
+  private readonly onMap = new THREE.Vector3()
+  private readonly targetOnMap = new THREE.Vector3()
   private readonly bounds: CameraBounds = { floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY }
 
   constructor(tuning: CameraTuning) {
@@ -161,9 +168,21 @@ export class ChaseCamera {
     })
   }
 
-  /** Where the camera is kept: above the floor, under the roof. */
-  setBoundsAt(boundsAt: CameraBoundsAt): void {
+  /** Where the camera is kept: above the floor, under the roof, read on the map of a world this shape. */
+  setBoundsAt(boundsAt: CameraBoundsAt, globe: Globe = FLAT_GLOBE): void {
     this.boundsAt = boundsAt
+    this.globe = globe
+  }
+
+  /** Hold a point between the floor and the roof where it is: on a planet, as high over the map as that allows. */
+  private confinePoint(point: THREE.Vector3): void {
+    if (!this.globe.round) {
+      point.y = this.confine(point.x, point.y, point.z)
+      return
+    }
+    this.globe.toMap(point, this.onMap)
+    this.onMap.y = this.confine(this.onMap.x, this.onMap.y, this.onMap.z)
+    this.globe.toWorld(this.onMap.x, this.onMap.y, this.onMap.z, point)
   }
 
   /**
@@ -175,7 +194,8 @@ export class ChaseCamera {
   private confine(x: number, y: number, z: number): number {
     if (this.boundsAt === null) return y
 
-    const { floor, ceiling } = this.boundsAt(x, z, this.bounds, this.targetPosition.y)
+    const above = this.globe.round ? this.globe.toMap(this.targetPosition, this.targetOnMap).y : this.targetPosition.y
+    const { floor, ceiling } = this.boundsAt(x, z, this.bounds, above)
     const lowest = floor + this.tuning.groundClearance
     const highest = ceiling - ROOF_CLEARANCE
 
@@ -210,6 +230,7 @@ export class ChaseCamera {
     this.targetPosition.set(target.position.x, target.position.y, target.position.z)
     this.targetRotation.set(target.rotation.x, target.rotation.y, target.rotation.z, target.rotation.w)
     this.targetVelocity.set(target.velocity.x, target.velocity.y, target.velocity.z)
+    if (target.up !== undefined) this.up.set(target.up.x, target.up.y, target.up.z)
   }
 
   private updateArmDirection(speed: number): void {
@@ -225,7 +246,8 @@ export class ChaseCamera {
       }
     }
 
-    this.armDirection.y = 0
+    // Along the ground: its part up or down taken out.
+    this.armDirection.addScaledVector(this.up, -this.armDirection.dot(this.up))
 
     if (this.armDirection.lengthSq() < MIN_ARM_LENGTH_SQUARED) {
       this.armDirection.copy(CHASSIS_FORWARD)
@@ -237,7 +259,7 @@ export class ChaseCamera {
   /** Whether there is a roof over the car itself: a bridge deck, or a tunnel. */
   private covered(): boolean {
     if (this.boundsAt === null) return false
-    const { x, y, z } = this.targetPosition
+    const { x, y, z } = this.globe.round ? this.globe.toMap(this.targetPosition, this.targetOnMap) : this.targetPosition
     return Number.isFinite(this.boundsAt(x, z, this.bounds, y).ceiling)
   }
 
@@ -250,8 +272,8 @@ export class ChaseCamera {
       this.desiredPosition
         .copy(this.wreckAnchor)
         .addScaledVector(this.wreckArm, -tuning.wreckDistance)
-        .addScaledVector(WORLD_UP, tuning.wreckHeight)
-      this.desiredPosition.y = this.confine(this.desiredPosition.x, this.desiredPosition.y, this.desiredPosition.z)
+        .addScaledVector(this.up, tuning.wreckHeight)
+      this.confinePoint(this.desiredPosition)
       this.desiredLookAt.copy(this.targetPosition)
       return
     }
@@ -264,12 +286,12 @@ export class ChaseCamera {
     this.desiredPosition
       .copy(this.targetPosition)
       .addScaledVector(this.armDirection, -armLength)
-      .addScaledVector(WORLD_UP, height)
-    this.desiredPosition.y = this.confine(this.desiredPosition.x, this.desiredPosition.y, this.desiredPosition.z)
+      .addScaledVector(this.up, height)
+    this.confinePoint(this.desiredPosition)
 
     this.desiredLookAt
       .copy(this.targetPosition)
-      .addScaledVector(WORLD_UP, tuning.lookHeight)
+      .addScaledVector(this.up, tuning.lookHeight)
       .addScaledVector(this.armDirection, lookAheadDistance)
   }
 
@@ -303,9 +325,9 @@ export class ChaseCamera {
 
     this.camera.near = tuning.near
     this.camera.far = tuning.far
-    this.position.y = this.confine(this.position.x, this.position.y, this.position.z)
+    this.confinePoint(this.position)
     this.camera.position.copy(this.position)
-    this.camera.up.copy(WORLD_UP)
+    this.camera.up.copy(this.up)
     this.camera.lookAt(this.lookAt)
     this.camera.updateProjectionMatrix()
   }

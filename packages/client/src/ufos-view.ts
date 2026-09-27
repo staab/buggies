@@ -4,7 +4,8 @@ import * as THREE from 'three'
 
 import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
-import { MACHINE_SMOKING } from './robots-view.ts'
+import { FLAT_GLOBE, type Globe } from './globe.ts'
+import { MACHINE_SMOKING, Y } from './robots-view.ts'
 
 /** Where the saucers are: an arena, or a mirror of one. */
 export interface UfoSource {
@@ -65,6 +66,8 @@ interface Shown {
 }
 
 const STILL = { x: 0, y: 0, z: 0 }
+const at = new THREE.Vector3()
+const turn = new THREE.Quaternion()
 
 /** The saucers, each where the simulation has it, its lights chasing round, and its beam down while it lifts a car. */
 export class UfosView {
@@ -74,11 +77,13 @@ export class UfosView {
   private readonly map: TerrainMap | null
   private readonly effects: PresenceEffects | null
   private readonly ear: Ear | null
+  private readonly globe: Globe
   private readonly shown = new Map<number, Shown>()
   private time = 0
 
-  constructor(source: UfoSource, map: TerrainMap | null = null, effects: PresenceEffects | null = null, ear: Ear | null = null) {
+  constructor(source: UfoSource, map: TerrainMap | null = null, effects: PresenceEffects | null = null, ear: Ear | null = null, globe: Globe = FLAT_GLOBE) {
     this.source = source
+    this.globe = globe
     this.map = map
     this.effects = effects
     this.ear = ear
@@ -97,13 +102,13 @@ export class UfosView {
       // Brought down since: it blows up where it was, and comes back elsewhere.
       if (ufo.deaths !== view.deaths) {
         view.deaths = ufo.deaths
-        const where = { x: view.model.position.x, y: view.model.position.y, z: view.model.position.z }
+        const where = view.model.position.clone()
         this.effects?.explosions.burst(where)
         if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
       }
-      if (ufo.damage > MACHINE_SMOKING) this.effects?.smoke.trail(ufo.position, STILL, (ufo.damage - MACHINE_SMOKING) * 2, dt)
-      view.model.position.set(ufo.position.x, ufo.position.y, ufo.position.z)
-      view.model.rotation.y = this.time * 0.6
+      at.set(ufo.position.x, ufo.position.y, ufo.position.z)
+      this.globe.place(view.model, at, turn.setFromAxisAngle(Y, this.time * 0.6))
+      if (ufo.damage > MACHINE_SMOKING) this.effects?.smoke.trail(view.model.position, STILL, (ufo.damage - MACHINE_SMOKING) * 2, dt)
       const lit = Math.floor(this.time * BLINK_RATE) % view.lights.length
       view.lights.forEach((light, k) => light.color.set(k === lit || (k + view.lights.length / 2) % view.lights.length === lit ? '#ffffff' : '#ffb020'))
       view.beam.visible = ufo.state === 'lift' || ufo.state === 'carry' || ufo.state === 'lower'

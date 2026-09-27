@@ -382,7 +382,8 @@ export class Shell implements MenuHost {
       const extent = mapExtent(made)
       const across = Math.max(extent.x, extent.z)
       this.scene.fog = new THREE.Fog('#a9cbe6', across * 0.65, across * 2.34)
-      this.sun.centerOn({ x: extent.x / 2, y: 0, z: extent.z / 2 })
+      // Over the middle of the map, or of the planet it is wrapped round.
+      this.sun.centerOn(made.planet ? { x: 0, y: 0, z: 0 } : { x: extent.x / 2, y: 0, z: extent.z / 2 })
       return made
     })
     this.making = { seed, island }

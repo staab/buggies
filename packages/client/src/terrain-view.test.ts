@@ -1,4 +1,5 @@
-import { ROAD_SKIRT, WORLD_SCALE, generateTerrain } from '@buggies/terrain'
+import { shapeOf } from '@buggies/game'
+import { PLANET_TERRAIN, ROAD_SKIRT, WORLD_SCALE, generateTerrain } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -173,4 +174,45 @@ describe('createTerrainView', () => {
   }, 30_000)
 
 
+
+  it("wraps a planet's island round the sphere: the ground on its surface, what stands on it upright, and the sea a sphere round it all", () => {
+    const map = generateTerrain(1, PLANET_TERRAIN)
+    const shape = shapeOf(map)
+    if (shape.kind !== 'planet') throw new Error('not a planet')
+    const { radius } = shape.planet
+    const view = createTerrainView(map)
+    view.updateMatrixWorld(true)
+    const point = new THREE.Vector3()
+    let grounds = 0
+    view.traverse((node) => {
+      if (!(node instanceof THREE.Mesh) || node instanceof THREE.InstancedMesh || node.name !== 'ground') return
+      grounds++
+      const positions = node.geometry.getAttribute('position')
+      for (let i = 0; i < positions.count; i += 97) {
+        point.fromBufferAttribute(positions, i).applyMatrix4(node.matrixWorld)
+        const height = point.length() - radius
+        expect(height).toBeGreaterThan(-60)
+        expect(height).toBeLessThan(200)
+      }
+    })
+    expect(grounds).toBeGreaterThan(0)
+    // Every instance of what stands on the island stands on the sphere, its own up pointing away from the middle.
+    const matrix = new THREE.Matrix4()
+    const up = new THREE.Vector3()
+    let standing = 0
+    view.traverse((node) => {
+      if (!(node instanceof THREE.InstancedMesh) || node.count === 0) return
+      for (let i = 0; i < node.count; i += 13) {
+        node.getMatrixAt(i, matrix)
+        point.setFromMatrixPosition(matrix)
+        up.set(0, 1, 0).transformDirection(matrix)
+        expect(point.length() - radius).toBeGreaterThan(-60)
+        expect(up.dot(point.clone().normalize())).toBeGreaterThan(0.5)
+        standing++
+      }
+    })
+    expect(standing).toBeGreaterThan(100)
+    const sea = view.getObjectByName('water') as THREE.Mesh
+    expect(sea.geometry).toBeInstanceOf(THREE.SphereGeometry)
+  }, 120_000)
 })

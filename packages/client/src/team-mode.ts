@@ -79,7 +79,7 @@ export async function createTeamMode(
     },
     map: first.map,
     position() {
-      return first.focus
+      return first.place
     },
     goal() {
       return first.goal()

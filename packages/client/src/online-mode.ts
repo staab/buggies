@@ -14,6 +14,7 @@ import {
   type Spider,
   type Ufo,
   type VehicleProfileId,
+  shapeOf,
 } from '@buggies/game'
 import { LocalPrediction, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
@@ -23,6 +24,7 @@ import * as THREE from 'three'
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
 import { aimPointOf, hookPointOf } from './car-presence.ts'
+import { Globe, UPRIGHT } from './globe.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
@@ -60,14 +62,14 @@ function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], uf
   const others: RadarBlip[] = []
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
-    const { x, z } = seat.vehicle.frame.position
+    const { x, z } = seat.chart.position
     others.push({ x, z, color: seat.npc ? NPC_COLOR : seatColor(seat.id) })
   }
   for (const robot of robots) others.push({ x: robot.position.x, z: robot.position.z, color: ROBOT_COLOR })
   for (const ufo of ufos) others.push({ x: ufo.position.x, z: ufo.position.z, color: UFO_COLOR })
   for (const spider of spiders) others.push({ x: spider.position.x, z: spider.position.z, color: SPIDER_COLOR })
   if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })
-  return { position: own.vehicle.frame.position, forward: own.vehicle.frame.forward, others }
+  return { position: own.chart.position, forward: own.chart.forward, others }
 }
 
 /** How a goal is coming along, in a line. */
@@ -100,8 +102,9 @@ export interface OnlineView {
   readonly root: THREE.Group
   readonly camera: THREE.PerspectiveCamera
   readonly seat: number
-  /** Where the play is: the car. */
+  /** Where the play is: the car, in the world, and on the map. */
   readonly focus: Vec3
+  readonly place: Vec3
   resize(aspect: number): void
   update(dt: number, active: boolean): void
   /** The mirror's tick: the game's time, the same on every mirror. */
@@ -143,6 +146,9 @@ export async function joinOnline(
   const welcome = await client.connect(player.profile, seed)
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
+  // What lies on the map drawn where that is in the world: round a planet, if the map is one's.
+  const globe = new Globe(shapeOf(map))
+  const spot = new THREE.Vector3()
 
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.
@@ -166,7 +172,7 @@ export async function joinOnline(
   // Far enough to take in the whole island, and the sun beyond it.
   cameraTuning.far = Math.max(Math.max(mapExtent(map).x, mapExtent(map).z) * 2, SUN_DISTANCE * 1.5)
   const chase = new ChaseCamera(cameraTuning)
-  chase.setBoundsAt(cameraBounds(map))
+  chase.setBoundsAt(cameraBounds(map), globe)
   const target = createChaseTarget()
 
   const onKey = (event: KeyboardEvent): void => {
@@ -188,6 +194,9 @@ export async function joinOnline(
     seat: welcome.seat,
     get focus() {
       return prediction.vehicle.frame.position
+    },
+    get place() {
+      return prediction.ownSeat.chart.position
     },
     get tick() {
       return prediction.tick
@@ -222,7 +231,8 @@ export async function joinOnline(
       wonFor = Math.max(wonFor - dt, 0)
       beacon.visible = own.goal?.kind === 'location'
       if (own.goal?.kind === 'location') {
-        beacon.position.set(own.goal.x, sampleHeight(map.heightfield, own.goal.x, own.goal.z), own.goal.z)
+        spot.set(own.goal.x, sampleHeight(map.heightfield, own.goal.x, own.goal.z), own.goal.z)
+        globe.place(beacon, spot, UPRIGHT)
       }
       car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
