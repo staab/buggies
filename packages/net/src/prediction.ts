@@ -15,6 +15,8 @@ import {
   type Pickup,
   type Robot,
   type Ufo,
+  type Spider,
+  seatSpiderBody,
   type Rocket,
   type Loose,
   type Seat,
@@ -159,6 +161,7 @@ export class LocalPrediction {
   /** The ledger is the client's: the bananas as the server has told of them so far. */
   constructor(mirror: Arena, seat: number, epoch: number, tick: number, bananas: BananaLedger) {
     this.mirror = mirror
+    mirror.mirror = true
     const own = mirror.seats[seat]
     if (own === undefined) throw new Error(`the mirror has no seat ${seat}`)
     this.seat = own
@@ -209,6 +212,11 @@ export class LocalPrediction {
   /** The flying saucers, as the mirror has them: the server's word, run ahead. */
   get ufos(): readonly Ufo[] {
     return this.mirror.ufos
+  }
+
+  /** The spiders, as the mirror has them: the server's word, run ahead. */
+  get spiders(): readonly Spider[] {
+    return this.mirror.spiders
   }
 
   /** Rockets in the air, as the mirror has them: the server's word, run ahead. */
@@ -374,6 +382,7 @@ export class LocalPrediction {
       seat.npc = vehicle.npc
       seat.collected = vehicle.collected
       seat.kills = vehicle.kills
+      seat.robotKills = vehicle.robotKills
       seat.goal = vehicle.goal === null ? null : { ...vehicle.goal }
       seat.goalsWon = vehicle.goalsWon
       seat.weapon = vehicle.weapon
@@ -432,6 +441,18 @@ export class LocalPrediction {
       ufo.abductions = known.abductions
       ufo.damage = known.damage
       ufo.deaths = known.deaths
+    }
+    for (const known of snapshot.spiders) {
+      const spider = this.mirror.spiders[known.id]
+      if (spider === undefined) continue
+      vcopy(spider.position, known.position)
+      spider.heading = known.heading
+      spider.legs = known.legs
+      spider.stride = known.stride
+      spider.bombTicks = known.bombTicks
+      spider.damage = known.damage
+      spider.deaths = known.deaths
+      seatSpiderBody(spider, true)
     }
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,

@@ -575,7 +575,8 @@ kbd {
   padding: 12px;
   border: 1px solid var(--edge);
   border-radius: 12px;
-  background: var(--panel);
+  /* Solid, so nothing of the game behind shows through the map. */
+  background: rgb(8, 20, 30);
   pointer-events: auto;
 }
 .overview canvas {

@@ -11,11 +11,12 @@ import { PropsView, type PropSource } from './props-view.ts'
 import { RobotsView, type RobotSource } from './robots-view.ts'
 import { RocketsView, type RocketSource } from './rockets-view.ts'
 import { Smoke } from './smoke.ts'
+import { SpidersView, type SpiderSource } from './spiders-view.ts'
 import { Tracers } from './tracers.ts'
 import { UfosView, type UfoSource } from './ufos-view.ts'
 
 /** Where everything on the island besides the cars is read from: an arena, or a mirror of one. */
-export interface ArenaSource extends PickupSource, RocketSource, PropSource, RobotSource, UfoSource {
+export interface ArenaSource extends PickupSource, RocketSource, PropSource, RobotSource, UfoSource, SpiderSource {
   readonly shots: readonly Shot[]
 }
 
@@ -39,6 +40,7 @@ export class ArenaView {
   private readonly props: PropsView
   private readonly robots: RobotsView
   private readonly ufos: UfosView
+  private readonly spiders: SpidersView
 
   constructor(source: ArenaSource, sound: Sound | null, ear: Ear, map: TerrainMap | null = null) {
     this.source = source
@@ -52,6 +54,7 @@ export class ArenaView {
     this.props = new PropsView(source)
     this.robots = new RobotsView(source, this.effects, ear)
     this.ufos = new UfosView(source, map, this.effects, ear)
+    this.spiders = new SpidersView(source, this.effects, ear)
     this.object.add(
       this.explosions.object,
       this.smoke.object,
@@ -61,6 +64,7 @@ export class ArenaView {
       this.props.object,
       this.robots.object,
       this.ufos.object,
+      this.spiders.object,
     )
   }
 
@@ -73,6 +77,7 @@ export class ArenaView {
     this.props.update()
     this.robots.update(dt)
     this.ufos.update(dt)
+    this.spiders.update(dt)
     this.smoke.update(dt)
     this.explosions.update(dt)
   }
@@ -82,6 +87,7 @@ export class ArenaView {
     this.props.dispose()
     this.robots.dispose()
     this.ufos.dispose()
+    this.spiders.dispose()
     this.rockets.dispose()
     this.pickups.dispose()
     this.explosions.dispose()

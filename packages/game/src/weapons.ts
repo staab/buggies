@@ -15,7 +15,6 @@ import {
 } from '@buggies/physics'
 import { sampleHeight, type TerrainMap } from '@buggies/terrain'
 import {
-  DURABILITY,
   WORLD_UP,
   addForceAlong,
   addTorqueAbout,
@@ -28,6 +27,7 @@ import {
 } from '@buggies/vehicle'
 
 import { NPC_FRAGILITY } from './npcs.ts'
+import { SPIDER_BELLY, SPIDER_BODY } from './spiders.ts'
 
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
@@ -216,6 +216,11 @@ export const PLOW_AHEAD = 2.5
 export const PLOW_ASIDE = 0.8
 export const PLOW_SHOVE = 1.6
 export const PLOW_LIFT = 0.3
+/** A robot is not shoved but battered: this much of what wrecks a car, a tick, for every m/s the plow closes on it. */
+export const PLOW_MACHINE_BITE = 0.007
+/** How far a robot stands out from its middle, to the side and ahead, for the plow. */
+const ROBOT_HALF_WIDTH = 1.6
+const ROBOT_HALF_DEPTH = 1.4
 
 /**
  * The grappling hook catches the nearest car within this far and this near
@@ -446,8 +451,9 @@ export interface Gunner {
   readonly occupied: boolean
   /** A car nobody drives, which weapons hurt all the more. */
   readonly npc: boolean
-  /** How many cars its weapons have wrecked since it sat down. */
+  /** How many cars its weapons have wrecked since it sat down, and how many robots they have brought down. */
   kills: number
+  robotKills: number
   readonly vehicle: Vehicle
   readonly tuning: VehicleTuning
   readonly profile: VehicleProfileId
@@ -514,18 +520,30 @@ export interface Machine {
   damage: number
 }
 
-/** A target number from here up is a robot, the robot's number on from it; from here up, a saucer. Below, a seat. */
+/** A target number from here up is a robot, the robot's number on from it; from here up, a saucer; from here up, a spider. Below, a seat. */
 export const ROBOT_TARGET = 200
 export const UFO_TARGET = 240
-/** How many times tougher than a car's hull a robot or a saucer is. */
-export const MACHINE_TOUGHNESS = 10
+export const SPIDER_TARGET = 250
+/** How many times tougher than the sports car a robot or a saucer is, weighed before `DURABILITY`: eight rockets or so bring one down. */
+export const MACHINE_TOUGHNESS = 5
 /** How high over a robot's feet it is aimed at, and how near a rocket has to come to a machine to go off on it. */
 const ROBOT_MIDDLE = 3
+/** Where a spider is aimed at: its body, high over its feet. */
+const SPIDER_MIDDLE = SPIDER_BELLY + SPIDER_BODY.halfHeight
 const MACHINE_REACH = 5
+/** A spider is bigger: a rocket goes off on it this near its middle. */
+const SPIDER_HIT_REACH = 8
 
 /** Where a target is to be aimed at, into `out`: a car in play, a robot's middle or a saucer; `null` for nothing there to aim at. */
-export function aimPoint(arena: Pick<Battlefield, 'seats' | 'robots' | 'ufos'>, target: number, out: Vec3): Vec3 | null {
+export function aimPoint(arena: Pick<Battlefield, 'seats' | 'robots' | 'ufos' | 'spiders'>, target: number, out: Vec3): Vec3 | null {
   if (target === NO_TARGET) return null
+  if (target >= SPIDER_TARGET) {
+    const spider = arena.spiders[target - SPIDER_TARGET]
+    if (spider === undefined) return null
+    vcopy(out, spider.position)
+    out.y += SPIDER_MIDDLE
+    return out
+  }
   if (target >= UFO_TARGET) {
     const ufo = arena.ufos[target - UFO_TARGET]
     return ufo === undefined ? null : vcopy(out, ufo.position)
@@ -543,15 +561,22 @@ export function aimPoint(arena: Pick<Battlefield, 'seats' | 'robots' | 'ufos'>, 
 }
 
 /** Take this much of a target with a weapon: of a car, as `harm` does; of a machine, as much less as it is tougher. */
-function strike(arena: Battlefield, target: number, damage: number, by?: Gunner): void {
+export function strike(arena: Battlefield, target: number, damage: number, by?: Gunner): void {
+  if (target >= SPIDER_TARGET) {
+    const spider = arena.spiders[target - SPIDER_TARGET]
+    if (spider !== undefined) spider.damage = Math.min(spider.damage + damage / MACHINE_TOUGHNESS, 1)
+    return
+  }
   if (target >= UFO_TARGET) {
     const ufo = arena.ufos[target - UFO_TARGET]
-    if (ufo !== undefined) ufo.damage = Math.min(ufo.damage + damage / MACHINE_TOUGHNESS / DURABILITY, 1)
+    if (ufo !== undefined) ufo.damage = Math.min(ufo.damage + damage / MACHINE_TOUGHNESS, 1)
     return
   }
   if (target >= ROBOT_TARGET) {
     const robot = arena.robots[target - ROBOT_TARGET]
-    if (robot !== undefined) robot.damage = Math.min(robot.damage + damage / MACHINE_TOUGHNESS / DURABILITY, 1)
+    if (robot === undefined || robot.damage >= 1) return
+    robot.damage = Math.min(robot.damage + damage / MACHINE_TOUGHNESS, 1)
+    if (robot.damage >= 1 && by !== undefined && by.occupied) by.robotKills += 1
     return
   }
   const seat = arena.seats[target]
@@ -566,6 +591,9 @@ function machinesOf(arena: Battlefield, visit: (target: number, at: Vec3) => voi
   for (const ufo of arena.ufos) {
     if (aimPoint(arena, UFO_TARGET + ufo.id, machineAt) !== null) visit(UFO_TARGET + ufo.id, machineAt)
   }
+  for (const spider of arena.spiders) {
+    if (aimPoint(arena, SPIDER_TARGET + spider.id, machineAt) !== null) visit(SPIDER_TARGET + spider.id, machineAt)
+  }
 }
 const machineAt = v3()
 const aimed = v3()
@@ -577,6 +605,7 @@ export interface Battlefield {
   /** The machines that can be shot at besides the cars: the robots and the saucers. */
   readonly robots: readonly Machine[]
   readonly ufos: readonly Machine[]
+  readonly spiders: readonly Machine[]
   readonly rockets: Rocket[]
   /** What lies loose on the map: bombs are dropped among the bananas. */
   readonly loose: Loose[]
@@ -824,7 +853,8 @@ export function shielded(seat: Gunner): boolean {
 export function harm(seat: Gunner, damage: number, by?: Gunner): void {
   if (shielded(seat)) return
   const whole = !seat.vehicle.wrecked
-  hurtVehicle(seat.vehicle, seat.tuning, damage * (seat.npc ? NPC_FRAGILITY : 1))
+  // A car nobody drives has its toughness cut by its fragility, which its armor already takes the root of.
+  hurtVehicle(seat.vehicle, seat.tuning, damage * (seat.npc ? Math.sqrt(NPC_FRAGILITY) : 1))
   if (whole && seat.vehicle.wrecked && by !== undefined && by.id !== seat.id && by.occupied) by.kills += 1
 }
 
@@ -1140,7 +1170,12 @@ function plow(arena: Battlefield, seat: Gunner): void {
     const closing = thrown(body.translation(), body.linvel(), 0.5, 0.5)
     if (closing > 0) body.applyImpulse(vscale(heading, shove, body.mass() * closing * PLOW_SHOVE), true)
   }
+  for (const robot of arena.robots) {
+    const closing = thrown(robot.position, STILL, ROBOT_HALF_DEPTH, ROBOT_HALF_WIDTH)
+    if (closing > 0) strike(arena, ROBOT_TARGET + robot.id, closing * PLOW_MACHINE_BITE, seat)
+  }
 }
+const STILL = v3()
 
 /** Let go of whatever the grappling hook has caught. */
 function unhook(seat: Gunner): void {
@@ -1399,8 +1434,8 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
         machinesOf(arena, (target, point) => {
           if (spent) return
           vsub(toward, point, rocket.position)
-          if (vlength(toward) > MACHINE_REACH) return
-          strike(arena, target, ROCKET_DAMAGE * rocket.power)
+          if (vlength(toward) > (target >= SPIDER_TARGET ? SPIDER_HIT_REACH : MACHINE_REACH)) return
+          strike(arena, target, ROCKET_DAMAGE * rocket.power, seats[rocket.owner])
           spent = true
         })
       }

@@ -106,7 +106,7 @@ export class UfosView {
       view.model.rotation.y = this.time * 0.6
       const lit = Math.floor(this.time * BLINK_RATE) % view.lights.length
       view.lights.forEach((light, k) => light.color.set(k === lit || (k + view.lights.length / 2) % view.lights.length === lit ? '#ffffff' : '#ffb020'))
-      view.beam.visible = ufo.state === 'lift'
+      view.beam.visible = ufo.state === 'lift' || ufo.state === 'carry' || ufo.state === 'lower'
       if (view.beam.visible) {
         const ground = this.map === null ? ufo.position.y - 20 : sampleHeight(this.map.heightfield, ufo.position.x, ufo.position.z)
         view.beam.scale.set(1, Math.max(ufo.position.y - ground, 1), 1)

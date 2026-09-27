@@ -49,7 +49,7 @@ const ISLAND_RADIUS_MAX = (0.35 * 1025 * 1.2) / 1281
  */
 const ISLAND_RADIUS_MIN = 28 / 1281
 /** How many islands a map has. They may overlap into one land mass. */
-const ISLAND_COUNT = { min: 1, max: 8 } as const
+const ISLAND_COUNT = { min: 1, max: 15 } as const
 /**
  * The first island is drawn at least this fraction of the largest size, so
  * every map has room for its cities however small the rest come out.

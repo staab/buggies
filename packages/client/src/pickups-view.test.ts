@@ -1,4 +1,4 @@
-import { BANANA_SLOTS, LOOSE_KINDS, OIL_LIFE_TICKS, SPILL_FLIGHT_TICKS, SPILL_LIFE_TICKS, type Pickup, type Loose } from '@buggies/game'
+import { BANANA_SLOTS, LOOSE_KINDS, OIL_LIFE_TICKS, SPILL_FLIGHT_TICKS, type Pickup, type Loose } from '@buggies/game'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -132,10 +132,10 @@ describe('bananas as drawn', () => {
     expect(looseBananas.count).toBe(0)
     expect(field.popping).toBe(1)
     field.update(POP_LIFE)
-    // Gone at its time: faded, no pop.
+    // A slick gone at its time: faded, no pop.
     loose.push({
       id: 2,
-      kind: 'banana',
+      kind: 'oil',
       owner: 0,
       power: 0,
       from: { x: 0, y: 2, z: 0 },
@@ -143,7 +143,7 @@ describe('bananas as drawn', () => {
       bornTick: 100,
     })
     field.update(0.1)
-    source.tick = 100 + SPILL_LIFE_TICKS
+    source.tick = 100 + OIL_LIFE_TICKS
     loose.length = 0
     field.update(0.1)
     expect(field.popping).toBe(0)

@@ -9,7 +9,7 @@ const REDRAW = 0.1
 
 /** Something to show on the overview. */
 export interface OverviewMark {
-  kind: 'you' | 'player' | 'npc' | 'robot' | 'ufo' | 'goal'
+  kind: 'you' | 'player' | 'npc' | 'robot' | 'ufo' | 'spider' | 'goal'
   x: number
   z: number
   /** The color a car is marked in: its seat's. */
@@ -32,6 +32,7 @@ const LEGEND: readonly [OverviewMark['kind'], string][] = [
   ['npc', 'Traffic'],
   ['robot', 'Robots'],
   ['ufo', 'Saucer'],
+  ['spider', 'Spider'],
   ['goal', 'Goal'],
 ]
 
@@ -40,6 +41,7 @@ const COLORS: Readonly<Record<Exclude<OverviewMark['kind'], 'player'>, string>> 
   npc: '#9aa0a6',
   robot: '#ff3030',
   ufo: '#5cff8a',
+  spider: '#c15cff',
   goal: '#ffd24a',
 }
 
@@ -116,8 +118,8 @@ export class MapOverview {
     if (this.island?.seed !== map.seed) this.island = { seed: map.seed, picture: drawIsland(map, OVERVIEW_PIXELS) }
     context.drawImage(this.island.picture, 0, 0)
     const scale = OVERVIEW_PIXELS / (map.size * map.cellSize)
-    // Drawn from the least to the most wanted, so your own car is on top.
-    const order: OverviewMark['kind'][] = ['goal', 'npc', 'robot', 'ufo', 'player', 'you']
+    // Drawn from the least to the most wanted, so your own car is on top, and the robots and the saucer over the other cars.
+    const order: OverviewMark['kind'][] = ['goal', 'npc', 'player', 'robot', 'spider', 'ufo', 'you']
     const marks = [...this.host.marks()].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind))
     context.lineWidth = 2
     context.strokeStyle = '#0b1620'
@@ -141,13 +143,21 @@ export class MapOverview {
           context.rect(x - 4, z - 4, 8, 8)
           break
         case 'robot':
-          context.moveTo(x, z - 7)
-          context.lineTo(x + 7, z + 6)
-          context.lineTo(x - 7, z + 6)
+          context.moveTo(x, z - 11)
+          context.lineTo(x + 11, z + 9)
+          context.lineTo(x - 11, z + 9)
           context.closePath()
           break
         case 'ufo':
-          context.ellipse(x, z, 10, 6, 0, 0, Math.PI * 2)
+          context.ellipse(x, z, 14, 8, 0, 0, Math.PI * 2)
+          break
+        case 'spider':
+          // A body with a leg out at each corner.
+          context.arc(x, z, 7, 0, Math.PI * 2)
+          for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+            context.moveTo(x + dx * 6, z + dz * 6)
+            context.lineTo(x + dx * 13, z + dz * 13)
+          }
           break
         case 'goal':
           context.arc(x, z, 8, 0, Math.PI * 2)

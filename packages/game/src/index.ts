@@ -32,8 +32,10 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import type { Goal } from './goals.ts'
-import { carried, createUfos, dropPoint, flyUfo, rebuildUfo, released, type Ufo } from './ufos.ts'
-import { NPC_FRAGILITY, NPC_PROFILES, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
+import { createBoats, moveBoat, type Boat } from './boats.ts'
+import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
+import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
+import { NPC_FRAGILITY, NPC_PROFILES, UNSTUCK_AHEAD, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
 import {
   ROBOT_COOLDOWN_TICKS,
   ROBOT_DAMAGE,
@@ -70,6 +72,7 @@ export {
   DAMAGE_SMOKING,
   DEFAULT_WORLD_TUNING,
   DEFAULT_VEHICLE_PROFILE,
+  armorShare,
   DURABILITY,
   hurtVehicle,
   initPhysics,
@@ -97,6 +100,7 @@ export { findSpawns } from './spawns.ts'
 export {
   UFOS,
   UFO_BEAM_REACH,
+  UFO_CARRY_SPEED,
   UFO_COOLDOWN_TICKS,
   UFO_CRUISE,
   UFO_HOVER,
@@ -106,6 +110,20 @@ export {
   type Ufo,
   type UfoState,
 } from './ufos.ts'
+export { moveBoat, type Boat } from './boats.ts'
+export { SPIDER_TARGET } from './weapons.ts'
+export {
+  SPIDER_BELLY,
+  SPIDER_BODY,
+  SPIDER_BOMB_TICKS,
+  SPIDER_REACH,
+  SPIDER_SPEED,
+  SPIDERS,
+  createSpiders,
+  seatSpiderBody,
+  spiderWaypoint,
+  type Spider,
+} from './spiders.ts'
 export { NPC_CARS, NPC_FRAGILITY, NPC_PROFILES, NPC_SPEED, type Driver } from './npcs.ts'
 export {
   ROBOTS,
@@ -143,12 +161,11 @@ export {
   HEALTH_SLOTS,
   PICKUP_HEIGHT,
   PICKUP_REACH_UP,
+  PICKUP_HELD,
   PICKUP_RESPAWN_TICKS,
   PICKUP_SLOTS,
   SPILL_FAR,
   SPILL_FLIGHT_TICKS,
-  SPILL_LIFE_TICKS,
-  SPILL_MOST,
   SPILL_NEAR,
   LOOSE_IDS,
   LOOSE_KINDS,
@@ -320,6 +337,8 @@ import {
   gripOf,
   harm,
   hinder,
+  ROBOT_TARGET,
+  strike,
   hooked,
   lifting,
   sightLine,
@@ -345,16 +364,18 @@ import {
   spillFrom,
   looseGone,
   looseOut,
+  PICKUP_HEIGHT,
+  PICKUP_HELD,
   PICKUP_RESPAWN_TICKS,
-  SPILL_MOST,
   LOOSE_MOST,
   LOOSE_IDS,
+  BANANA_SLOTS,
   type Pickup,
   type Loose,
 } from './pickups.ts'
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
-export const MAX_PLAYERS = 8
+export const MAX_PLAYERS = 32
 
 /**
  * A place for one vehicle. Seats are created with the arena and never go
@@ -378,8 +399,9 @@ export interface Seat {
   score: number
   /** Bananas taken since sitting down, all told. */
   collected: number
-  /** Cars its weapons have wrecked since sitting down. */
+  /** Cars its weapons have wrecked since sitting down, and robots they have brought down. */
   kills: number
+  robotKills: number
   /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
   goal: Goal | null
   goalsWon: number
@@ -450,11 +472,17 @@ export interface Arena {
   readonly shots: Shot[]
   /** The robots on their rounds. Their places are replaced by the server's word. */
   readonly robots: readonly Robot[]
+  /** The giant spiders. Replaced by the server's word, like the saucers. */
+  readonly spiders: readonly Spider[]
+  /** The boats, meandering on the water as the time goes. */
+  readonly boats: readonly Boat[]
   /** The flying saucers. Replaced by the server's word, too. */
   readonly ufos: readonly Ufo[]
   /** The props, numbered as the map lists them, each a body the physics steps. */
   readonly props: readonly ArenaProp[]
   tick: number
+  /** A client's copy of the server's arena: nothing in it is wrecked or brought down but on the server's word. */
+  mirror: boolean
 }
 
 export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
@@ -482,6 +510,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       score: 0,
       collected: 0,
       kills: 0,
+      robotKills: 0,
       goal: null,
       goalsWon: 0,
       npc: false,
@@ -526,8 +555,11 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     rockets: [],
     shots: [],
     robots: createRobots(map, world),
+    boats: createBoats(map, world),
+    spiders: createSpiders(map, world),
     ufos: createUfos(map),
     tick: 0,
+    mirror: false,
   }
 }
 
@@ -648,6 +680,7 @@ export function advance(
   applyWorldTuning(arena.world, arena.worldTuning)
   const gravity = worldGravity(arena.world)
   for (const seat of arena.seats) {
+    seat.vehicle.spared = arena.mirror
     if (!seat.occupied) continue
     // A stunned car takes no driving.
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
@@ -673,6 +706,12 @@ export function advance(
     walkRobot(arena.map, robot, dt)
     seatRobotBody(robot, false)
   }
+  // The spiders stride on, each letting a bomb fall from its belly when one is due: on the server's word, in a mirror.
+  for (const spider of arena.spiders) {
+    if (walkSpider(arena.map, spider, dt) && !arena.mirror) dropFromSpider(arena, spider)
+  }
+  // The boats drift on to where the next tick has them.
+  for (const boat of arena.boats) moveBoat(boat, arena.tick + 1, false)
   // The saucers fly on, and pull on whatever car they have in their beams.
   for (const ufo of arena.ufos) flyUfo(arena.map, ufo, arena.seats, gravity, dt)
   arena.world.step()
@@ -685,8 +724,11 @@ export function advance(
   armFromBananas(arena)
   flyRockets(arena, dt)
   // A machine the weapons have brought down comes back whole elsewhere.
-  for (const robot of arena.robots) if (robot.damage >= 1) rebuildRobot(arena.map, robot)
-  for (const ufo of arena.ufos) if (ufo.damage >= 1) rebuildUfo(arena.map, ufo)
+  if (!arena.mirror) {
+    for (const robot of arena.robots) if (robot.damage >= 1) rebuildRobot(arena.map, robot)
+    for (const ufo of arena.ufos) if (ufo.damage >= 1) rebuildUfo(arena.map, ufo)
+    for (const spider of arena.spiders) if (spider.damage >= 1) rebuildSpider(arena.map, spider)
+  }
   trimLoose(arena)
 }
 
@@ -758,15 +800,20 @@ export function putPropBack(prop: ArenaProp): void {
 }
 
 /**
- * Only so much lies loose on a map at once, bananas, bombs and rockets
- * together; past that the oldest go, whichever they are.
+ * Only so many bombs, mines, oil slicks and rockets lie loose on a map at
+ * once; past that the oldest go, whichever they are. Spilled bananas are
+ * held to the banana slots, and stay until taken.
  */
 function trimLoose(arena: Arena): void {
-  while (arena.loose.length + arena.rockets.length > LOOSE_MOST) {
-    const loose = arena.loose[0]
+  let count = arena.rockets.length
+  for (const loose of arena.loose) if (loose.kind !== 'banana') count++
+  while (count > LOOSE_MOST) {
+    const oldest = arena.loose.findIndex((loose) => loose.kind !== 'banana')
+    const loose = arena.loose[oldest]
     const rocket = arena.rockets[0]
-    if (rocket === undefined || (loose !== undefined && loose.bornTick <= rocket.bornTick)) arena.loose.shift()
+    if (rocket === undefined || (loose !== undefined && loose.bornTick <= rocket.bornTick)) arena.loose.splice(oldest, 1)
     else arena.rockets.shift()
+    count--
   }
 }
 
@@ -781,6 +828,7 @@ function clearTally(seat: Seat): void {
   seat.score = 0
   seat.collected = 0
   seat.kills = 0
+  seat.robotKills = 0
   seat.goal = null
   seat.goalsWon = 0
   seat.npc = false
@@ -813,7 +861,7 @@ export function npcInput(arena: Arena, seat: Seat, out: VehicleInput): VehicleIn
   const { frame } = vehicle
   drive(arena.map, driver, { position: frame.position, forward: frame.forward, right: frame.right, speed: vehicle.speed }, npcCommand)
   if (npcCommand.stuck) {
-    respawnNearby(arena, seat)
+    respawn(seat, driverSpawn(arena.map, driver, UNSTUCK_AHEAD))
     return out
   }
   out.steer = npcCommand.steer
@@ -844,12 +892,55 @@ function armFromBananas(arena: Arena): void {
 function spillBananas(arena: Arena): void {
   for (const seat of arena.seats) {
     if (!seat.occupied || !seat.vehicle.wrecked || seat.score === 0) continue
-    const count = Math.min(seat.score, SPILL_MOST)
+    const count = holdBananaSlots(arena, seat.score)
     arena.loose.push(
       ...spillFrom(arena.map, seat.vehicle.frame.position, count, seat.id, arena.tick, arena.looseNext),
     )
     arena.looseNext = (arena.looseNext + count) % LOOSE_IDS
     seat.score = 0
+  }
+}
+
+/** A bomb falls from a spider's belly to float over the ground under it, for the next car to run into. */
+function dropFromSpider(arena: Arena, spider: Spider): void {
+  const { x, y, z } = spider.position
+  arena.loose.push({
+    id: arena.looseNext,
+    kind: 'bomb',
+    owner: NO_TARGET,
+    power: 1,
+    from: v3(x, y + SPIDER_BELLY, z),
+    position: v3(x, y + PICKUP_HEIGHT, z),
+    bornTick: arena.tick,
+  })
+  arena.looseNext = (arena.looseNext + 1) % LOOSE_IDS
+}
+
+/**
+ * Hold this many banana slots for bananas spilled from a wreck, or as many
+ * as there are: those waiting to come out first, then those out on the map,
+ * which are gone from there. Returns how many were held.
+ */
+function holdBananaSlots(arena: Arena, count: number): number {
+  let held = 0
+  for (const waiting of [true, false]) {
+    for (let slot = 0; slot < BANANA_SLOTS && held < count; slot++) {
+      const pickup = arena.pickups[slot]!
+      if (pickup.spawnTick === PICKUP_HELD || pickupOut(pickup, arena.tick) === waiting) continue
+      setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, PICKUP_HELD)
+      held++
+    }
+  }
+  return held
+}
+
+/** A spilled banana taken frees the slot it held, to come out on the map again in a while. */
+function freeBananaSlot(arena: Arena): void {
+  for (let slot = 0; slot < BANANA_SLOTS; slot++) {
+    const pickup = arena.pickups[slot]!
+    if (pickup.spawnTick !== PICKUP_HELD) continue
+    setPickup(arena.map, arena.water, pickup, slot, pickup.generation + 1, arena.tick + PICKUP_RESPAWN_TICKS)
+    return
   }
 }
 
@@ -902,11 +993,19 @@ function collectPickups(arena: Arena): void {
         seat.slipTicks = Math.max(seat.slipTicks, Math.round(OIL_SLIP_TICKS * loose.power))
         continue
       }
-      if (loose.kind === 'banana') score(seat)
-      else harm(seat, BOMB_DAMAGE * loose.power * bombShare(seat.profile), arena.seats[loose.owner])
+      if (loose.kind === 'banana') {
+        score(seat)
+        freeBananaSlot(arena)
+      } else harm(seat, BOMB_DAMAGE * loose.power * bombShare(seat.profile), arena.seats[loose.owner])
       arena.loose.splice(i, 1)
       break
     }
+    // A robot rolling over a bomb or a mine sets it off too, and takes the blast.
+    if (arena.loose[i] !== loose || (loose.kind !== 'bomb' && loose.kind !== 'mine')) continue
+    const robot = arena.robots.find((robot) => reachesLoose(loose, robot.position))
+    if (robot === undefined) continue
+    strike(arena, ROBOT_TARGET + robot.id, BOMB_DAMAGE * loose.power, arena.seats[loose.owner])
+    arena.loose.splice(i, 1)
   }
 }
 
@@ -937,30 +1036,6 @@ export function isLost(arena: Arena, seat: Seat): boolean {
     x > worldSize ||
     z > worldSize
   )
-}
-
-/**
- * Set down every car a saucer has had up its beam long enough, somewhere
- * else entirely: on the road nearest where the saucer drops it. Kept apart
- * from `advance`, like a respawn, as the owner's call. Returns the seats
- * set down.
- */
-export function abduct(arena: Arena): Seat[] {
-  const taken: Seat[] = []
-  for (const ufo of arena.ufos) {
-    if (!carried(ufo)) continue
-    const seat = arena.seats[ufo.target]
-    if (seat !== undefined && seat.occupied) {
-      const drop = dropPoint(arena.map, ufo)
-      const spot = nearestRoadSpotTo(arena.map, drop.x, drop.z)
-      if (spot !== null) {
-        respawn(seat, spawnFacing(spot, seat.vehicle.frame.forward))
-        taken.push(seat)
-      }
-    }
-    released(ufo)
-  }
-  return taken
 }
 
 /**

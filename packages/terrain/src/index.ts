@@ -5,7 +5,7 @@ export {
   onGround,
   sampleHeight,
 } from './heightfield.ts'
-export { generateBuildings } from './buildings.ts'
+export { BOAT_WANDER, boatAt, generateBuildings } from './buildings.ts'
 export {
   DISTRICT_CITY,
   DISTRICT_COUNTRY,

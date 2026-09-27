@@ -16,17 +16,24 @@ const LOOKAHEAD = 14
 /** How far either way of where it was a driver looks for itself on its road, and how far off it can wander before it looks for a road afresh. */
 const FOLLOW_WINDOW = 40
 const LOST_REACH = 25
+/** How far right of the middle of its road it keeps, as a share of the road's width. */
+const LANE = 0.22
+const target = { x: 0, y: 0, z: 0 }
+const beyond = { x: 0, y: 0, z: 0 }
 /** How near the end of a road it turns onto the next. */
 const TURN_REACH = 3
-/** How long it may sit stuck before it is put back on its road, in ticks. */
+/** How long it may go without getting this far, in ticks and meters, before it is stuck and put back on its road. */
 const STUCK_TICKS = 60 * 6
+const STUCK_REACH = 4
 const NPC_SALT = 0x0c4a
 
 /** What drives a car nobody drives: its round of the arterials, and how long it has been stuck. */
 export interface Driver extends Patrol {
   /** What picks its turns at the junctions. */
   readonly seed: number
+  /** How long since it was last this far from where it is: rocking against a wall counts as stuck, as much as sitting still. */
   stuckTicks: number
+  readonly stuckFrom: { x: number; z: number }
 }
 
 /** The seed a driver's rounds are picked by. */
@@ -38,13 +45,16 @@ function driverSeed(map: TerrainMap, seat: number): number {
 export function createDriver(map: TerrainMap, seat: number): Driver | null {
   const seed = driverSeed(map, seat)
   const patrol = startPatrol(seed)(map)
-  return patrol === null ? null : { ...patrol, seed, stuckTicks: 0 }
+  return patrol === null ? null : { ...patrol, seed, stuckTicks: 0, stuckFrom: { x: Number.POSITIVE_INFINITY, z: 0 } }
 }
 
-/** Where a driver starts: on its road, facing along it. */
-export function driverSpawn(map: TerrainMap, driver: Driver): { position: { x: number; y: number; z: number }; yaw: number } {
+/** How far on along its road a driver stuck is put back, clear of whatever held it. */
+export const UNSTUCK_AHEAD = 20
+
+/** Where a driver starts, or this far further on: on its road, facing along it. */
+export function driverSpawn(map: TerrainMap, driver: Driver, ahead = 0): { position: { x: number; y: number; z: number }; yaw: number } {
   const position = { x: 0, y: 0, z: 0 }
-  const yaw = patrolPoint(map, driver, position)
+  const yaw = patrolPoint(map, driver, position, ahead)
   return { position, yaw }
 }
 
@@ -77,8 +87,15 @@ export function drive(map: TerrainMap, driver: Driver, car: DrivenCar, out: Driv
   const left = driver.direction > 0 ? length - driver.along : driver.along
   if (left < TURN_REACH) advancePatrol(map, driver, left + TURN_REACH, driver.seed)
 
-  const target = { x: 0, y: 0, z: 0 }
+  // A point down the road, in the lane on its right, so two meeting pass each other.
   patrolPoint(map, driver, target, LOOKAHEAD)
+  patrolPoint(map, driver, beyond, LOOKAHEAD + 1)
+  const tx = beyond.x - target.x
+  const tz = beyond.z - target.z
+  const tangent = Math.hypot(tx, tz) || 1
+  const lane = (map.roads[driver.road]?.width ?? 0) * LANE
+  target.x -= (tz / tangent) * lane
+  target.z += (tx / tangent) * lane
   const dx = target.x - position.x
   const dz = target.z - position.z
   const distance = Math.hypot(dx, dz) || 1
@@ -90,7 +107,11 @@ export function drive(map: TerrainMap, driver: Driver, car: DrivenCar, out: Driv
   out.throttle = speed < wanted ? 0.7 : 0
   out.brake = speed > wanted + 3 ? 0.5 : 0
 
-  driver.stuckTicks = speed < 1 ? driver.stuckTicks + 1 : 0
+  if (Math.hypot(position.x - driver.stuckFrom.x, position.z - driver.stuckFrom.z) > STUCK_REACH) {
+    driver.stuckFrom.x = position.x
+    driver.stuckFrom.z = position.z
+    driver.stuckTicks = 0
+  } else driver.stuckTicks += 1
   out.stuck = driver.stuckTicks > STUCK_TICKS
   if (out.stuck) driver.stuckTicks = 0
   return out

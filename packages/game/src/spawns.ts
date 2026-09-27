@@ -6,8 +6,9 @@ import type { VehicleSpawn } from '@buggies/vehicle'
 // is several times slower under the test runner's module loader, and these run hot.
 const { atan2, hypot } = exact
 
-/** Nose to tail along the road, with room to pull out. */
+/** Nose to tail along the road, with room to pull out, and side to side, two abreast. */
 const SPAWN_SPACING = 9
+const SPAWN_ABREAST = 5
 
 /** How far along a road to look for the next point when facing a vehicle. */
 const FACING_REACH = 3
@@ -149,12 +150,60 @@ export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
     }))
   }
 
-  // Behind the first spot for preference, so the front car is the one nearest
-  // the city; ahead of it when the road behind runs out.
-  const spots = [first, ...spotsAlong(first, SPAWN_SPACING, -1, count - 1)]
-  spots.push(...spotsAlong(first, SPAWN_SPACING, 1, count - spots.length))
-  // A road too short for the field stacks the rest on its last spot rather
-  // than leaving seats with nowhere to be.
-  while (spots.length < count) spots.push(spots.at(-1) ?? first)
-  return spots.map(spawnAt)
+  // Two abreast, staggered a half length apart, behind the first spot for
+  // preference, so the front car is the one nearest the city; ahead of it
+  // when the road behind runs out.
+  const half = SPAWN_SPACING / 2
+  const behind = spotsAlong(first, half, -1, count - 1)
+  const ahead = spotsAlong(first, half, 1, count - 1 - behind.length)
+  const lined = [
+    spawnAside(first, 0),
+    ...behind.map((spot, i) => spawnAside(spot, i + 1)),
+    ...ahead.map((spot, i) => spawnAside(spot, i + 1)),
+  ]
+  // A road too short for the field seats the rest on the nearest road spots clear of everyone.
+  if (lined.length < count) lined.push(...clearSpots(map, first, lined, count - lined.length))
+  while (lined.length < count) lined.push(lined.at(-1) ?? spawnAt(first))
+  return lined
+}
+
+/** A spawn at a spot, in the lane its place in the line puts it in: the left for even places, the right for odd. */
+function spawnAside(spot: RoadSpot, place: number): VehicleSpawn {
+  const spawn = spawnAt(spot)
+  const { road, index } = spot
+  const next = road.points[Math.min(index + 1, road.points.length - 1)]!
+  const prev = road.points[Math.max(index - 1, 0)]!
+  const dx = next.x - prev.x
+  const dz = next.z - prev.z
+  const length = hypot(dx, dz) || 1
+  const aside = Math.min(road.width / 4, SPAWN_ABREAST / 2) * (place % 2 === 0 ? 1 : -1)
+  spawn.position.x += (-dz / length) * aside
+  spawn.position.z += (dx / length) * aside
+  return spawn
+}
+
+/** Spots at grade on any road, nearest the first, each a spawn's length clear of the others and of those already had. */
+function clearSpots(map: TerrainMap, first: RoadSpot, had: VehicleSpawn[], wanted: number): VehicleSpawn[] {
+  const candidates: { spot: RoadSpot; distance: number }[] = []
+  for (const road of map.roads) {
+    const segmentCount = road.closed ? road.points.length : road.points.length - 1
+    for (let i = 0; i < segmentCount; i++) {
+      if (road.structure[i] !== ROAD_GRADE) continue
+      const point = road.points[i]!
+      candidates.push({ spot: { road, index: i, point }, distance: hypot(point.x - first.point.x, point.z - first.point.z) })
+    }
+  }
+  candidates.sort((a, b) => a.distance - b.distance)
+  const lead = had[0]?.yaw ?? 0
+  const forward = { x: -Math.sin(lead), z: -Math.cos(lead) }
+  const found: VehicleSpawn[] = []
+  const taken = [...had]
+  for (const { spot } of candidates) {
+    if (found.length >= wanted) break
+    if (taken.some(({ position }) => hypot(position.x - spot.point.x, position.z - spot.point.z) < SPAWN_SPACING)) continue
+    const spawn = spawnFacing(spot, forward)
+    found.push(spawn)
+    taken.push(spawn)
+  }
+  return found
 }

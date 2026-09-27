@@ -82,7 +82,7 @@ const SHIELD_BUBBLE = { scale: 1.6, opacity: 0.28 } as const
 const PLOW_OUT = 0.35
 
 /** Where a seat's gun is trained: the middle of the car, or the machine, it has picked out, if any. */
-export function aimPointOf(seat: Seat, field: Pick<Arena, 'seats' | 'robots' | 'ufos'>): Vec3 | null {
+export function aimPointOf(seat: Seat, field: Pick<Arena, 'seats' | 'robots' | 'ufos' | 'spiders'>): Vec3 | null {
   if ((seat.weapon !== 'machineGun' && seat.weapon !== 'laser') || seat.aimTarget === NO_TARGET) return null
   return aimPoint(field, seat.aimTarget, v3())
 }

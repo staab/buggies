@@ -63,12 +63,12 @@ describe('cars nobody drives', () => {
   it('are fragile: a weapon takes three times as much of one as of another car', () => {
     const arena = createArena(map)
     const npc = seatNpc(arena, 7)!
-    const car = takeSeat(arena, 0, 'smallCar')
+    const car = takeSeat(arena, 0, npc.profile)
     advance(arena)
     harm(npc, 0.3)
     harm(car, 0.3)
-    expect(car.vehicle.damage).toBeCloseTo(0.3 / DURABILITY, 5)
-    expect(npc.vehicle.damage).toBeCloseTo((0.3 * NPC_FRAGILITY) / DURABILITY, 5)
+    expect(npc.vehicle.damage / car.vehicle.damage).toBeCloseTo(NPC_FRAGILITY, 5)
+    expect(car.vehicle.damage).toBeGreaterThan(0)
     arena.world.free()
   })
 

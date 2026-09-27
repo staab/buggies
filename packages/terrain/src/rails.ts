@@ -138,6 +138,17 @@ export function railRuns(roads: Road[]): RailRun[] {
       }
       return along
     })
+  // Where a surface road ends on another, and which way it leaves it: a
+  // bridge's rail stands back from the mouth, which a car turns in or out of.
+  const junctions = roads
+    .filter((road) => isSurfaceRoad(road) && !road.closed && road.points.length > 1)
+    .flatMap((road) =>
+      [road.points, [...road.points].reverse()].map((points) => {
+        const end = points[0]!
+        const away = points.find((point) => hypot(point.x - end.x, point.z - end.z) > road.width) ?? points.at(-1)!
+        return { road, end, away, reach: road.width / 2 + RAIL_FLARE + 2 }
+      }),
+    )
   const runs: RailRun[] = []
 
   for (const road of roads) {
@@ -145,6 +156,14 @@ export function railRuns(roads: Road[]): RailRun[] {
     const segmentCount = road.closed ? count : count - 1
     const half = road.width / 2
     const lift = roadLift(road)
+    // The roads that end on this one, their ends on its deck.
+    const joining = junctions.filter((junction) => {
+      if (junction.road === road) return false
+      for (let i = 0; i < segmentCount; i++) {
+        if (beside(junction.end.x, junction.end.z, road.points[i]!, road.points[(i + 1) % count]!).distance <= half + 1) return true
+      }
+      return false
+    })
 
     // A segment, its structure and its two points are all within the road:
     // segments are counted from its points, and the last of a loop ends at
@@ -152,9 +171,17 @@ export function railRuns(roads: Road[]): RailRun[] {
     const railed = (segment: number, side: number): boolean => {
       const structure = road.structure[segment]!
       if (structure === ROAD_TUNNEL) return false
-      if (isSurfaceRoad(road)) return structure === ROAD_BRIDGE
       const a = road.points[segment]!
       const b = road.points[(segment + 1) % count]!
+      if (isSurfaceRoad(road)) {
+        return (
+          structure === ROAD_BRIDGE &&
+          !joining.some(
+            (junction) =>
+              beside(junction.away.x, junction.away.z, a, b).side === side && beside(junction.end.x, junction.end.z, a, b).distance <= junction.reach,
+          )
+        )
+      }
       return !mouths.some((mouth) => {
         const at = beside(mouth.x, mouth.z, a, b)
         return at.side === side && at.distance <= half + RAMP_MOUTH

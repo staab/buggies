@@ -81,7 +81,8 @@ describe('game', () => {
         if (distance < nearest.distance) nearest = { road, point, distance }
       }
     }
-    expect(nearest.distance).toBeLessThan(1)
+    // In its lane: off the middle of the road, but on it.
+    expect(nearest.distance).toBeLessThan(nearest.road.width / 2)
     expect(spawn.position.y).toBeCloseTo(nearest.point.y + roadLift(nearest.road), 5)
   })
 
@@ -95,11 +96,12 @@ describe('game', () => {
         expect(Math.hypot(a.x - b.x, a.z - b.z)).toBeGreaterThan(6)
       }
     }
-    // Everyone faces roughly the same way down the road.
-    for (const spawn of spawns) {
+    // Nearly everyone faces roughly the same way: all down the road, and those seated on the roads nearby where they can.
+    const along = spawns.filter((spawn) => {
       const turn = Math.abs(Math.atan2(Math.sin(spawn.yaw - spawns[0]!.yaw), Math.cos(spawn.yaw - spawns[0]!.yaw)))
-      expect(turn).toBeLessThan(Math.PI / 2)
-    }
+      return turn < Math.PI / 2
+    })
+    expect(along.length).toBeGreaterThan(MAX_PLAYERS * 0.75)
   })
 
   it('settles the vehicle on its springs instead of sinking or falling through', () => {

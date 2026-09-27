@@ -28,20 +28,20 @@ describe('the props', () => {
     arena.world.free()
   })
 
-  it('a car driven into a cone sends it flying', () => {
+  it('a tank driven into a cone sends it flying', () => {
     const arena = createArena(map)
     const cone = arena.props.find((prop) => prop.kind === 'cone')
     expect(cone).toBeDefined()
-    const seat = takeSeat(arena, 0, 'sportsCar')
+    const seat = takeSeat(arena, 0, 'tank')
     for (let i = 0; i < 30; i++) advance(arena)
-    // The cone set down in the road a little way ahead of the car, which then drives at it.
+    // Up to speed first, then the cone set down in the road just ahead of the car, which drives on at it.
+    for (let i = 0; i < 90; i++) advance(arena, () => DRIVE)
     const { forward, position } = seat.vehicle.frame
-    const ahead = 40
-    cone!.body.setTranslation({ x: position.x + forward.x * ahead, y: position.y + 0.5, z: position.z + forward.z * ahead }, true)
+    const ahead = 12
+    cone!.body.setTranslation({ x: position.x + forward.x * ahead, y: position.y + 0.3, z: position.z + forward.z * ahead }, true)
     cone!.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
-    for (let i = 0; i < 20; i++) advance(arena)
     const before = { ...cone!.body.translation() }
-    for (let i = 0; i < 240; i++) advance(arena, () => DRIVE)
+    for (let i = 0; i < 90; i++) advance(arena, () => DRIVE)
     const after = cone!.body.translation()
     expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeGreaterThan(2)
     arena.world.free()

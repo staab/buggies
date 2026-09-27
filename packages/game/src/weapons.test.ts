@@ -2,6 +2,7 @@ import { generateTerrain, roadLift, sampleHeight, type TerrainMap } from '@buggi
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  armorShare,
   BOMB_DROP_BACK,
   BUILT_IN_GUNS,
   ENGINE_BURN_TICKS,
@@ -19,7 +20,6 @@ import {
   ROCKET_LIFE_TICKS,
   ROCKET_SPEED,
   SPILL_FLIGHT_TICKS,
-  SPILL_LIFE_TICKS,
   WEAPONS,
   WINGS_FLIGHT_TICKS,
   HOP_SPEED,
@@ -253,7 +253,7 @@ describe('weapons', () => {
     const behind = { x: position.x - forward.x * BOMB_DROP_BACK, z: position.z - forward.z * BOMB_DROP_BACK }
     expect(Math.hypot(bomb.position.x - behind.x, bomb.position.z - behind.z)).toBeLessThan(0.5)
     expect(bomb.position.y).toBeGreaterThan(sampleHeight(map.heightfield, bomb.position.x, bomb.position.z))
-    expect(looseGone(bomb, bomb.bornTick + SPILL_LIFE_TICKS * 10)).toBe(false)
+    expect(looseGone(bomb, bomb.bornTick + 60 * 60 * 60)).toBe(false)
     // The car that dropped it is safe while the bomb is still in the air, and no longer once it has landed.
     respawn(a, { position: { x: bomb.position.x, y: bomb.position.y - PICKUP_HEIGHT, z: bomb.position.z }, yaw: 0 })
     for (let i = 0; i < SPILL_FLIGHT_TICKS - 10; i++) advance(arena)
@@ -266,11 +266,11 @@ describe('weapons', () => {
     arena.world.free()
   })
 
-  it('only so much lies loose at once, the oldest going first', () => {
+  it('only so many bombs, mines, slicks and rockets lie loose at once, the oldest going first, and spilled bananas are not among them', () => {
     const arena = createArena(map)
     takeSeat(arena, 0, 'sportsCar')
     advance(arena)
-    // A rocket older than all of it, and far more bananas than the map holds.
+    // A rocket older than all of it, far more bombs, mines and slicks than the map holds, and bananas among them.
     arena.rockets.push({
       id: 1,
       owner: 0,
@@ -280,22 +280,28 @@ describe('weapons', () => {
       bornTick: arena.tick - 2,
       power: 1,
     })
+    const kinds = ['bomb', 'mine', 'oil'] as const
     for (let i = 0; i < LOOSE_MOST + 40; i++) {
       arena.loose.push({
         id: i,
-        kind: i % 5 === 0 ? 'bomb' : 'banana',
+        kind: kinds[i % 3]!,
         owner: 0,
-        power: i % 5 === 0 ? 1 : 0,
+        power: 1,
         from: { x: 0, y: 0, z: 0 },
         position: { x: 10, y: 500, z: 10 },
         bornTick: arena.tick - 1 + Math.floor(i / 100),
       })
     }
+    for (let i = 0; i < 50; i++) {
+      arena.loose.push({ id: 1000 + i, kind: 'banana', owner: 0, power: 0, from: { x: 0, y: 0, z: 0 }, position: { x: 20, y: 500, z: 20 }, bornTick: arena.tick - 5 })
+    }
     advance(arena)
-    expect(arena.loose.length + arena.rockets.length).toBe(LOOSE_MOST)
-    // The rocket went first, then the forty oldest bananas.
+    const others = arena.loose.filter((loose) => loose.kind !== 'banana')
+    expect(others.length + arena.rockets.length).toBe(LOOSE_MOST)
+    expect(arena.loose.filter((loose) => loose.kind === 'banana')).toHaveLength(50)
+    // The rocket went first, then the forty oldest of the rest.
     expect(arena.rockets).toHaveLength(0)
-    expect(arena.loose[0]!.id).toBe(40)
+    expect(others[0]!.id).toBe(40)
     arena.world.free()
   })
 
@@ -675,7 +681,7 @@ describe("the car's own key", () => {
     const [a, b] = twoCars(arena, 'sportsCar', 'police', 25, 12)
     arm(a, 'machineGun')
     expect(hold(arena, a, 60, FIRE)).toBe(10)
-    expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * POLICE_SHOT_SHARE) / DURABILITY, 6)
+    expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * POLICE_SHOT_SHARE * armorShare(b.tuning)) / DURABILITY, 6)
     arena.world.free()
   })
 
@@ -774,7 +780,7 @@ describe("the car's own key", () => {
     expect(won.power).toBe(1)
     onto(truck, won.position)
     for (let i = 0; i < SPILL_FLIGHT_TICKS + 10; i++) advance(arena)
-    expect(truck.vehicle.damage).toBeCloseTo(FIRETRUCK_BOMB_SHARE / DURABILITY, 5)
+    expect(truck.vehicle.damage).toBeCloseTo((FIRETRUCK_BOMB_SHARE * armorShare(truck.tuning)) / DURABILITY, 5)
     expect(truck.vehicle.wrecked).toBe(false)
     arena.world.free()
   })

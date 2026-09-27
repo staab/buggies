@@ -123,7 +123,7 @@ function takeDamage(vehicle: Vehicle, tuning: VehicleTuning, dt: number): void {
   const knock = jolt - tuning.damageAcceleration * dt
   if (knock <= 0) return
   vehicle.damage = Math.min(vehicle.damage + knock / (tuning.damageToWreck * DURABILITY), 1)
-  if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
+  if (vehicle.damage >= 1 && !vehicle.wrecked && !vehicle.spared) wreck(vehicle, tuning)
 }
 
 /**
@@ -157,13 +157,26 @@ export function wreckVehicle(vehicle: Vehicle, tuning: VehicleTuning): void {
   wreck(vehicle, tuning)
 }
 
+/** How tough a car the weapons are measured against: the sports car's `damageToWreck`. */
+export const ARMOR_REFERENCE = 80
+
 /**
- * Hurt a car from outside, by this much of what would wreck a car with no
- * more than its tuning's toughness: `DURABILITY` times as much blows it up.
+ * How much of a blow a car takes for how tough it is, against the sports
+ * car's: the square root, so a tank shrugs off a good deal more than a
+ * go-kart without being all but untouchable.
+ */
+export function armorShare(tuning: VehicleTuning): number {
+  return Math.sqrt(ARMOR_REFERENCE / tuning.damageToWreck)
+}
+
+/**
+ * Hurt a car from outside, by this much of what would wreck the sports car,
+ * less for a tougher car and more for a flimsier one: `DURABILITY` times as
+ * much blows the sports car up.
  */
 export function hurtVehicle(vehicle: Vehicle, tuning: VehicleTuning, amount: number): void {
-  vehicle.damage = Math.min(vehicle.damage + amount / DURABILITY, 1)
-  if (vehicle.damage >= 1 && !vehicle.wrecked) wreck(vehicle, tuning)
+  vehicle.damage = Math.min(vehicle.damage + (amount * armorShare(tuning)) / DURABILITY, 1)
+  if (vehicle.damage >= 1 && !vehicle.wrecked && !vehicle.spared) wreck(vehicle, tuning)
 }
 
 function wreck(vehicle: Vehicle, tuning: VehicleTuning): void {

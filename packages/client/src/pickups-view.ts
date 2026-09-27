@@ -4,7 +4,6 @@ import {
   OIL_LIFE_TICKS,
   OIL_REACH,
   SPILL_FLIGHT_TICKS,
-  SPILL_LIFE_TICKS,
   pickupKind,
   pickupOut,
   type LooseKind,
@@ -186,9 +185,8 @@ export function oilGeometry(radius = OIL_REACH): THREE.BufferGeometry {
   return new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2)
 }
 
-/** When a loose thing would fade on its own: a banana or a slick in time, a bomb or a mine never. */
+/** When a loose thing would fade on its own: a slick in time, a banana, a bomb or a mine never. */
 function goneTick(thing: Loose): number {
-  if (thing.kind === 'banana') return thing.bornTick + SPILL_LIFE_TICKS
   if (thing.kind === 'oil') return thing.bornTick + OIL_LIFE_TICKS
   return Number.POSITIVE_INFINITY
 }

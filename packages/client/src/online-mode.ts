@@ -11,6 +11,7 @@ import {
   type GoalRequest,
   type Robot,
   type Seat,
+  type Spider,
   type Ufo,
   type VehicleProfileId,
 } from '@buggies/game'
@@ -49,13 +50,14 @@ const BEACON_RADIUS = 3
 /** How long a goal reached is told of, in seconds. */
 const GOAL_WON_SECONDS = 5
 
-/** The colors the robots, the cars nobody drives and the saucers are marked in on the mini-map. */
+/** The colors the robots, the cars nobody drives, the saucers and the spiders are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
 const NPC_COLOR = 0x9aa0a6
 const UFO_COLOR = 0x5cff8a
+const SPIDER_COLOR = 0xc15cff
 
 /** The mini-map from a seat: where it is and faces, every other occupied seat, the robots, and the spot it is playing for. */
-function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[]): RadarState {
+function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[]): RadarState {
   const others: RadarBlip[] = []
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
@@ -64,6 +66,7 @@ function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], uf
   }
   for (const robot of robots) others.push({ x: robot.position.x, z: robot.position.z, color: ROBOT_COLOR })
   for (const ufo of ufos) others.push({ x: ufo.position.x, z: ufo.position.z, color: UFO_COLOR })
+  for (const spider of spiders) others.push({ x: spider.position.x, z: spider.position.z, color: SPIDER_COLOR })
   if (own.goal?.kind === 'location') others.push({ x: own.goal.x, z: own.goal.z, color: GOAL_COLOR })
   return { position: own.vehicle.frame.position, forward: own.vehicle.frame.forward, others }
 }
@@ -73,7 +76,7 @@ function goalLine(seat: Seat, goal: Goal): string {
   const progress = goalProgress(seat, goal)
   if (goal.kind === 'location') return `Goal: ${Math.round(progress)} m to the spot`
   const done = Math.min(Math.max(progress, 0), goal.target)
-  return `Goal: ${done} / ${goal.target} ${goal.kind === 'score' ? 'bananas' : 'wrecks'}`
+  return `Goal: ${done} / ${goal.target} ${goal.kind === 'score' ? 'bananas' : goal.kind === 'kills' ? 'wrecks' : 'robots'}`
 }
 
 /** A column of light standing over a spot, to be seen from anywhere on the island. */
@@ -246,7 +249,7 @@ export async function joinOnline(
       const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal)
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos),
+        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders),
         ...(goal === null ? {} : { goal, goalWon: wonFor > 0 }),
       }
     },
@@ -271,6 +274,7 @@ export async function joinOnline(
       }
       for (const robot of prediction.robots) marks.push({ kind: 'robot', x: robot.position.x, z: robot.position.z })
       for (const ufo of prediction.ufos) marks.push({ kind: 'ufo', x: ufo.position.x, z: ufo.position.z })
+      for (const spider of prediction.spiders) marks.push({ kind: 'spider', x: spider.position.x, z: spider.position.z })
       if (own.goal?.kind === 'location') marks.push({ kind: 'goal', x: own.goal.x, z: own.goal.z })
       return marks
     },

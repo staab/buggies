@@ -75,6 +75,8 @@ export interface Vehicle {
   readonly command: DriverCommand
   /** The velocity at the end of the last step, to read the knocks the car takes. */
   readonly lastLinearVelocity: Vec3
+  /** A copy of a car the server owns: its knocks and hits add up, but only the server's word wrecks it. */
+  spared: boolean
 
   rideHeight: number
   steerAngle: number
@@ -174,6 +176,7 @@ type VehicleRig =
   | 'frame'
   | 'command'
   | 'lastLinearVelocity'
+  | 'spared'
   | 'rideHeight'
 
 type VehicleMotion = Omit<Vehicle, VehicleRig>
@@ -262,6 +265,7 @@ export function adoptVehicle(
     frame: readChassisFrame(createChassisFrame(), body),
     command: createDriverCommand(),
     lastLinearVelocity: v3(),
+    spared: false,
     rideHeight: restingRideHeight(tuning, worldGravity(world)),
     ...NEUTRAL_VEHICLE_MOTION,
   }

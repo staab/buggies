@@ -305,6 +305,30 @@ const BOATS_APART = 45
 /** A boat keeps this far from any road: a bridge deck over the water is a road too. */
 const BOAT_ROAD_MARGIN = 6
 
+/** How far a boat drifts from where it lies at anchor, either way along each axis, and how long its slowest swing takes, in seconds. */
+export const BOAT_WANDER = 10
+const BOAT_SWING = 110
+
+/**
+ * Where a boat is at this time, and which way it heads: meandering about
+ * where it lies at anchor on a slow loop of its own, its bow always the way
+ * it is going. Worked out from the time alone, so everyone who knows the
+ * game's time sees it in the same place.
+ */
+export function boatAt(boat: Building, index: number, seconds: number, out: { x: number; z: number; yaw: number }): { x: number; z: number; yaw: number } {
+  const a = (2 * Math.PI) / (BOAT_SWING * (1 + 0.13 * (index % 5)))
+  const b = a * (1.37 + 0.11 * (index % 3))
+  const p = boat.tone * 2 * Math.PI
+  const q = boat.yaw + index
+  out.x = boat.x + BOAT_WANDER * sine(a * seconds + p)
+  out.z = boat.z + BOAT_WANDER * sine(b * seconds + q)
+  // The hull's length lies along its own X: turned by the yaw, X points (cos, -sin).
+  const vx = a * cosine(a * seconds + p)
+  const vz = b * cosine(b * seconds + q)
+  out.yaw = atan2(-vz, vx)
+  return out
+}
+
 /**
  * A chair lift up a mountainside: a station at the foot of the slope, one
  * near the crest, and a line of pylons between them for the cable and the

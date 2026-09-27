@@ -1,4 +1,5 @@
 import {
+  boatAt,
   DISTRICT_CITY,
   DISTRICT_SUBURB,
   RIVER_BANK_LAP,
@@ -1584,7 +1585,8 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   const tents = ofKind('tent')
   const campers = ofKind('camper')
   const firepits = ofKind('firepit')
-  const boats = ofKind('boat')
+  // Copies, moved about as the game's time goes.
+  const boats = ofKind('boat').map((boat) => ({ ...boat }))
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
   const walls = ofKind('wall')
@@ -2109,40 +2111,72 @@ function buildStanding(map: TerrainMap): THREE.Object3D[] {
   // aft with its glass and roof; and a mast forward with a crossbar.
   const { skin, deck } = hullGeometry()
   const { seaLevel } = map
-  meshes.push(
-    instanced(skin, plain, boats, (boat, matrix, color) => {
+  const boatParts: [THREE.BufferGeometry, (boat: Building, matrix: THREE.Matrix4, color: THREE.Color) => void][] = [
+    [skin, (boat, matrix, color) => {
       upright(boat, matrix, boat.width, boat.top - boat.bottom, boat.depth, boat.bottom)
       color.copy(pick(BOAT_COLORS, boat.tone))
-    }),
-    instanced(deck, plain, boats, (boat, matrix, color) => {
+    }],
+    [deck, (boat, matrix, color) => {
       upright(boat, matrix, boat.width, boat.top - boat.bottom, boat.depth, boat.bottom)
       color.copy(DECK_COLOR)
-    }),
-    instanced(skin, plain, boats, (boat, matrix, color) => {
+    }],
+    [skin, (boat, matrix, color) => {
       upright(boat, matrix, boat.width * 1.02, seaLevel + BOOT_TOP_OVER - boat.bottom, boat.depth * 1.02, boat.bottom)
       color.copy(BOOT_TOP)
-    }),
-    instanced(box, plain, boats, (boat, matrix, color) => {
+    }],
+    [box, (boat, matrix, color) => {
       upright(boat, matrix, boat.width * 0.28, 1.5, boat.depth * 0.6, boat.top + 0.75, -boat.width * 0.12)
       color.copy(CABIN_COLOR)
-    }),
-    instanced(box, plain, boats, (boat, matrix, color) => {
+    }],
+    [box, (boat, matrix, color) => {
       upright(boat, matrix, boat.width * 0.29, 0.45, boat.depth * 0.62, boat.top + 1.05, -boat.width * 0.12)
       color.copy(CABIN_GLASS)
-    }),
-    instanced(box, plain, boats, (boat, matrix, color) => {
+    }],
+    [box, (boat, matrix, color) => {
       upright(boat, matrix, boat.width * 0.33, 0.1, boat.depth * 0.7, boat.top + 1.55, -boat.width * 0.12)
       color.copy(CABIN_ROOF)
-    }),
-    instanced(box, plain, boats, (boat, matrix, color) => {
+    }],
+    [box, (boat, matrix, color) => {
       upright(boat, matrix, 0.16, 5, 0.16, boat.top + 2.5, boat.width * 0.2)
       color.copy(IRONWORK)
-    }),
-    instanced(box, plain, boats, (boat, matrix, color) => {
+    }],
+    [box, (boat, matrix, color) => {
       upright(boat, matrix, 0.12, 0.12, 1.6, boat.top + 4.2, boat.width * 0.2)
       color.copy(IRONWORK)
-    }),
-  )
+    }],
+  ]
+  // The boats move as the game's time goes: each part laid again where boatAt has the boat.
+  const boatMeshes = boatParts.map(([geometry, place]) => instanced(geometry, plain, boats, place))
+  if (boats.length > 0) {
+    const fleet = new THREE.Group()
+    fleet.name = 'boats'
+    for (const mesh of boatMeshes) if (mesh !== null) fleet.add(mesh)
+    const homes = boats.map((boat) => ({ ...boat }))
+    const pose = { x: 0, z: 0, yaw: 0 }
+    const matrix = new THREE.Matrix4()
+    const color = new THREE.Color()
+    fleet.userData.move = (seconds: number): void => {
+      for (const [i, home] of homes.entries()) {
+        boatAt(home, i, seconds, pose)
+        const boat = boats[i]!
+        boat.x = pose.x
+        boat.z = pose.z
+        boat.yaw = pose.yaw
+      }
+      for (const [k, [, place]] of boatParts.entries()) {
+        const mesh = boatMeshes[k]
+        if (mesh === null || mesh === undefined) continue
+        for (const [i, boat] of boats.entries()) {
+          matrix.identity()
+          place(boat, matrix, color)
+          mesh.setMatrixAt(i, matrix)
+        }
+        mesh.instanceMatrix.needsUpdate = true
+        mesh.computeBoundingSphere()
+      }
+    }
+    meshes.push(fleet)
+  }
 
   // A chair lift: the pylons as gray posts with a crossbar and a sheave at
   // each end of it, the stations as sheds, the cable strung from crossbar
@@ -2591,6 +2625,12 @@ export function createScaleCar(map: TerrainMap, passenger: THREE.Object3D = buil
  * The visual layer for a generated map. Pure presentation: it reads the data
  * layer and builds geometry, and knows nothing about physics or simulation.
  */
+/** Move the boats of a terrain view to where they are this many seconds into the game. */
+export function moveBoats(view: THREE.Object3D, seconds: number): void {
+  const fleet = view.getObjectByName('boats')
+  ;(fleet?.userData.move as ((seconds: number) => void) | undefined)?.(seconds)
+}
+
 export function createTerrainView(map: TerrainMap): THREE.Group {
   const group = new THREE.Group()
   const worldSize = map.size * map.cellSize
