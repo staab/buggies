@@ -33,8 +33,8 @@ export async function fetchRooms(transport: ClientTransport): Promise<RoomSummar
 }
 
 /**
- * Ask a server where everyone and everything is on one island: the cars,
- * driven or not, and the machines. One short connection, like the rooms;
+ * Ask a server where every car on one island is, driven or not. One short
+ * connection, like the rooms;
  * an island nobody is on, or a server that does not answer, has nothing.
  */
 export async function fetchPeek(transport: ClientTransport, seed: number): Promise<IslandMark[]> {

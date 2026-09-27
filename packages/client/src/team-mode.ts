@@ -84,9 +84,6 @@ export async function createTeamMode(
     goal() {
       return first.goal()
     },
-    marks() {
-      return first.marks()
-    },
     setGoal(goal) {
       for (const view of views) view.setGoal(goal)
     },

@@ -4,7 +4,6 @@ import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
 
 import type { HudState } from './hud.ts'
-import type { OverviewMark } from './map-overview.ts'
 
 /**
  * One way of being on a map. Modes own their camera and whatever they add to
@@ -33,9 +32,7 @@ export interface ModeView {
   goal?(): Goal | null
   /** Put everyone on this screen to playing for this goal, or for none. */
   setGoal?(goal: GoalRequest | null): void
-  /** Where everything is, for the overview of the island, from the first player on this screen. */
-  marks?(): readonly OverviewMark[]
-  /** Show where everyone and everything is on the island being looked over, as the server last said. */
+  /** Show where every car is on the island being looked over, as the server last said. */
   showMarks?(marks: readonly IslandMark[]): void
   dispose(): void
 }

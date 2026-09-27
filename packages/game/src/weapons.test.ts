@@ -624,9 +624,9 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the sports car fires its own gun from its nose for as long as the key is held, trained on the car ahead, with the full bite', () => {
+  it('the small car fires its own gun from its nose for as long as the key is held, trained on the car ahead, with the full bite', () => {
     const arena = createArena(map)
-    const [a, b] = twoCars(arena, 'sportsCar', 'sportsCar', 25, 12)
+    const [a, b] = twoCars(arena, 'smallCar', 'sportsCar', 25, 12)
     expect(hold(arena, a, 60)).toBe(10)
     expect(a.aimTarget).toBe(b.id)
     expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * OWN_GUN_POWER) / DURABILITY, 6)
@@ -688,9 +688,9 @@ describe("the car's own key", () => {
     arena.world.free()
   })
 
-  it('the small car drops a slick of its own on a press, as slippery as one won, not another for three seconds, and only so many out at once', () => {
+  it('the sports car drops a slick of its own on a press, as slippery as one won, not another for three seconds, and only so many out at once', () => {
     const arena = createArena(map)
-    const [a, b] = twoCars(arena, 'smallCar', 'sportsCar', 40)
+    const [a, b] = twoCars(arena, 'sportsCar', 'smallCar', 40)
     press(arena, a)
     const slicks = (): Loose[] => arena.loose.filter((loose) => loose.kind === 'oil')
     expect(slicks()).toHaveLength(1)
@@ -704,7 +704,7 @@ describe("the car's own key", () => {
     expect(b.slipTicks).toBeLessThanOrEqual(OIL_SLIP_TICKS * OWN_OIL_POWER)
     // Only so many out at once.
     for (let i = 0; i < OWN_OILS_MOST + 1; i++) {
-      for (let t = 0; t < OWN_ACTIONS.smallCar.cooldownTicks; t++) advance(arena)
+      for (let t = 0; t < OWN_ACTIONS.sportsCar.cooldownTicks; t++) advance(arena)
       press(arena, a)
     }
     expect(slicks()).toHaveLength(OWN_OILS_MOST)

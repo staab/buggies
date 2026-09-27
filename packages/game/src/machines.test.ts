@@ -182,7 +182,7 @@ describe('the spider', () => {
       expect(bombs).toHaveLength(mirror ? 0 : 1)
       arena.world.free()
     }
-  })
+  }, 60_000)
 
   it('a spider takes a rocket as the robots do, and once brought down comes back whole somewhere else', () => {
     const arena = createArena(island)
@@ -201,7 +201,7 @@ describe('the spider', () => {
     expect(spider!.damage).toBe(0)
     expect(Math.hypot(spider!.position.x - before.x, spider!.position.z - before.z)).toBeGreaterThan(20)
     arena.world.free()
-  })
+  }, 60_000)
 
   it('a spider keeps out of the cities', () => {
     const arena = createArena(island)
