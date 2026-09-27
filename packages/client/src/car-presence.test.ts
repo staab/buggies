@@ -158,10 +158,10 @@ describe('a car on the screen', () => {
   it('names only what it carries in the power-up slot, and nothing of its own, mounting nothing for that either', () => {
     const { seat, free } = seatOnFlat()
     const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })
-    expect(OWN_ACTIONS[seat.profile].kind).toBe('gun')
+    expect(OWN_ACTIONS[seat.profile].kind).toBe('oil')
     presence.render(0, FIXED_TIMESTEP)
     expect(presence.weaponLabel).toBe('')
-    // Its own gun going, and cooling, makes no difference to the slot, and puts no gun over the roof.
+    // Its own slick going, and cooling, makes no difference to the slot, and puts nothing over the roof.
     seat.vehicle.command.ability = true
     seat.cooldownTicks = 150
     seat.actionTicks = 60

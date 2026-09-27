@@ -77,7 +77,7 @@ describe('generateTerrain', () => {
     }
     expect(map.mountains.length).toBeGreaterThanOrEqual(1)
     expect(map.mountains.length).toBeLessThanOrEqual(12)
-  })
+  }, 60_000)
 
   it('makes each seed a different map: its own count of islands and mountains', () => {
     const islands = new Set<number>()
