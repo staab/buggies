@@ -53,6 +53,7 @@ import {
   encodeSnapshot,
   type RoomSummary,
   encodeWelcome,
+  type HelloMessage,
   isRespawn,
   isRoomsRequest,
   decodePeekRequest,
@@ -63,6 +64,8 @@ import {
 } from './wire.ts'
 
 const HANDSHAKE_TIMEOUT_TICKS = TICKS_PER_SECOND * 5
+/** How long someone may wait for their island to be made before giving up on it. */
+const MAKING_TIMEOUT_TICKS = TICKS_PER_SECOND * 60
 
 /** A player asking to be put back more often than this is just held down. */
 const RESPAWN_COOLDOWN_TICKS = TICKS_PER_SECOND
@@ -124,6 +127,8 @@ interface Player {
 interface Handshake {
   connection: TransportConnection
   openedTick: number
+  /** The hello of someone waiting for their island to be made, to be seated on it once it is. */
+  waiting: HelloMessage | null
 }
 
 /**
@@ -147,7 +152,10 @@ export interface Room {
  * asks for its seed and closed when the last leaves.
  */
 export class GameServer implements TransportHandlers {
-  private readonly arenaFor: (seed: number) => Arena
+  private readonly arenaFor: (seed: number) => Arena | Promise<Arena>
+  /** The islands being made for someone waiting, made elsewhere while every room goes on. */
+  private readonly making = new Map<number, Promise<Arena>>()
+  private disposed = false
   private readonly events: Partial<GameServerEvents>
   private readonly rooms = new Map<number, Room>()
   private readonly players = new Map<number, Player>()
@@ -161,7 +169,12 @@ export class GameServer implements TransportHandlers {
   /** How many cars nobody drives each island has, while seats are free for them. */
   private readonly npcs: number
 
-  constructor(arenaFor: (seed: number) => Arena, events: Partial<GameServerEvents> = {}, npcs = NPC_CARS) {
+  /**
+   * `arenaFor` makes the arena for a seed nobody is on: at once, or
+   * eventually, as when its island is generated off the thread that steps
+   * the rooms, which then go on while it is made.
+   */
+  constructor(arenaFor: (seed: number) => Arena | Promise<Arena>, events: Partial<GameServerEvents> = {}, npcs = NPC_CARS) {
     this.arenaFor = arenaFor
     this.events = events
     this.npcs = npcs
@@ -245,13 +258,14 @@ export class GameServer implements TransportHandlers {
   }
 
   dispose(): void {
+    this.disposed = true
     for (const room of this.rooms.values()) room.arena.world.free()
     this.rooms.clear()
     this.players.clear()
   }
 
   onOpen = (connection: TransportConnection): void => {
-    this.handshaking.set(connection.id, { connection, openedTick: this.clock })
+    this.handshaking.set(connection.id, { connection, openedTick: this.clock, waiting: null })
   }
 
   onMessage = (connection: TransportConnection, payload: Uint8Array): void => {
@@ -327,11 +341,7 @@ export class GameServer implements TransportHandlers {
     this.topUpNpcs(room.arena)
     this.events.onLeft?.(player.seat, connection.id, room.seed)
     // The last one out closes the room: an empty island is not worth stepping.
-    if (room.players.size === 0) {
-      this.rooms.delete(room.seed)
-      room.arena.world.free()
-      this.events.onRoomClosed?.(room.seed)
-    }
+    if (room.players.size === 0) this.closeRoom(room)
   }
 
   private playerIn(room: Room, seat: Seat): Player | undefined {
@@ -349,18 +359,16 @@ export class GameServer implements TransportHandlers {
 
   private expireHandshakes(): void {
     for (const handshake of this.handshaking.values()) {
-      if (this.clock - handshake.openedTick < HANDSHAKE_TIMEOUT_TICKS) continue
+      if (this.clock - handshake.openedTick < (handshake.waiting === null ? HANDSHAKE_TIMEOUT_TICKS : MAKING_TIMEOUT_TICKS)) continue
       this.reject(handshake.connection, REJECT_HANDSHAKE_ORDER)
     }
   }
 
-  /** The room for a seed, made if nobody is on it yet. */
-  private openRoom(seed: number): Room {
-    const existing = this.rooms.get(seed)
-    if (existing !== undefined) return existing
+  /** A room for a seed nobody is on, with its arena made. */
+  private openRoom(seed: number, arena: Arena): Room {
     const room: Room = {
       seed,
-      arena: this.arenaFor(seed),
+      arena,
       players: new Map(),
       snapshots: createRoomSnapshots(),
       lastSnapshotBytes: 0,
@@ -410,7 +418,49 @@ export class GameServer implements TransportHandlers {
       this.reject(connection, REJECT_PROTOCOL_MISMATCH)
       return
     }
-    const room = this.openRoom(hello.seed)
+    const handshake = this.handshaking.get(connection.id)
+    // Asked twice while their island is made: the first is enough.
+    if (handshake === undefined || handshake.waiting !== null) return
+    const existing = this.rooms.get(hello.seed)
+    if (existing !== undefined) {
+      this.seat(connection, hello, existing)
+      return
+    }
+    const made = this.making.get(hello.seed) ?? this.arenaFor(hello.seed)
+    if (!(made instanceof Promise)) {
+      this.seat(connection, hello, this.openRoom(hello.seed, made))
+      return
+    }
+    // Not made yet: they wait for it, and whoever else asks for it meanwhile waits with them.
+    handshake.waiting = hello
+    if (!this.making.has(hello.seed)) this.whenMade(hello.seed, made)
+  }
+
+  /** Once an island being made is ready, a room for it, with everyone waiting for it seated there. */
+  private whenMade(seed: number, made: Promise<Arena>): void {
+    this.making.set(seed, made)
+    const waiting = (): Handshake[] => [...this.handshaking.values()].filter((handshake) => handshake.waiting?.seed === seed)
+    made.then(
+      (arena) => {
+        this.making.delete(seed)
+        if (this.disposed) {
+          arena.world.free()
+          return
+        }
+        const room = this.rooms.get(seed) ?? this.openRoom(seed, arena)
+        if (room.arena !== arena) arena.world.free()
+        for (const handshake of waiting()) this.seat(handshake.connection, handshake.waiting!, room)
+        if (room.players.size === 0) this.closeRoom(room)
+      },
+      () => {
+        this.making.delete(seed)
+        for (const handshake of waiting()) this.reject(handshake.connection, REJECT_MALFORMED_MESSAGE)
+      },
+    )
+  }
+
+  /** Seat someone who has said hello in the room for their island. */
+  private seat(connection: TransportConnection, hello: HelloMessage, room: Room): void {
     const { arena } = room
     // A car nobody drives gives up its seat to someone who will.
     let free = freeSeat(arena)
@@ -460,6 +510,7 @@ export class GameServer implements TransportHandlers {
   }
 
   private closeRoom(room: Room): void {
+    if (this.rooms.get(room.seed) !== room) return
     this.rooms.delete(room.seed)
     room.arena.world.free()
     this.events.onRoomClosed?.(room.seed)

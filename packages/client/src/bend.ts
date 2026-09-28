@@ -1,5 +1,7 @@
 import * as THREE from 'three'
 
+import { DUSK } from './night.ts'
+
 // A planet this small curves away fast: from a car, the horizon is some
 // forty meters off. What is drawn around the chase camera is bent as though
 // the planet were bigger: every point keeps its height and how far it is
@@ -30,6 +32,8 @@ uniform float bendOn;
 uniform float bendRadius;
 uniform float bendScale;
 uniform vec3 bendUp;
+// The way up at a point on the planet as it is, not as it is drawn bent: what its time of day is by.
+varying vec3 vPlanetUp;
 
 vec4 bendAroundCar( vec4 world ) {
 	if ( bendOn < 0.5 ) return world;
@@ -65,9 +69,27 @@ vec4 mvPosition = vec4( transformed, 1.0 );
 
 #endif
 
-mvPosition = viewMatrix * bendAroundCar( modelMatrix * mvPosition );
+vec4 planetPoint = modelMatrix * mvPosition;
+vPlanetUp = planetPoint.xyz;
+mvPosition = viewMatrix * bendAroundCar( planetPoint );
 
 gl_Position = projectionMatrix * mvPosition;
+`
+
+/** Where three reads a directional light, the sun, for a point. */
+const SUN_INFO = 'getDirectionalLightInfo( directionalLight, directLight );'
+
+/**
+ * On a planet, the sun lights a point only while it is over the point's own
+ * horizon, fading out through the dusk: the planet is in the way otherwise,
+ * though nothing but the ground by the car casts a shadow. The way up there
+ * is turned into the view, as the light's way to the sun is.
+ */
+const UNDER_THE_HORIZON = /* glsl */ `
+if ( bendOn > 0.5 ) {
+	vec3 planetUp = normalize( ( viewMatrix * vec4( vPlanetUp, 0.0 ) ).xyz );
+	directLight.color *= smoothstep( ${DUSK.below.toFixed(3)}, ${DUSK.above.toFixed(3)}, dot( planetUp, directLight.direction ) );
+}
 `
 
 /**
@@ -83,6 +105,7 @@ export function installBend(): void {
   if (THREE.ShaderChunk.project_vertex === PROJECT) return
   THREE.ShaderChunk.common = `${THREE.ShaderChunk.common}\n${DECLARATIONS}`
   THREE.ShaderChunk.project_vertex = PROJECT
+  THREE.ShaderChunk.lights_fragment_begin = THREE.ShaderChunk.lights_fragment_begin.replace(SUN_INFO, `${SUN_INFO}\n${UNDER_THE_HORIZON}`)
 }
 installBend()
 

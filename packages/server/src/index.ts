@@ -1,7 +1,6 @@
 import { FIXED_TIMESTEP, createArena, initPhysics } from '@buggies/game'
 import { GameServer, SNAPSHOTS_PER_SECOND, TICKS_PER_SECOND } from '@buggies/net'
-import { generateWorld } from '@buggies/terrain'
-
+import { MapMaker } from './maps.ts'
 import { WebSocketServerTransport } from './ws-transport.ts'
 
 const host = process.env.HOST ?? '0.0.0.0'
@@ -24,13 +23,18 @@ function log(message: string): void {
 
 await initPhysics()
 
-// An island is made the first time anyone asks for its seed, in a room of
-// its own, wrapped round a planet. Generation takes a few seconds, during
-// which every room waits.
+// A planet, or its moon, is made the first time anyone asks for its seed,
+// in a room of its own. Generation takes a few seconds, on a thread of its
+// own, while every room already open goes on.
+const maps = new MapMaker()
 const server = new GameServer(
-  (seed) => {
+  async (seed) => {
     log(`generating seed ${seed}...`)
-    return createArena(generateWorld(seed))
+    const started = performance.now()
+    const world = await maps.worldFor(seed)
+    const arena = createArena(world)
+    log(`seed ${seed} ready in ${Math.round(performance.now() - started)}ms`)
+    return arena
   },
   {
     onJoined: (seat, connection, seed) => log(`joined seed=${seed} seat=${seat.id} ${seat.profile} connection=${connection}`),
@@ -75,6 +79,7 @@ const shutdown = (): void => {
   transport.close().then(
     () => {
       server.dispose()
+      void maps.close()
       log('stopped')
       process.exit(0)
     },

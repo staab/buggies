@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { DAY_SECONDS, sunDirection } from '@buggies/game'
 
+import { nightAt } from './night.ts'
 import { SHADOW_REACH, SUN_DIRECTION, SUN_DISTANCE, Sun } from './sun.ts'
 
 describe('the sun', () => {
@@ -48,20 +49,33 @@ describe('the sun', () => {
     const way = sunDirection(DAY_SECONDS / 4)
     expect(noon.distanceTo(new THREE.Vector3(way.x, way.y, way.z))).toBeLessThan(1e-6)
 
-    // Where the sun stands overhead, it is day: its light, its disc, a blue sky.
+    // Where the sun stands overhead, it is day: its disc, a blue sky.
     sun.follow({ x: way.x * 612, y: way.y * 612, z: way.z * 612 }, way)
     sun.shade(scene)
-    expect(sun.light.intensity).toBeGreaterThan(1)
+    const light = sun.light.intensity
+    expect(light).toBeGreaterThan(1)
     expect((scene.background as THREE.Color).getHexString()).toBe('a9cbe6')
-    // Round the far side, it is night: no sunlight, no disc, a dark sky and haze.
+    // Round the far side, it is night overhead: no disc, a dark sky and haze. The light is as strong as
+    // ever, since a city on the day side is still lit in the day; the night side is dark by its own horizon.
     const under = { x: -way.x, y: -way.y, z: -way.z }
     sun.follow({ x: under.x * 612, y: under.y * 612, z: under.z * 612 }, under)
     sun.shade(scene)
-    expect(sun.light.intensity).toBe(0)
-    expect(sun.sky.intensity).toBeLessThan(0.5)
+    expect(sun.light.intensity).toBe(light)
+    expect(sun.position.clone().normalize().distanceTo(new THREE.Vector3(way.x, way.y, way.z))).toBeLessThan(1e-6)
     const night = scene.background as THREE.Color
     expect(night.r + night.g + night.b).toBeLessThan(0.5)
     expect((scene.fog as THREE.Fog).color.equals(night)).toBe(true)
+    sun.dispose()
+  })
+
+  it('says it is night by the time of day at each place, not where the play is', () => {
+    const sun = new Sun()
+    sun.turn(0)
+    const way = sunDirection(0)
+    // Played on the night side, a city under the sun is still in the day, and one round the far side in the night.
+    sun.follow({ x: -way.x * 612, y: -way.y * 612, z: -way.z * 612 }, { x: -way.x, y: -way.y, z: -way.z })
+    expect(nightAt({ x: way.x * 612, y: way.y * 612, z: way.z * 612 })).toBe(0)
+    expect(nightAt({ x: -way.x * 612, y: -way.y * 612, z: -way.z * 612 })).toBe(1)
     sun.dispose()
   })
 })

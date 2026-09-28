@@ -2,19 +2,22 @@ import type { Vec3 } from '@buggies/physics'
 import { sunDirection } from '@buggies/game'
 import * as THREE from 'three'
 
-import { night } from './night.ts'
+import { DUSK, setSunWay } from './night.ts'
 
 /** Where the light comes from before the planet has turned at all. */
 export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
 
-/** The sky by day and by night, and how far the sun is below the horizon, and above it, as day turns to night and back. */
+/** The sky by day and by night. */
 const DAY_SKY = new THREE.Color('#a9cbe6')
 const NIGHT_SKY = new THREE.Color('#0b1326')
 const SPACE = new THREE.Color('#000000')
-const DUSK = { below: -0.08, above: 0.12 } as const
-/** How bright the sun's light is at noon, and the sky's light, by day and at the least by night. */
+/**
+ * How bright the sun's light is, and the sky's: the same all round the
+ * planet, which is lit only on the side facing the sun, the sky's light from
+ * that side and the dark of the night from the other.
+ */
 const SUN_LIGHT = 1.6
-const SKY_LIGHT = { day: 0.9, night: 0.35 } as const
+const SKY_LIGHT = 0.75
 
 /** How far off the disc is drawn, in meters: beyond the island, short of the far plane. */
 export const SUN_DISTANCE = 5000
@@ -57,7 +60,7 @@ export class Sun {
 
   constructor(center: Vec3 = { x: 0, y: 0, z: 0 }) {
     // The sky's light from the sun's side of the planet, and the dark of the night side from the other.
-    this.sky = new THREE.HemisphereLight('#cfe6ff', '#1a2440', SKY_LIGHT.day)
+    this.sky = new THREE.HemisphereLight('#cfe6ff', '#141c36', SKY_LIGHT)
     this.light = new THREE.DirectionalLight('#fff4e0', SUN_LIGHT)
     this.light.castShadow = true
     this.light.shadow.mapSize.set(2048, 2048)
@@ -119,8 +122,9 @@ export class Sun {
 
   /**
    * Bring the shadows to where the action is, and, with the way up there,
-   * say how much of the day there is: the light falls from the sun,
-   * whichever side of the planet the play is on, and fades out as it sets.
+   * say how much of the day there is overhead, for the sky and the sun's
+   * disc. The light is as strong wherever the play is: each point of the
+   * planet is lit as the sun stands over its own horizon.
    */
   follow(at: Vec3, up?: Vec3): void {
     this.focus.set(at.x, at.y, at.z)
@@ -128,11 +132,9 @@ export class Sun {
     this.light.position.copy(this.direction).multiplyScalar(SHADOW_STANDOFF).add(this.focus)
     this.light.target.updateMatrixWorld()
     this.sky.position.copy(this.direction)
+    // How much of the day there is where the play is: for the sky overhead, not for how anything is lit.
     const elevation = up === undefined ? 1 : this.direction.x * up.x + this.direction.y * up.y + this.direction.z * up.z
     this.daylight = THREE.MathUtils.smoothstep(elevation, DUSK.below, DUSK.above)
-    night.value = 1 - this.daylight
-    this.light.intensity = SUN_LIGHT * (up === undefined ? 1 : this.daylight)
-    this.sky.intensity = SKY_LIGHT.night + (SKY_LIGHT.day - SKY_LIGHT.night) * this.daylight
     // Set, the disc is under the horizon.
     this.disc.visible = this.glow.visible = this.daylight > 0
   }
@@ -147,6 +149,7 @@ export class Sun {
 
   /** The disc and its glow, out along the way to the sun from the planet's middle, facing it. */
   private place(): void {
+    setSunWay(this.direction)
     for (const face of [this.glow, this.disc]) {
       face.position.copy(this.direction).multiplyScalar(SUN_DISTANCE).add(this.center)
       face.lookAt(this.center)

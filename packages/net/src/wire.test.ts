@@ -40,8 +40,11 @@ import {
   encodeGoal,
   isRespawn,
   isRoomsRequest,
+  NO_ARRIVAL,
+  SNAPSHOT_VEHICLE_CORE_BYTES,
   withAck,
   type SnapshotMessage,
+  type VehicleSnapshot,
 } from './wire.ts'
 
 const snapshot: SnapshotMessage = {
@@ -175,7 +178,9 @@ describe('wire', () => {
       protocolVersion: PROTOCOL_VERSION,
       profile: 'raceCar',
       seed: 4_000_000_000,
+      arrival: NO_ARRIVAL,
     })
+    expect(decodeHello(encodeHello('tank', 7, 2))).toMatchObject({ seed: 7, arrival: 2 })
     const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const }
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })
@@ -274,7 +279,14 @@ describe('wire', () => {
       expect(got.wrecked).toBe(vehicle.wrecked)
       expect(got.score).toBe(vehicle.score)
       expect(got.damage).toBeCloseTo(vehicle.damage, 2)
-      expect(got.appliedInput).toEqual(vehicle.appliedInput)
+      // The input a mirror runs a car on is told to within a byte's step.
+      const { steer, throttle, brake, ...buttons } = got.appliedInput
+      expect(steer).toBeCloseTo(vehicle.appliedInput.steer, 1)
+      expect(throttle).toBeCloseTo(vehicle.appliedInput.throttle, 2)
+      expect(brake).toBeCloseTo(vehicle.appliedInput.brake, 2)
+      expect(buttons).toEqual({ handbrake: vehicle.appliedInput.handbrake, fire: vehicle.appliedInput.fire, ability: vehicle.appliedInput.ability })
+      expect(got.goal).toEqual(vehicle.goal)
+      expect(got.npc).toBe(vehicle.npc)
       for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
         for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(vehicle[key][axis], 4)
       }
@@ -288,6 +300,65 @@ describe('wire', () => {
       }
       for (const axis of ['x', 'y', 'z', 'w'] as const) expect(got.rotation[axis]).toBeCloseTo(prop.rotation[axis], 6)
     }
+  })
+
+  it('tells a car nobody drives with nothing going on in its core alone, and one with something going on in full', () => {
+    const driven = snapshot.vehicles[1]!
+    const quiet: VehicleSnapshot = {
+      ...driven,
+      seat: 9,
+      npc: true,
+      score: 0,
+      collected: 0,
+      robotKills: 0,
+      goal: null,
+      rocketsFired: 0,
+      grappleTarget: -1,
+      abilityHeld: false,
+      appliedInput: { steer: 0.25, throttle: 0.6, brake: 0, handbrake: false, fire: false, ability: false },
+    }
+    const busy: VehicleSnapshot = { ...quiet, seat: 10, weapon: 'shield', shieldTicks: 90 }
+    const message = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [], vehicles: [quiet, busy, driven] }
+    const payload = encodeSnapshot(message)
+    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_CORE_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
+    const [gotQuiet, gotBusy, gotDriven] = decodeSnapshot(payload)!.vehicles
+    expect(gotQuiet).toMatchObject({ seat: 9, npc: true, score: 0, goal: null, weapon: 'none', grappleTarget: -1, shieldTicks: 0 })
+    expect(gotQuiet!.appliedInput.throttle).toBeCloseTo(0.6, 2)
+    expect(gotBusy).toMatchObject({ seat: 10, npc: true, weapon: 'shield', shieldTicks: 90 })
+    expect(gotDriven).toMatchObject({ seat: driven.seat, npc: false, score: driven.score, goal: driven.goal })
+  })
+
+  it('tells any turn, however it is written, to within a hundred-thousandth, and a velocity to within a step', () => {
+    const turns = [
+      { x: 0, y: 0, z: 0, w: 1 },
+      { x: 0, y: 0, z: 0, w: -1 },
+      { x: 0.5, y: -0.5, z: 0.5, w: -0.5 },
+      { x: -0.9, y: 0.1, z: 0.3, w: 0.2 },
+      { x: 0.01, y: 0.99, z: -0.05, w: -0.1 },
+    ].map(({ x, y, z, w }) => {
+      const length = Math.hypot(x, y, z, w)
+      return { x: x / length, y: y / length, z: z / length, w: w / length }
+    })
+    for (const rotation of turns) {
+      const vehicle = { ...snapshot.vehicles[1]!, rotation, linearVelocity: { x: -97.123, y: 12.345, z: 0.005 }, angularVelocity: { x: 7.8912, y: -0.0004, z: 31 } }
+      const got = decodeSnapshot(encodeSnapshot({ ...snapshot, vehicles: [vehicle] }))!.vehicles[0]!
+      // A turn and its every part negated are the same turn.
+      const sign = Math.sign(got.rotation.x * rotation.x + got.rotation.y * rotation.y + got.rotation.z * rotation.z + got.rotation.w * rotation.w)
+      for (const axis of ['x', 'y', 'z', 'w'] as const) expect(Math.abs(got.rotation[axis] * sign - rotation[axis])).toBeLessThan(1e-4)
+      for (const axis of ['x', 'y', 'z'] as const) {
+        expect(Math.abs(got.linearVelocity[axis] - vehicle.linearVelocity[axis])).toBeLessThanOrEqual(0.005 + 1e-9)
+        expect(Math.abs(got.angularVelocity[axis] - vehicle.angularVelocity[axis])).toBeLessThanOrEqual(0.0005 + 1e-9)
+      }
+    }
+  })
+
+  it('refuses a snapshot a byte too long or too short', () => {
+    const payload = encodeSnapshot(snapshot)
+    expect(decodeSnapshot(payload)).not.toBeNull()
+    expect(decodeSnapshot(payload.subarray(0, payload.length - 1))).toBeNull()
+    const longer = new Uint8Array(payload.length + 1)
+    longer.set(payload)
+    expect(decodeSnapshot(longer)).toBeNull()
   })
 
   it('stamps each player their own acknowledgment onto one encoding', () => {

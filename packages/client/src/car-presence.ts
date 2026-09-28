@@ -18,7 +18,7 @@ import {
 import { v3, type Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
-import { engineRev, skidAmount, type EngineVoice, type SirenVoice, type SkidVoice, type Sound, type ThrustVoice } from './audio.ts'
+import { EARSHOT, engineRev, skidAmount, type EngineVoice, type SirenVoice, type SkidVoice, type Sound, type ThrustVoice } from './audio.ts'
 import { CarView } from './car-view.ts'
 import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
@@ -32,6 +32,9 @@ import { SmoothedBody } from './smoothed-body.ts'
 import { PLOW_BLADE_RADIUS, buildHook, buildPlow } from './weapon-models.ts'
 import { WeaponMount } from './weapon-mount.ts'
 import { WeaponReveal } from './weapon-reveal.ts'
+
+/** How far past earshot a car's voices are kept going before they are let go. */
+const VOICES_KEPT = 1.25
 
 /** A knock that takes this much of a car's life is heard at full volume. */
 const LOUD_KNOCK = 0.25
@@ -123,9 +126,10 @@ export class CarPresence {
   private readonly effects: PresenceEffects
   private readonly ear: Ear | null
   private readonly view: CarView
-  private readonly voice: EngineVoice | null
-  private readonly skid: SkidVoice | null
-  private readonly thrust: ThrustVoice | null
+  /** Its engine, tires and thrusters, heard only while it is in earshot: out of it, they are let go, not left running silent. */
+  private voice: EngineVoice | null = null
+  private skid: SkidVoice | null = null
+  private thrust: ThrustVoice | null = null
   private readonly reveal = new WeaponReveal()
   private readonly mount: WeaponMount
   private readonly heard: Sound | null
@@ -164,11 +168,7 @@ export class CarPresence {
     this.mount = new WeaponMount(top + MOUNT_HEIGHT, hasBuiltInGun(seat.profile), sirenRest)
     this.object.add(this.mount.object)
     this.body = new SmoothedBody(seat.vehicle.body, this.object)
-    const heard = options.heard !== false ? effects.sound : null
-    this.voice = heard?.engine(seat.profile) ?? null
-    this.skid = heard?.skid() ?? null
-    this.thrust = heard?.thrust() ?? null
-    this.heard = heard
+    this.heard = options.heard !== false ? effects.sound : null
     // The boost's flame, behind the car, out until it boosts.
     this.boostFlame = new THREE.Mesh(
       new THREE.ConeGeometry(BOOST_FLAME.radius, BOOST_FLAME.length, 10),
@@ -282,6 +282,21 @@ export class CarPresence {
     this.hook.quaternion.setFromUnitVectors(AHEAD, ropeWay)
   }
 
+  /** Start its voices as it comes into earshot, and let them go a way past it, so one on the edge does not come and go. */
+  private listen(off: number): void {
+    if (this.heard === null) return
+    if (this.voice === null && off < EARSHOT) {
+      this.voice = this.heard.engine(this.seat.profile)
+      this.skid = this.heard.skid()
+      this.thrust = this.heard.thrust()
+    } else if (this.voice !== null && off > EARSHOT * VOICES_KEPT) {
+      this.voice.stop()
+      this.skid?.stop()
+      this.thrust?.stop()
+      this.voice = this.skid = this.thrust = null
+    }
+  }
+
   /** How far off it is from whoever is listening. */
   private distance(): number {
     return this.ear === null ? 0 : distanceFrom(this.ear, this.seat.vehicle.frame.position)
@@ -291,7 +306,7 @@ export class CarPresence {
   render(fraction: number, dt: number): void {
     const { vehicle, tuning, score } = this.seat
     const { explosions, smoke } = this.effects
-    const sound = this.voice !== null ? this.effects.sound : null
+    const sound = this.heard
     this.body.render(fraction, dt)
     this.view.applySimulatedWheels(vehicle.wheels, tuning)
     this.reveal.update(this.seat.weapon, this.seat.wins, dt)
@@ -304,10 +319,11 @@ export class CarPresence {
     const engine = this.seat.weapon === 'engine' && vehicle.command.fire && this.seat.ammoTicks > 0 && !vehicle.wrecked
     this.mount.burn(engine)
     const off = this.distance()
+    this.listen(off)
     const boosting = acting(this.seat) && (own.kind === 'boost' || own.kind === 'fly')
     this.thrust?.set(engine || boosting ? 1 : 0, off)
     this.boostFlame.visible = boosting
-    this.headlights.update(this.seat.vehicle.wrecked)
+    this.headlights.update(this.seat.vehicle.wrecked, this.seat.vehicle.frame.position)
     if (boosting) {
       const flicker = 0.75 + 0.25 * Math.sin(this.lightTime * 47) * Math.sin(this.lightTime * 31)
       this.boostFlame.scale.set(flicker, 0.8 + 0.5 * flicker, flicker)

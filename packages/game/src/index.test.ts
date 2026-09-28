@@ -17,6 +17,7 @@ import {
   respawnLost,
   respawnNearby,
   restingRideHeight,
+  setCoasting,
   spawnHere,
   takeSeat,
   worldGravity,
@@ -374,4 +375,54 @@ describe('game', () => {
     expect(inside).toBeGreaterThan(30)
     expect(onTheRoad / inside).toBeGreaterThan(0.8)
   }, 120_000)
+})
+
+describe('a car coasting in a mirror', () => {
+  beforeAll(async () => {
+    await initPhysics()
+    map ??= generatePlanet(1)
+  }, 60_000)
+
+  it('is out of the world and carried round the planet at its height, as fast as it was going, and driven again when asked', () => {
+    const arena = createArena(map)
+    arena.mirror = true
+    const seat = solo(arena)
+    for (let i = 0; i < 30; i++) advance(arena)
+    const { body } = seat.vehicle
+    // Sent off flat out along the ground, round the planet.
+    const start = { ...body.translation() }
+    const up = upOf(start)
+    const along = seat.vehicle.frame.forward
+    const ahead = { x: along.x - up.x * vdot(along, up), y: along.y - up.y * vdot(along, up), z: along.z - up.z * vdot(along, up) }
+    const length = Math.hypot(ahead.x, ahead.y, ahead.z)
+    body.setLinvel({ x: (ahead.x / length) * 45, y: (ahead.y / length) * 45, z: (ahead.z / length) * 45 }, true)
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    setCoasting(arena, seat, true)
+    expect(seat.coasting).toBe(true)
+    expect(body.isEnabled()).toBe(false)
+    const height = Math.hypot(start.x, start.y, start.z)
+    const upright = vdot(seat.vehicle.frame.up, up)
+    // Two seconds, longer than any replay.
+    for (let i = 0; i < 120; i++) advance(arena)
+    const end = body.translation()
+    expect(Math.abs(Math.hypot(end.x, end.y, end.z) - height)).toBeLessThan(0.05)
+    expect(angleBetween(start, end) * height).toBeGreaterThan(85)
+    // As upright on the curve where it has got to as it was where it set off.
+    expect(vdot(seat.vehicle.frame.up, upOf(end))).toBeCloseTo(upright, 2)
+    // Its velocity turned with it, still along the ground.
+    const v = body.linvel()
+    expect(Math.abs(vdot(v, upOf(end)))).toBeLessThan(0.05)
+    setCoasting(arena, seat, false)
+    expect(body.isEnabled()).toBe(true)
+    arena.world.free()
+  })
+
+  it('never coasts on the server', () => {
+    const arena = createArena(map)
+    const seat = solo(arena)
+    setCoasting(arena, seat, true)
+    expect(seat.coasting).toBe(false)
+    expect(seat.vehicle.body.isEnabled()).toBe(true)
+    arena.world.free()
+  })
 })

@@ -346,11 +346,11 @@ function propAt(kind: WorldProp['kind'], at: Vec3): WorldProp {
  * over a socket.
  */
 /** A client wired straight to a server, every message it is sent shown to `tap` as well. */
-function direct(server: TransportHandlers, tap: (payload: Uint8Array) => void = () => {}): ClientTransport {
+function direct(server: TransportHandlers, tap: (payload: Uint8Array) => void = () => {}, id = 9999): ClientTransport {
   let handlers: ClientTransportHandlers | null = null
   let closed = false
   const connection: TransportConnection = {
-    id: 9999,
+    id,
     send: (payload) => {
       tap(payload)
       handlers?.onMessage(payload.slice())
@@ -483,6 +483,33 @@ describe('a session', () => {
     // more shows as the car jumping about.
     expect(worst).toBeLessThan(0.5)
     expect(a.prediction.stats.hardResyncs).toBeLessThanOrEqual(1)
+    session.dispose()
+  })
+
+  it('carries a car far off along in the mirror without simulating it, and simulates it again once it comes near', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    const b = await session.join('sportsCar')
+    const own = session.arena.seats[a.client.welcome!.seat]!
+    const other = session.arena.seats[b.client.welcome!.seat]!
+    const mirrored = (): Seat => a.prediction.seats[other.id]!
+    // Far down the highway: out of the mirror's world, coasting round the planet on the server's word.
+    lineUp(session.arena, own, other, 200)
+    session.run(1)
+    expect(mirrored().coasting).toBe(true)
+    expect(mirrored().vehicle.body.isEnabled()).toBe(false)
+    expect(a.prediction.seats[own.id]!.coasting).toBe(false)
+    // Still where the server has it, near enough.
+    const told = session.serverPositionOf(b)
+    const seen = mirrored().vehicle.body.translation()
+    expect(Math.hypot(seen.x - told.x, seen.y - told.y, seen.z - told.z)).toBeLessThan(3)
+    // Come near, it is in the world again, to be run into.
+    lineUp(session.arena, own, other, 20)
+    session.run(1)
+    expect(mirrored().coasting).toBe(false)
+    expect(mirrored().vehicle.body.isEnabled()).toBe(true)
+    // The server never coasts anyone.
+    expect(session.arena.seats.some((seat) => seat.coasting)).toBe(false)
     session.dispose()
   })
 
@@ -667,6 +694,49 @@ describe('a session', () => {
       client.close('done')
       server.dispose()
     }
+  }, 60_000)
+
+  it('goes on stepping the rooms open while another island is made, and seats whoever waits for it once it is', async () => {
+    const island = planetOf(11)
+    const moon = planetOf(moonOf(11))
+    // The moon is made somewhere else, and is ready only when the test says.
+    let finish: (arena: Arena) => void = () => {}
+    const made = new Promise<Arena>((resolve) => {
+      finish = resolve
+    })
+    const server = new GameServer((seed) => (seed === island.seed ? createArena(island) : made), {}, 0)
+    const driver = new NetClient(direct(server, () => {}, 1), () => 0)
+    await driver.connect('sportsCar', island.seed)
+    const { arena } = server.roomFor(island.seed)!
+    let welcomed = false
+    const first = new NetClient(direct(server, () => {}, 2), () => 0)
+    const firstWelcome = first.connect('sportsCar', moon.seed)
+    void firstWelcome.then(() => {
+      welcomed = true
+    })
+    // Whoever asks for it while it is made waits with the first, for the same moon.
+    const second = new NetClient(direct(server, () => {}, 3), () => 0)
+    const secondWelcome = second.connect('pickup', moon.seed)
+    const before = arena.tick
+    for (let i = 0; i < 60; i++) server.advance()
+    await Promise.resolve()
+    expect(arena.tick - before).toBe(60)
+    expect(server.roomFor(moon.seed)).toBeUndefined()
+    expect(welcomed).toBe(false)
+
+    finish(createArena(moon))
+    const [a, b] = await Promise.all([firstWelcome, secondWelcome])
+    expect(a.seed).toBe(moon.seed)
+    expect(b.seed).toBe(moon.seed)
+    expect(a.seat).not.toBe(b.seat)
+    const room = server.roomFor(moon.seed)!
+    expect(room.players.size).toBe(2)
+    // Both rooms step on together from here.
+    const moonBefore = room.arena.tick
+    for (let i = 0; i < 10; i++) server.advance()
+    expect(room.arena.tick - moonBefore).toBe(10)
+    for (const client of [driver, first, second]) client.close('done')
+    server.dispose()
   }, 60_000)
 
   it('tells each car nobody drives by what its own driver asks of it, never by what a player sent last', async () => {

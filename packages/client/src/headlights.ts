@@ -1,7 +1,7 @@
 import { DEFAULT_WORLD_TUNING, restingRideHeight, type VehicleTuning } from '@buggies/game'
 import * as THREE from 'three'
 
-import { night } from './night.ts'
+import { litByNight, nightAt } from './night.ts'
 
 /** The light of a headlamp, how big a lamp is and its halo, and how far across each other they stand, as a share of the car's width. */
 const LAMP_LIGHT = new THREE.Color('#fff1cf')
@@ -36,38 +36,70 @@ function poolTexture(): THREE.DataTexture {
   return texture
 }
 
-/** A glow that grows as the night comes on: added over what is behind it, its opacity this at full night. */
+/** A glow that shows where it is night: added over what is behind it, its opacity this at full night. */
 function nightGlow(color: THREE.Color, opacity: number, map: THREE.Texture | null = null): THREE.MeshBasicMaterial {
   const material = new THREE.MeshBasicMaterial({
     color,
     map,
     transparent: true,
-    opacity: 0,
+    opacity,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
   })
-  material.onBeforeRender = () => {
-    material.opacity = night.value * opacity
-  }
+  // As dark as it is where each car is, not where the play is.
+  material.onBeforeCompile = (shader) => litByNight(shader, 'alpha')
+  material.customProgramCacheKey = () => 'night-glow'
   return material
 }
 
-/** Every car's lamps share these: one lamp, one halo and one pool, as bright as the night is dark. */
-let shared: { lamp: THREE.MeshBasicMaterial; halo: THREE.MeshBasicMaterial; pool: THREE.MeshBasicMaterial; disc: THREE.CircleGeometry; square: THREE.PlaneGeometry } | null = null
+/** Below this much night the lamps are not drawn at all, so the day costs nothing for them. */
+const LAMPS_FROM = 0.02
+
+/** Every car's lamps share these: the lamps' glow, their halos' and the pool's, as bright as the night is dark. */
+let shared: { lamp: THREE.MeshBasicMaterial; halo: THREE.MeshBasicMaterial; pool: THREE.MeshBasicMaterial; square: THREE.PlaneGeometry } | null = null
 
 function sharedParts(): NonNullable<typeof shared> {
   shared ??= {
     lamp: nightGlow(LAMP_LIGHT, 1),
     halo: nightGlow(LAMP_LIGHT, 0.35),
     pool: nightGlow(LAMP_LIGHT, POOL.opacity, poolTexture()),
-    // Facing forward, along -Z; and lying on the ground, facing up.
-    disc: new THREE.CircleGeometry(1, 20).rotateY(Math.PI),
+    // Lying on the ground, facing up.
     square: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
   }
   return shared
+}
+
+/** A pair of discs this big either side of the nose, facing forward along -Z, as one geometry: one draw for both. */
+const pairs = new Map<string, THREE.BufferGeometry>()
+
+function discPair(radius: number, x: number, y: number, z: number): THREE.BufferGeometry {
+  const key = `${radius} ${x} ${y} ${z}`
+  let pair = pairs.get(key)
+  if (pair === undefined) {
+    const disc = new THREE.CircleGeometry(radius, 20).rotateY(Math.PI)
+    const left = disc.clone().translate(x, y, z)
+    const right = disc.translate(-x, y, z)
+    pair = new THREE.BufferGeometry()
+    const count = left.getAttribute('position').count
+    const positions = new Float32Array(count * 6)
+    positions.set(left.getAttribute('position').array as Float32Array, 0)
+    positions.set(right.getAttribute('position').array as Float32Array, count * 3)
+    pair.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const index = left.getIndex()!.array
+    const indices = new Uint16Array(index.length * 2)
+    for (let i = 0; i < index.length; i++) {
+      indices[i] = index[i]!
+      indices[index.length + i] = index[i]! + count
+    }
+    pair.setIndex(new THREE.BufferAttribute(indices, 1))
+    left.dispose()
+    right.dispose()
+    pairs.set(key, pair)
+  }
+  return pair
 }
 
 /**
@@ -85,16 +117,11 @@ export class Headlights {
     const front = -tuning.chassisHalfLength - 0.04
     const height = -tuning.chassisHalfHeight * 0.15
     const ground = -restingRideHeight(tuning, DEFAULT_WORLD_TUNING.gravity)
-    for (const side of [-1, 1]) {
-      const x = side * tuning.chassisHalfWidth * LAMP.apart
-      const lamp = new THREE.Mesh(parts.disc, parts.lamp)
-      lamp.scale.setScalar(LAMP.radius)
-      lamp.position.set(x, height, front)
-      const halo = new THREE.Mesh(parts.disc, parts.halo)
-      halo.scale.setScalar(LAMP.halo)
-      halo.position.set(x, height, front - 0.02)
-      this.object.add(lamp, halo)
-    }
+    const x = tuning.chassisHalfWidth * LAMP.apart
+    this.object.add(
+      new THREE.Mesh(discPair(LAMP.radius, x, height, front), parts.lamp),
+      new THREE.Mesh(discPair(LAMP.halo, x, height, front - 0.02), parts.halo),
+    )
     if (beam) {
       this.beam = new THREE.SpotLight(LAMP_LIGHT, 0, BEAM.distance, BEAM.angle, BEAM.penumbra, 2)
       this.beam.position.set(0, height, front)
@@ -114,10 +141,13 @@ export class Headlights {
     }
   }
 
-  /** As bright as the night is dark; out once the car is wrecked. */
-  update(wrecked: boolean): void {
-    this.object.visible = !wrecked
-    if (this.beam !== null) this.beam.intensity = wrecked ? 0 : night.value * BEAM.intensity
+  /** As bright as the night is dark where the car is; out once it is wrecked, and not drawn at all by day. */
+  update(wrecked: boolean, at: { x: number; y: number; z: number }): void {
+    const night = nightAt(at)
+    const on = !wrecked && night > LAMPS_FROM
+    // The beam stays in the scene, only dimmed, so the count of lights, and so every shader, stays as it was.
+    for (const child of this.object.children) if (child !== this.beam && child !== this.beam?.target) child.visible = on
+    if (this.beam !== null) this.beam.intensity = on ? night * BEAM.intensity : 0
   }
 
   dispose(): void {

@@ -77,7 +77,7 @@ interface Rock {
 }
 
 import { hullGeometry } from './hull-geometry.ts'
-import { night } from './night.ts'
+import { litByNight } from './night.ts'
 import { uprightAt } from './stand.ts'
 
 interface ColorStop {
@@ -470,7 +470,7 @@ interface FacadeLights {
  * from its instance matrix, and a face's own span from its normal: the sides
  * run along the box and up it, the top across it. Stories count down from
  * the roof, so the row under the ground is the one cut short. With lights,
- * a share of its windows glow as the night comes on, which ones by the
+ * a share of its windows glow where it is night, which ones by the
  * window's place and the building's, so no two buildings are lit alike.
  */
 function facadeMaterial(facade: Facade, roughness: number, lights?: FacadeLights): THREE.MeshStandardMaterial {
@@ -478,12 +478,11 @@ function facadeMaterial(facade: Facade, roughness: number, lights?: FacadeLights
   if (lights !== undefined) {
     material.emissive.copy(WINDOW_LIGHT)
     material.emissiveMap = lights.mask
-    material.emissiveIntensity = 0
-    material.onBeforeRender = () => {
-      material.emissiveIntensity = night.value * WINDOW_GLOW
-    }
+    material.emissiveIntensity = WINDOW_GLOW
   }
   material.onBeforeCompile = (shader) => {
+    // Lit by the time of day where each window is, not where the play is.
+    if (lights !== undefined) litByNight(shader, 'emissive')
     shader.uniforms.facadeTile = { value: facade.tile }
     shader.uniforms.facadeCells = { value: new THREE.Vector2(...(lights?.cells ?? [1, 1])) }
     shader.uniforms.facadeLit = { value: 1 - (lights?.share ?? 0) }
@@ -1469,8 +1468,8 @@ function buildStanding(world: World): THREE.Object3D[] {
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
   // At night, some of the windows are lit: more of the houses', where people are home, than of the blocks'.
-  const blockWall = facadeMaterial(blockFacade(), 0.6, { mask: blockLights(), cells: [4, 4], share: 0.35 })
-  const houseWall = facadeMaterial(houseFacade(), 0.9, { mask: houseLights(), cells: [2, 1], share: 0.55 })
+  const blockWall = facadeMaterial(blockFacade(), 0.6, { mask: blockLights(), cells: [4, 4], share: 0.075 })
+  const houseWall = facadeMaterial(houseFacade(), 0.9, { mask: houseLights(), cells: [2, 1], share: 0.175 })
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
     palette[Math.floor(tone * palette.length) % palette.length] ?? palette[0]
   meshes.push(

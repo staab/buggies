@@ -8,6 +8,7 @@ import {
   propPlacement,
   applyChassisMassProperties,
   applyWaterResponse,
+  coastVehicle,
   applyWorldTuning,
   createPhysicsWorld,
   pullBody,
@@ -414,6 +415,12 @@ export interface Seat {
   /** A car nobody drives, and what drives it: a round of the arterials. */
   npc: boolean
   driver: Driver | null
+  /**
+   * In a mirror, a car too far from the local one to matter to it: carried
+   * along round the planet on how it was moving rather than driven, and out
+   * of the world, so nothing is spent simulating it. Never on the server.
+   */
+  coasting: boolean
   /** What it is carrying over its roof, won with bananas, and how long the machine gun has left. */
   weapon: Weapon
   /** How many weapons it has won, counted around past 255: a new one is told from the last even when it is the same. */
@@ -519,6 +526,7 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       goal: null,
       goalsWon: 0,
       npc: false,
+      coasting: false,
       driver: null,
       weapon: 'none',
       wins: 0,
@@ -636,6 +644,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   if (seat === undefined) throw new RangeError(`no seat ${id}`)
   reshape(arena, seat, profile)
   seat.occupied = true
+  seat.coasting = false
   clearTally(seat)
   disarm(seat)
   restAction(seat)
@@ -649,10 +658,18 @@ export function leaveSeat(arena: Arena, id: number): void {
   const seat = arena.seats[id]
   if (seat === undefined || !seat.occupied) return
   seat.occupied = false
+  seat.coasting = false
   clearTally(seat)
   disarm(seat)
   restAction(seat)
   seat.vehicle.body.setEnabled(false)
+}
+
+/** Have a mirror's car coast, out of the world and carried along on how it moves, or be driven in it again. */
+export function setCoasting(arena: Arena, seat: Seat, coasting: boolean): void {
+  if (!arena.mirror || seat.coasting === coasting || !seat.occupied) return
+  seat.coasting = coasting
+  seat.vehicle.body.setEnabled(!coasting)
 }
 
 /** The first free seat, or nothing when the map is full. */
@@ -687,6 +704,10 @@ export function advance(
     seat.vehicle.spared = arena.mirror
     upOf(seat.vehicle.frame.position, seat.vehicle.up)
     if (!seat.occupied) continue
+    if (seat.coasting) {
+      coastVehicle(seat.vehicle, seat.tuning, inputFor(seat), dt)
+      continue
+    }
     // A stunned car takes no driving.
     const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
     // A car its engine or wings are driving along, or a grappling line
@@ -721,7 +742,7 @@ export function advance(
   for (const ufo of arena.ufos) flyUfo(arena.planet, ufo, arena.seats, gravity, dt)
   arena.world.step()
   arena.tick += 1
-  for (const seat of arena.seats) if (seat.occupied) holdUnderCeiling(arena.planet.radius, seat.vehicle)
+  for (const seat of arena.seats) if (seat.occupied && !seat.coasting) holdUnderCeiling(arena.planet.radius, seat.vehicle)
   restoreProps(arena)
   collectPickups(arena)
   spillBananas(arena)

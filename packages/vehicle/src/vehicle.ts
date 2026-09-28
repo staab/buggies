@@ -9,6 +9,7 @@ import {
   clamp,
   inverseLerpClamped,
   moveTowards,
+  qmultiply,
   qrotate,
   rotateAboutAxis,
   v3,
@@ -477,6 +478,73 @@ function applyYawAssist(vehicle: Vehicle, tuning: VehicleTuning): void {
       groundFraction(vehicle) *
       travelDirection,
   )
+}
+
+const coastAt = v3()
+const coastVelocity = v3()
+const coastSpin = v3()
+const coastUp = v3()
+const coastAround = v3()
+const coastRotation = { x: 0, y: 0, z: 0, w: 1 }
+
+/**
+ * Carry a car along on how it was last moving, without driving it, round
+ * the planet whose middle is at the origin: the way it goes along the
+ * ground turns it round the planet on its great circle, keeping its
+ * height, and its velocity, its spin and the way it faces are turned with
+ * it, so it stays as upright on the curve as it was; its climb or fall is
+ * carried on as it was, and it turns on at its spin. Its wheels turn at its
+ * speed, but nothing is felt for, pushed or steered. For a car far off in
+ * a mirror, drawn but not worth simulating; its body is out of the world
+ * while it coasts, so nothing touches it either.
+ */
+export function coastVehicle(vehicle: Vehicle, tuning: VehicleTuning, input: VehicleInput, dt: number): void {
+  const { body } = vehicle
+  readDriverCommand(vehicle.command, vehicle.wrecked ? NEUTRAL_INPUT : input)
+  vcopy(coastAt, body.translation())
+  vcopy(coastVelocity, body.linvel())
+  vcopy(coastSpin, body.angvel())
+  const turned = body.rotation()
+  // The rotation turned on by the spin over the step, a quaternion's own derivative: q' = q + dt/2 (w q).
+  const half = dt / 2
+  const ax = coastSpin.x * half
+  const ay = coastSpin.y * half
+  const az = coastSpin.z * half
+  coastRotation.x = turned.x + (ax * turned.w + ay * turned.z - az * turned.y)
+  coastRotation.y = turned.y + (ay * turned.w + az * turned.x - ax * turned.z)
+  coastRotation.z = turned.z + (az * turned.w + ax * turned.y - ay * turned.x)
+  coastRotation.w = turned.w - (ax * turned.x + ay * turned.y + az * turned.z)
+  const out = vlength(coastAt)
+  vscale(coastUp, coastAt, 1 / Math.max(out, MIN_WHEEL_RADIUS))
+  const climb = vdot(coastVelocity, coastUp)
+  // Round the planet by as far as it goes along the ground, about the axis square to its way up and that way.
+  vcross(coastAround, coastUp, coastVelocity)
+  const along = vlength(coastAround)
+  let orbit: { x: number; y: number; z: number; w: number } = { x: 0, y: 0, z: 0, w: 1 }
+  if (along > 1e-6 && out > MIN_WHEEL_RADIUS) {
+    vscale(coastAround, coastAround, 1 / along)
+    const angle = (along * dt) / out
+    rotateAboutAxis(coastAt, coastAt, coastAround, angle)
+    rotateAboutAxis(coastVelocity, coastVelocity, coastAround, angle)
+    rotateAboutAxis(coastSpin, coastSpin, coastAround, angle)
+    const s = Math.sin(angle / 2)
+    orbit = { x: coastAround.x * s, y: coastAround.y * s, z: coastAround.z * s, w: Math.cos(angle / 2) }
+  }
+  // Up or down its way up, as it was going.
+  vscale(coastUp, coastAt, 1 / Math.max(vlength(coastAt), MIN_WHEEL_RADIUS))
+  vaddScaled(coastAt, coastAt, coastUp, climb * dt)
+  const rotation = qmultiply(orbit, coastRotation)
+  const length = Math.hypot(rotation.x, rotation.y, rotation.z, rotation.w) || 1
+  body.setTranslation(coastAt, false)
+  body.setLinvel(coastVelocity, false)
+  body.setAngvel(coastSpin, false)
+  body.setRotation({ x: rotation.x / length, y: rotation.y / length, z: rotation.z / length, w: rotation.w / length }, false)
+  readChassisFrame(vehicle.frame, body)
+  updateMotionState(vehicle)
+  // Coasting is not being hit.
+  vcopy(vehicle.lastLinearVelocity, coastVelocity)
+  const roll = (vehicle.forwardSpeed / Math.max(tuning.wheelRadius, MIN_WHEEL_RADIUS)) * dt
+  for (const wheel of vehicle.wheels) wheel.spin += roll
 }
 
 export function stepVehicle(
