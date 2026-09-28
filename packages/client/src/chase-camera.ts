@@ -185,7 +185,9 @@ export class ChaseCamera {
     this.offset.subVectors(point, this.middle)
     const out = this.offset.length()
     if (out === 0) return
-    point.copy(this.middle).addScaledVector(this.offset, this.confine(point, out) / out)
+    // Read the bounds where the point is before moving it: read after, they are the middle's.
+    const confined = this.confine(point, out)
+    point.copy(this.middle).addScaledVector(this.offset, confined / out)
   }
 
   /**

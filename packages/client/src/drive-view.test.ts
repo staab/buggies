@@ -156,6 +156,24 @@ describe('ChaseCamera', () => {
   })
 })
 
+describe('ChaseCamera on a planet', () => {
+  it('keeps to the ground where the camera is, not the ground anywhere else', () => {
+    const radius = 600
+    const camera = new ChaseCamera(createCameraTuning())
+    // A basin thirty meters down on the top half, and high ground everywhere else.
+    camera.setBoundsAt((at, out) => {
+      out.floor = at.y > 0 ? radius - 30 : radius + 20
+      out.ceiling = Number.POSITIVE_INFINITY
+      return out
+    })
+    const target = createChaseTarget()
+    target.position = { x: 0, y: radius - 29.5, z: 0 }
+    target.up = { x: 0, y: 1, z: 0 }
+    camera.snapTo(target)
+    expect(camera.camera.position.y - target.position.y).toBeCloseTo(createCameraTuning().height, 1)
+  })
+})
+
 describe('ChaseCamera under a deck', () => {
   it('drops to a low chase under a bridge, and rises again once out from under it', () => {
     const tuning = createCameraTuning()
