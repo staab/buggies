@@ -11,11 +11,10 @@ import type { VehicleSpawn } from '@buggies/vehicle'
 const EXIT = 14
 const ABREAST = 3.5
 
-/** A portal's middle, where its ring is round, and the way through it. */
+/** A portal's middle, where its ring is round, sunk to the ground it stands on; and the way through it. */
 function ringOf(portal: WorldPortal): { middle: Vec3; through: Vec3 } {
-  const up = upOf(portal.at)
   const through = qrotate(v3(), portal.turn, { x: 0, y: 0, z: 1 })
-  return { middle: { x: portal.at.x + up.x * portal.radius, y: portal.at.y + up.y * portal.radius, z: portal.at.z + up.z * portal.radius }, through }
+  return { middle: portal.at, through }
 }
 
 /** Which of a world's portals a move from one point to the next passes through, inside its ring; or -1. */

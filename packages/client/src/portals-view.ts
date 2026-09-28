@@ -19,9 +19,9 @@ function stood(object: THREE.Object3D, at: { x: number; y: number; z: number }, 
 }
 
 /**
- * The portals: each a glowing ring standing on the ground, round its
- * middle a portal's radius up, facing the way through it, with a
- * shimmering sheet across it.
+ * The portals: each a glowing ring sunk halfway into the ground, round
+ * its middle where it stands, facing the way through it, with a
+ * shimmering sheet across the arch.
  */
 export function buildPortals(world: World): THREE.Object3D {
   const portals = new THREE.Group()
@@ -32,12 +32,9 @@ export function buildPortals(world: World): THREE.Object3D {
   for (const portal of world.portals) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(portal.radius, RING_THICKNESS, 12, 64), ringMaterial)
     const sheet = new THREE.Mesh(new THREE.CircleGeometry(portal.radius - RING_THICKNESS / 2, 48), fillMaterial)
+    // The ring lies across the way through it, its lower half in the ground.
     const standing = new THREE.Group()
-    // The ring lies across the way through it, its middle a radius up off the ground.
-    for (const part of [ring, sheet]) {
-      part.position.y = portal.radius
-      standing.add(part)
-    }
+    standing.add(ring, sheet)
     portals.add(stood(standing, portal.at, portal.turn))
   }
   return portals

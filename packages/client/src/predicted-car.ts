@@ -22,7 +22,7 @@ export class PredictedCar {
     private readonly color: number,
     private readonly effects: PresenceEffects,
   ) {
-    this.current = new CarPresence(prediction.ownSeat, color, effects)
+    this.current = new CarPresence(prediction.ownSeat, color, effects, { beam: true })
     this.profile = prediction.ownSeat.profile
     this.object.add(this.current.object)
   }
@@ -51,7 +51,7 @@ export class PredictedCar {
   private redraw(): void {
     this.current.dispose()
     this.object.remove(this.current.object)
-    this.current = new CarPresence(this.prediction.ownSeat, this.color, this.effects)
+    this.current = new CarPresence(this.prediction.ownSeat, this.color, this.effects, { beam: true })
     this.current.body.snapToBody()
     this.profile = this.prediction.ownSeat.profile
     this.object.add(this.current.object)

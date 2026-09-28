@@ -77,6 +77,7 @@ interface Rock {
 }
 
 import { hullGeometry } from './hull-geometry.ts'
+import { night } from './night.ts'
 import { uprightAt } from './stand.ts'
 
 interface ColorStop {
@@ -384,6 +385,27 @@ function blockFacade(): Facade {
   })
 }
 
+/** Where a block's window panes are, white, on black: what is lit of it at night. */
+function blockLights(): THREE.DataTexture {
+  const bays = 4
+  const stories = 4
+  return paintedFacade(128, [bays * WINDOW_PITCH, stories * STORY], (u, v, out) => {
+    const du = u * bays - Math.floor(u * bays)
+    const dv = v * stories - Math.floor(v * stories)
+    const inWindow = du > 0.22 && du < 0.78 && dv > 0.2 && dv < 0.72
+    out.setScalar(inWindow ? 1 : 0)
+  }).texture
+}
+
+/** Where a house's window panes are, white, on black. */
+function houseLights(): THREE.DataTexture {
+  const bays = 2
+  return paintedFacade(64, [bays * HOUSE_PITCH, STORY], (u, v, out) => {
+    const du = u * bays - Math.floor(u * bays)
+    out.setScalar(du > 0.3 && du < 0.7 && v > 0.35 && v < 0.75 ? 1 : 0)
+  }).texture
+}
+
 /** Two windows with sills and frames per story of a house, on a bare wall. */
 function houseFacade(): Facade {
   const bays = 2
@@ -427,19 +449,46 @@ function roofFacade(): Facade {
   })
 }
 
+/** The warm light of a window lit from inside, and how bright it is at full night. */
+const WINDOW_LIGHT = new THREE.Color('#ffc870')
+const WINDOW_GLOW = 1.4
+
+/**
+ * Which of a facade's windows light up at night: where its panes are, how
+ * many windows across and up one repeat of it holds, and what share of
+ * them are lit.
+ */
+interface FacadeLights {
+  mask: THREE.DataTexture
+  cells: [number, number]
+  share: number
+}
+
 /**
  * A material that repeats its facade every `tile` meters over every face of
  * an instanced box, whatever the box's size. The box's size is read back
  * from its instance matrix, and a face's own span from its normal: the sides
  * run along the box and up it, the top across it. Stories count down from
- * the roof, so the row under the ground is the one cut short.
+ * the roof, so the row under the ground is the one cut short. With lights,
+ * a share of its windows glow as the night comes on, which ones by the
+ * window's place and the building's, so no two buildings are lit alike.
  */
-function facadeMaterial(facade: Facade, roughness: number): THREE.MeshStandardMaterial {
+function facadeMaterial(facade: Facade, roughness: number, lights?: FacadeLights): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({ map: facade.texture, roughness, metalness: 0.05 })
+  if (lights !== undefined) {
+    material.emissive.copy(WINDOW_LIGHT)
+    material.emissiveMap = lights.mask
+    material.emissiveIntensity = 0
+    material.onBeforeRender = () => {
+      material.emissiveIntensity = night.value * WINDOW_GLOW
+    }
+  }
   material.onBeforeCompile = (shader) => {
     shader.uniforms.facadeTile = { value: facade.tile }
+    shader.uniforms.facadeCells = { value: new THREE.Vector2(...(lights?.cells ?? [1, 1])) }
+    shader.uniforms.facadeLit = { value: 1 - (lights?.share ?? 0) }
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform vec2 facadeTile;')
+      .replace('#include <common>', '#include <common>\nuniform vec2 facadeTile;\nvarying float vFacadeSeed;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -447,10 +496,26 @@ function facadeMaterial(facade: Facade, roughness: number): THREE.MeshStandardMa
         vec3 boxSize = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
         vec2 faceSpan = abs(normal.x) > 0.5 ? boxSize.zy : abs(normal.z) > 0.5 ? boxSize.xy : boxSize.xz;
         vMapUv = vec2(uv.x, 1.0 - uv.y) * faceSpan / facadeTile;
+        #ifdef USE_EMISSIVEMAP
+        vEmissiveMapUv = vMapUv;
+        #endif
+        vFacadeSeed = fract(sin(dot(instanceMatrix[3].xyz, vec3(12.9898, 78.233, 37.719))) * 43758.5453) + dot(normal, vec3(1.0, 2.0, 3.0));
+        #else
+        vFacadeSeed = 0.0;
+        #endif`,
+      )
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec2 facadeCells;\nuniform float facadeLit;\nvarying float vFacadeSeed;')
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#ifdef USE_EMISSIVEMAP
+        vec2 facadeCell = floor(vMapUv * facadeCells);
+        float facadeOn = step(facadeLit, fract(sin(dot(facadeCell + vFacadeSeed * 17.0, vec2(12.9898, 78.233))) * 43758.5453));
+        totalEmissiveRadiance *= texture2D(emissiveMap, vEmissiveMapUv).rgb * facadeOn;
         #endif`,
       )
   }
-  material.customProgramCacheKey = () => 'facade'
+  material.customProgramCacheKey = () => (lights === undefined ? 'facade' : 'facade-lit')
   return material
 }
 
@@ -1403,8 +1468,9 @@ function buildStanding(world: World): THREE.Object3D[] {
   const boats = ofKind('boat')
   const stations = ofKind('station')
   const pylons = ofKind('pylon')
-  const blockWall = facadeMaterial(blockFacade(), 0.6)
-  const houseWall = facadeMaterial(houseFacade(), 0.9)
+  // At night, some of the windows are lit: more of the houses', where people are home, than of the blocks'.
+  const blockWall = facadeMaterial(blockFacade(), 0.6, { mask: blockLights(), cells: [4, 4], share: 0.35 })
+  const houseWall = facadeMaterial(houseFacade(), 0.9, { mask: houseLights(), cells: [2, 1], share: 0.55 })
   const pick = (palette: [THREE.Color, ...THREE.Color[]], tone: number): THREE.Color =>
     palette[Math.floor(tone * palette.length) % palette.length] ?? palette[0]
   meshes.push(

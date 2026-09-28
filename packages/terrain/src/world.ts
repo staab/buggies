@@ -125,8 +125,9 @@ export interface WorldDecks extends WorldMesh {
 }
 
 /**
- * A portal: a ring standing on the ground, its middle `radius` up from its
- * foot, facing along its z, which a car drives through to another world.
+ * A portal: a ring sunk halfway into the ground, its middle where it
+ * stands, facing along its z, which a car drives through to another world
+ * under the arch it makes.
  */
 export interface WorldPortal extends Stand {
   readonly radius: number

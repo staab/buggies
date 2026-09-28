@@ -114,21 +114,18 @@ describe("a planet's buildings and trees", () => {
     }
   })
 
-  it('leave props about for a car to knock over: barrels by the filling stations, cones on the suburb roads and bales in the fields', () => {
+  it('leave props about for a car to knock over: barrels by the filling stations and crates by the building sites', () => {
     const kinds = new Map<string, number>()
     for (const prop of world.props) kinds.set(prop.kind, (kinds.get(prop.kind) ?? 0) + 1)
     expect(world.props.length).toBeGreaterThan(20)
     expect(world.props.length).toBeLessThanOrEqual(250)
-    for (const kind of ['barrel', 'cone', 'bale']) expect(kinds.get(kind) ?? 0).toBeGreaterThan(0)
+    for (const kind of ['barrel', 'crate']) expect(kinds.get(kind) ?? 0).toBeGreaterThan(0)
     const shops = of('shop')
     for (const prop of world.props) {
       expect(Math.abs(heightOf(world, prop.at) - groundAt(world, prop.at))).toBeLessThan(0.01)
       const crowding = roadCrowding(world, world.roads, prop.at)
-      // Cones stand on the road's edge, as roadworks; everything else keeps off the roads.
-      if (prop.kind === 'cone') expect(crowding).toBeLessThan(1.2)
-      else expect(crowding).toBeGreaterThan(1)
+      expect(crowding).toBeGreaterThan(1)
       if (prop.kind === 'barrel') expect(shops.some((shop) => apart(world, shop.at, prop.at) < 12)).toBe(true)
-      if (prop.kind === 'bale') expect(world.fields.some((field) => field.kind === 'crop' && apart(world, field.at, prop.at) < 60)).toBe(true)
     }
   })
 

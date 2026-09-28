@@ -1,14 +1,15 @@
 /**
  * A planet's moon: half its size, gray and airless, its ground all rock,
- * pocked with craters and raised into mountains and cut by valleys, with
- * no sea, no rivers and no roads. On it stand a flag and the lander that
+ * smooth but for a few great craters, each a deep bowl inside a high lip
+ * that is climbed to from outside as a kicker is,
+ * with no sea, no rivers and no roads. On it stand a flag and the lander that
  * brought it, and the one portal back to the planet.
  */
 
 import * as exact from '@buggies/physics'
 import { createRng, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 
-import { fbm3D, ridged3D, smoothstep } from '../noise.ts'
+import { fbm3D } from '../noise.ts'
 import { createSphereGround, sphereHeight, type SphereGround } from '../sphere.ts'
 import { groundDirections } from '../sphere-water.ts'
 import { randomDirection } from '../world-queries.ts'
@@ -17,6 +18,7 @@ import { angleBetween, lift } from './lines.ts'
 import { axisAt, spotFrame, spotSamples, turnOf, type Spot } from './placing.ts'
 import { PLANET_RADIUS, SPHERE_CELLS, generatePlanet } from './planet.ts'
 import { PORTAL_RADIUS } from './portals.ts'
+import { rampRise } from './solids.ts'
 import { fromFrame } from './frame.ts'
 
 const { cos, sin } = exact
@@ -43,17 +45,24 @@ export function planetSeedOf(id: number): number {
 const MOON_SIZE = 0.5
 /** Far under anything on the moon: it has no sea. */
 const MOON_SEA = -1000
-/** The rolling of its plains, how high and how broad. */
-const PLAINS = { height: 5, frequency: 0.012 } as const
-/** Its mountains: ridges this high, where the broad noise that gathers them into ranges runs high. */
-const MOUNTAINS = { height: 32, frequency: 0.009, range: 0.004, from: 0.5, to: 0.7 } as const
-/** Its valleys: troughs this deep, where another ridged noise runs high. */
-const VALLEYS = { depth: 14, frequency: 0.006 } as const
-/** How many craters, how wide across their rims, how deep a bowl for its width, and how high a rim. */
-const CRATERS = 90
-const CRATER_RADIUS = { min: 6, max: 55 } as const
-const CRATER_DEPTH = 0.3
-const CRATER_RIM = 0.08
+/** The gentle swell of its plains, how high and how broad. */
+const PLAINS = { height: 1.5, frequency: 0.008 } as const
+/**
+ * Its craters: how many are tried for, how wide to the crest of the lip,
+ * and how far apart, as a share of the two radii, so none runs into
+ * another. For its radius, how deep the bowl's floor sinks under the
+ * plain, how high the lip stands over it, and how far out its flank's foot
+ * is; and how far the flank is bent from a straight ramp toward a kicker's
+ * arc, which steepens to the lip.
+ */
+const CRATERS = 14
+const CRATER_TRIES = 400
+const CRATER_RADIUS = { min: 45, max: 110 } as const
+const CRATERS_APART = 1.9
+const CRATER_DEPTH = 0.22
+const CRATER_LIP = 0.18
+const CRATER_FLANK = 0.5
+const CRATER_CURVE = 0.5
 /** How level the ground under the flag, the lander and the portal must be, and how many spots are tried for each. */
 const LEVEL = 1.2
 const TRIES = 2000
@@ -70,16 +79,37 @@ interface Crater {
   readonly radius: number
 }
 
-/** The moon's ground: plains, mountain ranges, valleys, and the craters over all of it. */
+/** The great craters, each kept clear of the others. */
+function placeCraters(radius: number, rng: Rng): Crater[] {
+  const craters: Crater[] = []
+  for (let attempt = 0; attempt < CRATER_TRIES && craters.length < CRATERS; attempt++) {
+    const center = { ...randomDirection(rng) }
+    const r = randomRange(rng, CRATER_RADIUS.min, CRATER_RADIUS.max)
+    if (craters.every((other) => angleBetween(center, other.center) * radius > (r + other.radius) * CRATERS_APART)) craters.push({ center, radius: r })
+  }
+  return craters
+}
+
+/**
+ * How high a crater raises or sinks the ground this far from its middle:
+ * a bowl rising from its floor to the lip, and outside it the flank, a
+ * kicker from its foot on the plain up to the lip, whence the ground drops
+ * away into the bowl.
+ */
+function craterHeight(d: number, r: number): number {
+  const lip = CRATER_LIP * r
+  if (d < r) return lip - (lip + CRATER_DEPTH * r) * (1 - (d / r) * (d / r))
+  const flank = CRATER_FLANK * r
+  const along = flank - (d - r)
+  if (along <= 0) return 0
+  return (1 - CRATER_CURVE) * rampRise({ length: flank, rise: lip, straight: true }, along) + CRATER_CURVE * rampRise({ length: flank, rise: lip }, along)
+}
+
+/** The moon's ground: smooth plains, and the craters over them. */
 function raiseMoonGround(ground: SphereGround, seed: number, rng: Rng): void {
   const { radius, heights } = ground
   const directions = groundDirections(ground)
-  const craters: Crater[] = Array.from({ length: CRATERS }, () => {
-    const center = randomDirection(rng)
-    // Small craters far outnumber big ones.
-    const t = rng()
-    return { center: { ...center }, radius: CRATER_RADIUS.min + (CRATER_RADIUS.max - CRATER_RADIUS.min) * t * t * t }
-  })
+  const craters = placeCraters(radius, rng)
   const p = { x: 0, y: 0, z: 0 }
   for (let at = 0; at < heights.length; at++) {
     p.x = directions[at * 3]!
@@ -88,19 +118,10 @@ function raiseMoonGround(ground: SphereGround, seed: number, rng: Rng): void {
     const x = p.x * radius
     const y = p.y * radius
     const z = p.z * radius
-    let height = (fbm3D(x * PLAINS.frequency, y * PLAINS.frequency, z * PLAINS.frequency, seed + 1, 3) - 0.5) * 2 * PLAINS.height
-    const range = smoothstep(MOUNTAINS.from, MOUNTAINS.to, fbm3D(x * MOUNTAINS.range, y * MOUNTAINS.range, z * MOUNTAINS.range, seed + 2, 2))
-    height += range * ridged3D(x * MOUNTAINS.frequency, y * MOUNTAINS.frequency, z * MOUNTAINS.frequency, seed + 3, 4) * MOUNTAINS.height
-    const trough = ridged3D(x * VALLEYS.frequency, y * VALLEYS.frequency, z * VALLEYS.frequency, seed + 4, 2)
-    height -= smoothstep(0.75, 1, trough) * VALLEYS.depth
+    let height = (fbm3D(x * PLAINS.frequency, y * PLAINS.frequency, z * PLAINS.frequency, seed + 1, 2) - 0.5) * 2 * PLAINS.height
     for (const crater of craters) {
       const d = angleBetween(p, crater.center) * radius
-      const r = crater.radius
-      if (d > r * 2) continue
-      // A bowl inside the rim, the rim raised round it, and its throw fading out beyond.
-      const inside = d < r ? -CRATER_DEPTH * r * (1 - (d / r) * (d / r)) : 0
-      const rim = CRATER_RIM * r * Math.exp(-((d - r) * (d - r)) / (0.08 * r * r))
-      height += inside + rim
+      if (d < crater.radius * (1 + CRATER_FLANK)) height += craterHeight(d, crater.radius)
     }
     heights[at] = height
   }

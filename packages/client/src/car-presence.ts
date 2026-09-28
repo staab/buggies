@@ -24,6 +24,7 @@ import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
 import { disposeObject } from './dispose.ts'
 import { distanceFrom, type Ear } from './ear.ts'
+import { Headlights } from './headlights.ts'
 import type { Explosions } from './explosion.ts'
 import type { ControlHint, HudState } from './hud.ts'
 import type { Smoke } from './smoke.ts'
@@ -103,6 +104,8 @@ export interface PresenceOptions {
   ear?: Ear
   /** Whether it is heard from here at all: a car driven from another view of this screen is not. */
   heard?: boolean
+  /** Whether its headlights light what is ahead of it, as the driver's own do, or only glow. */
+  beam?: boolean
 }
 
 /**
@@ -129,6 +132,7 @@ export class CarPresence {
   /** The siren, made the first time it is needed: an emergency vehicle's own, or the power any car may win. */
   private siren: SirenVoice | null = null
   private readonly boostFlame: THREE.Mesh
+  private readonly headlights: Headlights
   private aimPoint: Vec3 | null = null
   private hookPoint: Vec3 | null = null
   /** What lasts of what the car has used, drawn on it: the shield's bubble, the plow's blade, the magnet's reach and the grappling line with its hook. */
@@ -174,6 +178,8 @@ export class CarPresence {
     this.boostFlame.position.set(0, seat.tuning.chassisHalfHeight * 0.4, seat.tuning.chassisHalfLength + BOOST_FLAME.length / 2)
     this.boostFlame.visible = false
     this.object.add(this.boostFlame)
+    this.headlights = new Headlights(seat.tuning, options.beam === true)
+    this.object.add(this.headlights.object)
     const { chassisHalfWidth, chassisHalfHeight, chassisHalfLength } = seat.tuning
     this.bubble = new THREE.Mesh(
       new THREE.SphereGeometry(1, 24, 16),
@@ -301,6 +307,7 @@ export class CarPresence {
     const boosting = acting(this.seat) && (own.kind === 'boost' || own.kind === 'fly')
     this.thrust?.set(engine || boosting ? 1 : 0, off)
     this.boostFlame.visible = boosting
+    this.headlights.update(this.seat.vehicle.wrecked)
     if (boosting) {
       const flicker = 0.75 + 0.25 * Math.sin(this.lightTime * 47) * Math.sin(this.lightTime * 31)
       this.boostFlame.scale.set(flicker, 0.8 + 0.5 * flicker, flicker)
@@ -374,6 +381,7 @@ export class CarPresence {
   }
 
   dispose(): void {
+    this.headlights.dispose()
     this.voice?.stop()
     this.skid?.stop()
     this.siren?.stop()

@@ -35,17 +35,13 @@ export const INTERCHANGE_SHRUBS = 0.9
 export const PARK_LOT_ODDS = 7
 /**
  * Props, the furniture a car can knock about, no more than this many to a
- * planet: barrels stacked this many deep beside a gas station's shop,
- * crates this many along the strip outside a building site's fencing,
- * a line of this many cones this far apart as roadworks every so far along
- * the suburb roads, and this many bales to a crop field.
+ * planet: barrels stacked this many deep beside a gas station's shop, and
+ * crates this many along the strip outside a building site's fencing.
  */
 export const PROPS_MOST = 250
 export const PROP_SALT = 0x5a1d
 export const STATION_BARRELS = 4
 export const SITE_CRATES = 3
-export const ROADWORKS = { cones: 6, apart: 2.2, every: 450 } as const
-export const FIELD_BALES = { min: 2, max: 4 } as const
 /**
  * The city square: the first open lot this near the heart of a city is
  * paved over, with a fountain in the middle, its basin this wide and this

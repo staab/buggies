@@ -173,7 +173,8 @@ describe('game', () => {
     seat.vehicle.body.setLinvel({ x: up.x * 30, y: up.y * 30, z: up.z * 30 }, true)
     for (let i = 0; i < 60; i++) {
       advance(arena)
-      expect(heightOver(arena.planet, seat.vehicle.body.translation())).toBeLessThanOrEqual(CEILING + 1e-6)
+      // To within what a body's single-precision position holds, this far from the planet's middle.
+      expect(heightOver(arena.planet, seat.vehicle.body.translation())).toBeLessThanOrEqual(CEILING + 1e-3)
     }
     // Let go of, it falls back down under it.
     const velocity = seat.vehicle.body.linvel()

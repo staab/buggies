@@ -93,4 +93,4 @@ export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyram
 export const WATER_KINDS: readonly BuildingKind[] = ['boat']
 
 /** The kinds of thing a car can knock about. */
-export type PropKind = 'crate' | 'barrel' | 'cone' | 'bale'
+export type PropKind = 'crate' | 'barrel'

@@ -57,7 +57,6 @@ export {
   createVehicle,
   stepVehicle,
   createPhysicsWorld,
-  CONE_SIDES,
   PROP_SHAPES,
   addHeightfield,
   addProp,
@@ -445,7 +444,7 @@ export interface Seat {
 }
 
 /**
- * A prop in the arena: a crate, a barrel, a cone or a bale, as a body the
+ * A prop in the arena: a crate or a barrel, as a body the
  * physics steps, and where the map stands it, for putting it back.
  */
 export interface ArenaProp {

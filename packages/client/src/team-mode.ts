@@ -48,6 +48,10 @@ export async function createTeamMode(
 
   return {
     camera: first.camera,
+    // The game's time, the same on every mirror, so the day, the boats and the clouds are where they are for everyone.
+    get tick() {
+      return first.tick
+    },
     resize(aspect) {
       for (const view of views) view.resize(split ? aspect / views.length : aspect)
     },

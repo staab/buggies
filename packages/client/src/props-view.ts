@@ -1,4 +1,4 @@
-import { CONE_SIDES, PROP_SHAPES, type ArenaProp } from '@buggies/game'
+import { PROP_SHAPES, type ArenaProp } from '@buggies/game'
 import type { PropKind } from '@buggies/terrain'
 import * as THREE from 'three'
 import { disposeObject } from './dispose.ts'
@@ -11,24 +11,17 @@ export interface PropSource {
 const PROP_COLORS: Readonly<Record<PropKind, THREE.Color>> = {
   crate: new THREE.Color('#a8763e'),
   barrel: new THREE.Color('#2f5f9e'),
-  cone: new THREE.Color('#f07a1a'),
-  bale: new THREE.Color('#d9b45a'),
 }
 
 /** The model of each kind of prop, a unit of its shape, scaled to its size when drawn. */
 function geometryFor(kind: PropKind): THREE.BufferGeometry {
   const shape = PROP_SHAPES[kind]
-  switch (shape.shape) {
-    case 'box':
-      return new THREE.BoxGeometry(shape.halfWidth * 2, shape.halfHeight * 2, shape.halfDepth * 2)
-    case 'drum':
-      return new THREE.CylinderGeometry(shape.halfWidth, shape.halfWidth, shape.halfHeight * 2, 14)
-    default:
-      return new THREE.ConeGeometry(shape.halfWidth, shape.halfHeight * 2, CONE_SIDES)
-  }
+  return shape.shape === 'box'
+    ? new THREE.BoxGeometry(shape.halfWidth * 2, shape.halfHeight * 2, shape.halfDepth * 2)
+    : new THREE.CylinderGeometry(shape.halfWidth, shape.halfWidth, shape.halfHeight * 2, 14)
 }
 
-const KINDS: readonly PropKind[] = ['crate', 'barrel', 'cone', 'bale']
+const KINDS: readonly PropKind[] = ['crate', 'barrel']
 const position = new THREE.Vector3()
 const rotation = new THREE.Quaternion()
 const one = new THREE.Vector3(1, 1, 1)
@@ -36,7 +29,7 @@ const matrix = new THREE.Matrix4()
 
 /**
  * The props of an island, drawn where the simulation has them each frame:
- * one instanced mesh a kind, every instance following its body, so a cone
+ * one instanced mesh a kind, every instance following its body, so a crate
  * a car has scattered is seen where it landed and a barrel where it rolled.
  */
 export class PropsView {

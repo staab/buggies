@@ -32,7 +32,7 @@ import {
 } from './country.ts'
 import { Placed, interchangeRings, meetsRings, railClearance, roadClearance, wetTest, type Land } from './placing.ts'
 import { globeRailRuns } from './rails.ts'
-import { coneOffRoadworks, lineArterials, lineRamps, plantInterchanges, raiseStations } from './roadside.ts'
+import { lineArterials, lineRamps, plantInterchanges, raiseStations } from './roadside.ts'
 import { planter, worldBuilding, type Site } from './site.ts'
 import { BOAT_SALT, BUILDING_SALT, CAMP_SALT, OBSERVATORY_SALT, PROP_SALT, SIDEWALK_BAND } from './sizes.ts'
 import type { Grid } from './streets.ts'
@@ -111,7 +111,6 @@ export function buildGlobeStands(
   raisePyramid(site, country, mountains)
   // The stations take their lots before the houses line the roads, or the houses would leave them none.
   raiseStations(site)
-  coneOffRoadworks(site)
   // A house along an arterial has no sidewalk under its front: it keeps off a street's whole width.
   lineArterials(site, offStreets, plant)
   // The observatory, the boats and the camps throw their own dice, so which planets have them does not change whenever something else draws a number more or less.

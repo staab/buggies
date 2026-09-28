@@ -48,7 +48,7 @@ describe('the props', () => {
     let asleep = 0
     for (const prop of arena.props) {
       const at = prop.body.translation()
-      // A bale may roll a little way down its field, a cone slide a little on a cambered road.
+      // A barrel may roll a little way down a slope.
       expect(apart(at, prop.home.at)).toBeLessThan(4)
       expect(over(at, prop.home.at)).toBeGreaterThan(-0.5)
       if (prop.body.isSleeping()) asleep += 1
@@ -57,48 +57,23 @@ describe('the props', () => {
     arena.world.free()
   })
 
-  it('a tank driven into a cone sends it flying', () => {
+  it('a tank driven into a crate sends it flying', () => {
     const arena = createArena(map)
-    const cone = arena.props.find((prop) => prop.kind === 'cone')
-    expect(cone).toBeDefined()
+    const crate = arena.props.find((prop) => prop.kind === 'crate')
+    expect(crate).toBeDefined()
     const seat = takeSeat(arena, 0, 'tank')
     for (let i = 0; i < 30; i++) advance(arena)
-    // Up to speed first, then the cone dropped at the height of the hull just ahead of the car, which drives on
-    // into it before it lands: the tank rides high on its tracks, and a cone standing on the road fits under it.
+    // Up to speed first, then the crate dropped at the height of the hull just ahead of the car, which drives on
+    // into it before it lands: the tank rides high on its tracks, and something small on the road fits under it.
     for (let i = 0; i < 90; i++) advance(arena, () => DRIVE)
     const { forward, position } = seat.vehicle.frame
     const ahead = 5
-    cone!.body.setTranslation(lifted({ x: position.x + forward.x * ahead, y: position.y + forward.y * ahead, z: position.z + forward.z * ahead }, 0.3), true)
-    cone!.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
-    const before = { ...cone!.body.translation() }
+    crate!.body.setTranslation(lifted({ x: position.x + forward.x * ahead, y: position.y + forward.y * ahead, z: position.z + forward.z * ahead }, 0.3), true)
+    crate!.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    const before = { ...crate!.body.translation() }
     for (let i = 0; i < 90; i++) advance(arena, () => DRIVE)
-    expect(apart(cone!.body.translation(), before)).toBeGreaterThan(2)
+    expect(apart(crate!.body.translation(), before)).toBeGreaterThan(2)
     arena.world.free()
-  })
-
-  it('a cone knocked onto its side comes to rest rather than rolling in circles', () => {
-    for (const spin of [{ x: 0, y: 4, z: 6 }, { x: 3, y: 0, z: -5 }, { x: -6, y: 2, z: 0 }, { x: 0, y: -8, z: 2 }]) {
-      const arena = createArena(map)
-      // The cone on the most level ground: one on a hill rolls on down it, however it lands.
-      const slope = (prop: (typeof arena.props)[number]): number => {
-        const up = upOf(prop.home.at)
-        const { east, north } = tangentFrame(up)
-        const at = (e: number, n: number): number => {
-          const p = { x: up.x * map.radius + east.x * e + north.x * n, y: up.y * map.radius + east.y * e + north.y * n, z: up.z * map.radius + east.z * e + north.z * n }
-          return sphereHeight(map.ground, upOf(p))
-        }
-        return Math.hypot(at(3, 0) - at(-3, 0), at(0, 3) - at(0, -3))
-      }
-      const cone = arena.props.filter((prop) => prop.kind === 'cone').sort((a, b) => slope(a) - slope(b))[0]!
-      const { home } = cone
-      // Laid on its side a little above where it stood, and set spinning.
-      cone.body.setTranslation(lifted(home.at, 0.6), true)
-      cone.body.setRotation(qmultiply(home.turn, { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 }), true)
-      cone.body.setAngvel(spin, true)
-      for (let i = 0; i < 60 * 8 && !cone.body.isSleeping(); i++) advance(arena)
-      expect(cone.body.isSleeping()).toBe(true)
-      arena.world.free()
-    }
   })
 
   it('a prop sunk out of reach is put back where it started', () => {

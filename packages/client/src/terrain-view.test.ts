@@ -121,22 +121,25 @@ describe('the planet drawn', () => {
     expect(sea.geometry).toBeInstanceOf(THREE.SphereGeometry)
   })
 
-  it('floats see-through clouds high over the land all round the planet, carried round it by the wind', () => {
+  it('floats see-through clouds high over the land all round the planet, each one skin, carried round it by the wind', () => {
     const clouds = view.getObjectByName('clouds')!
-    const puffs = clouds.children[0] as THREE.InstancedMesh
-    expect(puffs.count).toBeGreaterThan(300)
-    const material = puffs.material as THREE.MeshLambertMaterial
+    const sky = clouds.children[0] as THREE.Mesh
+    // Every cloud in one mesh, each a closed skin of its own rather than a heap of puffs.
+    expect(sky).not.toBeInstanceOf(THREE.InstancedMesh)
+    expect(sky.userData.clouds).toBeGreaterThan(50)
+    const material = sky.material as THREE.MeshLambertMaterial
     expect(material.transparent).toBe(true)
     expect(material.opacity).toBeLessThan(1)
-    const matrix = new THREE.Matrix4()
+    const positions = sky.geometry.getAttribute('position')
     const at = new THREE.Vector3()
+    let lowest = Infinity
     let highest = -Infinity
-    for (let i = 0; i < puffs.count; i++) {
-      puffs.getMatrixAt(i, matrix)
-      const height = at.setFromMatrixPosition(matrix).length() - world.radius
-      expect(height).toBeGreaterThan(CLOUD_HEIGHT - 10)
+    for (let i = 0; i < positions.count; i++) {
+      const height = at.fromBufferAttribute(positions, i).length() - world.radius
+      lowest = Math.min(lowest, height)
       highest = Math.max(highest, height)
     }
+    expect(lowest).toBeGreaterThan(CLOUD_HEIGHT - 20)
     expect(highest).toBeLessThan(CLOUD_HEIGHT + 30)
     moveClouds(view, 0)
     const before = clouds.rotation.y

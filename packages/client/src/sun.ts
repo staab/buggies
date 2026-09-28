@@ -2,6 +2,8 @@ import type { Vec3 } from '@buggies/physics'
 import { sunDirection } from '@buggies/game'
 import * as THREE from 'three'
 
+import { night } from './night.ts'
+
 /** Where the light comes from before the planet has turned at all. */
 export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
 
@@ -128,6 +130,7 @@ export class Sun {
     this.sky.position.copy(this.direction)
     const elevation = up === undefined ? 1 : this.direction.x * up.x + this.direction.y * up.y + this.direction.z * up.z
     this.daylight = THREE.MathUtils.smoothstep(elevation, DUSK.below, DUSK.above)
+    night.value = 1 - this.daylight
     this.light.intensity = SUN_LIGHT * (up === undefined ? 1 : this.daylight)
     this.sky.intensity = SKY_LIGHT.night + (SKY_LIGHT.day - SKY_LIGHT.night) * this.daylight
     // Set, the disc is under the horizon.

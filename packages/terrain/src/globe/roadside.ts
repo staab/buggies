@@ -48,7 +48,6 @@ import {
   RAMP_SPACING,
   RAMP_WIDTH,
   ROAD_MARGIN,
-  ROADWORKS,
   SHOP,
   SIGN,
   STATION_APART,
@@ -286,41 +285,6 @@ export function raiseStations(site: Site): void {
         traveled = 0
         break
       }
-    }
-  }
-}
-
-/** Roadworks along the suburb stretches of the main roads, every so far: a line of cones down one edge of the roadway. */
-export function coneOffRoadworks(site: Site): void {
-  const rng = site.propRng
-  for (const road of mainRoads(site.roads)) {
-    if (road.kind === 'highway') continue
-    const { points } = road
-    const segments = road.closed ? points.length : points.length - 1
-    let traveled = randomRange(rng, 0, ROADWORKS.every)
-    for (let index = 1; index < segments; index++) {
-      traveled += step(site, points[index - 1]!, points[index]!)
-      if (traveled < ROADWORKS.every || road.structure[index] !== ROAD_GRADE) continue
-      if (districtAt(site.land, unit(points[index]!)) !== DISTRICT_SUBURB) continue
-      const side = rng() < 0.5 ? 1 : -1
-      const edge = road.widths[0]! / 2 - 0.6
-      // Each cone is walked on along the road from the last, so a line of them follows a bend.
-      let at = index
-      let left = 0
-      for (let k = 0; k < ROADWORKS.cones; k++) {
-        while (left > 0 && at + 1 < segments) {
-          const length = step(site, points[at]!, points[at + 1]!)
-          if (length > left) break
-          left -= length
-          at += 1
-        }
-        if (at + 1 >= points.length || left > step(site, points[at]!, points[at + 1]!)) break
-        const frame = roadFrameAt(road, at)
-        const base = along(unit(points[at]!), frame.ahead, left, site.radius)
-        prop(site, 'cone', out(site, base, frame.left, side * edge), frame.ahead)
-        left += ROADWORKS.apart
-      }
-      traveled = 0
     }
   }
 }

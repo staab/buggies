@@ -310,7 +310,8 @@ export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: V
   const wheelNodes = nodesNamed(scene, (name) => spec.wheels.test(name)).filter(
     (node, _, all) => !all.some((other) => other !== node && within(node, [other])),
   )
-  const body = meshBounds(scene, (mesh) => !within(mesh, wheelNodes))
+  // A glow, a flame or a light's halo, is no part of the body it is fitted by.
+  const body = meshBounds(scene, (mesh) => !within(mesh, wheelNodes) && mesh.userData.glow !== true)
   const ground = Math.min(body.min.y, meshBounds(scene, (mesh) => within(mesh, wheelNodes)).min.y)
   const center = body.getCenter(new THREE.Vector3())
   if (spec.sirens !== undefined) {
@@ -360,7 +361,7 @@ export function fitCarModel(scene: THREE.Object3D, spec: CarModelSpec, tuning: V
   bodyGroup.matrix.decompose(bodyGroup.position, bodyGroup.quaternion, bodyGroup.scale)
   bodyGroup.add(scene)
   bodyGroup.traverse((node) => {
-    if (node instanceof THREE.Mesh) {
+    if (node instanceof THREE.Mesh && node.userData.glow !== true) {
       node.castShadow = true
       node.receiveShadow = true
     }

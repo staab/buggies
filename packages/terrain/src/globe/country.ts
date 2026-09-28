@@ -34,7 +34,7 @@ import {
 import { roadFrameAt } from './rails.ts'
 import { mainRoads } from './roadside.ts'
 import { chordWay } from './segments.ts'
-import { farFromKind, noteStood, prop, raise, standsHere, tower, worldField, type Planter, type Raised, type Site } from './site.ts'
+import { farFromKind, noteStood, raise, standsHere, tower, worldField, type Planter, type Raised, type Site } from './site.ts'
 import {
   ALTAR,
   BARN,
@@ -62,7 +62,6 @@ import {
   FARM_TRIES,
   FARMS_MOST,
   FEATURE_APART,
-  FIELD_BALES,
   FIELD_GAP,
   FIELD_LENGTH,
   FIELD_RELIEF,
@@ -415,14 +414,6 @@ export function plantFarms(site: Site, country: Int32Array, plant: Planter, moun
       placed.add(spot)
       worldField(site, 'crop', spot, rng())
       hedge(site, spot, plant)
-      // A few bales left lying in the field.
-      const { propRng } = site
-      for (let n = randomInt(propRng, FIELD_BALES.min, FIELD_BALES.max); n > 0; n--) {
-        const u = randomRange(propRng, -spot.width / 2 + 3, spot.width / 2 - 3)
-        const v = randomRange(propRng, -spot.depth / 2 + 3, spot.depth / 2 - 3)
-        const p = onSpot(site, spot, u, v)
-        prop(site, 'bale', p, axisOn(localAt(p, radius), yaw + randomRange(propRng, -0.4, 0.4), p))
-      }
     }
     // The barn off the end of the first field, broadside to the row, and the silos beside it.
     const first = laid[0]!

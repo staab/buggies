@@ -1,5 +1,5 @@
 /**
- * The portals: rings standing on a planet's open country that a car
+ * The portals: rings sunk halfway into a planet's open country that a car
  * drives through to its moon, and the one on the moon that takes it back.
  * Each stands on level, dry ground with a clear run up to it and away from
  * it both ways, well apart from the others.
@@ -12,8 +12,8 @@ import { lift } from './lines.ts'
 import { axisAt, groundUnder, heightAt, turnOf, type Spot } from './placing.ts'
 import { farFromKind, noteStood, type Site } from './site.ts'
 
-/** How far a portal's ring reaches from its middle, which stands that far up off the ground: wide enough for a truck. */
-export const PORTAL_RADIUS = 6
+/** How far a portal's ring reaches from its middle, which is sunk to the ground: an arch as high as this, and twice as wide. */
+export const PORTAL_RADIUS = 12
 /** How many portals a planet has. */
 const PORTALS = { least: 3, most: 5 } as const
 /** How long the clear run is through a portal, both ways together, and how much the ground may rise and fall along it. */

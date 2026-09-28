@@ -470,11 +470,11 @@ describe('a session', () => {
 
   it('keeps the fastest car in line at full speed, snapshot after snapshot', async () => {
     const session = new Session()
-    // On a planet whose highway runs straight from the spawn for as long as it takes to reach full speed.
+    // On a planet whose highway runs straight from the spawn for as long as it takes to reach full speed, and no longer.
     const a = await session.join('raceCar', 0, 11)
     a.input.throttle = 1
     let worst = 0
-    for (let i = 0; i < 8 * TICKS_PER_SECOND; i++) {
+    for (let i = 0; i < 5 * TICKS_PER_SECOND; i++) {
       session.step()
       worst = Math.max(worst, a.prediction.stats.lastCorrectionMeters)
     }
@@ -944,31 +944,31 @@ describe('a session', () => {
   }, 120_000)
 
   it('sends a prop that is on the move to every mirror, and one nobody has touched to none', async () => {
-    // A small island may have no props of its own: a few cones are set out on it for the test, and taken away after.
+    // A small island may have no props of its own: a few crates are set out on it for the test, and taken away after.
     const road = map.roads[0]!
     const props = map.props as WorldProp[]
-    const cones = 3
-    for (let k = 0; k < cones; k++) props.push(propAt('cone', road.points[k * 2]!))
+    const crates = 3
+    for (let k = 0; k < crates; k++) props.push(propAt('crate', road.points[k * 2]!))
     const session = new Session()
     const a = await session.join()
     const b = await session.join()
     session.run(1)
     // Everything at rest: the snapshots carry no props.
-    expect(session.arena.props.length).toBeGreaterThanOrEqual(cones)
+    expect(session.arena.props.length).toBeGreaterThanOrEqual(crates)
     for (const prop of session.arena.props) prop.body.sleep()
     session.run(0.5)
     expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
-    // A cone knocked into the air on the server is seen flying on both mirrors.
-    const cone = session.arena.props.find((prop) => prop.kind === 'cone')!
-    cone.body.setLinvel({ x: 3, y: 6, z: 0 }, true)
+    // A crate knocked into the air on the server is seen flying on both mirrors.
+    const crate = session.arena.props.find((prop) => prop.kind === 'crate')!
+    crate.body.setLinvel({ x: 3, y: 6, z: 0 }, true)
     session.run(0.5)
-    const at = cone.body.translation()
+    const at = crate.body.translation()
     for (const player of [a, b]) {
-      const mirrored = player.prediction.props[cone.id]!.body.translation()
+      const mirrored = player.prediction.props[crate.id]!.body.translation()
       expect(Math.hypot(mirrored.x - at.x, mirrored.y - at.y, mirrored.z - at.z)).toBeLessThan(1.5)
     }
     session.dispose()
-    props.length -= cones
+    props.length -= crates
   }, 120_000)
 
   it('shows a player who joins late the props where they were knocked to, not where the map has them', async () => {

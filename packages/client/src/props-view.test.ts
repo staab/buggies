@@ -11,8 +11,8 @@ describe('the props on the screen', () => {
     const world = createPhysicsWorld()
     const upright = { x: 0, y: 0, z: 0, w: 1 }
     const homes = [
-      { kind: 'cone' as const, at: { x: 10, y: 0, z: 10 }, turn: upright },
-      { kind: 'cone' as const, at: { x: 12, y: 0, z: 10 }, turn: upright },
+      { kind: 'crate' as const, at: { x: 10, y: 0, z: 10 }, turn: upright },
+      { kind: 'crate' as const, at: { x: 12, y: 0, z: 10 }, turn: upright },
       { kind: 'barrel' as const, at: { x: 20, y: 0, z: 10 }, turn: upright },
     ]
     const props: ArenaProp[] = homes.map((home, id) => ({ id, kind: home.kind, home, body: addProp(world, home) }))
