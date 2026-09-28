@@ -17,6 +17,7 @@ import {
   type Ufo,
   type Spider,
   seatSpiderBody,
+  setCoasting,
   type Rocket,
   type Loose,
   type Seat,
@@ -35,6 +36,16 @@ import type { SnapshotMessage } from './wire.ts'
 export const MAX_REPLAY_TICKS = INPUT_TIMELINE_TICKS
 
 const HISTORY_TICKS = MAX_REPLAY_TICKS * 2
+
+/**
+ * How near the local car another has to come to be simulated in the mirror
+ * with it, and how far off it has to get before it is only carried along
+ * on how it was moving. Near enough to be hit, or hit by, before the next
+ * snapshot, with room for both to be going flat out; the gap between the
+ * two keeps a car on the edge from going back and forth.
+ */
+const DRIVEN_WITHIN = 70
+const COASTING_BEYOND = 90
 const NO_TICK_RECORDED = -1
 
 interface PredictionFrame {
@@ -476,6 +487,22 @@ export class LocalPrediction {
     this.mirror.loose = this.bananas.loose.slice()
     // Numbered on from where the server is, so a replay's drops get the numbers the server's will.
     this.mirror.looseNext = snapshot.looseNext
+    this.chooseCoasting()
+  }
+
+  /**
+   * Only the cars near the local one are simulated with it: the rest are
+   * out of the world and carried along on how they were moving, which is
+   * all anyone sees of them from here, and costs next to nothing to replay.
+   */
+  private chooseCoasting(): void {
+    const own = this.seat.vehicle.body.translation()
+    for (const seat of this.mirror.seats) {
+      if (seat === this.seat || !seat.occupied) continue
+      const at = seat.vehicle.body.translation()
+      const apart = Math.hypot(at.x - own.x, at.z - own.z)
+      if (seat.coasting ? apart < DRIVEN_WITHIN : apart > COASTING_BEYOND) setCoasting(seat, !seat.coasting)
+    }
   }
 
   /** Whoever the server has on the map, the mirror has too, in the same car. */

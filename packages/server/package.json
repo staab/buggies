@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx --conditions=development src/index.ts",
-    "build": "tsup src/index.ts --format esm --sourcemap",
+    "dev": "tsx watch --conditions=development src/index.ts",
+    "build": "tsup src/index.ts src/terrain-worker.ts --format esm --sourcemap",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit"
   },

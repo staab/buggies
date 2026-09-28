@@ -15,6 +15,7 @@ import {
   arm,
   createArena,
   initPhysics,
+  portalSpawn,
   respawn,
   setPickup,
   takeSeat,
@@ -24,7 +25,7 @@ import {
   type VehicleInput,
   type VehicleProfileId,
 } from '@buggies/game'
-import { ROAD_TUNNEL, generateTerrain, roadLift, type TerrainMap } from '@buggies/terrain'
+import { ROAD_TUNNEL, generateTerrain, moonOf, roadLift, type TerrainMap } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
@@ -45,7 +46,7 @@ import type {
   TransportConnection,
   TransportHandlers,
 } from './transport.ts'
-import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_SPIDER_BYTES, SNAPSHOT_UFO_BYTES, SNAPSHOT_VEHICLE_BYTES, encodeInput } from './wire.ts'
+import { SNAPSHOT_HEADER_BYTES, SNAPSHOT_SPIDER_BYTES, SNAPSHOT_UFO_BYTES, SNAPSHOT_VEHICLE_BYTES, decodeSnapshot, encodeInput, type SnapshotMessage, type TravelMessage } from './wire.ts'
 
 /** The test islands, laid out as when a seed picked at most eight: the maps these tests were written against. */
 const TEST_ISLANDS = { islandsMost: 8 }
@@ -303,20 +304,29 @@ function distance(a: { x: number; z: number }, b: { x: number; z: number }): num
   return Math.hypot(a.x - b.x, a.z - b.z)
 }
 
+/** Each direct wire's connection, told apart as a server tells sockets apart. */
+let nextDirectId = 9999
+
 /**
  * A wire with nothing in it: each side hears the other at once, and in
  * order, so a message sent before a hanging-up lands before it, as it does
  * over a socket.
  */
-function direct(server: TransportHandlers): ClientTransport {
+function direct(server: TransportHandlers, tap: (payload: Uint8Array) => void = () => {}): ClientTransport {
   let handlers: ClientTransportHandlers | null = null
   let closed = false
   const connection: TransportConnection = {
-    id: 9999,
-    send: (payload) => handlers?.onMessage(payload.slice()),
+    id: nextDirectId++,
+    send: (payload) => {
+      tap(payload)
+      handlers?.onMessage(payload.slice())
+    },
+    // Hung up on by the server, the socket closes, and the server hears it as a socket's close.
     close: (reason) => {
+      if (closed) return
       closed = true
       handlers?.onClose(reason)
+      server.onClose(connection)
     },
   }
   return {
@@ -588,6 +598,80 @@ describe('a session', () => {
     }
   }, 60_000)
 
+  it('tells each car nobody drives by what its own driver asks of it, never by what a player sent last', async () => {
+    const island = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
+    const server = new GameServer(() => createArena(island), {}, NPC_CARS)
+    const received: SnapshotMessage[] = []
+    const client = new NetClient(
+      direct(server, (payload) => {
+        const snapshot = decodeSnapshot(payload)
+        if (snapshot !== null) received.push(snapshot)
+      }),
+      () => 0,
+    )
+    const welcome = await client.connect('semi', island.seed)
+    const { arena } = server.roomFor(island.seed)!
+    for (let tick = 0; tick < 60; tick++) {
+      client.sendInput(tick, { ...NEUTRAL_INPUT, ability: true, fire: true, throttle: 1 })
+      server.advance()
+    }
+    const npcs = arena.seats.filter((seat) => seat.npc).map((seat) => seat.id)
+    expect(npcs.length).toBeGreaterThan(0)
+    const told = received.at(-1)!.vehicles.filter((vehicle) => npcs.includes(vehicle.seat))
+    expect(told.length).toBe(npcs.length)
+    for (const vehicle of told) {
+      expect(vehicle.appliedInput.ability).toBe(false)
+      expect(vehicle.appliedInput.fire).toBe(false)
+    }
+    // And driven on: the mirrors run them on with it.
+    expect(told.some((vehicle) => vehicle.appliedInput.throttle > 0)).toBe(true)
+    expect(received.at(-1)!.vehicles.find((vehicle) => vehicle.seat === welcome.seat)!.appliedInput.ability).toBe(true)
+    client.close('done')
+    server.dispose()
+  }, 60_000)
+
+  it('sends a car driven through a portal to the moon, out of its portal there, and back out of the one it went in by', async () => {
+    const island = generateTerrain(7)
+    const moon = generateTerrain(moonOf(7))
+    const server = new GameServer((seed) => createArena(seed === moon.seed ? moon : island), {}, 0)
+    const travels: TravelMessage[] = []
+    let closed: string | null = null
+    const client = new NetClient(direct(server), () => 0, {
+      onTravel: (travel) => travels.push(travel),
+      onClosed: (reason) => (closed = reason),
+    })
+    const welcome = await client.connect('sportsCar', island.seed)
+    const { arena } = server.roomFor(island.seed)!
+    const seat = arena.seats[welcome.seat]!
+    // Set down just short of the second portal, going through it.
+    const portal = island.portals[1]!
+    const start = { x: portal.x - portal.dx * 6, z: portal.z - portal.dz * 6 }
+    respawn(seat, { position: { x: start.x, y: portal.y, z: start.z }, yaw: Math.atan2(-portal.dx, -portal.dz) })
+    server.advance()
+    seat.vehicle.body.setLinvel({ x: portal.dx * 20, y: 0, z: portal.dz * 20 }, true)
+    for (let tick = 0; tick < 60 && closed === null; tick++) server.advance()
+    expect(travels).toEqual([{ seed: moonOf(7), through: 1 }])
+    expect(closed).toBe('travelled')
+    expect(server.roomFor(island.seed)).toBeUndefined()
+
+    // On the moon, out of its portal.
+    const there = new NetClient(direct(server), () => 0)
+    const landed = await there.connect('sportsCar', moon.seed, 0)
+    const car = server.roomFor(moon.seed)!.arena.seats[landed.seat]!.vehicle.frame.position
+    const out = portalSpawn(moon, 0, landed.seat % 10)!.position
+    expect(Math.hypot(car.x - out.x, car.z - out.z)).toBeLessThan(1)
+    there.close('done')
+
+    // And back, out of the portal it went in by.
+    const back = new NetClient(direct(server), () => 0)
+    const home = await back.connect('sportsCar', island.seed, 1)
+    const again = server.roomFor(island.seed)!.arena.seats[home.seat]!.vehicle.frame.position
+    const exit = portalSpawn(island, 1, home.seat % 10)!.position
+    expect(Math.hypot(again.x - exit.x, again.z - exit.z)).toBeLessThan(1)
+    back.close('done')
+    server.dispose()
+  }, 60_000)
+
   it('swaps a player into another vehicle where they are, keeping the seat and its bananas', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
@@ -833,30 +917,30 @@ describe('a session', () => {
   }, 120_000)
 
   it('sends a prop that is on the move to every mirror, and one nobody has touched to none', async () => {
-    // A small island may have no props of its own: a few cones are set out on it for the test, and taken away after.
+    // A small island may have no props of its own: a few crates are set out on it for the test, and taken away after.
     const spawn = map.roads[0]!.points[0]!
-    const cones = 3
-    for (let k = 0; k < cones; k++) map.props.push({ kind: 'cone', x: spawn.x + k * 3, z: spawn.z, bottom: spawn.y, yaw: 0 })
+    const crates = 3
+    for (let k = 0; k < crates; k++) map.props.push({ kind: 'crate', x: spawn.x + k * 3, z: spawn.z, bottom: spawn.y, yaw: 0 })
     const session = new Session()
     const a = await session.join()
     const b = await session.join()
     session.run(1)
     // Everything at rest: the snapshots carry no props.
-    expect(session.arena.props.length).toBeGreaterThanOrEqual(cones)
+    expect(session.arena.props.length).toBeGreaterThanOrEqual(crates)
     for (const prop of session.arena.props) prop.body.sleep()
     session.run(0.5)
     expect(session.server.stats().snapshotBytes).toBe(STEADY_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
-    // A cone knocked into the air on the server is seen flying on both mirrors.
-    const cone = session.arena.props.find((prop) => prop.kind === 'cone')!
-    cone.body.setLinvel({ x: 3, y: 6, z: 0 }, true)
+    // A crate knocked into the air on the server is seen flying on both mirrors.
+    const crate = session.arena.props.find((prop) => prop.kind === 'crate')!
+    crate.body.setLinvel({ x: 3, y: 6, z: 0 }, true)
     session.run(0.5)
-    const at = cone.body.translation()
+    const at = crate.body.translation()
     for (const player of [a, b]) {
-      const mirrored = player.prediction.props[cone.id]!.body.translation()
+      const mirrored = player.prediction.props[crate.id]!.body.translation()
       expect(Math.hypot(mirrored.x - at.x, mirrored.y - at.y, mirrored.z - at.z)).toBeLessThan(1.5)
     }
     session.dispose()
-    map.props.length -= cones
+    map.props.length -= crates
   }, 120_000)
 
   it('shows a player who joins late the props where they were knocked to, not where the map has them', async () => {

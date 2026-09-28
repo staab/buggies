@@ -39,6 +39,17 @@ describe('cars nobody drives', () => {
     map = generateTerrain(11, { ...TEST_ISLANDS, size: 513 })
   }, 60_000)
 
+  it('never fire or use their own key, whatever input reaches them', () => {
+    const arena = createArena(map)
+    // Seat 2 drives a pickup, whose own key drops a bomb.
+    const seat = seatNpc(arena, 2)!
+    expect(seat.profile).toBe('pickup')
+    for (let i = 0; i < 60 * 3; i++) advance(arena, () => ({ ...createVehicleInput(), throttle: 1, fire: true, ability: true }))
+    expect(arena.loose.filter((loose) => loose.kind === 'bomb')).toEqual([])
+    expect(seat.cooldownTicks).toBe(0)
+    arena.world.free()
+  })
+
   it('drive slowly along the arterials, staying on the road', () => {
     const arena = createArena(map)
     const seat = seatNpc(arena, 7)!

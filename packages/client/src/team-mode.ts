@@ -20,10 +20,11 @@ export async function createTeamMode(
   mapFor: (seed: number) => Promise<TerrainMap>,
   sound: Sound,
   sun: Sun,
+  arrival: number | null = null,
 ): Promise<ModeView> {
   const locals = new Set<number>()
   const joins = await Promise.allSettled(
-    players.map((player) => joinOnline(scene, url, seed, player, locals, mapFor, sound)),
+    players.map((player) => joinOnline(scene, url, seed, player, locals, mapFor, sound, arrival)),
   )
   const failed = joins.find((join): join is PromiseRejectedResult => join.status === 'rejected')
   if (failed !== undefined) {
@@ -86,6 +87,10 @@ export async function createTeamMode(
     },
     setGoal(goal) {
       for (const view of views) view.setGoal(goal)
+    },
+    // Where one goes through a portal, everyone on this screen goes.
+    get travel() {
+      return views.find((view) => view.travel !== null)?.travel ?? null
     },
     dispose() {
       for (const view of views) view.dispose()

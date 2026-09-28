@@ -86,16 +86,12 @@ const PARK_LOT_ODDS = 7
 /**
  * Props, the furniture a car can knock about, no more than this many to an
  * island: barrels stacked this many deep beside a gas station's shop,
- * crates this many along the strip outside a building site's fencing,
- * a line of this many cones this far apart as roadworks every so far along
- * the suburb roads, and this many bales to a crop field.
+ * and crates this many along the strip outside a building site's fencing.
  */
 const PROPS_MOST = 250
 const PROP_SALT = 0x5a1d
 const STATION_BARRELS = 4
 const SITE_CRATES = 3
-const ROADWORKS = { cones: 6, apart: 2.2, every: 450 } as const
-const FIELD_BALES = { min: 2, max: 4 } as const
 /**
  * Building sites: an open lot this near the heart of a city (as a share of
  * the way in from the core's edge) is this often fenced around, this far
@@ -1564,7 +1560,6 @@ export function generateBuildings(
   raisePyramid(stands, ramps, mountains)
   // The stations take their lots before the houses line the roads, or the houses would leave them none.
   raiseStations(stands, fields)
-  coneOffRoadworks(stands)
   // A house along an arterial has no sidewalk under its front: it keeps off a street's whole width.
   const offStreets = roadClearance(
     roads.filter((road) => road.kind === 'street'),
@@ -1829,13 +1824,6 @@ function plantFarms(stands: Stands, fields: Field[], plant: Planter, mountains: 
       placed.add(footprint)
       fields.push({ kind: 'crop', ...footprint, tone: rng() })
       hedge(stands, footprint, plant)
-      // A few bales left lying in the field.
-      const { propRng } = stands
-      for (let k = randomInt(propRng, FIELD_BALES.min, FIELD_BALES.max); k > 0; k--) {
-        const u = randomRange(propRng, -footprint.width / 2 + 3, footprint.width / 2 - 3)
-        const v = randomRange(propRng, -footprint.depth / 2 + 3, footprint.depth / 2 - 3)
-        prop(stands, 'bale', footprint.x + ux * u + vx * v, footprint.z + uz * u + vz * v, yaw + randomRange(propRng, -0.4, 0.4))
-      }
     }
     // The barn off the end of the first field, broadside to the row, and the silos beside it.
     const first = laid[0]
@@ -2145,52 +2133,6 @@ function raiseStations(stands: Stands, fields: Field[]): void {
         traveled = 0
         break
       }
-    }
-  }
-}
-
-/**
- * Roadworks along the suburb stretches of the main roads, every so far: a
- * line of cones down one edge of the roadway, for a car to scatter.
- */
-function coneOffRoadworks(stands: Stands): void {
-  const rng = stands.propRng
-  for (const road of mainRoads(stands.roads)) {
-    if (road.kind === 'highway') continue
-    const count = road.points.length
-    const segmentCount = road.closed ? count : count - 1
-    let traveled = randomRange(rng, 0, ROADWORKS.every)
-    let previous = road.points[0]
-    for (const [index, point] of road.points.entries()) {
-      if (index >= segmentCount || previous === undefined) break
-      traveled += hypot(point.x - previous.x, point.z - previous.z)
-      previous = point
-      if (traveled < ROADWORKS.every || road.structure[index] !== ROAD_GRADE) continue
-      if (districtAt(stands, point.x, point.z) !== DISTRICT_SUBURB) continue
-      const side = rng() < 0.5 ? 1 : -1
-      const edge = road.width / 2 - 0.6
-      // Each cone is walked on along the road from the last, so a line of
-      // them follows a bend rather than running straight off its edge.
-      let at = index
-      let left = 0
-      for (let k = 0; k < ROADWORKS.cones; k++) {
-        while (left > 0 && at + 1 < segmentCount) {
-          const here = road.points[at]!
-          const next = road.points[at + 1]!
-          const step = hypot(next.x - here.x, next.z - here.z)
-          if (step > left) break
-          left -= step
-          at += 1
-        }
-        const base = road.points[at]!
-        // A line that runs out of road stops at its end.
-        const beyond = road.points[at + 1]
-        if (beyond === undefined || left > hypot(beyond.x - base.x, beyond.z - base.z)) break
-        const { dx, dz, nx, nz } = frameAlong(road, at, base)
-        prop(stands, 'cone', base.x + dx * left + nx * side * edge, base.z + dz * left + nz * side * edge, -atan2(dz, dx))
-        left += ROADWORKS.apart
-      }
-      traveled = 0
     }
   }
 }

@@ -1,6 +1,6 @@
 import type { VehicleProfileId } from '@buggies/game'
-import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
-import type { TerrainMap } from '@buggies/terrain'
+import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary, type TravelMessage } from '@buggies/net'
+import { isMoon, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -14,6 +14,8 @@ import type { OnlinePlayer } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 import { createTeamMode } from './team-mode.ts'
+import { moveClouds } from './clouds-view.ts'
+import { shimmerPortals } from './portals-view.ts'
 import { createTerrainView, moveBoats } from './terrain-view.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -56,6 +58,8 @@ export interface ShellModes {
     mapFor: (seed: number) => Promise<TerrainMap>,
     sound: Sound,
     sun: Sun,
+    /** The portal come out of, having been sent through one. */
+    arrival: number | null,
   ): Promise<ModeView>
 }
 
@@ -158,6 +162,9 @@ export class Shell implements MenuHost {
   private view: THREE.Group | null = null
   /** Seconds the screen has run, for what keeps time with no game on. */
   private idle = 0
+  /** Whether everyone on this screen is on the way through a portal, and which of the island's they went to the moon by. */
+  private travelling = false
+  private cameBy = 0
   /** An island on its way, so that two players joining at once do not each make one. */
   private making: { seed: number; island: Promise<TerrainMap> } | null = null
   private game: Game | null = null
@@ -268,7 +275,7 @@ export class Shell implements MenuHost {
    * the vehicles they asked for; or, if that is the game already being
    * played, go back to it.
    */
-  async start(next: Choice): Promise<void> {
+  async start(next: Choice, arrival: number | null = null): Promise<void> {
     const stamp = ++this.generation
     this.choiceNow = next
     this.menu.hide()
@@ -297,6 +304,7 @@ export class Shell implements MenuHost {
         (seed) => this.mapFor(seed),
         this.sound,
         this.sun,
+        arrival,
       )
       if (stamp !== this.generation) {
         mode.dispose()
@@ -344,13 +352,21 @@ export class Shell implements MenuHost {
   frame(dt: number): void {
     const { menu, game, backdrop } = this
     game?.mode.update(dt, !menu.open && !this.overlay.open)
+    const travel = game?.mode.travel ?? null
+    if (game !== null && travel !== null && !this.travelling) void this.travel(game.choice, travel)
     if (menu.open) backdrop?.mode.update(dt, false)
     // The island's clocks keep the game's time.
     if (this.view !== null) {
       this.view.userData.tick = game?.mode.tick ?? null
       // The boats by the game's time where there is one, to be where the game has them; by the screen's otherwise.
       this.idle += dt
-      moveBoats(this.view, game?.mode.tick === undefined ? this.idle : game.mode.tick / 60)
+      const seconds = game?.mode.tick === undefined ? this.idle : game.mode.tick / 60
+      moveBoats(this.view, seconds)
+      moveClouds(this.view, seconds)
+      shimmerPortals(this.view, seconds)
+      // Day and night by the game's time too, so everyone on an island has the same hour.
+      this.sun.turn(seconds)
+      this.sun.shade(this.scene)
     }
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
@@ -382,6 +398,7 @@ export class Shell implements MenuHost {
       const worldSize = made.size * made.cellSize
       this.scene.fog = new THREE.Fog('#a9cbe6', worldSize * 0.65, worldSize * 2.34)
       this.sun.centerOn({ x: worldSize / 2, y: 0, z: worldSize / 2 })
+      this.sun.airless = made.moon
       return made
     })
     this.making = { seed, island }
@@ -392,6 +409,22 @@ export class Shell implements MenuHost {
     this.backdrop?.mode.dispose()
     this.backdrop = next
     this.resize()
+  }
+
+  /**
+   * Through a portal: off to the room at the other side, coming out of the
+   * portal it leads to: the moon's own, going there, or going back, the
+   * one of the island's that was driven through to get there.
+   */
+  private async travel(choice: Choice, travel: TravelMessage): Promise<void> {
+    this.travelling = true
+    const arrival = isMoon(travel.seed) ? 0 : this.cameBy
+    if (isMoon(travel.seed)) this.cameBy = travel.through
+    try {
+      await this.start({ ...choice, seed: travel.seed }, arrival)
+    } finally {
+      this.travelling = false
+    }
   }
 
   private setGame(next: Game | null): void {

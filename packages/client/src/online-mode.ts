@@ -15,7 +15,7 @@ import {
   type Ufo,
   type VehicleProfileId,
 } from '@buggies/game'
-import { LocalPrediction, NetClient } from '@buggies/net'
+import { LocalPrediction, NetClient, type TravelMessage } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
 import { sampleHeight, type TerrainMap } from '@buggies/terrain'
 import * as THREE from 'three'
@@ -115,6 +115,8 @@ export interface OnlineView {
   goal(): Goal | null
   /** Play for this goal, or for none. */
   setGoal(goal: GoalRequest | null): void
+  /** Driven through a portal: where the server has sent this player on to, once it has. */
+  readonly travel: TravelMessage | null
   dispose(): void
 }
 
@@ -133,14 +135,19 @@ export async function joinOnline(
   locals: Set<number>,
   mapFor: (seed: number) => Promise<TerrainMap>,
   sound: Sound,
+  arrival: number | null = null,
 ): Promise<OnlineView> {
   let lost: string | null = null
+  let travel: TravelMessage | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
+    onTravel: (message) => {
+      travel = message
+    },
     onClosed: (reason) => {
       lost = reason
     },
   })
-  const welcome = await client.connect(player.profile, seed)
+  const welcome = await client.connect(player.profile, seed, arrival)
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
 
@@ -225,6 +232,7 @@ export async function joinOnline(
         beacon.position.set(own.goal.x, sampleHeight(map.heightfield, own.goal.x, own.goal.z), own.goal.z)
       }
       car.presence.aim(target)
+      target.abducted = prediction.ufos.some((ufo) => ufo.target === own.id && (ufo.state === 'lift' || ufo.state === 'carry' || ufo.state === 'lower'))
       if (chaseSnapped) chase.update(dt, target)
       else {
         chase.snapTo(target)
@@ -238,6 +246,7 @@ export async function joinOnline(
       const controls = player.keys.controls(OWN_ACTIONS[profile].label)
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that, and what to do about it.
+      if (travel !== null) return { title, goal: 'Through the portal...' }
       if (lost !== null) return { title, goal: `Disconnected from the server (${lost}). Pick the island again from the menu to rejoin.` }
       const { stats } = prediction
       const sync =
@@ -260,6 +269,9 @@ export async function joinOnline(
     },
     setGoal(goal) {
       client.setGoal(goal)
+    },
+    get travel() {
+      return travel
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

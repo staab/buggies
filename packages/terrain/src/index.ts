@@ -113,4 +113,6 @@ export type {
   Rock,
   Prop,
   PropKind,
+  Portal,
 } from './types.ts'
+export { MOON_BIT, PORTAL_RADIUS, isMoon, islandSeedOf, moonOf } from './portals.ts'

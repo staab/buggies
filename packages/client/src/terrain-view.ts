@@ -46,6 +46,8 @@ import {
 import * as THREE from 'three'
 
 import { hullGeometry } from './hull-geometry.ts'
+import { buildClouds } from './clouds-view.ts'
+import { buildMoonCraft, buildPortals } from './portals-view.ts'
 
 interface ColorStop {
   t: number
@@ -54,6 +56,13 @@ interface ColorStop {
 
 /** A ramp of colors: always at least the one to start from. */
 type Stops = [ColorStop, ...ColorStop[]]
+
+const MOON_STOPS: Stops = [
+  { t: 0, color: new THREE.Color('#5d5d60') },
+  { t: 0.25, color: new THREE.Color('#7b7b7d') },
+  { t: 0.6, color: new THREE.Color('#99989a') },
+  { t: 1, color: new THREE.Color('#bdbcbc') },
+]
 
 const LAND_STOPS: Stops = [
   { t: 0, color: new THREE.Color('#c8b98a') },
@@ -451,7 +460,10 @@ function terrainColor(
   seaLevel: number,
   district: number,
   out: THREE.Color,
+  moon = false,
 ): THREE.Color {
+  // A moon's dust is gray, darker in the low ground and paler up the heights.
+  if (moon) return sampleRamp((height - min) / Math.max(max - min, 1e-3), MOON_STOPS, out)
   if (height <= seaLevel) {
     const depth = (seaLevel - height) / Math.max(seaLevel - min, 1e-3)
     return out.copy(SEABED_SHALLOW).lerp(SEABED_DEEP, Math.min(1, depth))
@@ -507,7 +519,7 @@ function groundColors(map: TerrainMap): GroundColors {
   const rgb = { r: 0, g: 0, b: 0 }
   // The heights and districts cover the field, a value a cell.
   for (let cell = 0; cell < width * depth; cell++) {
-    terrainColor(heights[cell]!, min, max, seaLevel, districtOf[cell]!, color)
+    terrainColor(heights[cell]!, min, max, seaLevel, districtOf[cell]!, color, map.moon)
     color.getRGB(rgb, THREE.SRGBColorSpace)
     srgb[cell * 3] = rgb.r
     srgb[cell * 3 + 1] = rgb.g
@@ -2525,11 +2537,17 @@ export function createTerrainView(map: TerrainMap): THREE.Group {
     buildGround(map, hole, segments, map.cellSize * 0.5),
   )
 
-  const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
-  sea.name = 'water'
-  sea.rotation.x = -Math.PI / 2
-  sea.position.set(worldSize / 2, map.seaLevel + 0.02, worldSize / 2)
-  group.add(sea)
+  // A moon has no sea round it, and no air for clouds.
+  if (!map.moon) {
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), waterMaterial)
+    sea.name = 'water'
+    sea.rotation.x = -Math.PI / 2
+    sea.position.set(worldSize / 2, map.seaLevel + 0.02, worldSize / 2)
+    group.add(sea)
+    group.add(buildClouds(map))
+  }
+  group.add(buildPortals(map))
+  group.add(buildMoonCraft(map))
 
   if (map.lakes.length > 0) {
     group.add(new THREE.Mesh(buildLakeGeometry(map.lakes, map.size, map.cellSize), waterMaterial))

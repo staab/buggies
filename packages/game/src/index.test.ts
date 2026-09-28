@@ -11,6 +11,10 @@ import {
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  CEILING,
+  CLOUD_HEIGHT,
+  DAY_SECONDS,
+  sunDirection,
   MAX_PLAYERS,
   NEUTRAL_INPUT,
   advance,
@@ -182,6 +186,35 @@ describe('game', () => {
     const { position } = seat.vehicle.frame
     expect(offRoad(position.x, position.z)).toBeLessThan(1)
     expect(seat.vehicle.speed).toBe(0)
+  })
+
+  it('keeps a vehicle under the ceiling, a little over the clouds, however hard it is thrown up', () => {
+    const arena = createArena(map)
+    const seat = solo(arena)
+    expect(CEILING).toBeGreaterThan(CLOUD_HEIGHT)
+    const { x, z } = seat.vehicle.frame.position
+    seat.vehicle.body.setTranslation({ x, y: arena.map.seaLevel + CEILING + 40, z }, true)
+    seat.vehicle.body.setLinvel({ x: 0, y: 30, z: 0 }, true)
+    for (let i = 0; i < 60; i++) {
+      advance(arena)
+      expect(seat.vehicle.body.translation().y).toBeLessThanOrEqual(arena.map.seaLevel + CEILING + 1e-6)
+    }
+    // Let go of, it falls back down under it.
+    expect(seat.vehicle.body.linvel().y).toBeLessThan(0)
+    arena.world.free()
+  })
+
+  it('sends the sun over the island by day and under it by night', () => {
+    const noon = sunDirection(DAY_SECONDS * 0.15)
+    const midnight = sunDirection(DAY_SECONDS * 0.65)
+    expect(sunDirection(0).y).toBeGreaterThan(0.3)
+    expect(noon.y).toBeGreaterThan(0.8)
+    expect(midnight.y).toBeLessThan(-0.5)
+    expect(Math.hypot(noon.x, noon.y, noon.z)).toBeCloseTo(1, 6)
+    // A day later it is where it was.
+    const again = sunDirection(DAY_SECONDS * 1.15)
+    expect(again.x).toBeCloseTo(noon.x, 6)
+    expect(again.y).toBeCloseTo(noon.y, 6)
   })
 
   it('puts a vehicle back on the nearest road, facing the way it was going', () => {

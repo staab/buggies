@@ -6,6 +6,7 @@ import {
   INPUT_TIMELINE_TICKS,
   SERVER_REJECT,
   SERVER_SNAPSHOT,
+  SERVER_TRAVEL,
   SERVER_WELCOME,
   UNACKNOWLEDGED_INPUT_TICK,
   rejectLabel,
@@ -15,6 +16,7 @@ import type { ClientTransport } from './transport.ts'
 import {
   decodeReject,
   decodeSnapshot,
+  decodeTravel,
   decodeWelcome,
   encodeHello,
   encodeInput,
@@ -23,6 +25,7 @@ import {
   encodeRespawn,
   messageTypeOf,
   type SnapshotMessage,
+  type TravelMessage,
   type WelcomeMessage,
 } from './wire.ts'
 
@@ -64,6 +67,8 @@ const STALL_TICKS = INPUT_TIMELINE_TICKS / 2
 
 export interface NetClientEvents {
   onClosed(reason: string): void
+  /** Driven through a portal: the room to join next, and which portal of this one was driven through. The connection closes after. */
+  onTravel(travel: TravelMessage): void
 }
 
 export class ConnectionFailure extends Error {}
@@ -119,8 +124,8 @@ export class NetClient {
     return this.newestSnapshot?.vehicles.length ?? 0
   }
 
-  /** Join the room for a seed, in a vehicle. */
-  async connect(profile: VehicleProfileId, seed: number): Promise<WelcomeMessage> {
+  /** Join the room for a seed, in a vehicle: coming out of one of its portals, if come through one. */
+  async connect(profile: VehicleProfileId, seed: number, arrival: number | null = null): Promise<WelcomeMessage> {
     try {
       await this.transport.connect({
         onMessage: (payload) => this.receive(payload),
@@ -129,7 +134,7 @@ export class NetClient {
       const welcome = new Promise<WelcomeMessage>((resolve, reject) => {
         this.settleWelcome = { resolve, reject }
       })
-      this.transport.send(encodeHello(profile, seed))
+      this.transport.send(encodeHello(profile, seed, arrival))
       return await welcome
     } catch (error) {
       throw new ConnectionFailure(error instanceof Error ? error.message : String(error))
@@ -222,6 +227,12 @@ export class NetClient {
       this.welcomeMessage = welcome
       this.settleWelcome?.resolve(welcome)
       this.settleWelcome = null
+      return
+    }
+
+    if (type === SERVER_TRAVEL) {
+      const travel = decodeTravel(payload)
+      if (travel !== null) this.events.onTravel?.(travel)
       return
     }
 

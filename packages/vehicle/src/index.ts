@@ -35,7 +35,7 @@ export {
   type VehicleTuning,
 } from './tuning.ts'
 export { lateralGripCurve, solveTireForces } from './tireModel.ts'
-export { ARMOR_REFERENCE, armorShare, DAMAGE_SMOKING, DURABILITY, hurtVehicle, stepVehicle, wreckVehicle } from './vehicle.ts'
+export { ARMOR_REFERENCE, armorShare, coastVehicle, DAMAGE_SMOKING, DURABILITY, hurtVehicle, stepVehicle, wreckVehicle } from './vehicle.ts'
 export {
   WHEEL_CORNERS,
   WHEEL_COUNT,
@@ -76,4 +76,4 @@ export {
   WORLD_UP,
   worldGravity,
 } from './world.ts'
-export { CONE_SIDES, PROP_SHAPES, addMover, addProp, propRise, propRotation, type PropShape } from './props.ts'
+export { PROP_SHAPES, addMover, addProp, propRise, propRotation, type PropShape } from './props.ts'

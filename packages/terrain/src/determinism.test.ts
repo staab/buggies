@@ -14,8 +14,8 @@ const TEST_ISLANDS = { islandsMost: 8 }
  * client and that is the bug.
  */
 const GOLDEN: Record<number, string> = {
-  7: '78712b0a',
-  11: '99bffa3c',
+  7: 'ab3db5eb',
+  11: '75d5c3ed',
 }
 
 describe('terrain determinism', () => {

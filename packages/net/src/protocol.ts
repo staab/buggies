@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 30
+export const PROTOCOL_VERSION = 31
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND
@@ -19,6 +19,8 @@ export const INPUT_TIMELINE_TICKS = 64
 /** On the wire, a tick that is not one. */
 export const NO_TICK = 0xffffffff
 export const UNACKNOWLEDGED_INPUT_TICK = -1
+/** On the wire, a hello that comes out of no portal. */
+export const NO_PORTAL = 0xff
 
 export const CLIENT_HELLO = 0x01
 export const CLIENT_INPUT = 0x02
@@ -37,6 +39,8 @@ export const SERVER_REJECT = 0x82
 export const SERVER_SNAPSHOT = 0x83
 export const SERVER_ROOMS = 0x84
 export const SERVER_PEEK = 0x85
+/** Through a portal: to join the room this seed is, the island's moon or the island again. The connection is closed after it. */
+export const SERVER_TRAVEL = 0x86
 
 /** How many islands the server tells of: every one with anyone on it, up to what the wire counts in a byte. */
 export const ROOMS_LISTED = 255

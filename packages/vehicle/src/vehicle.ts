@@ -474,6 +474,46 @@ function applyYawAssist(vehicle: Vehicle, tuning: VehicleTuning): void {
   )
 }
 
+const coastAt = v3()
+const coastVelocity = v3()
+const coastSpin = v3()
+const coastRotation = { x: 0, y: 0, z: 0, w: 1 }
+
+/**
+ * Carry a car along on how it was last moving, without driving it: where it
+ * is and which way it faces run on at its velocity and spin, and its
+ * wheels turn at its speed, but nothing is felt for, pushed or steered.
+ * For a car far off in a mirror, drawn but not worth simulating; its body
+ * is out of the world while it coasts, so nothing touches it either.
+ */
+export function coastVehicle(vehicle: Vehicle, tuning: VehicleTuning, input: VehicleInput, dt: number): void {
+  const { body } = vehicle
+  readDriverCommand(vehicle.command, vehicle.wrecked ? NEUTRAL_INPUT : input)
+  body.translation(coastAt)
+  body.linvel(coastVelocity)
+  body.angvel(coastSpin)
+  body.rotation(coastRotation)
+  body.setTranslation({ x: coastAt.x + coastVelocity.x * dt, y: coastAt.y + coastVelocity.y * dt, z: coastAt.z + coastVelocity.z * dt }, false)
+  // The rotation turned on by the spin over the step, a quaternion's own derivative: q' = q + dt/2 (w q).
+  const { x, y, z, w } = coastRotation
+  const half = dt / 2
+  const ax = coastSpin.x * half
+  const ay = coastSpin.y * half
+  const az = coastSpin.z * half
+  const qx = x + (ax * w + ay * z - az * y)
+  const qy = y + (ay * w + az * x - ax * z)
+  const qz = z + (az * w + ax * y - ay * x)
+  const qw = w - (ax * x + ay * y + az * z)
+  const length = Math.hypot(qx, qy, qz, qw) || 1
+  body.setRotation({ x: qx / length, y: qy / length, z: qz / length, w: qw / length }, false)
+  readChassisFrame(vehicle.frame, body)
+  updateMotionState(vehicle)
+  // Coasting is not being hit.
+  vcopy(vehicle.lastLinearVelocity, coastVelocity)
+  const roll = (vehicle.forwardSpeed / Math.max(tuning.wheelRadius, MIN_WHEEL_RADIUS)) * dt
+  for (const wheel of vehicle.wheels) wheel.spin += roll
+}
+
 export function stepVehicle(
   world: RAPIER.World,
   vehicle: Vehicle,

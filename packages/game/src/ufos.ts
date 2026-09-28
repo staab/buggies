@@ -34,6 +34,8 @@ const LIFT_RISE = 5
 /** How fast it carries a car off, how fast it climbs over what is in the way meanwhile, and how far under it the car hangs. */
 export const UFO_CARRY_SPEED = 40
 const UFO_CARRY_CLIMB = 30
+/** How much faster than the saucer a car on its beam is drawn in under it. */
+const CATCH_UP = 1.5
 const UFO_HANG = 6
 /** How fast it lets a car down on its beam at the far end, and how far over the road the car is let go. */
 const UFO_LOWER_SPEED = 4
@@ -233,9 +235,13 @@ export function flyUfo(map: TerrainMap, ufo: Ufo, seats: readonly Abductee[], gr
       const drop = dropSpot(map, ufo)
       const { x, z } = ufo.position
       if (ufo.state === 'carry') {
-        // Off over the island to where it sets the car down, high enough to clear the ground ahead as well as under it.
-        const ahead = Math.max(groundAt(map, x, z), groundAt(map, x + (drop.x - x) * 0.05, z + (drop.z - z) * 0.05))
-        if (fly(ufo, drop.x, drop.z, ahead + UFO_CRUISE, UFO_CARRY_SPEED, dt, UFO_CARRY_CLIMB) < WAYPOINT_REACH / 4) {
+        // Off over the island to where it sets the car down, high enough to clear the ground and the
+        // rooftops ahead as well as under it, and slowed while it is still climbing to that.
+        const aheadX = x + (drop.x - x) * 0.05
+        const aheadZ = z + (drop.z - z) * 0.05
+        const clear = Math.max(groundAt(map, x, z), groundAt(map, aheadX, aheadZ), skylineAt(map, x, z), skylineAt(map, aheadX, aheadZ))
+        const pace = Math.min(Math.max(1 - (clear + UFO_CRUISE - ufo.position.y) / UFO_CRUISE, 0), 1)
+        if (fly(ufo, drop.x, drop.z, clear + UFO_CRUISE, UFO_CARRY_SPEED * pace, dt, UFO_CARRY_CLIMB) < WAYPOINT_REACH / 4) {
           ufo.state = 'lower'
           ufo.stateTicks = 0
         }
@@ -257,7 +263,7 @@ const drift = v3()
 
 /**
  * Hold a car on the beam this high under a saucer, level and facing the way
- * it was, drawn in under it no faster than the saucer carries it, so it is
+ * it was, drawn in under it a little faster than the saucer carries it, so it is
  * never put anywhere in a blink.
  */
 function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
@@ -270,12 +276,13 @@ function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
   drift.y = height - at.y
   drift.z = ufo.position.z - at.z
   const off = Math.hypot(drift.x, drift.y, drift.z)
-  const most = UFO_CARRY_SPEED * dt
+  // A little faster than the saucer goes, so a car that has fallen behind it catches up.
+  const most = UFO_CARRY_SPEED * CATCH_UP * dt
   const share = off > most ? most / off : 1
   drift.x *= share / dt
   drift.y *= share / dt
   drift.z *= share / dt
-  body.setTranslation({ x: at.x + drift.x * dt, y: at.y + drift.y * dt, z: at.z + drift.z * dt }, true)
+  // Carried by its velocity alone: moved as well as given it, a step would carry it twice as far.
   body.setRotation(spun, true)
   body.setLinvel(drift, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
@@ -283,6 +290,55 @@ function hold(seat: Abductee, ufo: Ufo, height: number, dt: number): void {
   lastLinearVelocity.x = drift.x
   lastLinearVelocity.y = drift.y
   lastLinearVelocity.z = drift.z
+}
+
+/** How wide a cell of the skyline is, in meters. */
+const SKYLINE_CELL = 16
+
+interface Skyline {
+  readonly columns: number
+  readonly rows: number
+  readonly tops: Float32Array
+}
+
+const skylines = new WeakMap<TerrainMap, Skyline>()
+
+/** The tallest rooftop in each cell of the map, made once a map. */
+function skylineOf(map: TerrainMap): Skyline {
+  const known = skylines.get(map)
+  if (known !== undefined) return known
+  const columns = Math.ceil((map.size * map.cellSize) / SKYLINE_CELL) + 1
+  const rows = columns
+  const tops = new Float32Array(columns * rows).fill(Number.NEGATIVE_INFINITY)
+  for (const building of map.buildings) {
+    // Whichever cells the building's footprint reaches into, however it is turned.
+    const reach = Math.hypot(building.width, building.depth) / 2
+    const c0 = Math.max(Math.floor((building.x - reach) / SKYLINE_CELL), 0)
+    const c1 = Math.min(Math.floor((building.x + reach) / SKYLINE_CELL), columns - 1)
+    const r0 = Math.max(Math.floor((building.z - reach) / SKYLINE_CELL), 0)
+    const r1 = Math.min(Math.floor((building.z + reach) / SKYLINE_CELL), rows - 1)
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) tops[r * columns + c] = Math.max(tops[r * columns + c]!, building.top)
+    }
+  }
+  const skyline = { columns, rows, tops }
+  skylines.set(map, skyline)
+  return skyline
+}
+
+/** The tallest rooftop at or about a point, or nothing to clear. */
+function skylineAt(map: TerrainMap, x: number, z: number): number {
+  const { columns, rows, tops } = skylineOf(map)
+  const c = Math.floor(x / SKYLINE_CELL)
+  const r = Math.floor(z / SKYLINE_CELL)
+  let top = Number.NEGATIVE_INFINITY
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (c + dc < 0 || c + dc >= columns || r + dr < 0 || r + dr >= rows) continue
+      top = Math.max(top, tops[(r + dr) * columns + c + dc]!)
+    }
+  }
+  return top
 }
 
 const drops = new WeakMap<Ufo, { abductions: number; x: number; y: number; z: number }>()

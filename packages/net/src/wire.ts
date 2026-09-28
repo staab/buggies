@@ -31,7 +31,9 @@ import {
   SERVER_ROOMS,
   SERVER_PEEK,
   SERVER_SNAPSHOT,
+  SERVER_TRAVEL,
   SERVER_WELCOME,
+  NO_PORTAL,
   UNACKNOWLEDGED_INPUT_TICK,
 } from './protocol.ts'
 
@@ -42,9 +44,10 @@ import {
  * anything the wrong length is refused rather than read past.
  */
 
-export const HELLO_BYTES = 8
+export const HELLO_BYTES = 9
 export const WELCOME_BYTES = 15
 export const REJECT_BYTES = 2
+export const TRAVEL_BYTES = 6
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
 export const CHANGE_VEHICLE_BYTES = 2
@@ -56,7 +59,14 @@ export const PEEK_REQUEST_BYTES = 5
 export const PEEK_HEADER_BYTES = 3
 export const PEEK_MARK_BYTES = 14
 export const SNAPSHOT_HEADER_BYTES = 24
-export const SNAPSHOT_VEHICLE_BYTES = 118
+/**
+ * A vehicle in a snapshot: where it is and how it moves, how hurt it is and
+ * what it was last driven with, always; and what it has won and what it has
+ * going on, only when it has any, which a car nobody drives mostly has not.
+ */
+export const SNAPSHOT_VEHICLE_CORE_BYTES = 40
+export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 47
+export const SNAPSHOT_VEHICLE_BYTES = SNAPSHOT_VEHICLE_CORE_BYTES + SNAPSHOT_VEHICLE_EXTRAS_BYTES
 export const SNAPSHOT_PICKUP_BYTES = 6
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
@@ -80,6 +90,14 @@ export interface HelloMessage {
   profile: VehicleProfileId
   /** Which island: the room to be seated in. */
   seed: number
+  /** Which of its portals the car comes out of, having driven through the one it leads from; or none. */
+  arrival: number | null
+}
+
+/** Through a portal: the room to join next, and which portal of this one was driven through. */
+export interface TravelMessage {
+  seed: number
+  through: number
 }
 
 export interface WelcomeMessage {
@@ -327,6 +345,41 @@ class Writer {
     this.f32(value.brake)
     this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0) | (value.ability ? 4 : 0))
   }
+
+  i16(value: number): void {
+    this.view.setInt16(this.at, Math.round(Math.min(Math.max(value, -32767), 32767)))
+    this.at += 2
+  }
+
+  /** A vector as whole steps of a given size, each way along each axis. */
+  steps(value: Vec3, step: number): void {
+    this.i16(value.x / step)
+    this.i16(value.y / step)
+    this.i16(value.z / step)
+  }
+
+  /**
+   * A rotation as its three smallest parts and which is left out: a unit
+   * quaternion's largest part follows from the others, and the others are
+   * never more than a half root two across, so they keep their precision.
+   */
+  rotation(value: Quat): void {
+    const parts = [value.x, value.y, value.z, value.w]
+    let largest = 0
+    for (let k = 1; k < 4; k++) if (Math.abs(parts[k]!) > Math.abs(parts[largest]!)) largest = k
+    const sign = parts[largest]! < 0 ? -1 : 1
+    this.u8(largest)
+    for (let k = 0; k < 4; k++) if (k !== largest) this.i16((parts[k]! * sign * 32767) / Math.SQRT1_2)
+  }
+
+  /** A driver's input, near enough for a mirror to run a car on. */
+  looseInput(value: VehicleInput): void {
+    this.view.setInt8(this.at, Math.round(Math.min(Math.max(value.steer, -1), 1) * 127))
+    this.at += 1
+    this.u8(Math.round(Math.min(Math.max(value.throttle, 0), 1) * 255))
+    this.u8(Math.round(Math.min(Math.max(value.brake, 0), 1) * 255))
+    this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0) | (value.ability ? 4 : 0))
+  }
 }
 
 class Reader {
@@ -370,6 +423,47 @@ class Reader {
   }
 
   /** What a driver asks for, kept to its ranges: nothing a client sends is taken as given. */
+  i16(): number {
+    const value = this.view.getInt16(this.at)
+    this.at += 2
+    return value
+  }
+
+  steps(step: number): Vec3 {
+    return { x: this.i16() * step, y: this.i16() * step, z: this.i16() * step }
+  }
+
+  rotation(): Quat | null {
+    const largest = this.u8()
+    if (largest > 3) return null
+    const parts = [0, 0, 0, 0]
+    let sum = 0
+    for (let k = 0; k < 4; k++) {
+      if (k === largest) continue
+      parts[k] = (this.i16() / 32767) * Math.SQRT1_2
+      sum += parts[k]! * parts[k]!
+    }
+    parts[largest] = Math.sqrt(Math.max(1 - sum, 0))
+    return { x: parts[0]!, y: parts[1]!, z: parts[2]!, w: parts[3]! }
+  }
+
+  looseInput(out: VehicleInput): VehicleInput {
+    out.steer = this.view.getInt8(this.at) / 127
+    this.at += 1
+    out.throttle = this.u8() / 255
+    out.brake = this.u8() / 255
+    const buttons = this.u8()
+    out.handbrake = (buttons & 1) === 1
+    out.fire = (buttons & 2) === 2
+    out.ability = (buttons & 4) === 4
+    return out
+  }
+
+  /** How far through the message it has read. */
+  get offset(): number {
+    return this.at
+  }
+
   input(out: VehicleInput): VehicleInput {
     out.steer = within(this.f32(), -1, 1)
     out.throttle = within(this.f32(), 0, 1)
@@ -403,12 +497,13 @@ function profileIndex(profile: VehicleProfileId): number {
   return VEHICLE_PROFILE_IDS.indexOf(profile)
 }
 
-export function encodeHello(profile: VehicleProfileId, seed: number): Uint8Array {
+export function encodeHello(profile: VehicleProfileId, seed: number, arrival: number | null = null): Uint8Array {
   const writer = new Writer(HELLO_BYTES)
   writer.u8(CLIENT_HELLO)
   writer.u16(PROTOCOL_VERSION)
   writer.u8(profileIndex(profile))
   writer.u32(seed)
+  writer.u8(arrival === null ? NO_PORTAL : Math.min(Math.max(arrival, 0), NO_PORTAL - 1))
   return writer.bytes
 }
 
@@ -419,7 +514,23 @@ export function decodeHello(payload: Uint8Array): HelloMessage | null {
   const protocolVersion = reader.u16()
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
   const seed = reader.u32()
-  return profile === undefined ? null : { protocolVersion, profile, seed }
+  const portal = reader.u8()
+  return profile === undefined ? null : { protocolVersion, profile, seed, arrival: portal === NO_PORTAL ? null : portal }
+}
+
+export function encodeTravel(message: TravelMessage): Uint8Array {
+  const writer = new Writer(TRAVEL_BYTES)
+  writer.u8(SERVER_TRAVEL)
+  writer.u32(message.seed)
+  writer.u8(message.through)
+  return writer.bytes
+}
+
+export function decodeTravel(payload: Uint8Array): TravelMessage | null {
+  if (payload.length !== TRAVEL_BYTES || messageTypeOf(payload) !== SERVER_TRAVEL) return null
+  const reader = new Reader(payload)
+  reader.u8()
+  return { seed: reader.u32(), through: reader.u8() }
 }
 
 export function encodeWelcome(message: WelcomeMessage): Uint8Array {
@@ -551,10 +662,78 @@ export function decodeRooms(payload: Uint8Array): RoomSummary[] | null {
   return rooms
 }
 
+/** How finely a vehicle's velocity is told, in m/s, and its spin, in rad/s: finer than a mirror notices, over the few ticks it runs on from them. */
+const VELOCITY_STEP = 1 / 100
+const SPIN_STEP = 1 / 1000
+
+/**
+ * Whether a vehicle has anything to tell beyond where it is and how it
+ * moves: anyone driven does, and a car nobody drives only while something
+ * is going on with it.
+ */
+function hasExtras(vehicle: VehicleSnapshot): boolean {
+  if (!vehicle.npc) return true
+  return (
+    vehicle.score !== 0 ||
+    vehicle.collected !== 0 ||
+    vehicle.kills !== 0 ||
+    vehicle.robotKills !== 0 ||
+    vehicle.goal !== null ||
+    vehicle.goalsWon !== 0 ||
+    vehicle.weapon !== 'none' ||
+    vehicle.wins !== 0 ||
+    vehicle.ammoTicks !== 0 ||
+    vehicle.actionTicks !== 0 ||
+    vehicle.cooldownTicks !== 0 ||
+    vehicle.stunnedTicks !== 0 ||
+    vehicle.slowedTicks !== 0 ||
+    vehicle.rocketsFired !== 0 ||
+    vehicle.shieldTicks !== 0 ||
+    vehicle.magnetTicks !== 0 ||
+    vehicle.plowTicks !== 0 ||
+    vehicle.slipTicks !== 0 ||
+    vehicle.grappleTicks !== 0 ||
+    vehicle.grappleTarget !== NO_TARGET
+  )
+}
+
+function vehicleBytes(vehicles: readonly VehicleSnapshot[]): number {
+  let bytes = 0
+  for (const vehicle of vehicles) bytes += SNAPSHOT_VEHICLE_CORE_BYTES + (hasExtras(vehicle) ? SNAPSHOT_VEHICLE_EXTRAS_BYTES : 0)
+  return bytes
+}
+
+/** A vehicle with nothing going on: what one told of without its extras has. */
+function quietVehicle(): Omit<VehicleSnapshot, 'seat' | 'epoch' | 'profile' | 'position' | 'rotation' | 'linearVelocity' | 'angularVelocity' | 'damage' | 'wrecked' | 'lightsOn' | 'abilityHeld' | 'npc' | 'appliedInput'> {
+  return {
+    score: 0,
+    collected: 0,
+    kills: 0,
+    robotKills: 0,
+    goal: null,
+    goalsWon: 0,
+    weapon: 'none',
+    wins: 0,
+    ammoTicks: 0,
+    actionTicks: 0,
+    cooldownTicks: 0,
+    stunnedTicks: 0,
+    slowedTicks: 0,
+    slowedBy: 0,
+    rocketsFired: 0,
+    shieldTicks: 0,
+    magnetTicks: 0,
+    plowTicks: 0,
+    slipTicks: 0,
+    grappleTicks: 0,
+    grappleTarget: NO_TARGET,
+  }
+}
+
 export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   const writer = new Writer(
     SNAPSHOT_HEADER_BYTES +
-      message.vehicles.length * SNAPSHOT_VEHICLE_BYTES +
+      vehicleBytes(message.vehicles) +
       message.pickups.length * SNAPSHOT_PICKUP_BYTES +
       message.loose.length * SNAPSHOT_SPILLED_BYTES +
       message.removed.length * SNAPSHOT_REMOVED_BYTES +
@@ -579,16 +758,21 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.ufos.length)
   writer.u8(message.spiders.length)
   for (const vehicle of message.vehicles) {
+    const extras = hasExtras(vehicle)
     writer.u8(vehicle.seat)
     writer.u8(vehicle.epoch)
     writer.u8(profileIndex(vehicle.profile))
+    writer.u8(
+      (vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0) | (vehicle.npc ? 4 : 0) | (vehicle.wrecked ? 8 : 0) | (extras ? 16 : 0),
+    )
     writer.vec3(vehicle.position)
-    writer.quat(vehicle.rotation)
-    writer.vec3(vehicle.linearVelocity)
-    writer.vec3(vehicle.angularVelocity)
+    writer.rotation(vehicle.rotation)
+    writer.steps(vehicle.linearVelocity, VELOCITY_STEP)
+    writer.steps(vehicle.angularVelocity, SPIN_STEP)
     // Rounded down: a car short of a wreck on the server is never a full 1 on the client.
     writer.u8(Math.floor(Math.min(Math.max(vehicle.damage, 0), 1) * 255))
-    writer.u8(vehicle.wrecked ? 1 : 0)
+    writer.looseInput(vehicle.appliedInput)
+    if (!extras) continue
     writer.u16(Math.min(vehicle.score, 0xffff))
     writer.u16(Math.min(vehicle.collected, 0xffff))
     writer.u16(Math.min(vehicle.kills, 0xffff))
@@ -607,13 +791,11 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(Math.max(vehicle.stunnedTicks, 0), 0xffff))
     writer.u8(Math.min(Math.max(vehicle.slowedTicks, 0), 0xff))
     writer.u8(Math.round(Math.min(Math.max(vehicle.slowedBy, 0), 1) * 255))
-    writer.u8((vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0) | (vehicle.npc ? 4 : 0))
     writer.u16(vehicle.rocketsFired & 0xffff)
     for (const ticks of [vehicle.shieldTicks, vehicle.magnetTicks, vehicle.plowTicks, vehicle.slipTicks, vehicle.grappleTicks]) {
       writer.u16(Math.min(Math.max(ticks, 0), 0xffff))
     }
     writer.u8(vehicle.grappleTarget === NO_TARGET ? NOBODY_BYTE : vehicle.grappleTarget)
-    writer.input(vehicle.appliedInput)
   }
   for (const pickup of message.pickups) {
     writer.u16(pickup.slot)
@@ -714,9 +896,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const robotCount = reader.u8()
   const ufoCount = reader.u8()
   const spiderCount = reader.u8()
-  const expected =
-    SNAPSHOT_HEADER_BYTES +
-    count * SNAPSHOT_VEHICLE_BYTES +
+  const rest =
     pickupCount * SNAPSHOT_PICKUP_BYTES +
     looseCount * SNAPSHOT_SPILLED_BYTES +
     removedCount * SNAPSHOT_REMOVED_BYTES +
@@ -725,52 +905,26 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     robotCount * SNAPSHOT_ROBOT_BYTES +
     ufoCount * SNAPSHOT_UFO_BYTES +
     spiderCount * SNAPSHOT_SPIDER_BYTES
-  if (payload.length !== expected) return null
+  if (payload.length < SNAPSHOT_HEADER_BYTES + count * SNAPSHOT_VEHICLE_CORE_BYTES + rest) return null
 
   const vehicles: VehicleSnapshot[] = []
   for (let i = 0; i < count; i++) {
+    // Each vehicle is as long as what it has to tell: never past what the rest of the message needs.
+    if (payload.length - reader.offset - rest < SNAPSHOT_VEHICLE_CORE_BYTES) return null
     const seat = reader.u8()
     const epoch = reader.u8()
     const profile = VEHICLE_PROFILE_IDS[reader.u8()]
     if (profile === undefined) return null
-    const position = reader.vec3()
-    const rotation = reader.quat()
-    const linearVelocity = reader.vec3()
-    const angularVelocity = reader.vec3()
-    const damage = reader.u8() / 255
-    const wrecked = reader.u8() === 1
-    const score = reader.u16()
-    const collected = reader.u16()
-    const kills = reader.u16()
-    const robotKills = reader.u16()
-    const goalKind = GOAL_CODES[reader.u8()]
-    const target = reader.u16()
-    const from = reader.u16()
-    const x = reader.f32()
-    const z = reader.f32()
-    const goalsWon = reader.u8()
-    if (goalKind === undefined) return null
-    const weapon = WEAPON_CODES[reader.u8()]
-    if (weapon === undefined) return null
-    const wins = reader.u8()
-    const ammoTicks = reader.u16()
-    const actionTicks = reader.u16()
-    const cooldownTicks = reader.u16()
-    const stunnedTicks = reader.u16()
-    const slowedTicks = reader.u8()
-    const slowedBy = reader.u8() / 255
     const flags = reader.u8()
-    const lightsOn = (flags & 1) === 1
-    const abilityHeld = (flags & 2) === 2
-    const npc = (flags & 4) === 4
-    const rocketsFired = reader.u16()
-    const shieldTicks = reader.u16()
-    const magnetTicks = reader.u16()
-    const plowTicks = reader.u16()
-    const slipTicks = reader.u16()
-    const grappleTicks = reader.u16()
-    const hooked = reader.u8()
-    vehicles.push({
+    const position = reader.vec3()
+    const rotation = reader.rotation()
+    if (rotation === null) return null
+    const linearVelocity = reader.steps(VELOCITY_STEP)
+    const angularVelocity = reader.steps(SPIN_STEP)
+    const damage = reader.u8() / 255
+    const appliedInput = reader.looseInput(createVehicleInput())
+    const vehicle: VehicleSnapshot = {
+      ...quietVehicle(),
       seat,
       epoch,
       profile,
@@ -779,34 +933,47 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       linearVelocity,
       angularVelocity,
       damage,
-      wrecked,
-      score,
-      collected,
-      kills,
-      robotKills,
-      goal: goalKind === 'none' ? null : { kind: goalKind, target, from, x, z },
-      goalsWon,
-      weapon,
-      wins,
-      ammoTicks,
-      actionTicks,
-      cooldownTicks,
-      lightsOn,
-      abilityHeld,
-      npc,
-      rocketsFired,
-      stunnedTicks,
-      slowedTicks,
-      slowedBy,
-      shieldTicks,
-      magnetTicks,
-      plowTicks,
-      slipTicks,
-      grappleTicks,
-      grappleTarget: hooked === NOBODY_BYTE ? NO_TARGET : hooked,
-      appliedInput: reader.input(createVehicleInput()),
-    })
+      wrecked: (flags & 8) === 8,
+      lightsOn: (flags & 1) === 1,
+      abilityHeld: (flags & 2) === 2,
+      npc: (flags & 4) === 4,
+      appliedInput,
+    }
+    vehicles.push(vehicle)
+    if ((flags & 16) === 0) continue
+    if (payload.length - reader.offset - rest < SNAPSHOT_VEHICLE_EXTRAS_BYTES) return null
+    vehicle.score = reader.u16()
+    vehicle.collected = reader.u16()
+    vehicle.kills = reader.u16()
+    vehicle.robotKills = reader.u16()
+    const goalKind = GOAL_CODES[reader.u8()]
+    const target = reader.u16()
+    const from = reader.u16()
+    const x = reader.f32()
+    const z = reader.f32()
+    if (goalKind === undefined) return null
+    vehicle.goal = goalKind === 'none' ? null : { kind: goalKind, target, from, x, z }
+    vehicle.goalsWon = reader.u8()
+    const weapon = WEAPON_CODES[reader.u8()]
+    if (weapon === undefined) return null
+    vehicle.weapon = weapon
+    vehicle.wins = reader.u8()
+    vehicle.ammoTicks = reader.u16()
+    vehicle.actionTicks = reader.u16()
+    vehicle.cooldownTicks = reader.u16()
+    vehicle.stunnedTicks = reader.u16()
+    vehicle.slowedTicks = reader.u8()
+    vehicle.slowedBy = reader.u8() / 255
+    vehicle.rocketsFired = reader.u16()
+    vehicle.shieldTicks = reader.u16()
+    vehicle.magnetTicks = reader.u16()
+    vehicle.plowTicks = reader.u16()
+    vehicle.slipTicks = reader.u16()
+    vehicle.grappleTicks = reader.u16()
+    const hooked = reader.u8()
+    vehicle.grappleTarget = hooked === NOBODY_BYTE ? NO_TARGET : hooked
   }
+  if (payload.length - reader.offset !== rest) return null
   const pickups: PickupSnapshot[] = []
   for (let i = 0; i < pickupCount; i++) {
     pickups.push({ slot: reader.u16(), generation: reader.u16(), ticksUntilOut: reader.u16() })

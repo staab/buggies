@@ -4,7 +4,6 @@ import { buildWaterLevels, DRY, waterLevelAt, type Prop, type PropKind, type Ter
 import {
   DEFAULT_VEHICLE_PROFILE,
   NEUTRAL_INPUT,
-  CONE_SIDES,
   PROP_SHAPES,
   addProp,
   addTerrain,
@@ -13,8 +12,11 @@ import {
   applyChassisMassProperties,
   applyWaterResponse,
   applyWorldTuning,
+  coastVehicle,
+  copyVehicleInput,
   createPhysicsWorld,
   createVehicle,
+  createVehicleInput,
   createVehicleTuning,
   createWorldTuning,
   hurtVehicle,
@@ -49,10 +51,13 @@ import {
   type Robot,
 } from './robots.ts'
 import { findSpawns, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
+import { CEILING } from './sky.ts'
 
 const { atan2, hypot } = exact
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
+export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, sunDirection } from './sky.ts'
+export { portalCrossed, portalLink, portalSpawn } from './portals.ts'
 export {
   CHASSIS_FORWARD,
   copyVehicleInput,
@@ -62,7 +67,6 @@ export {
   createVehicle,
   stepVehicle,
   createPhysicsWorld,
-  CONE_SIDES,
   PROP_SHAPES,
   addHeightfield,
   addProp,
@@ -408,6 +412,12 @@ export interface Seat {
   /** A car nobody drives, and what drives it: a round of the arterials. */
   npc: boolean
   driver: Driver | null
+  /**
+   * In a mirror, a car too far from the local one to matter to it: carried
+   * along on how it was moving rather than driven, and out of the world, so
+   * nothing is spent simulating it. Never on the server.
+   */
+  coasting: boolean
   /** What it is carrying over its roof, won with bananas, and how long the machine gun has left. */
   weapon: Weapon
   /** How many weapons it has won, counted around past 255: a new one is told from the last even when it is the same. */
@@ -438,7 +448,7 @@ export interface Seat {
 }
 
 /**
- * A prop in the arena: a crate, a barrel, a cone or a bale, as a body the
+ * A prop in the arena: a crate or a barrel, as a body the
  * physics steps, and where the map stands it, for putting it back.
  */
 export interface ArenaProp {
@@ -514,6 +524,7 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
       goal: null,
       goalsWon: 0,
       npc: false,
+      coasting: false,
       driver: null,
       weapon: 'none',
       wins: 0,
@@ -556,8 +567,9 @@ export function createArena(map: TerrainMap, seatCount = MAX_PLAYERS): Arena {
     shots: [],
     robots: createRobots(map, world),
     boats: createBoats(map, world),
-    spiders: createSpiders(map, world),
-    ufos: createUfos(map),
+    // Nothing flies or walks about an airless moon.
+    spiders: map.moon ? [] : createSpiders(map, world),
+    ufos: map.moon ? [] : createUfos(map),
     tick: 0,
     mirror: false,
   }
@@ -632,6 +644,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   if (seat === undefined) throw new RangeError(`no seat ${id}`)
   reshape(arena, seat, profile)
   seat.occupied = true
+  seat.coasting = false
   clearTally(seat)
   disarm(seat)
   restAction(seat)
@@ -645,10 +658,18 @@ export function leaveSeat(arena: Arena, id: number): void {
   const seat = arena.seats[id]
   if (seat === undefined || !seat.occupied) return
   seat.occupied = false
+  seat.coasting = false
   clearTally(seat)
   disarm(seat)
   restAction(seat)
   seat.vehicle.body.setEnabled(false)
+}
+
+/** Have a mirror's car coast, out of the world and carried along on how it moves, or be driven in it again. */
+export function setCoasting(seat: Seat, coasting: boolean): void {
+  if (seat.coasting === coasting || !seat.occupied) return
+  seat.coasting = coasting
+  seat.vehicle.body.setEnabled(!coasting)
 }
 
 /** The first free seat, or nothing when the map is full. */
@@ -664,6 +685,16 @@ export function occupiedSeats(arena: Arena): Seat[] {
 function waterUnder(arena: Arena, seat: Seat): number {
   const { x, z } = seat.vehicle.frame.position
   return waterLevelAt(arena.map.heightfield, arena.water, x, z)
+}
+
+const unarmedInput = createVehicleInput()
+
+/** The input with nothing fired and no key of its own pressed. */
+function unarmed(input: VehicleInput): VehicleInput {
+  copyVehicleInput(unarmedInput, input)
+  unarmedInput.fire = false
+  unarmedInput.ability = false
+  return unarmedInput
 }
 
 /**
@@ -682,8 +713,12 @@ export function advance(
   for (const seat of arena.seats) {
     seat.vehicle.spared = arena.mirror
     if (!seat.occupied) continue
-    // A stunned car takes no driving.
-    const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
+    if (seat.coasting) {
+      coastVehicle(seat.vehicle, seat.tuning, inputFor(seat), dt)
+      continue
+    }
+    // A stunned car takes no driving, and a car nobody drives never fires or uses its own key, whatever it is told.
+    const input = stunned(seat) ? NEUTRAL_INPUT : seat.npc ? unarmed(inputFor(seat)) : inputFor(seat)
     // A car its engine or wings are driving along, or a grappling line
     // reeling in, is not one the tires hold still, and one its wings are lifting is not one the road holds down.
     seat.vehicle.boosted = burning(seat, input) || hooked(arena, seat)
@@ -716,6 +751,7 @@ export function advance(
   for (const ufo of arena.ufos) flyUfo(arena.map, ufo, arena.seats, gravity, dt)
   arena.world.step()
   arena.tick += 1
+  for (const seat of arena.seats) if (seat.occupied) holdUnderCeiling(arena.map.seaLevel, seat.vehicle)
   restoreProps(arena)
   collectPickups(arena)
   spillBananas(arena)
@@ -730,6 +766,17 @@ export function advance(
     for (const spider of arena.spiders) if (spider.damage >= 1) rebuildSpider(arena.map, spider)
   }
   trimLoose(arena)
+}
+
+/** Nothing driven or flown goes over the ceiling: a car there is held at it, and whatever carried it up is taken off. */
+function holdUnderCeiling(seaLevel: number, vehicle: Seat['vehicle']): void {
+  const { body } = vehicle
+  const at = body.translation()
+  const most = seaLevel + CEILING
+  if (at.y <= most) return
+  body.setTranslation({ x: at.x, y: most, z: at.z }, true)
+  const v = body.linvel()
+  if (v.y > 0) body.setLinvel({ x: v.x, y: 0, z: v.z }, true)
 }
 
 const eyes = v3()
@@ -794,7 +841,7 @@ function restoreProps(arena: Arena): void {
 export function putPropBack(prop: ArenaProp): void {
   const { body, home, kind } = prop
   body.setTranslation({ x: home.x, y: home.bottom + propRise(kind), z: home.z }, true)
-  body.setRotation(propRotation(kind, home.yaw), true)
+  body.setRotation(propRotation(home.yaw), true)
   body.setLinvel({ x: 0, y: 0, z: 0 }, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
 }
@@ -957,13 +1004,19 @@ function magnetOf(seat: Seat): number {
  * from its own reach alone, and mends half of what wrecks a car. A wreck
  * takes nothing.
  */
+const takers: Seat[] = []
+
 function collectPickups(arena: Arena): void {
+  // Who can take anything, in seat order, found once rather than for every pickup:
+  // a car nobody drives takes nothing, since it has no use for bananas or weapons.
+  takers.length = 0
+  for (const seat of arena.seats) if (seat.occupied && !seat.vehicle.wrecked && !seat.npc) takers.push(seat)
   for (const [slot, pickup] of arena.pickups.entries()) {
+    if (takers.length === 0) break
     if (!pickupOut(pickup, arena.tick)) continue
     const health = pickupKind(slot) === 'health'
-    for (const seat of arena.seats) {
-      // A car nobody drives takes nothing: it has no use for bananas or weapons.
-      if (!seat.occupied || seat.vehicle.wrecked || seat.npc) continue
+    for (const seat of takers) {
+      if (seat.vehicle.wrecked) continue
       if (health && seat.vehicle.damage <= 0) continue
       if (!reachesPickup(pickup, seat.vehicle.frame.position, health ? 0 : magnetOf(seat))) continue
       if (health) seat.vehicle.damage = Math.max(seat.vehicle.damage - HEALTH_MEND, 0)

@@ -153,6 +153,8 @@ export type BuildingKind =
   | 'statue'
   | 'clocktower'
   | 'pyramid'
+  | 'flag'
+  | 'lander'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
@@ -299,7 +301,7 @@ export interface Rock {
 }
 
 /** The kinds of thing a car can knock about. */
-export type PropKind = 'crate' | 'barrel' | 'cone' | 'bale'
+export type PropKind = 'crate' | 'barrel'
 
 /**
  * A prop: the one kind of furniture that moves. Where it starts, standing
@@ -313,6 +315,20 @@ export interface Prop {
   /** The ground it stands on. */
   bottom: number
   yaw: number
+}
+
+/**
+ * A portal: a ring standing on the ground, its foot at `x, z` on ground at
+ * `y` and its middle a radius up, the way through it along `dx, dz`. Driven
+ * through, it takes a car from an island to its moon, or back.
+ */
+export interface Portal {
+  x: number
+  z: number
+  y: number
+  dx: number
+  dz: number
+  radius: number
 }
 
 export interface TerrainMap {
@@ -335,4 +351,8 @@ export interface TerrainMap {
   ramps: Ramp[]
   sidewalks: Sidewalk[]
   fields: Field[]
+  /** The rings through to the moon, or on a moon the one back. */
+  portals: Portal[]
+  /** Whether this is an island's moon: gray, airless, and with nothing on it but a flag and a lander. */
+  moon: boolean
 }

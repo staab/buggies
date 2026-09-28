@@ -10,8 +10,8 @@ describe('the props on the screen', () => {
   it('draws one instance a prop, each where its body is', () => {
     const world = createPhysicsWorld()
     const homes = [
-      { kind: 'cone' as const, x: 10, z: 10, bottom: 0, yaw: 0 },
-      { kind: 'cone' as const, x: 12, z: 10, bottom: 0, yaw: 0 },
+      { kind: 'crate' as const, x: 10, z: 10, bottom: 0, yaw: 0 },
+      { kind: 'crate' as const, x: 12, z: 10, bottom: 0, yaw: 0 },
       { kind: 'barrel' as const, x: 20, z: 10, bottom: 0, yaw: 1 },
     ]
     const props: ArenaProp[] = homes.map((home, id) => ({ id, kind: home.kind, home, body: addProp(world, home) }))

@@ -1,6 +1,8 @@
 import * as exact from '@buggies/physics'
-import { ROAD_GRADE, ROAD_TUNNEL, roadLift, type Road, type RoadPoint, type TerrainMap } from '@buggies/terrain'
+import { ROAD_GRADE, ROAD_TUNNEL, roadLift, sampleHeight, type Road, type RoadPoint, type TerrainMap } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
+
+import { portalSpawn } from './portals.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
@@ -40,13 +42,14 @@ export function spawnFacing(spot: RoadSpot, forward: { x: number; z: number }): 
     road.points[road.closed ? ((i % count) + count) % count : Math.min(Math.max(i, 0), count - 1)]!
   const ahead = at(index + FACING_REACH)
   const behind = at(index - FACING_REACH)
-  let dx = ahead.x - point.x
-  let dz = ahead.z - point.z
-  if (dx * forward.x + dz * forward.z < 0) {
-    dx = point.x - behind.x
-    dz = point.z - behind.z
-  }
+  // The way the road runs through the spot, from behind it to ahead of it, however near an end it is.
+  let dx = ahead.x - behind.x
+  let dz = ahead.z - behind.z
   if (hypot(dx, dz) < 1e-6) return spawnAt(spot)
+  if (dx * forward.x + dz * forward.z < 0) {
+    dx = -dx
+    dz = -dz
+  }
   return {
     position: { x: point.x, y: point.y + roadLift(road), z: point.z },
     yaw: atan2(-dx, -dz),
@@ -142,12 +145,14 @@ function spotsAlong(from: RoadSpot, spacing: number, step: 1 | -1, wanted: numbe
 export function findSpawns(map: TerrainMap, count: number): VehicleSpawn[] {
   const first = nearestGradeSpot(map)
   if (first === null) {
+    // No roads, as on a moon: out of the first portal, side by side; or down the middle of the map.
     const worldSize = map.size * map.cellSize
-    const middle = { x: worldSize / 2, y: 0, z: worldSize / 2 }
-    return Array.from({ length: count }, (_, i) => ({
-      position: { ...middle, z: middle.z + i * SPAWN_SPACING },
-      yaw: 0,
-    }))
+    return Array.from({ length: count }, (_, i) => {
+      const out = portalSpawn(map, 0, i)
+      if (out !== null) return { position: { ...out.position }, yaw: out.yaw }
+      const z = worldSize / 2 + i * SPAWN_SPACING
+      return { position: { x: worldSize / 2, y: sampleHeight(map.heightfield, worldSize / 2, z), z }, yaw: 0 }
+    })
   }
 
   // Two abreast, staggered a half length apart, behind the first spot for

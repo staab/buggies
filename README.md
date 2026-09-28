@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Neither reloads on a code change: restart `pnpm dev` and reload the page to pick one up. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. The server generates each island on a thread of its own, so the rooms already open carry on meanwhile, and it keeps the last eight it made. To join from a second screen, open the same URL.
 
 The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
@@ -47,6 +47,14 @@ A giant spider, its body ten meters up on legs nearly twenty meters long, walks 
 ## Traffic
 
 Twenty cars nobody drives potter slowly around the arterials of every island in the seats players leave empty: small cars, sports cars, pickups, semis, police cars, ambulances and fire trucks. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They keep to the right-hand lane, carry no weapons, take no bananas or health packs, and set off any bomb or mine they drive onto. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back a little further along its road if it goes nowhere for six seconds.
+
+## Sky
+
+Clouds drift high over every island, carried by the wind. Nothing driven or flown gets more than 30 m above them. The sun crosses the sky once every ten minutes of the game's time. At night the sky darkens and the stars come out, and since the time is the game's, everyone on an island shares the same hour.
+
+## Portals and the moon
+
+Three to five glowing rings stand on level country beside the arterials of every island. Driving through one leads to the island's moon: a gray, airless world half the size of the island, with craters, ridges of mountains and valleys, walled in by highlands. The moon has no roads, traffic, robots, saucer or spider, only boulders, a lander and the flag it planted beside the one portal back. That portal leads home through the island portal the car left by. The moon is a room of its own on the server, and its seed is the island's with the top bit set.
 
 ## Goals
 
@@ -144,7 +152,8 @@ The land is grown on a 1281 × 1281 grid of cells at a reference scale, then enl
 14. **Junctions.** Road ends meeting at a node are paired off and bent to leave in opposite directions. A street running alongside an arterial rather than across it is cut back to meet it, and street ends are joined to the roads they reach. A grid cut off from the network gets a street to the nearest arterial or cross road, and any street nothing can reach is dropped.
 15. **Climbs.** Each map has at most one mountain road. It leaves an arterial for the highest mountain the arterial comes near, winds up the slope at its grade with hairpins where the way is blocked, and ends in a level lot with a view.
 16. **Road beds.** The ground is cut away beneath the highway so it never pokes through the deck, except where a surface road runs. Every other road lies on the ground itself. The ground is cut or filled to the road's profile across the roadway and blended back over the shoulders, two roads crossing share one level, and each road is held to its grade and curvature limits. Tunnels are not stored as geometry. The bore is derived from the road being marked as a tunnel, the same way for the drawn mesh and for the collider.
-17. **What stands on the land.** Cities fill their blocks with lots, sidewalks, parks and buildings that grow taller toward the middle. Jump ramps stand on the shoulders of the country roads, and filling stations, roadworks, houses and gardens line the roads through the suburbs. The landmarks follow: an observatory on a peak, farms, orchards, a wind farm, standing stones, lighthouses, boats meandering about their moorings, a cable lift up a mountain, viewpoints, churches, water towers and camps. Last, woods and clearings spread over the country and up the foothills, and rocks over the bare heights. Everything is placed off the finished roads, clear of the interchanges, on ground that has already been settled.
+17. **What stands on the land.** Cities fill their blocks with lots, sidewalks, parks and buildings that grow taller toward the middle. Jump ramps stand on the shoulders of the country roads, and filling stations, houses and gardens line the roads through the suburbs. The landmarks follow: an observatory on a peak, farms, orchards, a wind farm, standing stones, lighthouses, boats meandering about their moorings, a cable lift up a mountain, viewpoints, churches, water towers and camps. Last, woods and clearings spread over the country and up the foothills, and rocks over the bare heights. Everything is placed off the finished roads, clear of the interchanges, on ground that has already been settled.
+18. **Portals.** Three to five portals stand 28 m off the arterials in the country. Each is at least 500 m from the others, and its way through runs along the road over ground level and dry enough for a run at it. Any trees in that run are cleared. An island too rough for enough of these takes rougher ground, and then open country anywhere.
 
 ## Check it
 

@@ -1,4 +1,4 @@
-import type { IslandMark } from '@buggies/net'
+import type { IslandMark, TravelMessage } from '@buggies/net'
 import type { Goal, GoalRequest, VehicleProfileId } from '@buggies/game'
 import type { TerrainMap } from '@buggies/terrain'
 import type * as THREE from 'three'
@@ -32,6 +32,8 @@ export interface ModeView {
   goal?(): Goal | null
   /** Put everyone on this screen to playing for this goal, or for none. */
   setGoal?(goal: GoalRequest | null): void
+  /** Driven through a portal: where the server has sent everyone on this screen on to. */
+  readonly travel?: TravelMessage | null
   /** Show where every car is on the island being looked over, as the server last said. */
   showMarks?(marks: readonly IslandMark[]): void
   dispose(): void

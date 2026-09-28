@@ -22,6 +22,15 @@ export interface CameraTuning {
   wreckDistance: number
   wreckHeight: number
   wreckLambda: number
+  /**
+   * On a saucer's beam, the car is watched from further back and a little
+   * below, looking up at it and the saucer over it, and the camera eases
+   * there and back slowly: nothing is gained by chasing a car being carried.
+   */
+  abductedDistance: number
+  abductedHeight: number
+  abductedLook: number
+  abductedLambda: number
 
   positionLambda: number
   lookLambda: number
@@ -43,6 +52,9 @@ export interface CameraTuning {
   groundClearance: number
 }
 
+/** How long after a car leaves a saucer's beam the camera still eases slowly back to the chase. */
+const ABDUCTED_EASE_SECONDS = 2
+
 export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   distance: 8.5,
   // Raised on request, then a little more.
@@ -52,6 +64,10 @@ export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   wreckDistance: 102,
   wreckHeight: 66,
   wreckLambda: 1.2,
+  abductedDistance: 24,
+  abductedHeight: 1.5,
+  abductedLook: 4,
+  abductedLambda: 1.8,
 
   positionLambda: 6,
   lookLambda: 9,
@@ -88,6 +104,8 @@ export interface ChaseTarget {
   speed: number
   /** Blown up, and being watched from well back until it is put back. */
   wrecked: boolean
+  /** On a saucer's beam: lifted, carried or let down. */
+  abducted: boolean
 }
 
 export function createChaseTarget(): ChaseTarget {
@@ -97,6 +115,7 @@ export function createChaseTarget(): ChaseTarget {
     velocity: { x: 0, y: 0, z: 0 },
     speed: 0,
     wrecked: false,
+    abducted: false,
   }
 }
 
@@ -142,6 +161,9 @@ export class ChaseCamera {
 
   private settled = false
   private wrecked = false
+  private abducted = false
+  /** How much longer the slow ease back from watching a car on a saucer's beam lasts. */
+  private easing = 0
   /** Where the car blew up, and which way it was going, for the camera to pull away from. */
   private readonly wreckAnchor = new THREE.Vector3()
   private readonly wreckArm = new THREE.Vector3()
@@ -201,6 +223,7 @@ export class ChaseCamera {
       this.wreckArm.copy(this.armDirection)
     }
     this.wrecked = target.wrecked
+    this.abducted = target.abducted && !target.wrecked
     this.updateDesiredPose(target.speed, speedFractionOfReference)
     this.settleOrDamp(dt, speedFractionOfReference)
     this.applyToCamera()
@@ -255,6 +278,15 @@ export class ChaseCamera {
       this.desiredLookAt.copy(this.targetPosition)
       return
     }
+    if (this.abducted) {
+      this.desiredPosition
+        .copy(this.targetPosition)
+        .addScaledVector(this.armDirection, -tuning.abductedDistance)
+        .addScaledVector(WORLD_UP, tuning.abductedHeight)
+      this.desiredPosition.y = this.confine(this.desiredPosition.x, this.desiredPosition.y, this.desiredPosition.z)
+      this.desiredLookAt.copy(this.targetPosition).addScaledVector(WORLD_UP, tuning.abductedLook)
+      return
+    }
     const armLength = tuning.distance + tuning.distanceSpeedGain * speedFractionOfReference
     const lookAheadDistance = Math.min(speed * tuning.lookAheadTime, tuning.lookAheadMax)
     // Under a bridge the camera drops to a low chase, and
@@ -285,10 +317,11 @@ export class ChaseCamera {
       return
     }
 
-    // The pull-out from a wreck is slower than the chase.
-    const positionLambda = this.wrecked ? tuning.wreckLambda : tuning.positionLambda
+    // The pull-out from a wreck is slower than the chase, and so is the move to and from a car on a saucer's beam.
+    const positionLambda = this.wrecked ? tuning.wreckLambda : this.abducted || this.easing > 0 ? tuning.abductedLambda : tuning.positionLambda
+    this.easing = this.abducted ? ABDUCTED_EASE_SECONDS : Math.max(this.easing - dt, 0)
     dampVector3Toward(this.position, this.desiredPosition, positionLambda, dt)
-    dampVector3Toward(this.lookAt, this.desiredLookAt, tuning.lookLambda, dt)
+    dampVector3Toward(this.lookAt, this.desiredLookAt, this.abducted || this.easing > 0 ? tuning.abductedLambda * 1.5 : tuning.lookLambda, dt)
 
     this.camera.fov = dampToward(
       this.camera.fov,

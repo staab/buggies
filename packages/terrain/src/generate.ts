@@ -13,6 +13,8 @@ import {
 import { fbm2D, ridged2D, smoothstep } from './noise.ts'
 import { generateRoads } from './roads.ts'
 import { RIVER_BANK_LAP, traceRivers } from './rivers.ts'
+import { generateMoon } from './moon.ts'
+import { isMoon, placePortals } from './portals.ts'
 import type {
   Heightfield,
   Lake,
@@ -696,6 +698,8 @@ function scaleWorld(map: TerrainMap, scale: number): void {
  * seed and options always produce byte-identical output.
  */
 export function generateTerrain(seed: number, options: TerrainOptions = {}): TerrainMap {
+  // A moon's seed is its island's with the moon's bit set, and it is made as a moon.
+  if (isMoon(seed)) return generateMoon(seed)
   const size = options.size ?? DEFAULTS.size
   const cellSize = options.cellSize ?? DEFAULTS.cellSize
   const seaLevel = options.seaLevel ?? DEFAULTS.seaLevel
@@ -776,6 +780,8 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
     ramps: [],
     sidewalks: [],
     fields: [],
+    portals: [],
+    moon: false,
   }
   scaleWorld(map, WORLD_SCALE)
   map.roads = generateRoads(
@@ -802,5 +808,6 @@ export function generateTerrain(seed: number, options: TerrainOptions = {}): Ter
       seed,
     ),
   )
+  map.portals = placePortals(map)
   return map
 }

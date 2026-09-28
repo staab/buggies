@@ -1113,7 +1113,7 @@ const AMPHIBIAN_TUNING: Readonly<VehicleTuning> = Object.freeze({
   damageAcceleration: 80,
   damageToWreck: 110,
 
-  hull: { buoyancy: 2.2, drag: 0.5, heave: 6, thrust: 7, turn: 2.2, righting: 6 },
+  hull: { buoyancy: 2.2, drag: 0.5, heave: 6, thrust: 7, turn: 11, righting: 6 },
 
   ...selfRightTuning(1500),
   ...SHARED_DAMPING_TUNING,

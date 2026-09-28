@@ -33,6 +33,8 @@ export type {
 } from './transport.ts'
 export {
   decodeSnapshot,
+  decodeTravel,
+  type TravelMessage,
   decodeWelcome,
   encodeSnapshot,
   type IslandMark,

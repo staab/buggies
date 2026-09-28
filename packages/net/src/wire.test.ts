@@ -1,3 +1,4 @@
+import { NO_TARGET } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -22,7 +23,10 @@ import {
   SNAPSHOT_ROCKET_BYTES,
   SNAPSHOT_SPILLED_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
+  SNAPSHOT_VEHICLE_CORE_BYTES,
   decodeHello,
+  decodeTravel,
+  encodeTravel,
   decodeInput,
   decodeReject,
   decodeRooms,
@@ -175,7 +179,10 @@ describe('wire', () => {
       protocolVersion: PROTOCOL_VERSION,
       profile: 'raceCar',
       seed: 4_000_000_000,
+      arrival: null,
     })
+    expect(decodeHello(encodeHello('pickup', 7, 3))?.arrival).toBe(3)
+    expect(decodeTravel(encodeTravel({ seed: 0x8000_0007, through: 2 }))).toEqual({ seed: 0x8000_0007, through: 2 })
     const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const }
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })
@@ -273,11 +280,21 @@ describe('wire', () => {
       expect(got.wrecked).toBe(vehicle.wrecked)
       expect(got.score).toBe(vehicle.score)
       expect(got.damage).toBeCloseTo(vehicle.damage, 2)
-      expect(got.appliedInput).toEqual(vehicle.appliedInput)
-      for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
-        for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(vehicle[key][axis], 4)
+      // The input a car was driven with, the way it moves and the way it faces are told near enough, not exactly.
+      expect(got.appliedInput).toMatchObject({ handbrake: vehicle.appliedInput.handbrake, fire: vehicle.appliedInput.fire, ability: vehicle.appliedInput.ability })
+      expect(got.appliedInput.steer).toBeCloseTo(vehicle.appliedInput.steer, 1)
+      expect(Math.abs(got.appliedInput.throttle - vehicle.appliedInput.throttle)).toBeLessThan(1 / 255)
+      expect(Math.abs(got.appliedInput.brake - vehicle.appliedInput.brake)).toBeLessThan(1 / 255)
+      for (const axis of ['x', 'y', 'z'] as const) {
+        expect(got.position[axis]).toBeCloseTo(vehicle.position[axis], 4)
+        expect(Math.abs(got.linearVelocity[axis] - vehicle.linearVelocity[axis])).toBeLessThanOrEqual(0.005 + 1e-9)
+        expect(Math.abs(got.angularVelocity[axis] - vehicle.angularVelocity[axis])).toBeLessThanOrEqual(0.0005 + 1e-9)
       }
-      for (const axis of ['x', 'y', 'z', 'w'] as const) expect(got.rotation[axis]).toBeCloseTo(vehicle.rotation[axis], 6)
+      // The same way round, whichever sign the quaternion had.
+      const alignment = Math.abs(
+        got.rotation.x * vehicle.rotation.x + got.rotation.y * vehicle.rotation.y + got.rotation.z * vehicle.rotation.z + got.rotation.w * vehicle.rotation.w,
+      )
+      expect(alignment).toBeGreaterThan(1 - 1e-8)
     }
     for (const [i, prop] of snapshot.props.entries()) {
       const got = decoded.props[i]!
@@ -287,6 +304,42 @@ describe('wire', () => {
       }
       for (const axis of ['x', 'y', 'z', 'w'] as const) expect(got.rotation[axis]).toBeCloseTo(prop.rotation[axis], 6)
     }
+  })
+
+  it('tells a car nobody drives with nothing going on in few bytes, and nothing it has not got', () => {
+    const [driven] = snapshot.vehicles
+    const idle = {
+      ...driven!,
+      npc: true,
+      score: 0,
+      collected: 0,
+      kills: 0,
+      robotKills: 0,
+      goal: null,
+      goalsWon: 0,
+      weapon: 'none' as const,
+      wins: 0,
+      ammoTicks: 0,
+      actionTicks: 0,
+      cooldownTicks: 0,
+      stunnedTicks: 0,
+      slowedTicks: 0,
+      slowedBy: 0,
+      rocketsFired: 0,
+      shieldTicks: 0,
+      magnetTicks: 0,
+      plowTicks: 0,
+      slipTicks: 0,
+      grappleTicks: 0,
+      grappleTarget: NO_TARGET,
+    }
+    const quiet = { ...snapshot, vehicles: [idle], pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [] }
+    const payload = encodeSnapshot(quiet)
+    expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_CORE_BYTES)
+    const got = decodeSnapshot(payload)!.vehicles[0]!
+    expect(got).toMatchObject({ seat: idle.seat, npc: true, score: 0, weapon: 'none', goal: null, grappleTarget: NO_TARGET, wrecked: idle.wrecked })
+    // A truncated one is refused, not read past its end.
+    expect(decodeSnapshot(payload.subarray(0, payload.length - 1))).toBeNull()
   })
 
   it('stamps each player their own acknowledgment onto one encoding', () => {
