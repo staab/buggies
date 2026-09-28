@@ -246,10 +246,13 @@ const way = v3()
 
 /** Whether a point is within this far of another across the ground, and this far up or down. */
 function within(point: Vec3, at: Vec3, reach: number, up: number): boolean {
-  upOf(at, way)
   const dx = point.x - at.x
   const dy = point.y - at.y
   const dz = point.z - at.z
+  // Further off in a straight line than across and up together could be, with a hair to spare, it is out of reach:
+  // told without the root the way up takes, as nearly every pickup on the planet is from nearly every car.
+  if (dx * dx + dy * dy + dz * dz > (reach * reach + up * up) * 1.001 + 1e-6) return false
+  upOf(at, way)
   const rise = dx * way.x + dy * way.y + dz * way.z
   const x = dx - way.x * rise
   const y = dy - way.y * rise

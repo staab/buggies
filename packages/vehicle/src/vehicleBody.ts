@@ -64,6 +64,23 @@ export interface Axle {
   readonly right: WheelState
 }
 
+/**
+ * Where a coasting car is and how it moves, kept here rather than in its
+ * body while it coasts: a body out of the world still costs the next step
+ * whenever it is moved, so it is only told once, when the car is next drawn
+ * or driven again.
+ */
+export interface CoastState {
+  readonly at: Vec3
+  readonly rotation: Quat
+  readonly velocity: Vec3
+  readonly spin: Vec3
+  /** The body has been moved since, by a snapshot or a saucer: coasting goes on from it rather than from here. */
+  fromBody: boolean
+  /** Coasting has moved on from what the body was last told. */
+  unwritten: boolean
+}
+
 export interface Vehicle {
   readonly body: RAPIER.RigidBody
   readonly collider: RAPIER.Collider
@@ -79,6 +96,8 @@ export interface Vehicle {
   spared: boolean
   /** The way up where the car is: up the y axis on a flat world, away from a planet's middle on one, as its owner says. */
   readonly up: Vec3
+  /** Where it is while it coasts in a mirror, out of the world. */
+  readonly coast: CoastState
 
   rideHeight: number
   steerAngle: number
@@ -187,6 +206,7 @@ type VehicleRig =
   | 'lastLinearVelocity'
   | 'spared'
   | 'up'
+  | 'coast'
   | 'rideHeight'
 
 type VehicleMotion = Omit<Vehicle, VehicleRig>
@@ -278,6 +298,7 @@ export function adoptVehicle(
     lastLinearVelocity: v3(),
     spared: false,
     up: v3(0, 1, 0),
+    coast: { at: v3(), rotation: { x: 0, y: 0, z: 0, w: 1 }, velocity: v3(), spin: v3(), fromBody: true, unwritten: false },
     rideHeight: restingRideHeight(tuning, worldGravity(world)),
     ...NEUTRAL_VEHICLE_MOTION,
   }

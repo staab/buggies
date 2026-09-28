@@ -1,5 +1,6 @@
 import { DEFAULT_WORLD_TUNING, restingRideHeight, type VehicleTuning } from '@buggies/game'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 import { litByNight, nightAt } from './night.ts'
 
@@ -79,24 +80,9 @@ function discPair(radius: number, x: number, y: number, z: number): THREE.Buffer
   const key = `${radius} ${x} ${y} ${z}`
   let pair = pairs.get(key)
   if (pair === undefined) {
-    const disc = new THREE.CircleGeometry(radius, 20).rotateY(Math.PI)
-    const left = disc.clone().translate(x, y, z)
-    const right = disc.translate(-x, y, z)
-    pair = new THREE.BufferGeometry()
-    const count = left.getAttribute('position').count
-    const positions = new Float32Array(count * 6)
-    positions.set(left.getAttribute('position').array as Float32Array, 0)
-    positions.set(right.getAttribute('position').array as Float32Array, count * 3)
-    pair.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    const index = left.getIndex()!.array
-    const indices = new Uint16Array(index.length * 2)
-    for (let i = 0; i < index.length; i++) {
-      indices[i] = index[i]!
-      indices[index.length + i] = index[i]! + count
-    }
-    pair.setIndex(new THREE.BufferAttribute(indices, 1))
-    left.dispose()
-    right.dispose()
+    const discs = [x, -x].map((side) => new THREE.CircleGeometry(radius, 20).deleteAttribute('normal').deleteAttribute('uv').rotateY(Math.PI).translate(side, y, z))
+    pair = mergeGeometries(discs)
+    for (const disc of discs) disc.dispose()
     pairs.set(key, pair)
   }
   return pair
@@ -111,6 +97,8 @@ function discPair(radius: number, x: number, y: number, z: number): THREE.Buffer
 export class Headlights {
   readonly object = new THREE.Group()
   private readonly beam: THREE.SpotLight | null
+  /** What only glows: the lamps, their halos, and the pool where there is no beam. */
+  private readonly glows: THREE.Mesh[] = []
 
   constructor(tuning: VehicleTuning, beam: boolean) {
     const parts = sharedParts()
@@ -118,10 +106,7 @@ export class Headlights {
     const height = -tuning.chassisHalfHeight * 0.15
     const ground = -restingRideHeight(tuning, DEFAULT_WORLD_TUNING.gravity)
     const x = tuning.chassisHalfWidth * LAMP.apart
-    this.object.add(
-      new THREE.Mesh(discPair(LAMP.radius, x, height, front), parts.lamp),
-      new THREE.Mesh(discPair(LAMP.halo, x, height, front - 0.02), parts.halo),
-    )
+    this.glows.push(new THREE.Mesh(discPair(LAMP.radius, x, height, front), parts.lamp), new THREE.Mesh(discPair(LAMP.halo, x, height, front - 0.02), parts.halo))
     if (beam) {
       this.beam = new THREE.SpotLight(LAMP_LIGHT, 0, BEAM.distance, BEAM.angle, BEAM.penumbra, 2)
       this.beam.position.set(0, height, front)
@@ -133,12 +118,9 @@ export class Headlights {
       const pool = new THREE.Mesh(parts.square, parts.pool)
       pool.scale.set(POOL.width, 1, POOL.length)
       pool.position.set(0, ground + 0.06, front - POOL.length / 2)
-      this.object.add(pool)
+      this.glows.push(pool)
     }
-    for (const mesh of this.object.children) {
-      mesh.castShadow = false
-      mesh.receiveShadow = false
-    }
+    this.object.add(...this.glows)
   }
 
   /** As bright as the night is dark where the car is; out once it is wrecked, and not drawn at all by day. */
@@ -146,7 +128,7 @@ export class Headlights {
     const night = nightAt(at)
     const on = !wrecked && night > LAMPS_FROM
     // The beam stays in the scene, only dimmed, so the count of lights, and so every shader, stays as it was.
-    for (const child of this.object.children) if (child !== this.beam && child !== this.beam?.target) child.visible = on
+    for (const glow of this.glows) glow.visible = on
     if (this.beam !== null) this.beam.intensity = on ? night * BEAM.intensity : 0
   }
 

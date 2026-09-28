@@ -1,7 +1,7 @@
 import { createRng, uprightRotation, v3, vaddScaled, vdot, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
 import { atHeight, gridPlace, groundIndex, groundUnder, heightOver, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
-import { addForceAlong, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
+import { addForceAlong, coastFromBody, writeCoast, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
 import { nearestRoadSpotTo } from './spawns.ts'
 
@@ -327,6 +327,8 @@ const under = v3()
  */
 function hold(map: World, seat: Abductee, ufo: Ufo, height: number, dt: number): void {
   const { body, frame, lastLinearVelocity, up } = seat.vehicle
+  // A car coasting in a mirror is held from where it has coasted to, and goes on from where it is held.
+  writeCoast(seat.vehicle)
   const at = body.translation()
   atHeight(map, upOf(ufo.position, under), height, under)
   drift.x = under.x - at.x
@@ -343,6 +345,7 @@ function hold(map: World, seat: Abductee, ufo: Ufo, height: number, dt: number):
   body.setRotation(uprightRotation(up, frame.forward), true)
   body.setLinvel(drift, true)
   body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+  coastFromBody(seat.vehicle)
   // Carried is not knocked about: the car reads its knocks against the velocity it is given.
   lastLinearVelocity.x = drift.x
   lastLinearVelocity.y = drift.y

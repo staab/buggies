@@ -135,6 +135,9 @@ export class Sun {
     // How much of the day there is where the play is: for the sky overhead, not for how anything is lit.
     const elevation = up === undefined ? 1 : this.direction.x * up.x + this.direction.y * up.y + this.direction.z * up.z
     this.daylight = THREE.MathUtils.smoothstep(elevation, DUSK.below, DUSK.above)
+    // With the sun set here, its light reaches nothing the shadows cover: they are not drawn again until it rises.
+    // Kept rather than turned off, since turning them off would compile every shader afresh.
+    this.light.shadow.autoUpdate = this.daylight > 0
     // Set, the disc is under the horizon.
     this.disc.visible = this.glow.visible = this.daylight > 0
   }

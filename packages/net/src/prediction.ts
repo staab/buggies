@@ -9,7 +9,9 @@ import {
   placeRobot,
   seatRobotBody,
   setPickup,
+  movedBody,
   setCoasting,
+  writeCoasting,
   takeSeat,
   writeVehicleStepState,
   type Arena,
@@ -294,6 +296,7 @@ export class LocalPrediction {
       const recorded = this.history.frameAt(this.mirror.tick)
       this.recordAndStep(recorded?.input ?? this.lastSentInput)
     }
+    writeCoasting(this.mirror)
     return 'replayed'
   }
 
@@ -320,6 +323,8 @@ export class LocalPrediction {
       copyVehicleInput(this.lastSentInput, update.input)
     }
     this.stats.lastSteps = steps
+    // The far cars' bodies told where they have coasted to, once, for whoever draws or reads the mirror next.
+    writeCoasting(this.mirror)
     this.history.recordState(this.mirror.tick, this.seat.vehicle)
     this.stats.ticksAheadOfServer = this.mirror.tick - update.estimatedServerTick
   }
@@ -384,6 +389,7 @@ export class LocalPrediction {
       body.setRotation(vehicle.rotation, true)
       body.setLinvel(vehicle.linearVelocity, true)
       body.setAngvel(vehicle.angularVelocity, true)
+      movedBody(seat)
       // Being moved by the server is not being hit: the car reads its knocks
       // against the velocity it has just been given.
       vcopy(seat.vehicle.lastLinearVelocity, vehicle.linearVelocity)

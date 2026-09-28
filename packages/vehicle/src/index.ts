@@ -35,7 +35,7 @@ export {
   type VehicleTuning,
 } from './tuning.ts'
 export { lateralGripCurve, solveTireForces } from './tireModel.ts'
-export { ARMOR_REFERENCE, armorShare, coastVehicle, DAMAGE_SMOKING, DURABILITY, hurtVehicle, stepVehicle, wreckVehicle } from './vehicle.ts'
+export { ARMOR_REFERENCE, armorShare, coastFromBody, coastVehicle, writeCoast, DAMAGE_SMOKING, DURABILITY, hurtVehicle, stepVehicle, wreckVehicle } from './vehicle.ts'
 export {
   WHEEL_CORNERS,
   WHEEL_COUNT,

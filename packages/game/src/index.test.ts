@@ -18,6 +18,7 @@ import {
   respawnNearby,
   restingRideHeight,
   setCoasting,
+  writeCoasting,
   spawnHere,
   takeSeat,
   worldGravity,
@@ -404,7 +405,11 @@ describe('a car coasting in a mirror', () => {
     const upright = vdot(seat.vehicle.frame.up, up)
     // Two seconds, longer than any replay.
     for (let i = 0; i < 120; i++) advance(arena)
+    // Its frame has come along with it all the while; its body is told only once asked, as the mirror does before it is drawn.
+    const coasted = { ...seat.vehicle.frame.position }
+    writeCoasting(arena)
     const end = body.translation()
+    expect(Math.hypot(end.x - coasted.x, end.y - coasted.y, end.z - coasted.z)).toBeLessThan(1e-3)
     expect(Math.abs(Math.hypot(end.x, end.y, end.z) - height)).toBeLessThan(0.05)
     expect(angleBetween(start, end) * height).toBeGreaterThan(85)
     // As upright on the curve where it has got to as it was where it set off.

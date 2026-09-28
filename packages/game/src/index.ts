@@ -8,7 +8,9 @@ import {
   propPlacement,
   applyChassisMassProperties,
   applyWaterResponse,
+  coastFromBody,
   coastVehicle,
+  writeCoast,
   applyWorldTuning,
   createPhysicsWorld,
   pullBody,
@@ -645,6 +647,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   reshape(arena, seat, profile)
   seat.occupied = true
   seat.coasting = false
+  coastFromBody(seat.vehicle)
   clearTally(seat)
   disarm(seat)
   restAction(seat)
@@ -659,6 +662,7 @@ export function leaveSeat(arena: Arena, id: number): void {
   if (seat === undefined || !seat.occupied) return
   seat.occupied = false
   seat.coasting = false
+  coastFromBody(seat.vehicle)
   clearTally(seat)
   disarm(seat)
   restAction(seat)
@@ -669,7 +673,24 @@ export function leaveSeat(arena: Arena, id: number): void {
 export function setCoasting(arena: Arena, seat: Seat, coasting: boolean): void {
   if (!arena.mirror || seat.coasting === coasting || !seat.occupied) return
   seat.coasting = coasting
+  // Setting off from where its body is, and driven again from where it coasted to.
+  if (coasting) coastFromBody(seat.vehicle)
+  else writeCoast(seat.vehicle)
   seat.vehicle.body.setEnabled(!coasting)
+}
+
+/**
+ * Tell every coasting car's body where it has coasted to: done once before
+ * the mirror is drawn or looked at, not every step, since moving a body out
+ * of the world costs the next step as much as it would to simulate it.
+ */
+export function writeCoasting(arena: Arena): void {
+  for (const seat of arena.seats) if (seat.coasting) writeCoast(seat.vehicle)
+}
+
+/** A car's body has been put somewhere by someone else, as by a snapshot: if it coasts, it goes on from there. */
+export function movedBody(seat: Seat): void {
+  coastFromBody(seat.vehicle)
 }
 
 /** The first free seat, or nothing when the map is full. */
@@ -989,6 +1010,9 @@ function freeBananaSlot(arena: Arena): void {
 }
 
 /** How far a car takes bananas from: its magnet's reach while that pulls, and a banana's own otherwise. */
+/** The seats that may take a pickup this tick, gathered afresh each one. */
+const takers: Seat[] = []
+
 function magnetOf(seat: Seat): number {
   return seat.magnetTicks > 0 ? MAGNET_REACH : 0
 }
@@ -1002,12 +1026,15 @@ function magnetOf(seat: Seat): number {
  * takes nothing.
  */
 function collectPickups(arena: Arena): void {
-  for (const [slot, pickup] of arena.pickups.entries()) {
-    if (!pickupOut(pickup, arena.tick)) continue
+  // Who can take anything at all, in seat order, found once rather than for every slot.
+  // A car nobody drives takes nothing: it has no use for bananas or weapons.
+  takers.length = 0
+  for (const seat of arena.seats) if (seat.occupied && !seat.vehicle.wrecked && !seat.npc) takers.push(seat)
+  for (let slot = 0; slot < arena.pickups.length; slot++) {
+    const pickup = arena.pickups[slot]!
+    if (takers.length === 0 || !pickupOut(pickup, arena.tick)) continue
     const health = pickupKind(slot) === 'health'
-    for (const seat of arena.seats) {
-      // A car nobody drives takes nothing: it has no use for bananas or weapons.
-      if (!seat.occupied || seat.vehicle.wrecked || seat.npc) continue
+    for (const seat of takers) {
       if (health && seat.vehicle.damage <= 0) continue
       if (!reachesPickup(pickup, seat.vehicle.frame.position, health ? 0 : magnetOf(seat))) continue
       if (health) seat.vehicle.damage = Math.max(seat.vehicle.damage - HEALTH_MEND, 0)

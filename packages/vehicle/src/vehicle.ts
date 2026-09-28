@@ -27,7 +27,7 @@ import {
 } from '@buggies/physics'
 import { applyAirControl, applyAirStabilization, holdLevel } from './airControl.ts'
 import { addForceAlong, addTorqueAbout } from './bodyForces.ts'
-import { readChassisFrame, velocityAtPoint, type ChassisFrame } from './chassisFrame.ts'
+import { orientChassisFrame, readChassisFrame, velocityAtPoint, type ChassisFrame } from './chassisFrame.ts'
 import { WHEEL_RAY_GROUPS, isGround } from './groups.ts'
 import { NEUTRAL_INPUT, readDriverCommand, type VehicleInput } from './input.ts'
 import { updateSelfRighting } from './selfRighting.ts'
@@ -480,9 +480,6 @@ function applyYawAssist(vehicle: Vehicle, tuning: VehicleTuning): void {
   )
 }
 
-const coastAt = v3()
-const coastVelocity = v3()
-const coastSpin = v3()
 const coastUp = v3()
 const coastAround = v3()
 const coastRotation = { x: 0, y: 0, z: 0, w: 1 }
@@ -496,15 +493,27 @@ const coastRotation = { x: 0, y: 0, z: 0, w: 1 }
  * carried on as it was, and it turns on at its spin. Its wheels turn at its
  * speed, but nothing is felt for, pushed or steered. For a car far off in
  * a mirror, drawn but not worth simulating; its body is out of the world
- * while it coasts, so nothing touches it either.
+ * while it coasts, so nothing touches it either. Where it has got to is
+ * kept in its coast and its frame, and only told to the body by
+ * `writeCoast`.
  */
 export function coastVehicle(vehicle: Vehicle, tuning: VehicleTuning, input: VehicleInput, dt: number): void {
-  const { body } = vehicle
+  const { body, coast } = vehicle
+  const { at: coastAt, velocity: coastVelocity, spin: coastSpin } = coast
   readDriverCommand(vehicle.command, vehicle.wrecked ? NEUTRAL_INPUT : input)
-  vcopy(coastAt, body.translation())
-  vcopy(coastVelocity, body.linvel())
-  vcopy(coastSpin, body.angvel())
-  const turned = body.rotation()
+  // Just set coasting, or moved since by someone else: on from where the body is.
+  if (coast.fromBody) {
+    vcopy(coastAt, body.translation())
+    vcopy(coastVelocity, body.linvel())
+    vcopy(coastSpin, body.angvel())
+    const rotation = body.rotation()
+    coast.rotation.x = rotation.x
+    coast.rotation.y = rotation.y
+    coast.rotation.z = rotation.z
+    coast.rotation.w = rotation.w
+    coast.fromBody = false
+  }
+  const turned = coast.rotation
   // The rotation turned on by the spin over the step, a quaternion's own derivative: q' = q + dt/2 (w q).
   const half = dt / 2
   const ax = coastSpin.x * half
@@ -535,16 +544,41 @@ export function coastVehicle(vehicle: Vehicle, tuning: VehicleTuning, input: Veh
   vaddScaled(coastAt, coastAt, coastUp, climb * dt)
   const rotation = qmultiply(orbit, coastRotation)
   const length = Math.hypot(rotation.x, rotation.y, rotation.z, rotation.w) || 1
-  body.setTranslation(coastAt, false)
-  body.setLinvel(coastVelocity, false)
-  body.setAngvel(coastSpin, false)
-  body.setRotation({ x: rotation.x / length, y: rotation.y / length, z: rotation.z / length, w: rotation.w / length }, false)
-  readChassisFrame(vehicle.frame, body)
+  coast.rotation.x = rotation.x / length
+  coast.rotation.y = rotation.y / length
+  coast.rotation.z = rotation.z / length
+  coast.rotation.w = rotation.w / length
+  coast.unwritten = true
+  const { frame } = vehicle
+  vcopy(frame.position, coastAt)
+  frame.rotation.x = coast.rotation.x
+  frame.rotation.y = coast.rotation.y
+  frame.rotation.z = coast.rotation.z
+  frame.rotation.w = coast.rotation.w
+  vcopy(frame.linearVelocity, coastVelocity)
+  orientChassisFrame(frame)
   updateMotionState(vehicle)
   // Coasting is not being hit.
   vcopy(vehicle.lastLinearVelocity, coastVelocity)
   const roll = (vehicle.forwardSpeed / Math.max(tuning.wheelRadius, MIN_WHEEL_RADIUS)) * dt
   for (const wheel of vehicle.wheels) wheel.spin += roll
+}
+
+/** Tell a coasting car's body where coasting has got it to, if it has got anywhere since it was last told. */
+export function writeCoast(vehicle: Vehicle): void {
+  const { body, coast } = vehicle
+  if (!coast.unwritten) return
+  body.setTranslation(coast.at, false)
+  body.setRotation(coast.rotation, false)
+  body.setLinvel(coast.velocity, false)
+  body.setAngvel(coast.spin, false)
+  coast.unwritten = false
+}
+
+/** The body has been moved by someone else: a coasting car goes on from where it now is, and not from where it had coasted to. */
+export function coastFromBody(vehicle: Vehicle): void {
+  vehicle.coast.fromBody = true
+  vehicle.coast.unwritten = false
 }
 
 export function stepVehicle(
