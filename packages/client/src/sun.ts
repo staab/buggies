@@ -7,9 +7,12 @@ import { DUSK, setSunWay } from './night.ts'
 /** Where the light comes from before the planet has turned at all. */
 export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
 
-/** The sky by day and by night. */
+/** The sky by day, at sunset and sunrise, and by night. */
 const DAY_SKY = new THREE.Color('#a9cbe6')
-const NIGHT_SKY = new THREE.Color('#0b1326')
+const DUSK_SKY = new THREE.Color('#c8452a')
+const NIGHT_SKY = new THREE.Color('#000000')
+/** How much of the day there is when the sky is reddest, between the night's black and the day's blue. */
+const REDDEST = 0.45
 const SPACE = new THREE.Color('#000000')
 /**
  * How bright the sun's light is, and the sky's: the same all round the
@@ -142,11 +145,15 @@ export class Sun {
     this.disc.visible = this.glow.visible = this.daylight > 0
   }
 
-  /** Colour the sky, and the haze over the distance, by how much of the day there is where the play is; over an airless moon, black by day as by night. */
+  /**
+   * Colour the sky, and the haze over the distance, by how much of the day there is where the play is: blue by
+   * day, red near the line between day and night, and black by night; over an airless moon, black by day as by night.
+   */
   shade(scene: THREE.Scene, airless = false): void {
     const sky = scene.background instanceof THREE.Color ? scene.background : (scene.background = new THREE.Color())
     if (airless) sky.copy(SPACE)
-    else sky.copy(NIGHT_SKY).lerp(DAY_SKY, this.daylight)
+    else if (this.daylight < REDDEST) sky.lerpColors(NIGHT_SKY, DUSK_SKY, this.daylight / REDDEST)
+    else sky.lerpColors(DUSK_SKY, DAY_SKY, (this.daylight - REDDEST) / (1 - REDDEST))
     if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(sky)
   }
 

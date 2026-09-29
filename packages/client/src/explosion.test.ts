@@ -26,4 +26,16 @@ describe('explosions', () => {
     expect(explosions.object.children).toHaveLength(0)
     explosions.dispose()
   })
+
+  it('lay a shockwave ring flat on the planet wherever it goes off, across the way up there', () => {
+    const explosions = new Explosions()
+    const at = new THREE.Vector3(400, -300, 360)
+    explosions.shockwave(at, 30)
+    const ring = explosions.object.children[0] as THREE.Mesh
+    ring.updateMatrixWorld()
+    // The ring's face, its normal once laid flat, points out from the planet's middle.
+    const face = new THREE.Vector3(0, 1, 0).applyQuaternion(ring.quaternion)
+    expect(face.distanceTo(at.clone().normalize())).toBeLessThan(1e-6)
+    explosions.dispose()
+  })
 })

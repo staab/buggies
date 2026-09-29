@@ -23,6 +23,13 @@ const SHOCK = new THREE.Color('#bfe8ff')
 const FIRE = new THREE.Color('#ff9a2e')
 const SMOKE = new THREE.Color('#2b2622')
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5))
+const UP = new THREE.Vector3(0, 1, 0)
+
+/** Stand an object at a point on the planet, its y along the way up there, out from the planet's middle. */
+function standAt(object: THREE.Object3D, at: Vec3): void {
+  object.position.set(at.x, at.y, at.z)
+  if (object.position.lengthSq() > 0) object.quaternion.setFromUnitVectors(UP, object.position.clone().normalize())
+}
 
 interface Burst {
   group: THREE.Group
@@ -61,7 +68,8 @@ export class Explosions {
 
   burst(at: Vec3): void {
     const group = new THREE.Group()
-    group.position.set(at.x, at.y, at.z)
+    // Its pieces fly up, and fall back, along the way up where it goes off.
+    standAt(group, at)
     const pieceMaterial = new THREE.MeshStandardMaterial({
       color: FIRE,
       emissive: FIRE,
@@ -110,7 +118,8 @@ export class Explosions {
       depthWrite: false,
     })
     const ring = new THREE.Mesh(this.band, material)
-    ring.position.set(at.x, at.y, at.z)
+    // Flat on the ground round the car, across the way up there.
+    standAt(ring, at)
     ring.scale.setScalar(1)
     this.object.add(ring)
     this.shocks.push({ ring, material, radius, age: 0 })

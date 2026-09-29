@@ -65,6 +65,15 @@ describe('the sun', () => {
     const night = scene.background as THREE.Color
     expect(night.r + night.g + night.b).toBeLessThan(0.5)
     expect((scene.fog as THREE.Fog).color.equals(night)).toBe(true)
+    expect(night.getHexString()).toBe('000000')
+
+    // On the line between day and night, the sky is red.
+    const side = new THREE.Vector3(way.x, way.y, way.z).cross(new THREE.Vector3(0, 0, 1)).normalize()
+    sun.follow(side.clone().multiplyScalar(612), side)
+    sun.shade(scene)
+    const dusk = scene.background as THREE.Color
+    expect(dusk.r).toBeGreaterThan(dusk.g)
+    expect(dusk.r).toBeGreaterThan(dusk.b)
     sun.dispose()
   })
 
