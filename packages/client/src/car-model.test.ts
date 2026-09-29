@@ -66,8 +66,8 @@ describe('car models', () => {
       it('has its wheels on the axles, as big as the tuning says', async () => {
         const tuning = createVehicleTuning(profile)
         const { wheels } = await fitted(profile)
-        // The tank's wheels are inside its tracks, and the rocket ship rides on thrusters.
-        if (profile === 'tank' || profile === 'rocketShip') {
+        // The tank's wheels are inside its tracks.
+        if (profile === 'tank') {
           expect(wheels).toHaveLength(0)
           return
         }

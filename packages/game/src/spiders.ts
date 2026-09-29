@@ -1,6 +1,6 @@
 import { createRng, uprightRotation, v3, vdistance, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { alongGround, atHeight, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
+import { alongGround, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
 import { addMover } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
@@ -8,7 +8,7 @@ import type * as RAPIER from '@dimforge/rapier3d-compat'
 // is several times slower under the test runner's module loader, and these run hot.
 const { atan2, cos, sin } = exact
 
-/** How many giant spiders walk each island. */
+/** How many giant spiders walk each moon: none walk a planet. */
 export const SPIDERS = 1
 /** How fast it walks, in m/s, and how fast it turns, in radians a second. */
 export const SPIDER_SPEED = 2.5
@@ -22,13 +22,11 @@ export const SPIDER_REACH = 19
 export const SPIDER_BOMB_TICKS = 60 * 30
 /** How near a waypoint it has to come to have reached it. */
 const WAYPOINT_REACH = 15
-/** How many spots over the whole planet it tries for its next waypoint: most are sea, and much of the land is city. */
-const WAYPOINT_TRIES = 400
 const SPIDER_SALT = 0x5b1d
 
 /**
- * A giant spider: it strides across the island from one spot on the land
- * to the next, over whatever is in the way, high enough for a car to drive
+ * A giant spider: it strides across the moon from one spot on it to the
+ * next, over whatever is in the way, high enough for a car to drive
  * under it, and every thirty seconds lets a bomb fall from its belly. It
  * can be shot down, and comes back whole somewhere else.
  */
@@ -56,53 +54,10 @@ function spiderSeed(map: World, id: number): number {
   return (map.seed ^ SPIDER_SALT) + id * 7919
 }
 
-/** How far outside a city's suburbs a spider keeps, beyond the reach of its legs. */
-const CITY_BERTH = 20
-
-/** How far a point is inside the ground a spider keeps off around a city, or less than zero outside it. */
-function intoCity(map: World, point: Vec3): number {
-  let most = -Infinity
-  const at = atHeight(map, upOf(point), 0)
-  for (const city of map.districts) {
-    const keep = city.radius + city.suburbWidth + SPIDER_REACH + CITY_BERTH
-    most = Math.max(most, keep - vdistance(at, atHeight(map, city.center, 0)))
-  }
-  return most
-}
-
-/** Whether the straight way from one point to another keeps out of every city. */
-function clearOfCities(map: World, from: Vec3, to: Vec3): boolean {
-  const steps = Math.max(Math.ceil(vdistance(from, to) / 20), 1)
-  const between = v3()
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps
-    between.x = from.x + (to.x - from.x) * t
-    between.y = from.y + (to.y - from.y) * t
-    between.z = from.z + (to.z - from.z) * t
-    if (intoCity(map, between) > 0) return false
-  }
-  return true
-}
-
-/**
- * Where a spider walks to next: a point on the land and out of the cities,
- * picked by how many it has reached, and one it can walk straight to from
- * where it is without going through a city, when there is one to be had.
- */
-export function spiderWaypoint(map: World, id: number, legs: number, out: Vec3, from?: Vec3): Vec3 {
+/** Where a spider walks to next: a point anywhere on the moon, picked by how many it has reached. */
+export function spiderWaypoint(map: World, id: number, legs: number, out: Vec3): Vec3 {
   const rng = createRng(spiderSeed(map, id) + legs * 131)
-  const direction = v3()
-  // Failing that, the point on the land least far into a city.
-  let fallback: { at: Vec3; into: number } | null = null
-  for (let attempt = 0; attempt < WAYPOINT_TRIES; attempt++) {
-    randomDirection(rng, direction)
-    if (!onLand(map, direction)) continue
-    const at = overSurface(map, direction, 0)
-    const into = intoCity(map, at)
-    if (into <= 0 && (from === undefined || clearOfCities(map, from, at))) return copy(out, at)
-    if (fallback === null || into < fallback.into) fallback = { at, into }
-  }
-  return copy(out, fallback?.at ?? overSurface(map, map.districts[0]?.center ?? { x: 0, y: 0, z: 1 }, 0))
+  return overSurface(map, randomDirection(rng, v3()), 0, out)
 }
 
 function copy(out: Vec3, from: Vec3): Vec3 {
@@ -142,14 +97,14 @@ function faceToward(spider: Spider, point: Vec3): void {
 /** Set a spider down at a waypoint, facing the next. */
 function place(map: World, spider: Spider, legs: number): void {
   spiderWaypoint(map, spider.id, legs, spider.position)
-  spiderWaypoint(map, spider.id, spider.legs, spider.target, spider.position)
+  spiderWaypoint(map, spider.id, spider.legs, spider.target)
   faceToward(spider, spider.target)
   seatSpiderBody(spider, true)
 }
 
-/** The island's spiders, each somewhere on the land, a while from its first bomb. */
+/** The moon's spiders, each somewhere on it, a while from its first bomb; a planet has none. */
 export function createSpiders(map: World, world: RAPIER.World): Spider[] {
-  return Array.from({ length: SPIDERS }, (_, id) => {
+  return Array.from({ length: map.kind === 'moon' ? SPIDERS : 0 }, (_, id) => {
     const spider: Spider = {
       id,
       position: v3(),
@@ -178,7 +133,7 @@ const way = v3()
 export function walkSpider(map: World, spider: Spider, dt: number): boolean {
   if (vdistance(spider.target, spider.position) < WAYPOINT_REACH) {
     spider.legs += 1
-    spiderWaypoint(map, spider.id, spider.legs, spider.target, spider.position)
+    spiderWaypoint(map, spider.id, spider.legs, spider.target)
   }
   const { position, forward } = spider
   upOf(position, up)

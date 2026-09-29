@@ -1,5 +1,5 @@
 import { vdot, type Vec3 } from '@buggies/physics'
-import { atHeight, generatePlanet, heightOver, tangentFrame, upOf, type World } from '@buggies/terrain'
+import { generateMoon, generatePlanet, heightOver, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -16,6 +16,7 @@ import {
   SPIDER_BOMB_TICKS,
   SPIDER_SPEED,
   SPIDER_TARGET,
+  SPIDERS,
   ROCKET_DAMAGE,
   UFO_CRUISE,
   UFO_TARGET,
@@ -160,14 +161,23 @@ describe('the robots and the saucers', () => {
 })
 
 describe('the spider', () => {
-  // A full-size island, as the game plays on: a small one is all cities to a spider.
   let island: World
+  let planet: World
   beforeAll(async () => {
     await initPhysics()
-    island = generatePlanet(3)
+    island = generateMoon(3)
+    planet = generatePlanet(3)
   }, 120_000)
 
-  it('a spider strides across the island and lets a bomb fall every thirty seconds, but not in a mirror', () => {
+  it('walks the moon and not a planet', () => {
+    for (const [world, spiders] of [[island, SPIDERS], [planet, 0]] as const) {
+      const arena = createArena(world)
+      expect(arena.spiders).toHaveLength(spiders)
+      arena.world.free()
+    }
+  })
+
+  it('a spider strides across the moon and lets a bomb fall every thirty seconds, but not in a mirror', () => {
     for (const mirror of [false, true]) {
       const arena = createArena(island)
       arena.mirror = mirror
@@ -202,20 +212,4 @@ describe('the spider', () => {
     arena.world.free()
   }, 60_000)
 
-  it('a spider keeps out of the cities', () => {
-    const arena = createArena(island)
-    const [spider] = arena.spiders
-    const { districts } = arena.planet
-    expect(districts.length).toBeGreaterThan(0)
-    let nearest = Infinity
-    for (let i = 0; i < 60 * 60 * 10; i++) {
-      advance(arena)
-      if (i % 30 !== 0) continue
-      for (const city of districts) {
-        nearest = Math.min(nearest, apart(spider!.position, atHeight(arena.planet, city.center, 0)) - city.radius - city.suburbWidth)
-      }
-    }
-    expect(nearest).toBeGreaterThan(0)
-    arena.world.free()
-  }, 120_000)
 })

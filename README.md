@@ -50,7 +50,7 @@ A flying saucer cruises high over every island, shown in green on the mini-map. 
 
 ## Spider
 
-A giant spider, its body ten meters up on legs nearly twenty meters long, walks slowly across every island from one spot on the land to the next, keeping out of the cities, high enough for a car to drive under it between its legs. Every thirty seconds a bomb falls from its belly. It is shown in purple on the mini-map, and can be shot down as a robot can, coming back somewhere else.
+A giant spider, its body ten meters up on legs nearly twenty meters long, walks slowly across every moon from one spot to the next, high enough for a car to drive under it between its legs. Every thirty seconds a bomb falls from its belly. It is shown in purple on the mini-map, and can be shot down as a robot can, coming back somewhere else.
 
 ## Traffic
 
@@ -75,7 +75,7 @@ The fire key uses whatever the car carries.
 - **Machine gun** aims at the nearest car ahead and fires while the key is held, for five seconds in total. Its full five seconds of hits takes a third of a car's health.
 - **Bomb** drops behind the car and floats there until a car runs into it, taking a third of that car's health. Once it has landed, it goes off under the car that dropped it too.
 - **Rocket engine** pushes the car forward while the key is held, for ten seconds in total.
-- **Wings** lift the car into the air while the key is held, for ten seconds in total. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. A car carrying wings steers this way whenever it is airborne, whether or not the key is held.
+- **Wings** lift the car into the air while the key is held, for twenty seconds in total. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. A car carrying wings steers this way whenever it is airborne, whether or not the key is held.
 - **Shockwave** stuns every other car within 30 meters for five seconds.
 - **Siren** slows every other car within 30 meters by half while the key is held, for five seconds in total.
 - **Oil slick** drops a pool of oil behind the car that lasts a minute. Any car that drives into it, including the one that dropped it once it has landed, keeps a fifth of its grip while in it and for five seconds after.
@@ -101,7 +101,6 @@ Each vehicle has its own armor, which sets how much it takes from crashes and we
 - **Semi truck** honks its horn, stunning every car within 30 meters for five seconds, every five seconds.
 - **Heavy pickup** drops a bomb behind with the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
 - **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets. It fires three rockets in a fan, as the triple rocket power-up does, every thirty seconds.
-- **Rocket ship** has no wheels: it hovers on thrusters, is faster than the race car, and turns wide. Holding its key lifts it off to fly, with the pedals driving it along and the steering banking it into turns, as the wings power-up does.
 - **Amphibian** is a boat's hull on four wheels: slow on the road, but it floats, and in the water its throttle and steering drive it like a boat. It is never put back on shore. Its own key burns the car ahead with a laser while held, with the bite of the laser power-up, so it is never given the laser.
 - **Police car, ambulance and fire truck** turn their lights on or off. While the lights are on, every car within 30 meters is slowed by half. As a passive ability, none of them is slowed by sirens or lights. The ambulance also repairs 1% of its health every five seconds, the fire truck takes a tenth of the damage from bombs, and the police car takes half damage from machine guns.
 
@@ -160,4 +159,4 @@ The tests cover terrain, driving, the wire format, and a full session with two p
 
 ## Credits
 
-The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a [tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a [cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). The dune buggy, the rocket ship and the amphibian are built in code. See `CREDITS.md`.
+The vehicles are drawn with Kenney's [Car Kit](https://kenney.nl/assets/car-kit) (CC0), a [tank](https://poly.pizza/m/Dc4k4CooN3) by Quaternius (CC0) and a [cargo truck](https://poly.pizza/m/Fy3WI3uXNQ) by J-Toastie (CC BY 3.0). The dune buggy and the amphibian are built in code. See `CREDITS.md`.

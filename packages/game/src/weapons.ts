@@ -133,7 +133,7 @@ export const NOSE_UP = 0.2
  */
 export const MACHINE_GUN_AMMO_TICKS = 60 * 5
 export const ENGINE_BURN_TICKS = 60 * 10
-export const WINGS_FLIGHT_TICKS = 60 * 10
+export const WINGS_FLIGHT_TICKS = 60 * 20
 export const MACHINE_GUN_SHOT_TICKS = 6
 
 /** How hard the rocket engine pushes, in meters a second a second, fading out toward this many times the car's own top speed. */
@@ -161,8 +161,6 @@ export const WINGS_LEAN = 0.55
 export const WINGS_TURN_MIN_SPEED = 3
 export const WINGS_HOVER_TURN = 0.35
 export const WINGS_THRUST = 9
-/** How hard a car that flies of its own drives itself along in the air, in m/s². */
-export const FLY_THRUST = 24
 
 /**
  * The siren sounds this long, held, and slows every other car within this
@@ -254,7 +252,7 @@ export const MINES_DEEP = 4
  * besides whatever it carries, and as strong as the power-up it is like.
  * Nothing is mounted over the roof for it, and the HUD makes nothing of it.
  */
-export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'laser' | 'oil' | 'horn' | 'bomb' | 'tripleRocket' | 'fly'
+export type OwnActionKind = 'missile' | 'hop' | 'boost' | 'lights' | 'gun' | 'laser' | 'oil' | 'horn' | 'bomb' | 'tripleRocket'
 export interface OwnAction {
   kind: OwnActionKind
   label: string
@@ -287,13 +285,6 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
     about: 'Fires three rockets in a fan, as the triple rocket power-up does, every thirty seconds.',
     activeTicks: 0,
     cooldownTicks: 60 * 30,
-  },
-  rocketShip: {
-    kind: 'fly',
-    label: 'Fly',
-    about: 'Lifts off and flies while held: the pedals drive it along, and the steering banks it into a turn.',
-    activeTicks: 0,
-    cooldownTicks: 0,
   },
   raceCar: {
     kind: 'boost',
@@ -342,7 +333,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
   },
 }
 /** The actions that go on while the key is held. */
-const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'laser', 'fly']
+const LASTING: readonly OwnActionKind[] = ['boost', 'gun', 'laser']
 /** The hop: this much speed straight up, from the ground, which carries the kart a few meters into the air. */
 export const HOP_SPEED = 8
 /** The race car's boost: the rocket engine's push. */
@@ -390,7 +381,6 @@ export const NATURE_NOTES: Readonly<Record<VehicleProfileId, readonly string[]>>
   semi: [],
   goKart: [],
   duneBuggy: [],
-  rocketShip: ['Hovers over the ground on its thrusters, with no wheels to grip it.'],
   amphibian: ['Floats, and drives on the water like a boat: it is never taken for lost there.'],
 }
 
@@ -650,7 +640,6 @@ export const NATIVE_POWER_UPS: Readonly<Record<VehicleProfileId, readonly Weapon
   pickup: ['bomb'],
   goKart: [],
   duneBuggy: ['tripleRocket'],
-  rocketShip: ['wings'],
   amphibian: ['laser'],
 }
 
@@ -724,22 +713,21 @@ export function arm(seat: Gunner, weapon: Weapon): void {
  */
 export function burning(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): boolean {
   if (using(seat, 'engine', keys) || using(seat, 'wings', keys)) return true
-  return acting(seat, keys) && (ownAction(seat).kind === 'boost' || ownAction(seat).kind === 'fly')
+  return acting(seat, keys) && ownAction(seat).kind === 'boost'
 }
 
-/** Whether the car is held up in the air: by the wings it has won, or, for a car that flies of its own, its own key. */
+/** Whether the car is held up in the air by the wings it has won. */
 export function lifting(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): boolean {
-  return using(seat, 'wings', keys) || (acting(seat, keys) && ownAction(seat).kind === 'fly')
+  return using(seat, 'wings', keys)
 }
 
 /**
  * Whether the car has wings out: the ones it has won, with time left of
- * them, whether or not the key is held, or its own, for a car that flies.
- * A wreck has none.
+ * them, whether or not the key is held. A wreck has none.
  */
 export function winged(seat: Gunner): boolean {
   if (seat.vehicle.wrecked) return false
-  return (seat.weapon === 'wings' && seat.ammoTicks > 0) || ownAction(seat).kind === 'fly'
+  return seat.weapon === 'wings' && seat.ammoTicks > 0
 }
 
 /**
@@ -765,9 +753,8 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
   if (lifted) {
     const climb = clamp(1 - vdot(frame.linearVelocity, vehicle.up) / WINGS_CLIMB_SPEED, 0, 1)
     addForceAlong(body, vehicle.up, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
-    // The pedals drive it along, forward or back, wherever it is: harder for a car that flies of its own.
-    const thrust = ownAction(seat).kind === 'fly' && !using(seat, 'wings', command) ? FLY_THRUST : WINGS_THRUST
-    addForceAlong(body, frame.forward, tuning.mass * thrust * (command.throttle - command.brake))
+    // The pedals drive it along, forward or back, wherever it is.
+    addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
   }
   if (lifted || (vehicle.winged && vehicle.groundedCount === 0)) bank(seat)
   // Off its wings, or on the ground with them, the car has no bank to hold.

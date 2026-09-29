@@ -320,7 +320,7 @@ export class CarPresence {
     this.mount.burn(engine)
     const off = this.distance()
     this.listen(off)
-    const boosting = acting(this.seat) && (own.kind === 'boost' || own.kind === 'fly')
+    const boosting = acting(this.seat) && own.kind === 'boost'
     this.thrust?.set(engine || boosting ? 1 : 0, off)
     this.boostFlame.visible = boosting
     this.headlights.update(this.seat.vehicle.wrecked, this.seat.vehicle.frame.position)
@@ -360,8 +360,7 @@ export class CarPresence {
       smoke.trail(vehicle.frame.position, vehicle.frame.linearVelocity, smokeAmount(vehicle.damage), dt)
     }
     this.voice?.set(vehicle.wrecked ? 0 : engineRev(vehicle.speed, tuning.maxSpeed, vehicle.command.throttle), off)
-    // A ship on its thrusters has no tires to squeal.
-    this.skid?.set(vehicle.wrecked || this.seat.profile === 'rocketShip' ? 0 : skidAmount(vehicle.wheels, tuning), off)
+    this.skid?.set(vehicle.wrecked ? 0 : skidAmount(vehicle.wheels, tuning), off)
     const knock = vehicle.damage - this.lastDamage
     if (knock > 0 && !vehicle.wrecked) sound?.thud(knock / LOUD_KNOCK, off)
     this.lastDamage = vehicle.damage

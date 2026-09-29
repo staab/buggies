@@ -7,7 +7,6 @@ import {
   MAX_PLAYERS,
   NPC_CARS,
   ROBOTS,
-  SPIDERS,
   UFOS,
   armorShare,
   DURABILITY,
@@ -53,7 +52,6 @@ import {
   NO_ARRIVAL,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_ROBOT_BYTES,
-  SNAPSHOT_SPIDER_BYTES,
   SNAPSHOT_UFO_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
   decodeSnapshot,
@@ -72,9 +70,8 @@ function planetOf(seed: number): World {
   return known
 }
 
-/** What every snapshot carries whatever else changes: the header, the saucers and the spiders. There are no robots on these small islands. */
-/** What every snapshot carries while nothing else changes: the saucers, the spiders and the robots, which never stop. */
-const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES + SPIDERS * SNAPSHOT_SPIDER_BYTES + ROBOTS * SNAPSHOT_ROBOT_BYTES
+/** What every snapshot carries while nothing else changes: the saucers and the robots, which never stop. A planet has no spiders. */
+const STEADY_BYTES = SNAPSHOT_HEADER_BYTES + UFOS * SNAPSHOT_UFO_BYTES + ROBOTS * SNAPSHOT_ROBOT_BYTES
 
 /**
  * A wire made of queues. Messages are delivered when `deliver` is called,

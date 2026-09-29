@@ -75,7 +75,6 @@ const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
   goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
   duneBuggy: 'Light and springy. Bounds over everything, and keeps bouncing.',
   amphibian: 'A boat on wheels. Slow on the road, but drive it into the sea and it floats.',
-  rocketShip: 'Hovers, flies, and outruns everything. Turns like a barge.',
 }
 
 /** The pages a mode goes through: two players have two vehicles to pick. */

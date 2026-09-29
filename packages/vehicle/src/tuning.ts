@@ -1119,94 +1119,6 @@ const AMPHIBIAN_TUNING: Readonly<VehicleTuning> = Object.freeze({
   ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 
-/**
- * A rocket ship: no wheels, but four thrusters that hold it half a meter
- * over the ground, set far down from the hull and sprung smooth. It is the
- * fastest thing on the island and the worst at turning: a slow, short
- * rack, and little to hold it across its line, so it drifts wide. Its own
- * key lifts it off to fly. The thrusters give only so much however hard
- * the ground comes up at them, and the hull shrugs off the shaking they
- * pass on at speed: only a real knock is damage.
- */
-const ROCKET_SHIP_TUNING: Readonly<VehicleTuning> = Object.freeze({
-  chassisHalfWidth: 1.0,
-  chassisHalfHeight: 0.45,
-  chassisHalfLength: 2.4,
-  mass: 1100,
-  centerOfMassOffsetY: -0.9,
-  centerOfMassOffsetZ: 0.0,
-
-  halfTrackWidth: 0.9,
-  frontAxleZ: -1.4,
-  rearAxleZ: 1.4,
-  suspensionMountY: -0.1,
-  wheelRadius: 0.9,
-
-  suspensionRestLength: 0.35,
-  suspensionStiffness: 30000,
-  suspensionDamping: 5000,
-  maxSuspensionForce: 24000,
-  bumpStopStiffness: 220000,
-  antiRollStiffnessFront: 30000,
-  antiRollStiffnessRear: 30000,
-
-  groundStickRange: 0.3,
-  groundStickStiffness: 8000,
-  groundStickLiftSpeed: 5.0,
-
-  maxSteerAngle: 0.36,
-  steerRate: 3.0,
-  steerReturnRate: 4.0,
-  steerAtHighSpeed: 0.35,
-  steerFalloffMinSpeed: 12,
-  steerFalloffMaxSpeed: 80,
-  counterSteerSlipMin: 0.3,
-  counterSteerAuthority: 0.4,
-
-  engineForce: 26000,
-  driveSplit: 0.5,
-  maxSpeed: 150,
-  brakeForce: 22000,
-  handbrakeForce: 6000,
-  reverseForceScale: 0.5,
-  reverseSpeedThreshold: 0.5,
-  rollingResistance: 5,
-  dragCoefficient: 1.1,
-
-  lateralPeakSlip: 2.2,
-  lateralPeakGrip: 1.7,
-  lateralPlateauEndSlip: 5.0,
-  lateralFalloffRange: 9,
-  lateralTailGrip: 0.9,
-  longitudinalGrip: 2.2,
-  frictionCircleGrip: 2.3,
-  handbrakeRearGripFraction: 0.4,
-  rearLateralGripScale: 0.95,
-
-  downforce: 1.4,
-  yawAssistTorque: 2200,
-  yawAssistMinSpeed: 1.5,
-  yawAssistFullSpeed: 14,
-  yawAssistSlipCutoff: 0.6,
-
-  airPitchTorque: 5000,
-
-  airLevelTorque: 22000,
-  airLevelDamping: 7500,
-  airLevelEngageDelay: 0.06,
-  impactSpeedChange: 4,
-  impactTumbleTime: 2.5,
-  damageAcceleration: 250,
-  damageToWreck: 90,
-  airLevelInputYield: 0.35,
-  airLevelLandingCastDistance: 20,
-  airLevelLandingLookahead: 0.35,
-  airLevelLandingBoostMax: 3.2,
-
-  ...selfRightTuning(1100),
-  ...SHARED_DAMPING_TUNING,
-} satisfies VehicleTuning)
-
 export type VehicleProfileId =
   | 'raceCar'
   | 'police'
@@ -1220,7 +1132,6 @@ export type VehicleProfileId =
   | 'goKart'
   | 'duneBuggy'
   | 'amphibian'
-  | 'rocketShip'
 
 export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
   'sportsCar',
@@ -1234,7 +1145,6 @@ export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
   'semi',
   'goKart',
   'duneBuggy',
-  'rocketShip',
   'amphibian',
 ]
 
@@ -1251,7 +1161,6 @@ export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> 
   goKart: 'Go-kart',
   duneBuggy: 'Dune buggy',
   amphibian: 'Amphibian',
-  rocketShip: 'Rocket ship',
 })
 
 export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<VehicleTuning>>> = Object.freeze({
@@ -1267,7 +1176,6 @@ export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<Vehicl
   goKart: GO_KART_TUNING,
   duneBuggy: DUNE_BUGGY_TUNING,
   amphibian: AMPHIBIAN_TUNING,
-  rocketShip: ROCKET_SHIP_TUNING,
 })
 
 export const DEFAULT_VEHICLE_PROFILE: VehicleProfileId = 'sportsCar'
