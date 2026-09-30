@@ -9,10 +9,11 @@ export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
 
 /** The sky by day, at sunset and sunrise, and by night. */
 const DAY_SKY = new THREE.Color('#a9cbe6')
-const DUSK_SKY = new THREE.Color('#c8452a')
+// A soft peach-pink, not a red: the sunset is a tint on the blue, not a fire.
+const DUSK_SKY = new THREE.Color('#e3b4a6')
 const NIGHT_SKY = new THREE.Color('#000000')
-/** How much of the day there is when the sky is reddest, between the night's black and the day's blue. */
-const REDDEST = 0.45
+/** How much of the day there is when the sky is pinkest, between the night's black and the day's blue. */
+const PINKEST = 0.45
 const SPACE = new THREE.Color('#000000')
 /**
  * How bright the sun's light is, and the sky's: the same all round the
@@ -147,13 +148,13 @@ export class Sun {
 
   /**
    * Colour the sky, and the haze over the distance, by how much of the day there is where the play is: blue by
-   * day, red near the line between day and night, and black by night; over an airless moon, black by day as by night.
+   * day, a pale pink near the line between day and night, and black by night; over an airless moon, black by day as by night.
    */
   shade(scene: THREE.Scene, airless = false): void {
     const sky = scene.background instanceof THREE.Color ? scene.background : (scene.background = new THREE.Color())
     if (airless) sky.copy(SPACE)
-    else if (this.daylight < REDDEST) sky.lerpColors(NIGHT_SKY, DUSK_SKY, this.daylight / REDDEST)
-    else sky.lerpColors(DUSK_SKY, DAY_SKY, (this.daylight - REDDEST) / (1 - REDDEST))
+    else if (this.daylight < PINKEST) sky.lerpColors(NIGHT_SKY, DUSK_SKY, this.daylight / PINKEST)
+    else sky.lerpColors(DUSK_SKY, DAY_SKY, (this.daylight - PINKEST) / (1 - PINKEST))
     if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(sky)
   }
 

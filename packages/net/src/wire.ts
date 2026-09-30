@@ -72,7 +72,7 @@ export const SNAPSHOT_REMOVED_BYTES = 2
 export const SNAPSHOT_ROCKET_BYTES = 25
 export const SNAPSHOT_PROP_BYTES = 33
 export const SNAPSHOT_ROBOT_BYTES = 16
-export const SNAPSHOT_UFO_BYTES = 25
+export const SNAPSHOT_UFO_BYTES = 41
 export const SNAPSHOT_SPIDER_BYTES = 47
 
 /** What a goal is, by the byte that says so: none first. */
@@ -199,6 +199,8 @@ export interface UfoSnapshot {
   abductions: number
   damage: number
   deaths: number
+  velocity: Vec3
+  climb: number
 }
 
 /** A giant spider, as the server has it. */
@@ -854,6 +856,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(ufo.abductions & 0xffff)
     writer.u8(Math.round(Math.min(Math.max(ufo.damage, 0), 1) * 255))
     writer.u8(ufo.deaths & 0xff)
+    writer.vec3(ufo.velocity)
+    writer.f32(ufo.climb)
   }
   for (const spider of message.spiders) {
     writer.u8(spider.id)
@@ -1061,6 +1065,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       abductions: reader.u16(),
       damage: reader.u8() / 255,
       deaths: reader.u8(),
+      velocity: reader.vec3(),
+      climb: reader.f32(),
     })
   }
   const spiders: SpiderSnapshot[] = []

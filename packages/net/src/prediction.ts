@@ -458,6 +458,8 @@ export class LocalPrediction {
       ufo.abductions = known.abductions
       ufo.damage = known.damage
       ufo.deaths = known.deaths
+      vcopy(ufo.velocity, known.velocity)
+      ufo.climb = known.climb
     }
     for (const known of snapshot.spiders) {
       const spider = this.mirror.spiders[known.id]

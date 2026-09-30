@@ -68,15 +68,24 @@ export class ArenaView {
     )
   }
 
-  /** A frame on: after the cars have fed the effects, so that what they gave off this frame is seen. */
-  update(dt: number): void {
+  /** After a step of the simulation: what is drawn between steps takes note of where it got to. */
+  captureStep(): void {
+    this.ufos.captureStep()
+  }
+
+  /**
+   * A frame on: after the cars have fed the effects, so that what they gave
+   * off this frame is seen. `fraction` is how far the frame is from the last
+   * step to the next, for what is drawn between steps.
+   */
+  update(dt: number, fraction?: number): void {
     this.pickups.update(dt)
     this.tracers.fire(this.source.shots, this.source.tick)
     this.tracers.update(dt)
     this.rockets.update(dt)
     this.props.update()
     this.robots.update(dt)
-    this.ufos.update(dt)
+    this.ufos.update(dt, fraction)
     this.spiders.update(dt)
     this.smoke.update(dt)
     this.explosions.update(dt)

@@ -294,6 +294,8 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
       abductions: 0,
       damage: 0,
       deaths: 0,
+      velocity: v3(),
+      climb: 0,
     })
     entry.id = ufo.id
     vcopy(entry.position, ufo.position)
@@ -305,6 +307,8 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
     entry.abductions = ufo.abductions
     entry.damage = ufo.damage
     entry.deaths = ufo.deaths
+    vcopy(entry.velocity, ufo.velocity)
+    entry.climb = ufo.climb
   })
   ufos.length = arena.ufos.length
   return ufos

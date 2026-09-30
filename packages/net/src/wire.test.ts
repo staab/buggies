@@ -168,6 +168,8 @@ const snapshot: SnapshotMessage = {
       abductions: 2,
       damage: 0,
       deaths: 1,
+      velocity: { x: 12.5, y: -0.5, z: 2.25 },
+      climb: -3.25,
     },
   ],
   spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, forward: { x: 0, y: 0.5, z: -0.75 }, legs: 4, target: { x: 1000.5, y: -2.5, z: 700.25 }, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],

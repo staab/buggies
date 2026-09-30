@@ -118,4 +118,30 @@ describe('jumps', () => {
     expect(leveled.lowestUp).toBeGreaterThan(0.5)
     expect(leveled.landedUp).toBeGreaterThan(0.85)
   })
+
+  it('lands a car coming down hard and lets it roll on, rather than dragging it to a stop on its belly', () => {
+    for (const profile of ['raceCar', 'sportsCar', 'goKart'] as const) {
+      const tuning = createVehicleTuning(profile)
+      const world = createPhysicsWorld()
+      addHeightfield(world, runway(() => 0))
+      // Twelve meters up, rolling at 30 m/s, nothing asked of it: far harder than the springs can take.
+      const vehicle = createVehicle(world, tuning, levelSpawn({ x: (WIDTH * CELL) / 2, y: 12, z: 1150 }, 0))
+      world.step()
+      vehicle.body.setLinvel({ x: 0, y: 0, z: -30 }, true)
+      let landed = -1
+      let before = 0
+      for (let tick = 0; tick < 60 * 5; tick++) {
+        stepVehicle(world, vehicle, tuning, NEUTRAL_INPUT, FIXED_TIMESTEP)
+        world.step()
+        if (landed < 0 && vehicle.groundedCount > 0) {
+          landed = tick
+          before = -vehicle.body.linvel().z
+        }
+        if (landed >= 0 && tick - landed === 60) break
+      }
+      // A second after touching down, no more lost than a second of coasting on the flat would cost it.
+      expect(before - -vehicle.body.linvel().z).toBeLessThan(6)
+      world.free()
+    }
+  })
 })

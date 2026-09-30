@@ -7,7 +7,7 @@ import { nearestRoadSpotTo } from './spawns.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { atan2, cos, sin } = exact
+const { atan2 } = exact
 
 /** How many flying saucers each island has. */
 export const UFOS = 1
@@ -40,6 +40,15 @@ const UFO_LOWER_SPEED = 4
 const UFO_LET_GO = 0.8
 /** How near a waypoint it has to come to have reached it. */
 const WAYPOINT_REACH = 12
+/**
+ * How fast it can change its speed over the ground and its climb, in m/s²,
+ * and how quickly it eases into a height it has all but reached, a share a
+ * second: it has weight, gathering way and slowing into where it is going,
+ * so that nothing it carries is snatched from one speed to another.
+ */
+const UFO_ACCELERATION = 12
+const UFO_CLIMB_ACCELERATION = 10
+const UFO_SETTLE = 3
 const UFO_SALT = 0x5a0c
 
 /** What it is doing: cruising between waypoints, closing on a car, lifting one up its beam, carrying it off, or letting it down. */
@@ -67,6 +76,9 @@ export interface Ufo {
   /** How much of what brings it down it has taken, 0 to 1, and how many times it has been brought down, which picks where it comes back. */
   damage: number
   deaths: number
+  /** How fast and which way it is going over the ground, and how fast it is climbing (or, below nothing, sinking), in m/s. */
+  readonly velocity: Vec3
+  climb: number
 }
 
 /** What a saucer needs of a car: where it is, whether it can be taken, and the car itself for the beam to pull. */
@@ -153,6 +165,8 @@ export function createUfos(map: World): Ufo[] {
       abductions: 0,
       damage: 0,
       deaths: 0,
+      velocity: v3(),
+      climb: 0,
     }
     const start = waypoint(map, { ...ufo, legs: -1 }, v3())
     atHeight(map, upOf(start), groundAt(map, start) + UFO_CRUISE, ufo.position)
@@ -163,10 +177,19 @@ export function createUfos(map: World): Ufo[] {
 const from = v3()
 const toward = v3()
 
+/** A rate moved toward another by no more than a step. */
+function approach(rate: number, wanted: number, step: number): number {
+  return rate + Math.min(Math.max(wanted - rate, -step), step)
+}
+
+const wantedVelocity = v3()
+
 /**
- * Move a saucer round the planet toward over a point at this speed, and
- * toward this height over the planet's radius at this climb rate. How far
- * it had to go, along the ground.
+ * Move a saucer round the planet toward over a point at up to this speed,
+ * and toward this height over the planet's radius at up to this climb rate:
+ * gathering way and slowing into both no harder than it can, so it comes to
+ * a stop over the point and eases into the height. How far it had to go,
+ * along the ground.
  */
 function fly(map: World, ufo: Ufo, point: Vec3, height: number, speed: number, dt: number, climb = UFO_CLIMB): number {
   upOf(ufo.position, from)
@@ -177,17 +200,35 @@ function fly(map: World, ufo: Ufo, point: Vec3, height: number, speed: number, d
   const aside = Math.sqrt(vdot(toward, toward))
   const angle = atan2(aside, dot)
   const distance = angle * map.radius
-  const turn = Math.min(distance, speed * dt) / map.radius
+  // Wanting to go that way no faster than it could stop from in the way left, settling the last of it.
+  const pace = Math.min(speed, Math.sqrt(2 * UFO_ACCELERATION * distance), distance * UFO_SETTLE)
+  const scale = aside > 1e-9 ? pace / aside : 0
+  wantedVelocity.x = toward.x * scale
+  wantedVelocity.y = toward.y * scale
+  wantedVelocity.z = toward.z * scale
+  // Its way kept along the ground where it now is, then turned toward what it wants no harder than it can.
+  const { velocity } = ufo
+  vaddScaled(velocity, velocity, from, -vdot(velocity, from))
+  const dx = wantedVelocity.x - velocity.x
+  const dy = wantedVelocity.y - velocity.y
+  const dz = wantedVelocity.z - velocity.z
+  const change = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  const most = UFO_ACCELERATION * dt
+  const share = change > most ? most / change : 1
+  velocity.x += dx * share
+  velocity.y += dy * share
+  velocity.z += dz * share
   const reached = heightOver(map, ufo.position)
   const rise = height - reached
-  const next = reached + Math.sign(rise) * Math.min(Math.abs(rise), climb * dt)
-  if (aside > 1e-9) {
-    const c = cos(turn)
-    const s = sin(turn) / aside
-    from.x = from.x * c + toward.x * s
-    from.y = from.y * c + toward.y * s
-    from.z = from.z * c + toward.z * s
-  }
+  // Likewise up and down, and settling the last of the way rather than stopping on the spot.
+  const wanted = Math.sign(rise) * Math.min(climb, Math.sqrt(2 * UFO_CLIMB_ACCELERATION * Math.abs(rise)), Math.abs(rise) * UFO_SETTLE)
+  ufo.climb = approach(ufo.climb, wanted, UFO_CLIMB_ACCELERATION * dt)
+  const next = reached + ufo.climb * dt
+  // On round the planet the way it is going, as far as it goes in the step.
+  const r = map.radius
+  from.x += (velocity.x * dt) / r
+  from.y += (velocity.y * dt) / r
+  from.z += (velocity.z * dt) / r
   atHeight(map, upOf(from, from), next, ufo.position)
   return distance
 }
@@ -400,6 +441,8 @@ export function released(ufo: Ufo): void {
 export function rebuildUfo(map: World, ufo: Ufo): void {
   ufo.deaths += 1
   ufo.damage = 0
+  ufo.velocity.x = ufo.velocity.y = ufo.velocity.z = 0
+  ufo.climb = 0
   const at = waypoint(map, { ...ufo, legs: 50000 + ufo.deaths * 13 }, v3())
   atHeight(map, upOf(at), groundAt(map, at) + UFO_CRUISE, ufo.position)
   giveUp(ufo, UFO_COOLDOWN_TICKS)

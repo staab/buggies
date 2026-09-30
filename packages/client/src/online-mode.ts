@@ -247,13 +247,14 @@ export async function joinOnline(
         from.z = before.z
         if (car.tick(client.pump(input), others) === 'resynced') chaseSnapped = false
         else if (crossed < 0) crossed = portalCrossed(map, from, prediction.ownSeat.vehicle.frame.position)
+        arena.captureStep()
         owed -= FIXED_TIMESTEP
       }
       others.render(owed / FIXED_TIMESTEP, dt)
       car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction))
       car.presence.hookAt(hookPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
-      arena.update(dt)
+      arena.update(dt, owed / FIXED_TIMESTEP)
       const own = prediction.ownSeat
       if (own.goalsWon !== goalsWon) {
         goalsWon = own.goalsWon

@@ -49,8 +49,18 @@ describe('flying saucers', () => {
     let jump = 0
     let last = { ...before }
     let carried = false
+    // How the saucer's own velocity changes from one step to the next, while it has the car.
+    let flown = { ...ufo!.position }
+    let velocity: { x: number; y: number; z: number } | null = null
+    let lurch = 0
     for (let i = 0; i < 60 * 90 && ufo!.abductions === 0; i++) {
       advance(arena)
+      const moved = { x: (ufo!.position.x - flown.x) * 60, y: (ufo!.position.y - flown.y) * 60, z: (ufo!.position.z - flown.z) * 60 }
+      flown = { ...ufo!.position }
+      if (ufo!.state === 'lift' || ufo!.state === 'carry' || ufo!.state === 'lower') {
+        if (velocity !== null) lurch = Math.max(lurch, Math.hypot(moved.x - velocity.x, moved.y - velocity.y, moved.z - velocity.z))
+        velocity = moved
+      }
       const now = seat.vehicle.frame.position
       if (ufo!.state === 'lift') lifted = Math.max(lifted, over(now, before))
       if (ufo!.state === 'carry') carried = true
@@ -66,6 +76,8 @@ describe('flying saucers', () => {
     expect(carried).toBe(true)
     expect(lifted).toBeGreaterThan(2)
     expect(jump).toBeLessThan(UFO_CARRY_SPEED / 60 + 0.5)
+    // It gathers way and slows as something with weight does: never snatched from one speed to another.
+    expect(lurch).toBeLessThan(1)
     expect(Math.sqrt(fastest)).toBeGreaterThan(UFO_CARRY_SPEED / 2)
     expect(apart(seat.vehicle.frame.position, before)).toBeGreaterThan(50)
     // Let down onto the road, and settled on it a moment later, whole.

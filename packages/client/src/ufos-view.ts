@@ -63,7 +63,14 @@ interface Shown {
   beam: THREE.Mesh
   /** How many times it had been brought down when last drawn. */
   deaths: number
+  /** Where it was at the step before last and at the last, to draw between as the frames fall between steps. */
+  readonly before: THREE.Vector3
+  readonly after: THREE.Vector3
 }
+
+/** A saucer that has moved further than this in a step has been put somewhere, not flown there: it is drawn there at once. */
+const LARGEST_STEP = 20
+const drawn = new THREE.Vector3()
 
 const STILL = { x: 0, y: 0, z: 0 }
 const turn = new THREE.Quaternion()
@@ -87,15 +94,39 @@ export class UfosView {
     this.update(0)
   }
 
-  update(dt: number): void {
+  /** After a step of the simulation: where each saucer has got to, to draw between it and where it was. */
+  captureStep(): void {
+    for (const ufo of this.source.ufos) {
+      const view = this.viewOf(ufo)
+      view.before.copy(view.after)
+      view.after.set(ufo.position.x, ufo.position.y, ufo.position.z)
+      if (view.before.distanceTo(view.after) > LARGEST_STEP) view.before.copy(view.after)
+    }
+  }
+
+  private viewOf(ufo: Ufo): Shown {
+    let view = this.shown.get(ufo.id)
+    if (view === undefined) {
+      const at = new THREE.Vector3(ufo.position.x, ufo.position.y, ufo.position.z)
+      view = { ...buildUfo(), deaths: ufo.deaths, before: at.clone(), after: at }
+      this.shown.set(ufo.id, view)
+      this.object.add(view.model)
+    }
+    return view
+  }
+
+  /**
+   * A frame on, `fraction` of the way from the last step to the next: each
+   * saucer drawn that far between where the last two steps had it, as the
+   * cars are, so one carrying a car moves as smoothly as the car under it.
+   * Where nothing steps it, it is drawn where the simulation has it.
+   */
+  update(dt: number, fraction?: number): void {
     this.time += dt
     for (const ufo of this.source.ufos) {
-      let view = this.shown.get(ufo.id)
-      if (view === undefined) {
-        view = { ...buildUfo(), deaths: ufo.deaths }
-        this.shown.set(ufo.id, view)
-        this.object.add(view.model)
-      }
+      const view = this.viewOf(ufo)
+      if (fraction === undefined) drawn.set(ufo.position.x, ufo.position.y, ufo.position.z)
+      else drawn.lerpVectors(view.before, view.after, fraction)
       // Brought down since: it blows up where it was, and comes back elsewhere.
       if (ufo.deaths !== view.deaths) {
         view.deaths = ufo.deaths
@@ -104,14 +135,14 @@ export class UfosView {
         if (this.ear !== null) this.effects?.sound?.boom(distanceFrom(this.ear, where))
       }
       // Spinning slowly about its way up.
-      standOn(view.model, ufo.position)
+      standOn(view.model, drawn)
       view.model.quaternion.multiply(turn.setFromAxisAngle(Y, this.time * 0.6))
       if (ufo.damage > MACHINE_SMOKING) this.effects?.smoke.trail(view.model.position, STILL, (ufo.damage - MACHINE_SMOKING) * 2, dt)
       const lit = Math.floor(this.time * BLINK_RATE) % view.lights.length
       view.lights.forEach((light, k) => light.color.set(k === lit || (k + view.lights.length / 2) % view.lights.length === lit ? '#ffffff' : '#ffb020'))
       view.beam.visible = ufo.state === 'lift' || ufo.state === 'carry' || ufo.state === 'lower'
       if (view.beam.visible) {
-        view.beam.scale.set(1, this.planet === null ? 20 : Math.max(overGround(this.planet, ufo.position), 1), 1)
+        view.beam.scale.set(1, this.planet === null ? 20 : Math.max(overGround(this.planet, drawn), 1), 1)
       }
     }
   }

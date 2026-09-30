@@ -12,7 +12,14 @@ import { worldGravity } from './world.ts'
 export const WHEEL_COUNT = 4
 export const WHEELS_PER_AXLE = 2
 
-const CHASSIS_FRICTION = 0.4
+/**
+ * The body slides on whatever it touches, the lower of its figure and the
+ * other's: the tires are what grip, not the chassis. A car coming down
+ * harder than its springs can take, or bottoming over a crest, glances off
+ * the ground on its belly and rolls on, rather than being dragged to a stop
+ * by the friction of the blow.
+ */
+const CHASSIS_FRICTION = 0.1
 const CHASSIS_RESTITUTION = 0.1
 const DENSITY_FROM_EXPLICIT_MASS_ONLY = 0
 const MIN_SPRING_RATE = 1e-3
@@ -332,6 +339,7 @@ export function createVehicle(world: RAPIER.World, tuning: VehicleTuning, spawn:
       .setTranslation(0, (tuning.hullLift ?? 0) / 2, 0)
       .setDensity(DENSITY_FROM_EXPLICIT_MASS_ONLY)
       .setFriction(CHASSIS_FRICTION)
+      .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
       .setRestitution(CHASSIS_RESTITUTION),
     body,
   )
