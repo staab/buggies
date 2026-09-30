@@ -1,4 +1,4 @@
-import { NATURE_NOTES, OWN_ACTIONS, VEHICLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
+import { NATURE_NOTES, OWN_ACTIONS, PLAYABLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
 import type { RoomSummary } from '@buggies/net'
 
 import { modelCredits } from './car-model.ts'
@@ -75,6 +75,7 @@ const VEHICLE_NOTES: Record<VehicleProfileId, string> = {
   goKart: 'An inch off the road. Turns on a coin, breaks if you look at it.',
   duneBuggy: 'Light and springy. Bounds over everything, and keeps bouncing.',
   amphibian: 'A boat on wheels. Slow on the road, but drive it into the sea and it floats.',
+  moonRover: 'Wanders the moon by itself.',
 }
 
 /** The pages a mode goes through: two players have two vehicles to pick. */
@@ -227,7 +228,7 @@ export class Menu {
     // spot beside the panel. One page serves both drivers in turn.
     const [vehicleGroup, vehicleCards, vehicleLegend] = group('Vehicle')
     this.vehicleLegend = vehicleLegend
-    for (const vehicle of VEHICLE_PROFILE_IDS) {
+    for (const vehicle of PLAYABLE_PROFILE_IDS) {
       const button = card(VEHICLE_PROFILE_LABELS[vehicle], VEHICLE_NOTES[vehicle])
       button.addEventListener('click', () => {
         this.pick({ [vehicleKey(this.step)]: vehicle })

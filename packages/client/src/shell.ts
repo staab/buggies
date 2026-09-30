@@ -57,6 +57,7 @@ export interface ShellModes {
     sound: Sound,
     sun: Sun,
     arrival?: number,
+    passes?: readonly number[],
   ): Promise<ModeView>
 }
 
@@ -329,10 +330,12 @@ export class Shell implements MenuHost {
     const link = portalLink(map, this.cameFrom)
     if (!isMoon(map.seed)) this.cameFrom = through
     const stamp = ++this.generation
+    // Taken before the game is let go, so that what everyone holds goes through with them.
+    const passes = game.mode.passes?.() ?? []
     this.setGame(null)
     this.notice(isMoon(link.to) ? 'through the portal to the moon...' : 'back through the portal...')
     try {
-      const mode = await this.modes.play(this.scene, this.server, link.to, playersFor(game.choice), (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival)
+      const mode = await this.modes.play(this.scene, this.server, link.to, playersFor(game.choice), (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, passes)
       if (stamp !== this.generation) {
         mode.dispose()
         return

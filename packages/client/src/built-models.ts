@@ -99,6 +99,78 @@ export function buildDuneBuggy(tuning: VehicleTuning): THREE.Group {
 }
 
 /**
+ * A moon rover: a low flat deck on four wire wheels out at the corners
+ * under their fenders, two seats with the controls between them, and a
+ * high-gain dish on a mast behind, turned up at the sky.
+ */
+export function buildMoonRover(tuning: VehicleTuning): THREE.Group {
+  const group = new THREE.Group()
+  const w = tuning.chassisHalfWidth
+  const l = tuning.chassisHalfLength
+  const r = tuning.wheelRadius
+  const frame = material('#b8b3a6', { metalness: 0.6, roughness: 0.4 })
+  const foil = material('#d6a93a', { metalness: 0.9, roughness: 0.3 })
+  const fender = material('#8c8f94', { metalness: 0.4, roughness: 0.5 })
+  const seat = material('#4a5968', { roughness: 0.9 })
+  const dish = material('#ecebe6', { metalness: 0.3, roughness: 0.4, side: THREE.DoubleSide })
+  const mesh = material('#7a7568', { metalness: 0.8, roughness: 0.5, side: THREE.DoubleSide })
+  const hub = material('#3a3c40', { metalness: 0.6, roughness: 0.4 })
+
+  const deck = r * 1.1
+  // The deck, wrapped in foil at the middle, and the fenders arched over the wheels.
+  group.add(box([w, 0.1, l * 1.9], [0, deck, 0], frame))
+  group.add(box([w * 0.9, 0.3, l * 0.9], [0, deck - 0.2, 0], foil))
+  for (const x of [-1, 1]) {
+    for (const z of [-tuning.frontAxleZ, -tuning.rearAxleZ]) {
+      group.add(box([0.4, 0.05, r * 1.8], [x * tuning.halfTrackWidth, r * 2.15, z], fender))
+    }
+  }
+  // Two seats, and the console between them.
+  for (const side of [-1, 1]) {
+    group.add(box([0.5, 0.08, 0.5], [side * w * 0.35, deck + 0.1, -l * 0.1], seat))
+    group.add(box([0.5, 0.5, 0.08], [side * w * 0.35, deck + 0.35, -l * 0.35], seat))
+    group.add(tube(new THREE.Vector3(side * w * 0.6, deck, -l * 0.1), new THREE.Vector3(side * w * 0.6, deck + 0.35, -l * 0.1), 0.03, frame))
+  }
+  group.add(tube(new THREE.Vector3(0, deck, l * 0.2), new THREE.Vector3(0, deck + 0.6, l * 0.3), 0.04, frame))
+  group.add(box([0.35, 0.25, 0.08], [0, deck + 0.7, l * 0.32], frame))
+  // The mast and dish, on the front, looking up and ahead; and a small camera on a stalk.
+  const mastFoot = new THREE.Vector3(-w * 0.45, deck, l * 0.5)
+  const mastTop = new THREE.Vector3(-w * 0.45, deck + 1.3, l * 0.5)
+  group.add(tube(mastFoot, mastTop, 0.035, frame))
+  const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 6, 0, Math.PI * 2, 0, 0.6), dish)
+  bowl.position.copy(mastTop)
+  bowl.rotation.x = 0.5
+  group.add(bowl)
+  group.add(tube(new THREE.Vector3(w * 0.45, deck, l * 0.8), new THREE.Vector3(w * 0.45, deck + 0.8, l * 0.8), 0.03, frame))
+  group.add(box([0.22, 0.16, 0.25], [w * 0.45, deck + 0.9, l * 0.8], hub))
+  // The battery boxes on the back.
+  group.add(box([w * 1.1, 0.35, 0.45], [0, deck + 0.22, -l * 0.8], foil))
+
+  // Four open wire wheels, a mesh tread round spokes.
+  const tread = new THREE.CylinderGeometry(r, r, 0.32, 20, 1, true).rotateZ(Math.PI / 2)
+  const spoke = new THREE.BoxGeometry(0.04, r * 1.9, 0.06)
+  const middle = new THREE.CylinderGeometry(r * 0.25, r * 0.25, 0.3, 10).rotateZ(Math.PI / 2)
+  for (const [name, x, z] of [
+    ['wheel-front-left', 1, -tuning.frontAxleZ],
+    ['wheel-front-right', -1, -tuning.frontAxleZ],
+    ['wheel-back-left', 1, -tuning.rearAxleZ],
+    ['wheel-back-right', -1, -tuning.rearAxleZ],
+  ] as const) {
+    const wheel = new THREE.Group()
+    wheel.name = name
+    wheel.position.set(x * tuning.halfTrackWidth, r, z)
+    wheel.add(new THREE.Mesh(tread, mesh), new THREE.Mesh(middle, hub))
+    for (let i = 0; i < 3; i++) {
+      const bar = new THREE.Mesh(spoke, frame)
+      bar.rotation.x = (i * Math.PI) / 3
+      wheel.add(bar)
+    }
+    group.add(wheel)
+  }
+  return group
+}
+
+/**
  * An amphibian: a boat's hull, its bow forward, a dark band along its
  * waterline and a pale deck, a wheelhouse amidships with its glass and
  * roof, and four wheels half tucked into the hull's sides.

@@ -23,6 +23,8 @@ export { updateSelfRighting } from './selfRighting.ts'
 export { addHeightfield, addWall, addTerrain } from './terrain.ts'
 export {
   DEFAULT_VEHICLE_PROFILE,
+  NPC_ONLY_PROFILES,
+  PLAYABLE_PROFILE_IDS,
   VEHICLE_PROFILES,
   VEHICLE_PROFILE_IDS,
   VEHICLE_PROFILE_LABELS,

@@ -279,6 +279,7 @@ export const OWN_ACTIONS: Readonly<Record<VehicleProfileId, OwnAction>> = {
     cooldownTicks: 60 * 8,
   },
   goKart: { kind: 'hop', label: 'Hop', about: 'Jumps into the air whenever the kart is on the ground.', activeTicks: 6, cooldownTicks: 0 },
+  moonRover: { kind: 'hop', label: 'Hop', about: 'Jumps into the air whenever the rover is on the ground.', activeTicks: 6, cooldownTicks: 0 },
   duneBuggy: {
     kind: 'tripleRocket',
     label: 'Triple rocket',
@@ -382,6 +383,7 @@ export const NATURE_NOTES: Readonly<Record<VehicleProfileId, readonly string[]>>
   goKart: [],
   duneBuggy: [],
   amphibian: ['Floats, and drives on the water like a boat: it is never taken for lost there.'],
+  moonRover: [],
 }
 
 /** Whether a siren or lights slow a vehicle: not an emergency vehicle. */
@@ -641,6 +643,7 @@ export const NATIVE_POWER_UPS: Readonly<Record<VehicleProfileId, readonly Weapon
   goKart: [],
   duneBuggy: ['tripleRocket'],
   amphibian: ['laser'],
+  moonRover: [],
 }
 
 /** What a vehicle can win: everything but what it has of its own. */

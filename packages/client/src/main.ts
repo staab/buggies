@@ -1,6 +1,6 @@
 import {
   DEFAULT_VEHICLE_PROFILE,
-  VEHICLE_PROFILE_IDS,
+  PLAYABLE_PROFILE_IDS,
   initPhysics,
   type VehicleProfileId,
 } from '@buggies/game'
@@ -78,13 +78,13 @@ function readChoice(): Choice {
   const mode: Mode = params.get('mode') === 'duo' ? 'duo' : 'solo'
   const profile = (name: string, fallback: VehicleProfileId): VehicleProfileId => {
     const given = params.get(name)
-    return VEHICLE_PROFILE_IDS.includes(given as VehicleProfileId) ? (given as VehicleProfileId) : fallback
+    return PLAYABLE_PROFILE_IDS.includes(given as VehicleProfileId) ? (given as VehicleProfileId) : fallback
   }
   return {
     mode,
     seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
     vehicle: profile('vehicle', DEFAULT_VEHICLE_PROFILE),
-    vehicle2: profile('vehicle2', VEHICLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE),
+    vehicle2: profile('vehicle2', PLAYABLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE),
   }
 }
 

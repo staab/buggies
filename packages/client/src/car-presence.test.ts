@@ -55,6 +55,8 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     goalsWon: 0,
     npc: false,
     driver: null,
+    rover: null,
+    coasting: false,
     weapon: 'none',
     wins: 0,
     ammoTicks: 0,

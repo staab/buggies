@@ -16,7 +16,7 @@ import {
   type Ufo,
   type VehicleProfileId,
 } from '@buggies/game'
-import { LocalPrediction, NO_ARRIVAL, NetClient } from '@buggies/net'
+import { LocalPrediction, NO_ARRIVAL, NO_PASS, NetClient } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
 import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
@@ -118,6 +118,8 @@ export interface OnlineView {
   readonly root: THREE.Group
   readonly camera: THREE.PerspectiveCamera
   readonly seat: number
+  /** What the server gave this seat to show on coming through a portal, for what it holds to be carried over. */
+  readonly pass: number
   /** Where the play is: the car, in the world, and on the map. */
   readonly focus: Vec3
   readonly place: Vec3
@@ -157,6 +159,7 @@ export async function joinOnline(
   mapFor: (seed: number) => Promise<World>,
   sound: Sound,
   arrival = NO_ARRIVAL,
+  pass = NO_PASS,
 ): Promise<OnlineView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
@@ -164,7 +167,7 @@ export async function joinOnline(
       lost = reason
     },
   })
-  const welcome = await client.connect(player.profile, seed, arrival)
+  const welcome = await client.connect(player.profile, seed, arrival, pass)
   locals.add(welcome.seat)
   const map = await mapFor(welcome.seed)
   // A mirror of the server's arena: same map, same seats, so the local car
@@ -212,6 +215,7 @@ export async function joinOnline(
     root,
     camera: chase.camera,
     seat: welcome.seat,
+    pass: welcome.pass,
     get focus() {
       return prediction.vehicle.frame.position
     },

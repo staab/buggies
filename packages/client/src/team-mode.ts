@@ -23,10 +23,11 @@ export async function createTeamMode(
   sound: Sound,
   sun: Sun,
   arrival = NO_ARRIVAL,
+  passes: readonly number[] = [],
 ): Promise<ModeView> {
   const locals = new Set<number>()
   const joins = await Promise.allSettled(
-    players.map((player) => joinOnline(scene, url, seed, player, locals, mapFor, sound, arrival)),
+    players.map((player, index) => joinOnline(scene, url, seed, player, locals, mapFor, sound, arrival, passes[index])),
   )
   const failed = joins.find((join): join is PromiseRejectedResult => join.status === 'rejected')
   if (failed !== undefined) {
@@ -96,6 +97,9 @@ export async function createTeamMode(
         const crossed = view.portal()
         return through >= 0 ? through : crossed
       }, -1)
+    },
+    passes() {
+      return views.map((view) => view.pass)
     },
     changeVehicles(profiles) {
       views.forEach((view, index) => {

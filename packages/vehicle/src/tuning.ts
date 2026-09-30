@@ -1119,6 +1119,31 @@ const AMPHIBIAN_TUNING: Readonly<VehicleTuning> = Object.freeze({
   ...SHARED_DAMPING_TUNING,
 } satisfies VehicleTuning)
 
+/**
+ * A moon rover: a low open frame on six-spoked wire wheels, wide and long
+ * for its weight, sprung soft for the moon's rubble. Nobody drives one: it
+ * wanders the moon by itself.
+ */
+const MOON_ROVER_TUNING: Readonly<VehicleTuning> = Object.freeze({
+  ...DUNE_BUGGY_TUNING,
+  chassisHalfWidth: 1.25,
+  chassisHalfHeight: 0.4,
+  chassisHalfLength: 1.6,
+  mass: 800,
+
+  halfTrackWidth: 1.05,
+  frontAxleZ: -1.15,
+  rearAxleZ: 1.15,
+  wheelRadius: 0.5,
+
+  suspensionStiffness: 17000,
+  suspensionDamping: 900,
+  maxSpeed: 20,
+  damageToWreck: 80,
+
+  ...selfRightTuning(800),
+} satisfies VehicleTuning)
+
 export type VehicleProfileId =
   | 'raceCar'
   | 'police'
@@ -1132,6 +1157,7 @@ export type VehicleProfileId =
   | 'goKart'
   | 'duneBuggy'
   | 'amphibian'
+  | 'moonRover'
 
 export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
   'sportsCar',
@@ -1146,7 +1172,14 @@ export const VEHICLE_PROFILE_IDS: readonly VehicleProfileId[] = [
   'goKart',
   'duneBuggy',
   'amphibian',
+  'moonRover',
 ]
+
+/** Vehicles nobody may pick: they drive themselves. */
+export const NPC_ONLY_PROFILES: readonly VehicleProfileId[] = ['moonRover']
+
+/** What a player may drive: every vehicle but those that drive themselves. */
+export const PLAYABLE_PROFILE_IDS: readonly VehicleProfileId[] = VEHICLE_PROFILE_IDS.filter((profile) => !NPC_ONLY_PROFILES.includes(profile))
 
 export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> = Object.freeze({
   raceCar: 'Race car',
@@ -1161,6 +1194,7 @@ export const VEHICLE_PROFILE_LABELS: Readonly<Record<VehicleProfileId, string>> 
   goKart: 'Go-kart',
   duneBuggy: 'Dune buggy',
   amphibian: 'Amphibian',
+  moonRover: 'Moon rover',
 })
 
 export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<VehicleTuning>>> = Object.freeze({
@@ -1176,6 +1210,7 @@ export const VEHICLE_PROFILES: Readonly<Record<VehicleProfileId, Readonly<Vehicl
   goKart: GO_KART_TUNING,
   duneBuggy: DUNE_BUGGY_TUNING,
   amphibian: AMPHIBIAN_TUNING,
+  moonRover: MOON_ROVER_TUNING,
 })
 
 export const DEFAULT_VEHICLE_PROFILE: VehicleProfileId = 'sportsCar'
@@ -1197,15 +1232,15 @@ export function resetVehicleTuning(tuning: VehicleTuning, profile: VehicleProfil
 }
 
 export function nextVehicleProfile(profile: VehicleProfileId): VehicleProfileId {
-  const index = VEHICLE_PROFILE_IDS.indexOf(profile)
-  const next = (index + 1) % VEHICLE_PROFILE_IDS.length
+  const index = PLAYABLE_PROFILE_IDS.indexOf(profile)
+  const next = (index + 1) % PLAYABLE_PROFILE_IDS.length
 
-  return VEHICLE_PROFILE_IDS[next] ?? DEFAULT_VEHICLE_PROFILE
+  return PLAYABLE_PROFILE_IDS[next] ?? DEFAULT_VEHICLE_PROFILE
 }
 
 export function profileForSeed(seed: number): VehicleProfileId {
   const roll = createRng(seed)()
-  const index = Math.floor(roll * VEHICLE_PROFILE_IDS.length)
+  const index = Math.floor(roll * PLAYABLE_PROFILE_IDS.length)
 
-  return VEHICLE_PROFILE_IDS[index] ?? DEFAULT_VEHICLE_PROFILE
+  return PLAYABLE_PROFILE_IDS[index] ?? DEFAULT_VEHICLE_PROFILE
 }

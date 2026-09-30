@@ -35,6 +35,7 @@ import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
 import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, UNSTUCK_AHEAD, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
+import { ROVERS, createRover, roverSpawn, wander, type Rover } from './rovers.ts'
 import {
   ROBOT_COOLDOWN_TICKS,
   ROBOT_DAMAGE,
@@ -78,6 +79,7 @@ export {
   readVehicleStepState,
   restingRideHeight,
   type Vehicle,
+  PLAYABLE_PROFILE_IDS,
   VEHICLE_PROFILE_IDS,
   VEHICLE_PROFILE_LABELS,
   type VehicleInput,
@@ -126,6 +128,7 @@ export {
   type Spider,
 } from './spiders.ts'
 export { NPC_CARS, NPC_FRAGILITY, NPC_PROFILES, NPC_SPEED, type Driver } from './npcs.ts'
+export { ROVER_SPEED, ROVERS, type Rover } from './rovers.ts'
 export {
   ROBOTS,
   ROBOT_BEAM_TICKS,
@@ -417,6 +420,8 @@ export interface Seat {
   /** A car nobody drives, and what drives it: a round of the arterials. */
   npc: boolean
   driver: Driver | null
+  /** On the moon, where there are no arterials, what drives it instead: a wander from waypoint to waypoint. */
+  rover: Rover | null
   /**
    * In a mirror, a car too far from the local one to matter to it: carried
    * along round the planet on how it was moving rather than driven, and out
@@ -530,6 +535,7 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       npc: false,
       coasting: false,
       driver: null,
+      rover: null,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -897,14 +903,40 @@ function clearTally(seat: Seat): void {
   seat.goalsWon = 0
   seat.npc = false
   seat.driver = null
+  seat.rover = null
+}
+
+/** What a car takes with it through a portal: what it carries over its roof, and its bananas. */
+export interface Carried {
+  readonly weapon: Weapon
+  readonly ammoTicks: number
+  readonly score: number
+  readonly collected: number
+}
+
+/** What a seat would take with it through a portal. */
+export function carriedOf(seat: Seat): Carried {
+  return { weapon: seat.weapon, ammoTicks: seat.ammoTicks, score: seat.score, collected: seat.collected }
+}
+
+/** A seat just sat down in, come through a portal, holding what the car had on the other side. */
+export function carryOver(seat: Seat, carried: Carried): void {
+  if (carried.weapon !== 'none') {
+    arm(seat, carried.weapon)
+    seat.ammoTicks = carried.ammoTicks
+  }
+  seat.score = carried.score
+  seat.collected = carried.collected
 }
 
 /**
  * Put a car nobody drives in a seat: one of the NPC vehicles, in turn by
  * seat, on a round of the arterials, and a third as tough as any other.
- * Nothing, on an island without arterials.
+ * On the moon, a rover wandering it, as many as it has; nothing else, and
+ * nothing on an island without arterials.
  */
 export function seatNpc(arena: Arena, id: number): Seat | null {
+  if (arena.planet.kind === 'moon') return seatRover(arena, id)
   const driver = createDriver(arena.planet, id)
   if (driver === null) return null
   const seat = takeSeat(arena, id, NPC_PROFILES[id % NPC_PROFILES.length]!)
@@ -915,17 +947,33 @@ export function seatNpc(arena: Arena, id: number): Seat | null {
   return seat
 }
 
+/** A moon rover in a seat, wandering the moon: none once the moon has as many as it takes. */
+function seatRover(arena: Arena, id: number): Seat | null {
+  if (arena.seats.filter((seat) => seat.rover !== null).length >= ROVERS) return null
+  const rover = createRover(arena.planet, id)
+  if (rover === null) return null
+  const seat = takeSeat(arena, id, 'moonRover')
+  seat.npc = true
+  seat.rover = rover
+  seat.tuning.damageToWreck /= NPC_FRAGILITY
+  respawn(seat, roverSpawn(arena.planet, rover))
+  return seat
+}
+
 const npcCommand: DriverCommand = { steer: 0, throttle: 0, brake: 0, stuck: false }
 
 /** What a car nobody drives is asking for this tick, written into `out`: put back on its road, if it has been stuck too long. */
 export function npcInput(arena: Arena, seat: Seat, out: VehicleInput): VehicleInput {
   Object.assign(out, NEUTRAL_INPUT)
-  const { driver, vehicle } = seat
-  if (driver === null || vehicle.wrecked) return out
+  const { driver, rover, vehicle } = seat
+  if ((driver === null && rover === null) || vehicle.wrecked) return out
   const { position, forward, right } = vehicle.frame
-  drive(arena.planet, driver, { position, forward, right, speed: vehicle.speed }, npcCommand)
+  const car = { position, forward, right, speed: vehicle.speed }
+  if (rover !== null) wander(arena.planet, rover, car, npcCommand)
+  else drive(arena.planet, driver!, car, npcCommand)
   if (npcCommand.stuck) {
-    respawn(seat, driverSpawn(arena.planet, driver, UNSTUCK_AHEAD))
+    // Put back upright where it is, facing its next waypoint; or on its road, clear of whatever held it.
+    respawn(seat, rover !== null ? roverSpawn(arena.planet, rover, position) : driverSpawn(arena.planet, driver!, UNSTUCK_AHEAD))
     return out
   }
   out.steer = npcCommand.steer
@@ -1113,7 +1161,9 @@ export function respawnLost(arena: Arena): Seat[] {
     if (!seat.occupied) continue
     seat.lostTicks = isLost(arena, seat) ? seat.lostTicks + 1 : 0
     if (seat.lostTicks < (seat.vehicle.wrecked ? WRECK_PATIENCE : LOST_PATIENCE)) continue
-    respawnNearby(arena, seat)
+    // A rover has no road to be put back on: it starts again where it is.
+    if (seat.rover !== null) respawn(seat, roverSpawn(arena.planet, seat.rover, seat.vehicle.frame.position))
+    else respawnNearby(arena, seat)
     respawned.push(seat)
   }
   return respawned

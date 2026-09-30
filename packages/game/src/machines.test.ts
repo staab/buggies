@@ -7,6 +7,9 @@ import {
   MACHINE_TOUGHNESS,
   NEUTRAL_INPUT,
   PLOW_TICKS,
+  ROVERS,
+  createVehicleInput,
+  npcInput,
   arm,
   respawn,
   seatNpc,
@@ -212,4 +215,38 @@ describe('the spider', () => {
     arena.world.free()
   }, 60_000)
 
+})
+
+describe('the moon rover', () => {
+  let moon: World
+  let planet: World
+  beforeAll(async () => {
+    await initPhysics()
+    moon = generateMoon(3)
+    planet = generatePlanet(3)
+  }, 120_000)
+
+  it('the moon has its rovers and no other cars nobody drives; a planet has none', () => {
+    const arena = createArena(moon)
+    const seated = arena.seats.map((seat) => seatNpc(arena, seat.id)).filter((seat) => seat !== null)
+    expect(seated).toHaveLength(ROVERS)
+    expect(seated.every((seat) => seat.profile === 'moonRover' && seat.npc && seat.rover !== null)).toBe(true)
+    arena.world.free()
+    const other = createArena(planet)
+    const car = seatNpc(other, 0)
+    expect(car?.rover ?? null).toBeNull()
+    expect(car?.profile).not.toBe('moonRover')
+    other.world.free()
+  })
+
+  it('a rover drives off across the moon by itself', () => {
+    const arena = createArena(moon)
+    const rover = seatNpc(arena, 0)!
+    const start = { ...rover.vehicle.frame.position }
+    const input = createVehicleInput()
+    for (let i = 0; i < 60 * 20; i++) advance(arena, (seat) => (seat.npc ? npcInput(arena, seat, input) : NEUTRAL_INPUT))
+    expect(apart(rover.vehicle.frame.position, start)).toBeGreaterThan(30)
+    expect(rover.vehicle.wrecked).toBe(false)
+    arena.world.free()
+  }, 60_000)
 })

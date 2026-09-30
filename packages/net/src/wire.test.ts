@@ -41,6 +41,7 @@ import {
   isRespawn,
   isRoomsRequest,
   NO_ARRIVAL,
+  NO_PASS,
   SNAPSHOT_VEHICLE_CORE_BYTES,
   withAck,
   type SnapshotMessage,
@@ -179,9 +180,10 @@ describe('wire', () => {
       profile: 'raceCar',
       seed: 4_000_000_000,
       arrival: NO_ARRIVAL,
+      pass: NO_PASS,
     })
-    expect(decodeHello(encodeHello('tank', 7, 2))).toMatchObject({ seed: 7, arrival: 2 })
-    const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const }
+    expect(decodeHello(encodeHello('tank', 7, 2, 4_000_000_001))).toMatchObject({ seed: 7, arrival: 2, pass: 4_000_000_001 })
+    const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const, pass: 3_000_000_000 }
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })
     expect(isRespawn(encodeRespawn())).toBe(true)

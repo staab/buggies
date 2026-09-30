@@ -33,6 +33,7 @@ export type {
 } from './transport.ts'
 export {
   NO_ARRIVAL,
+  NO_PASS,
   decodeSnapshot,
   decodeWelcome,
   encodeSnapshot,

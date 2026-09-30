@@ -44,8 +44,8 @@ import {
  * alone: anything the wrong length is refused rather than read past.
  */
 
-export const HELLO_BYTES = 9
-export const WELCOME_BYTES = 15
+export const HELLO_BYTES = 13
+export const WELCOME_BYTES = 19
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
@@ -91,10 +91,14 @@ export interface HelloMessage {
   seed: number
   /** Which of its portals to come out of, having come through a portal to it, or `NO_ARRIVAL`. */
   arrival: number
+  /** The pass the server gave the seat left for the portal, which carries over what it held; or `NO_PASS`. */
+  pass: number
 }
 
 /** No portal to come out of: the car starts where the world's spawns are. */
 export const NO_ARRIVAL = 0xff
+/** No seat left behind: nothing carried over. */
+export const NO_PASS = 0
 
 export interface WelcomeMessage {
   protocolVersion: number
@@ -104,6 +108,8 @@ export interface WelcomeMessage {
   tick: number
   maxPlayers: number
   profile: VehicleProfileId
+  /** What to show the server on coming through a portal, for what this seat held to be carried over. */
+  pass: number
 }
 
 export interface RejectMessage {
@@ -494,13 +500,14 @@ function profileIndex(profile: VehicleProfileId): number {
   return VEHICLE_PROFILE_IDS.indexOf(profile)
 }
 
-export function encodeHello(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL): Uint8Array {
+export function encodeHello(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS): Uint8Array {
   const writer = new Writer(HELLO_BYTES)
   writer.u8(CLIENT_HELLO)
   writer.u16(PROTOCOL_VERSION)
   writer.u8(profileIndex(profile))
   writer.u32(seed)
   writer.u8(arrival)
+  writer.u32(pass)
   return writer.bytes
 }
 
@@ -512,7 +519,8 @@ export function decodeHello(payload: Uint8Array): HelloMessage | null {
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
   const seed = reader.u32()
   const arrival = reader.u8()
-  return profile === undefined ? null : { protocolVersion, profile, seed, arrival }
+  const pass = reader.u32()
+  return profile === undefined ? null : { protocolVersion, profile, seed, arrival, pass }
 }
 
 export function encodeWelcome(message: WelcomeMessage): Uint8Array {
@@ -525,6 +533,7 @@ export function encodeWelcome(message: WelcomeMessage): Uint8Array {
   writer.u32(message.tick)
   writer.u8(message.maxPlayers)
   writer.u8(profileIndex(message.profile))
+  writer.u32(message.pass)
   return writer.bytes
 }
 
@@ -539,8 +548,9 @@ export function decodeWelcome(payload: Uint8Array): WelcomeMessage | null {
   const tick = reader.u32()
   const maxPlayers = reader.u8()
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
+  const pass = reader.u32()
   if (profile === undefined) return null
-  return { protocolVersion, seed, seat, epoch, tick, maxPlayers, profile }
+  return { protocolVersion, seed, seat, epoch, tick, maxPlayers, profile, pass }
 }
 
 export function encodeReject(message: RejectMessage): Uint8Array {

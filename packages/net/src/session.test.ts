@@ -50,6 +50,7 @@ import type {
 } from './transport.ts'
 import {
   NO_ARRIVAL,
+  NO_PASS,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_ROBOT_BYTES,
   SNAPSHOT_UFO_BYTES,
@@ -195,10 +196,10 @@ class Session {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL): Promise<Player> {
+  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL, pass = NO_PASS): Promise<Player> {
     const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
     const client = new NetClient(wire.client, () => this.nowMs)
-    const welcoming = client.connect(profile, seed, arrival)
+    const welcoming = client.connect(profile, seed, arrival, pass)
     welcoming.catch(() => undefined)
     // The hello goes out once connect() has had a turn; then it has to get
     // there and the welcome has to come back. A refusal comes back the same way.
@@ -613,6 +614,33 @@ describe('a session', () => {
     expect(Math.hypot(at.x - exit.position.x, at.y - exit.position.y, at.z - exit.position.z)).toBeLessThan(2)
     // The second out stands beside the first, not on it.
     expect(distance(session.serverPositionOf(b), at)).toBeGreaterThan(2)
+    session.dispose()
+  })
+
+  it('carries what a player held through a portal, for the pass they were given, and nobody else', async () => {
+    const session = new Session()
+    const a = await session.join()
+    const seat = session.arena.seats[a.client.welcome!.seat]!
+    arm(seat, 'rocket')
+    seat.score = 7
+    seat.collected = 12
+    const { pass } = a.client.welcome!
+    expect(pass).not.toBe(NO_PASS)
+    a.client.close('through the portal')
+    session.players.splice(session.players.indexOf(a), 1)
+    session.run(0.2)
+
+    const moon = moonOf(map.seed)
+    // A stranger guessing wrong gets nothing; the one who went in gets it all, once.
+    const stranger = await session.join('sportsCar', 0, moon, 0, (pass ^ 1) >>> 0)
+    const back = await session.join('sportsCar', 0, moon, 0, pass)
+    const again = await session.join('sportsCar', 0, moon, 0, pass)
+    const { arena } = session.server.roomFor(moon)!
+    const seatOf = (player: Player): Seat => arena.seats[player.client.welcome!.seat]!
+    expect(seatOf(stranger)).toMatchObject({ weapon: 'none', score: 0 })
+    expect(seatOf(back)).toMatchObject({ weapon: 'rocket', score: 7, collected: 12 })
+    expect(seatOf(again)).toMatchObject({ weapon: 'none', score: 0 })
+    a.prediction.dispose()
     session.dispose()
   })
 

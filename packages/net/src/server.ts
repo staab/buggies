@@ -1,8 +1,11 @@
 import {
   NEUTRAL_INPUT,
   NPC_CARS,
+  PLAYABLE_PROFILE_IDS,
   advance,
   awardGoals,
+  carriedOf,
+  carryOver,
   changeVehicle,
   takeSeat,
   createVehicleInput,
@@ -17,6 +20,7 @@ import {
   setGoal,
   validGoal,
   type Arena,
+  type Carried,
   type Seat,
   type VehicleInput,
   type VehicleSpawn,
@@ -46,6 +50,7 @@ import {
   decodeChangeVehicle,
   decodeGoal,
   NO_ARRIVAL,
+  NO_PASS,
   decodeHello,
   decodeInput,
   encodeReject,
@@ -81,6 +86,9 @@ const INPUTS_PER_TICK = 2
 
 /** A player heard nothing from for this long is let go: a tab left behind is not a driver. */
 const IDLE_TIMEOUT_TICKS = TICKS_PER_SECOND * 15
+
+/** How long what a player left a room holding waits for them to come out of a portal into the next. */
+const CARRY_TICKS = TICKS_PER_SECOND * 30
 
 export interface GameServerEvents {
   onJoined(seat: Seat, connectionId: number, seed: number): void
@@ -122,6 +130,14 @@ interface Player {
   dropped: number
   /** The server tick they were last heard from. */
   heardTick: number
+  /** What they show on coming through a portal, for what they held here to be carried over. */
+  pass: number
+}
+
+/** What a player left a room holding, and when, for the room they come out into. */
+interface Left {
+  readonly carried: Carried
+  readonly tick: number
 }
 
 interface Handshake {
@@ -165,6 +181,8 @@ export class GameServer implements TransportHandlers {
   private readonly npcCommand: VehicleInput = createVehicleInput()
   /** The server's own clock, for handshakes, which belong to no room yet. */
   private clock = 0
+  /** What players left their rooms holding, by their pass, a while. */
+  private readonly left = new Map<number, Left>()
 
   /** How many cars nobody drives each island has, while seats are free for them. */
   private readonly npcs: number
@@ -255,6 +273,7 @@ export class GameServer implements TransportHandlers {
     }
     this.expireHandshakes()
     this.tendPlayers()
+    for (const [pass, { tick }] of this.left) if (this.clock - tick > CARRY_TICKS) this.left.delete(pass)
   }
 
   dispose(): void {
@@ -289,7 +308,7 @@ export class GameServer implements TransportHandlers {
 
     if (messageTypeOf(payload) === CLIENT_CHANGE_VEHICLE) {
       const profile = decodeChangeVehicle(payload)
-      if (profile === null) {
+      if (profile === null || !PLAYABLE_PROFILE_IDS.includes(profile)) {
         this.reject(connection, REJECT_MALFORMED_MESSAGE)
         return
       }
@@ -337,6 +356,8 @@ export class GameServer implements TransportHandlers {
     this.players.delete(connection.id)
     const { room } = player
     room.players.delete(connection.id)
+    // Gone through a portal, as far as anyone here knows: what they held waits for them on the other side.
+    this.left.set(player.pass, { carried: carriedOf(player.seat), tick: this.clock })
     leaveSeat(room.arena, player.seat.id)
     this.topUpNpcs(room.arena)
     this.events.onLeft?.(player.seat, connection.id, room.seed)
@@ -410,7 +431,7 @@ export class GameServer implements TransportHandlers {
       return
     }
     const hello = decodeHello(payload)
-    if (hello === null) {
+    if (hello === null || !PLAYABLE_PROFILE_IDS.includes(hello.profile)) {
       this.reject(connection, REJECT_MALFORMED_MESSAGE)
       return
     }
@@ -481,6 +502,12 @@ export class GameServer implements TransportHandlers {
     if (hello.arrival !== NO_ARRIVAL) {
       const out = arrivalSpawn(arena, hello.arrival, seat)
       if (out !== null) respawn(seat, out)
+      // With what it held when it went in, if it shows the pass it was given for it.
+      const left = hello.pass === NO_PASS ? undefined : this.left.get(hello.pass)
+      if (left !== undefined) {
+        this.left.delete(hello.pass)
+        carryOver(seat, left.carried)
+      }
     }
     const player: Player = {
       connection,
@@ -492,6 +519,7 @@ export class GameServer implements TransportHandlers {
       allowance: INPUT_ALLOWANCE,
       dropped: 0,
       heardTick: this.clock,
+      pass: this.newPass(),
     }
     this.players.set(connection.id, player)
     room.players.set(connection.id, player)
@@ -504,9 +532,19 @@ export class GameServer implements TransportHandlers {
         tick: arena.tick,
         maxPlayers: arena.seats.length,
         profile: seat.profile,
+        pass: player.pass,
       }),
     )
     this.events.onJoined?.(seat, connection.id, room.seed)
+  }
+
+  /** A pass nobody holds or has left behind: random, so nobody takes another's by guessing. */
+  private newPass(): number {
+    for (;;) {
+      const pass = Math.floor(Math.random() * 0x1_0000_0000)
+      if (pass === NO_PASS || this.left.has(pass) || [...this.players.values()].some((player) => player.pass === pass)) continue
+      return pass
+    }
   }
 
   private closeRoom(room: Room): void {
