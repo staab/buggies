@@ -56,16 +56,16 @@ A giant spider, its body ten meters up on legs nearly twenty meters long, walks 
 
 Twenty cars nobody drives potter slowly around the arterials of every island in the seats players leave empty: small cars, sports cars, pickups, semis, police cars, ambulances and fire trucks. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They keep to the right-hand lane, carry no weapons, take no bananas or health packs, and set off any bomb or mine they drive onto. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back a little further along its road if it goes nowhere for six seconds.
 
-## Goals
+## Games
 
-The game is free play, but the trophy beside the speaker, in the top corner while a game is on, opens a panel for setting a goal to play for. A goal is one of four kinds:
+The game is free play, but the trophy beside the speaker, in the top corner while an island is being played, opens a panel of games to play. A game is one of four kinds:
 
-- **Score** asks for a number of bananas collected from when the goal is set. Bananas spent on power-ups still count.
-- **Kills** asks for a number of cars wrecked by the player's own weapons from when the goal is set: any hit that finishes a car, whether from a power-up or the vehicle's own ability.
-- **Robots** asks for a number of robots brought down by the player's own weapons from when the goal is set.
-- **Location** asks the player to drive to a spot picked on a map of the island. A gold beacon stands over it, and it shows on the mini-map. Coming within 20 m of it counts.
+- **Score** asks for a number of bananas collected from when the game is set. Bananas spent on power-ups still count.
+- **Kills** asks for a number of other players' cars wrecked by the player's own weapons from when the game is set: any hit that finishes a car, whether from a power-up or the vehicle's own ability. Cars nobody drives don't count.
+- **Robots** asks for a number of robots brought down by the player's own weapons from when the game is set.
+- **Race** is played by everyone on the island. The player picks a course on a map of it: a start, one or more checkpoints and a finish, each mark on land and at least 200 m from the one before it. Starting the race puts every player on the island on a starting grid at the start, facing the first checkpoint. Each checkpoint has to be passed in order, within 20 m, and a wreck passes nothing. A gold beacon stands over each racer's next mark, which also shows on the mini-map. The first over the finish wins. Only one race runs at a time. A race is called off after five minutes with no winner, or when the player who started it stops it.
 
-The HUD shows how the goal is going. Reaching it wins 100 bananas and returns to free play. In two-player mode the goal is set for both players, and each is paid for reaching it. Escape closes the panel.
+The HUD shows how each game is going. Winning one pays 100 bananas. A count then returns to free play, and a race ends for everyone. In two-player mode a count is set for both players, and each is paid for reaching it. Escape closes the panel.
 
 ## Power-ups
 

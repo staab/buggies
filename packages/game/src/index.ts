@@ -1,4 +1,4 @@
-import { FIXED_TIMESTEP, uprightRotation, v3, vaddScaled, vdistance, vdot } from '@buggies/physics'
+import { FIXED_TIMESTEP, uprightRotation, v3, vaddScaled, vdistance, vdot, type Vec3 } from '@buggies/physics'
 import { DRY, alongGround, heightOver, upOf, waterUnder, type PropKind, type World, type WorldProp } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
@@ -30,7 +30,7 @@ import {
 } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import type { Goal } from './goals.ts'
+import { NOT_RACING, RACE_TICKS_MOST, runRace, type Game, type Race } from './games.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
 import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
@@ -49,7 +49,7 @@ import {
   type Robot,
 } from './robots.ts'
 import { CEILING } from './sky.ts'
-import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
+import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing, startingGrid } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
@@ -96,7 +96,7 @@ export {
   writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
-export { findSpawns } from './spawns.ts'
+export { findSpawns, startingGrid } from './spawns.ts'
 export { portalCrossed, portalLink, portalSpawn } from './portals.ts'
 export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, sunDirection } from './sky.ts'
 export {
@@ -144,20 +144,31 @@ export {
   type Robot,
 } from './robots.ts'
 export {
-  GOAL_KINDS,
-  GOAL_LABELS,
-  GOAL_PRIZE,
-  GOAL_REACH,
-  GOAL_TARGET_MOST,
-  awardGoals,
-  goalMet,
-  goalProgress,
-  setGoal,
-  validGoal,
-  type Goal,
-  type GoalKind,
-  type GoalRequest,
-} from './goals.ts'
+  COUNT_KINDS,
+  GAME_KINDS,
+  GAME_LABELS,
+  GAME_PRIZE,
+  GAME_REACH,
+  GAME_TARGET_MOST,
+  RACE_LEG_LEAST,
+  RACE_MARKS_LEAST,
+  RACE_MARKS_MOST,
+  RACE_TICKS_MOST,
+  NOT_RACING,
+  apartOnGround,
+  awardGames,
+  courseFault,
+  gameProgress,
+  nextMark,
+  runRace,
+  setGame,
+  validGame,
+  type CountKind,
+  type Game,
+  type GameKind,
+  type GameRequest,
+  type Race,
+} from './games.ts'
 export {
   BANANA_REACH,
   BANANA_SLOTS,
@@ -407,16 +418,18 @@ export interface Seat {
   submersion: number
   /** Consecutive steps spent sunk or off the map. */
   lostTicks: number
-  /** Bananas held: taken since sitting down, less those spent on weapons or spilled from a wreck, and any won with a goal. */
+  /** Bananas held: taken since sitting down, less those spent on weapons or spilled from a wreck, and any won with a game. */
   score: number
   /** Bananas taken since sitting down, all told. */
   collected: number
-  /** Cars its weapons have wrecked since sitting down, and robots they have brought down. */
+  /** Other players' cars its weapons have wrecked since sitting down, and robots they have brought down. */
   kills: number
   robotKills: number
-  /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
-  goal: Goal | null
-  goalsWon: number
+  /** The count it is playing for, if any, and how many games it has won, counted around past 255. */
+  game: Game | null
+  gamesWon: number
+  /** How many of the race's marks it has passed, or `NOT_RACING`. */
+  racePassed: number
   /** A car nobody drives, and what drives it: a round of the arterials. */
   npc: boolean
   driver: Driver | null
@@ -499,6 +512,8 @@ export interface Arena {
   readonly ufos: readonly Ufo[]
   /** The props, numbered as the map lists them, each a body the physics steps. */
   readonly props: readonly ArenaProp[]
+  /** The race on over the island, if any. Replaced by the server's word. */
+  race: Race | null
   tick: number
   /** A client's copy of the server's arena: nothing in it is wrecked or brought down but on the server's word. */
   mirror: boolean
@@ -530,8 +545,9 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       collected: 0,
       kills: 0,
       robotKills: 0,
-      goal: null,
-      goalsWon: 0,
+      game: null,
+      gamesWon: 0,
+      racePassed: NOT_RACING,
       npc: false,
       coasting: false,
       driver: null,
@@ -577,9 +593,49 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
     boats: createBoats(planet, world),
     spiders: createSpiders(planet, world),
     ufos: createUfos(planet),
+    race: null,
     tick: 0,
     mirror: false,
   }
+}
+
+/**
+ * Set a race going over this course: everyone driving on the island is put
+ * on a starting grid at its start, facing its first checkpoint, and is in
+ * it from there, the start passed. The cars nobody drives are in no race.
+ * Returns the racers.
+ */
+export function startRace(arena: Arena, course: Vec3[], starter: Seat): Seat[] {
+  const racers = arena.seats.filter((seat) => seat.occupied && !seat.npc)
+  const grid = startingGrid(arena.planet, course[0]!, course[1]!, racers.length)
+  racers.forEach((seat, place) => {
+    respawn(seat, grid[place])
+    seat.racePassed = 1
+  })
+  arena.race = { course, starter: starter.id, startTick: arena.tick }
+  return racers
+}
+
+/** Call the race off, or close it once won: nobody is in one. */
+export function endRace(arena: Arena): void {
+  arena.race = null
+  for (const seat of arena.seats) seat.racePassed = NOT_RACING
+}
+
+/**
+ * A step of the race on, if any: the first over the finish wins it, and it
+ * is over. It is called off once it has gone on too long, or once nobody is
+ * left in it. Returns how it ended, with its winner if it has one, or
+ * `null` while it goes on.
+ */
+export function playRace(arena: Arena): { winner: Seat | null } | null {
+  const { race } = arena
+  if (race === null) return null
+  const winner = runRace(arena.seats, race, arena.planet.radius)
+  const racing = arena.seats.some((seat) => seat.occupied && seat.racePassed !== NOT_RACING)
+  if (winner === null && racing && arena.tick - race.startTick < RACE_TICKS_MOST) return null
+  endRace(arena)
+  return { winner }
 }
 
 function nextEpoch(epoch: number): number {
@@ -898,14 +954,15 @@ function score(seat: Seat): void {
   seat.collected += 1
 }
 
-/** A seat sat down in, or left, starts again: no bananas, no wrecks and no goal. */
+/** A seat sat down in, or left, starts again: no bananas, no wrecks and no game. */
 function clearTally(seat: Seat): void {
   seat.score = 0
   seat.collected = 0
   seat.kills = 0
   seat.robotKills = 0
-  seat.goal = null
-  seat.goalsWon = 0
+  seat.game = null
+  seat.gamesWon = 0
+  seat.racePassed = NOT_RACING
   seat.npc = false
   seat.driver = null
   seat.rover = null

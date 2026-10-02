@@ -119,11 +119,17 @@ export async function createTeamMode(
     position() {
       return first.place
     },
-    goal() {
-      return first.goal()
+    game() {
+      return first.game()
     },
-    setGoal(goal) {
-      for (const view of views) view.setGoal(goal)
+    race() {
+      const race = first.race()
+      return race === null ? null : { race, mine: views.some((view) => view.seat === race.starter) }
+    },
+    setGame(game) {
+      // A race is the island's: asked for once, everyone here is in it, as everyone else is.
+      if (game?.kind === 'race') first.setGame(game)
+      else for (const view of views) view.setGame(game)
     },
     dispose() {
       for (const view of views) view.dispose()

@@ -16,6 +16,7 @@ import {
   writeVehicleStepState,
   type Arena,
   type Pickup,
+  type Race,
   type Robot,
   type Ufo,
   type Spider,
@@ -217,6 +218,11 @@ export class LocalPrediction {
     return this.mirror.loose
   }
 
+  /** The race on over the island, as the server last said, if any. */
+  get race(): Race | null {
+    return this.mirror.race
+  }
+
   /** The robots, as the mirror has them: the server's word, run ahead. */
   get robots(): readonly Robot[] {
     return this.mirror.robots
@@ -400,8 +406,9 @@ export class LocalPrediction {
       seat.collected = vehicle.collected
       seat.kills = vehicle.kills
       seat.robotKills = vehicle.robotKills
-      seat.goal = vehicle.goal === null ? null : { ...vehicle.goal }
-      seat.goalsWon = vehicle.goalsWon
+      seat.game = vehicle.game === null ? null : { ...vehicle.game }
+      seat.gamesWon = vehicle.gamesWon
+      seat.racePassed = vehicle.racePassed
       seat.weapon = vehicle.weapon
       seat.wins = vehicle.wins
       seat.ammoTicks = vehicle.ammoTicks
@@ -430,6 +437,7 @@ export class LocalPrediction {
       prop.body.setLinvel(moved.linearVelocity, true)
       prop.body.setAngvel(moved.angularVelocity, true)
     }
+    this.mirror.race = snapshot.race
     // The robots are where the server has them, their bodies put straight there.
     for (const known of snapshot.robots) {
       const robot = this.mirror.robots[known.id]

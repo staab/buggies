@@ -75,6 +75,21 @@ describe('cars nobody drives', () => {
     arena.world.free()
   })
 
+  it('are no kill to whoever wrecks one: only another player is', () => {
+    const arena = createArena(map)
+    const npc = seatNpc(arena, 7)!
+    const car = takeSeat(arena, 0, npc.profile)
+    const other = takeSeat(arena, 1, npc.profile)
+    advance(arena)
+    harm(npc, 10, car)
+    expect(npc.vehicle.wrecked).toBe(true)
+    expect(car.kills).toBe(0)
+    harm(other, 10, car)
+    expect(other.vehicle.wrecked).toBe(true)
+    expect(car.kills).toBe(1)
+    arena.world.free()
+  })
+
   it('take no bananas and no health packs, and carry no weapons', () => {
     const arena = createArena(map)
     const npc = seatNpc(arena, 7)!

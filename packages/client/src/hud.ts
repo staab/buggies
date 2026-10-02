@@ -24,10 +24,10 @@ export interface HudState {
   sync?: string
   /** Where everyone else is, for the mini-map. */
   radar?: RadarState
-  /** The goal being played for and how far along it is, in a line; nothing in free play. */
-  goal?: string
-  /** Whether the goal line is telling of one just reached. */
-  goalWon?: boolean
+  /** The games being played and how far along they are, a line each; nothing in free play. */
+  game?: string
+  /** Whether the game lines are telling of one just won. */
+  gameWon?: boolean
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -185,7 +185,7 @@ export class Hud {
   private readonly row = div('row')
   private readonly score = div('score')
   private readonly weapon = div('weapon')
-  private readonly goal = div('goal')
+  private readonly game = div('game')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
   private readonly damage = buildDial('damage')
@@ -235,7 +235,7 @@ export class Hud {
     this.toggle.append(caret())
     this.toggle.addEventListener('click', () => this.expand(!this.expanded))
     this.expand(false)
-    root.append(this.title, this.row, this.goal, this.gauges, this.drawer, this.toggle)
+    root.append(this.title, this.row, this.game, this.gauges, this.drawer, this.toggle)
     this.render(null)
   }
 
@@ -264,10 +264,10 @@ export class Hud {
       this.scoreCount.textContent = score
     }
     this.score.hidden = score === ''
-    const goal = state.goal ?? ''
-    if (goal !== this.goal.textContent) this.goal.textContent = goal
-    this.goal.hidden = goal === ''
-    this.goal.classList.toggle('won', state.goalWon === true)
+    const game = state.game ?? ''
+    if (game !== this.game.textContent) this.game.textContent = game
+    this.game.hidden = game === ''
+    this.game.classList.toggle('won', state.gameWon === true)
 
     const { speed, maxSpeed, damage: wear } = state
     const driving = speed !== undefined && maxSpeed !== undefined && wear !== undefined

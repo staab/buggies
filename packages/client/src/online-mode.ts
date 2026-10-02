@@ -1,15 +1,19 @@
 import {
   FIXED_TIMESTEP,
-  GOAL_PRIZE,
+  GAME_LABELS,
+  GAME_PRIZE,
   NEUTRAL_INPUT,
+  NOT_RACING,
   OWN_ACTIONS,
   VEHICLE_PROFILE_LABELS,
   createArena,
-  goalProgress,
+  gameProgress,
+  nextMark,
   portalCrossed,
   takeSeat,
-  type Goal,
-  type GoalRequest,
+  type Game,
+  type GameRequest,
+  type Race,
   type Robot,
   type Seat,
   type Spider,
@@ -43,13 +47,13 @@ import { WebSocketClientTransport } from './ws-transport.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-/** The color a spot played for is marked in, on the mini-map and over the island. */
-const GOAL_COLOR = 0xffd24a
-/** How tall the beacon over a spot played for stands, and how wide. */
+/** The color a race's next mark is marked in, on the mini-map and over the island. */
+const MARK_COLOR = 0xffd24a
+/** How tall the beacon over a race's next mark stands, and how wide. */
 const BEACON_HEIGHT = 160
 const BEACON_RADIUS = 3
-/** How long a goal reached is told of, in seconds. */
-const GOAL_WON_SECONDS = 5
+/** How long a game won, or a race over, is told of, in seconds. */
+const GAME_WON_SECONDS = 5
 
 /** The colors the robots, the cars nobody drives, the saucers and the spiders are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
@@ -59,10 +63,10 @@ const SPIDER_COLOR = 0xc15cff
 
 /**
  * The mini-map from a seat: where it is and faces, every other occupied
- * seat, the robots, and the spot it is playing for, laid out on the ground
- * round the car, east across and south down, as a map is.
+ * seat, the robots, and the race's next mark for it, laid out on the
+ * ground round the car, east across and south down, as a map is.
  */
-function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[], radius: number): RadarState {
+function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[], race: Race | null, radius: number): RadarState {
   const { position, forward } = own.vehicle.frame
   const { east, north } = tangentFrame(upOf(position))
   /** A point on the ground round the car, as far from it and the same way as it is round the planet. */
@@ -80,7 +84,8 @@ function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], uf
   for (const robot of robots) others.push(onRadar(robot.position, ROBOT_COLOR))
   for (const ufo of ufos) others.push(onRadar(ufo.position, UFO_COLOR))
   for (const spider of spiders) others.push(onRadar(spider.position, SPIDER_COLOR))
-  if (own.goal?.kind === 'location') others.push(onRadar({ x: own.goal.x * radius, y: own.goal.y * radius, z: own.goal.z * radius }, GOAL_COLOR))
+  const mark = race === null ? null : nextMark(own, race)
+  if (mark !== null) others.push(onRadar({ x: mark.x * radius, y: mark.y * radius, z: mark.z * radius }, MARK_COLOR))
   return {
     position: { x: 0, z: 0 },
     forward: { x: forward.x * east.x + forward.y * east.y + forward.z * east.z, z: -(forward.x * north.x + forward.y * north.y + forward.z * north.z) },
@@ -88,19 +93,28 @@ function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], uf
   }
 }
 
-/** How a goal is coming along, in a line. */
-function goalLine(seat: Seat, goal: Goal, radius: number): string {
-  const progress = goalProgress(seat, goal, radius)
-  if (goal.kind === 'location') return `Goal: ${Math.round(progress)} m to the spot`
-  const done = Math.min(Math.max(progress, 0), goal.target)
-  return `Goal: ${done} / ${goal.target} ${goal.kind === 'score' ? 'bananas' : goal.kind === 'kills' ? 'wrecks' : 'robots'}`
+/** How a count is coming along, in a line. */
+function countLine(seat: Seat, game: Game): string {
+  const done = Math.min(Math.max(gameProgress(seat, game), 0), game.target)
+  return `${GAME_LABELS[game.kind]}: ${done} / ${game.target} ${game.kind === 'score' ? 'bananas' : game.kind === 'kills' ? 'wrecks' : 'robots'}`
+}
+
+/** How a race is going for a seat, in a line: how far to which mark, and how long it has been on. */
+function raceLine(seat: Seat, race: Race, tick: number, radius: number): string {
+  const mark = nextMark(seat, race)
+  if (mark === null) return 'A race is on.'
+  const meters = Math.round(groundDistance(seat.vehicle.frame.position, { x: mark.x * radius, y: mark.y * radius, z: mark.z * radius }))
+  const checkpoints = race.course.length - 2
+  const toward = seat.racePassed === race.course.length - 1 ? 'the finish' : `checkpoint ${seat.racePassed} of ${checkpoints}`
+  const seconds = Math.max(Math.floor((tick - race.startTick) * FIXED_TIMESTEP), 0)
+  return `Race: ${meters} m to ${toward} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 /** A column of light standing over a spot, to be seen from anywhere on the island. */
 function buildBeacon(): THREE.Mesh {
   const beacon = new THREE.Mesh(
     new THREE.CylinderGeometry(BEACON_RADIUS, BEACON_RADIUS, BEACON_HEIGHT, 16, 1, true).translate(0, BEACON_HEIGHT / 2, 0),
-    new THREE.MeshBasicMaterial({ color: GOAL_COLOR, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ color: MARK_COLOR, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
   )
   beacon.visible = false
   return beacon
@@ -134,10 +148,12 @@ export interface OnlineView {
   changeVehicle(profile: VehicleProfileId): void
   /** The island being played. */
   readonly map: World
-  /** The goal being played for, as the server last said, if any. */
-  goal(): Goal | null
-  /** Play for this goal, or for none. */
-  setGoal(goal: GoalRequest | null): void
+  /** The count being played for, as the server last said, if any. */
+  game(): Game | null
+  /** The race on over the island, as the server last said, if any. */
+  race(): Race | null
+  /** Play this game, or none. */
+  setGame(game: GameRequest | null): void
   /** The portal the car has driven through since last asked, or -1. */
   portal(): number
   /** Why the connection to the server was lost, if it has been. */
@@ -207,9 +223,13 @@ export async function joinOnline(
   const from = { x: 0, y: 0, z: 0 }
   let crossed = -1
   let chaseSnapped = false
-  // A goal reached: how many the server has counted, and how much longer that is told of.
-  let goalsWon = prediction.ownSeat.goalsWon
+  // A game won: how many the server has counted, and how much longer that, or a race over, is told of.
+  let gamesWon = prediction.ownSeat.gamesWon
   let wonFor = 0
+  let overFor = 0
+  // How far along the race the car was, for a mark passed to be heard, and whether one was on.
+  let racePassed = prediction.ownSeat.racePassed
+  let raced = prediction.race !== null
   const beacon = buildBeacon()
   root.add(beacon)
 
@@ -258,16 +278,22 @@ export async function joinOnline(
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       arena.update(dt, owed / FIXED_TIMESTEP)
       const own = prediction.ownSeat
-      if (own.goalsWon !== goalsWon) {
-        goalsWon = own.goalsWon
-        wonFor = GOAL_WON_SECONDS
+      if (own.gamesWon !== gamesWon) {
+        gamesWon = own.gamesWon
+        wonFor = GAME_WON_SECONDS
         sound.chime()
       }
+      const { race } = prediction
+      if (own.racePassed > racePassed && racePassed !== NOT_RACING) sound.chime()
+      racePassed = own.racePassed
+      // A race over that this car did not win: someone else did, or it was called off.
+      if (raced && race === null && wonFor === 0) overFor = GAME_WON_SECONDS
+      raced = race !== null
       wonFor = Math.max(wonFor - dt, 0)
-      beacon.visible = own.goal?.kind === 'location'
-      if (own.goal?.kind === 'location') {
-        standOn(beacon, overSurface(mirror.planet, own.goal, 0))
-      }
+      overFor = Math.max(overFor - dt, 0)
+      const mark = race === null ? null : nextMark(own, race)
+      beacon.visible = mark !== null
+      if (mark !== null) standOn(beacon, overSurface(mirror.planet, mark, 0))
       car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
       else {
@@ -282,28 +308,36 @@ export async function joinOnline(
       const controls = player.keys.controls(OWN_ACTIONS[profile].label)
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
-      if (lost !== null) return { title, goal: `Disconnected from the server (${lost}). Reconnecting...` }
+      if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
       const sync =
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
       const own = prediction.ownSeat
-      const goal = wonFor > 0 ? `Goal reached! +${GOAL_PRIZE} bananas` : own.goal === null ? null : goalLine(own, own.goal, mirror.planet.radius)
+      const { race } = prediction
+      const lines = [
+        ...(wonFor > 0 ? [`Game won! +${GAME_PRIZE} bananas`] : overFor > 0 ? ['The race is over.'] : []),
+        ...(race === null ? [] : [raceLine(own, race, prediction.tick, mirror.planet.radius)]),
+        ...(own.game === null ? [] : [countLine(own, own.game)]),
+      ]
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, mirror.planet.radius),
-        ...(goal === null ? {} : { goal, goalWon: wonFor > 0 }),
+        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, race, mirror.planet.radius),
+        ...(lines.length === 0 ? {} : { game: lines.join('\n'), gameWon: wonFor > 0 }),
       }
     },
     changeVehicle(profile) {
       client.changeVehicle(profile)
     },
     map,
-    goal() {
-      return prediction.ownSeat.goal
+    game() {
+      return prediction.ownSeat.game
     },
-    setGoal(goal) {
-      client.setGoal(goal)
+    race() {
+      return prediction.race
+    },
+    setGame(game) {
+      client.setGame(game)
     },
     portal() {
       const through = crossed

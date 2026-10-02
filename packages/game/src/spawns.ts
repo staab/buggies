@@ -1,5 +1,5 @@
 import { uprightRotation, v3, vdistance, vlength, vscale, type Vec3 } from '@buggies/physics'
-import { ROAD_GRADE, ROAD_TUNNEL, atHeight, upOf, type World, type WorldRoad } from '@buggies/terrain'
+import { ROAD_GRADE, ROAD_TUNNEL, alongGround, atHeight, overSurface, tangentFrame, upOf, type World, type WorldRoad } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
 
 import { portalSpawn } from './portals.ts'
@@ -7,6 +7,9 @@ import { portalSpawn } from './portals.ts'
 /** Nose to tail along the road, with room to pull out, and side to side, two abreast. */
 const SPAWN_SPACING = 9
 const SPAWN_ABREAST = 5
+
+/** How far from a race's start a road may be for the cars to line up on it rather than on the ground there. */
+const GRID_ROAD_REACH = 30
 
 /** How far along a road to look for the next point when facing a vehicle. */
 const FACING_REACH = 3
@@ -156,9 +159,44 @@ export function findSpawns(planet: World, count: number): VehicleSpawn[] {
   return lined
 }
 
-/** A spawn at a spot, in the lane its place in the line puts it in: the right for even places, the left for odd. */
-function spawnAside(spot: RoadSpot, place: number): VehicleSpawn {
-  const spawn = spawnAt(spot)
+/**
+ * Where `count` cars line up for a race from a start toward its first
+ * checkpoint: two abreast, staggered a half length apart, back from the
+ * start along the road nearest it, facing the way to the checkpoint; on the
+ * ground round the start where no road runs near it.
+ */
+export function startingGrid(planet: World, start: Vec3, toward: Vec3, count: number): VehicleSpawn[] {
+  const at = overSurface(planet, upOf(start), 0)
+  const forward = alongGround(v3(toward.x - at.x, toward.y - at.y, toward.z - at.z), upOf(at))
+  const first = nearestRoadSpotTo(planet, at)
+  if (first === null || vdistance(first.point, at) > GRID_ROAD_REACH) return groundGrid(planet, at, forward, count)
+  const { road, index, point } = first
+  const next = pointOf(road, index + 1)
+  // Back from the start is down the road from the way it runs toward the checkpoint.
+  const back = (next.x - point.x) * forward.x + (next.y - point.y) * forward.y + (next.z - point.z) * forward.z >= 0 ? -1 : 1
+  const lined = [first, ...spotsAlong(first, SPAWN_SPACING / 2, back, count - 1)].map((spot, place) => spawnAside(spot, place, forward))
+  if (lined.length < count) lined.push(...clearSpots(planet, first, lined, count - lined.length))
+  if (lined.length < count) lined.push(...groundGrid(planet, at, forward, count).slice(lined.length))
+  return lined
+}
+
+/** Cars lined up two abreast on the ground back from a point, facing along `forward`. */
+function groundGrid(planet: World, at: Vec3, forward: Vec3, count: number): VehicleSpawn[] {
+  const up = upOf(at)
+  const ahead = vlength(forward) > 1e-6 ? vscale(v3(), forward, 1 / vlength(forward)) : tangentFrame(up).north
+  // Across: ahead crossed with up.
+  const across = v3(ahead.y * up.z - ahead.z * up.y, ahead.z * up.x - ahead.x * up.z, ahead.x * up.y - ahead.y * up.x)
+  return Array.from({ length: count }, (_, place) => {
+    const aside = (SPAWN_ABREAST / 2) * (place % 2 === 0 ? 1 : -1)
+    const behind = (place * SPAWN_SPACING) / 2
+    const way = v3(at.x + across.x * aside - ahead.x * behind, at.y + across.y * aside - ahead.y * behind, at.z + across.z * aside - ahead.z * behind)
+    return spawnHere(overSurface(planet, upOf(way), 0.5), ahead)
+  })
+}
+
+/** A spawn at a spot, in the lane its place in the line puts it in: the right for even places, the left for odd; facing along the road, or the way along it nearer `forward` where one is given. */
+function spawnAside(spot: RoadSpot, place: number, forward?: Vec3): VehicleSpawn {
+  const spawn = forward === undefined ? spawnAt(spot) : spawnFacing(spot, forward)
   const { road, index, point } = spot
   const next = road.points[Math.min(index + 1, road.points.length - 1)]!
   const prev = road.points[Math.max(index - 1, 0)]!

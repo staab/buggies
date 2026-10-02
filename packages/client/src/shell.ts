@@ -212,7 +212,7 @@ export class Shell implements MenuHost {
     this.huds[0]?.notice(text)
   }
 
-  /** A panel over the game, such as the goal panel: while it is open, no one is driving. */
+  /** A panel over the game, such as the games panel: while it is open, no one is driving. */
   overlay: { readonly open: boolean } = { open: false }
 
   /** The game being played, if any. */

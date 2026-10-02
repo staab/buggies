@@ -1,14 +1,19 @@
 import {
-  GOAL_KINDS,
+  COUNT_KINDS,
+  GAME_KINDS,
+  NOT_RACING,
+  RACE_MARKS_MOST,
   UFO_STATES,
   NO_TARGET,
   LOOSE_KINDS,
   VEHICLE_PROFILE_IDS,
   WEAPONS,
   createVehicleInput,
-  type Goal,
-  type GoalKind,
-  type GoalRequest,
+  type CountKind,
+  type Game,
+  type GameKind,
+  type GameRequest,
+  type Race,
   type LooseKind,
   type UfoState,
   type VehicleInput,
@@ -19,7 +24,7 @@ import type { Quat, Vec3 } from '@buggies/physics'
 
 import {
   CLIENT_CHANGE_VEHICLE,
-  CLIENT_GOAL,
+  CLIENT_GAME,
   CLIENT_HELLO,
   CLIENT_INPUT,
   CLIENT_RESPAWN,
@@ -50,21 +55,26 @@ export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
 export const CHANGE_VEHICLE_BYTES = 2
-export const GOAL_BYTES = 16
+/** A game asked for: what kind, how many, and how many marks its course has, each told after it. */
+export const GAME_HEADER_BYTES = 5
+export const GAME_MARK_BYTES = 12
 export const ROOMS_REQUEST_BYTES = 1
 export const ROOMS_HEADER_BYTES = 2
 export const ROOM_BYTES = 5
 export const PEEK_REQUEST_BYTES = 5
 export const PEEK_HEADER_BYTES = 3
 export const PEEK_MARK_BYTES = 14
-export const SNAPSHOT_HEADER_BYTES = 24
+export const SNAPSHOT_HEADER_BYTES = 25
 /**
  * A vehicle in a snapshot: where it is and how it moves, how hurt it is and
  * what it was last driven with, always; and what it has won and what it has
  * going on, only when it has any, which a car nobody drives mostly has not.
  */
 export const SNAPSHOT_VEHICLE_CORE_BYTES = 40
-export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 51
+export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 40
+/** The race on, if any, told after the header: who set it going and when, and each of its marks. */
+export const SNAPSHOT_RACE_BYTES = 5
+export const SNAPSHOT_MARK_BYTES = 6
 export const SNAPSHOT_VEHICLE_BYTES = SNAPSHOT_VEHICLE_CORE_BYTES + SNAPSHOT_VEHICLE_EXTRAS_BYTES
 export const SNAPSHOT_PICKUP_BYTES = 6
 export const SNAPSHOT_SPILLED_BYTES = 31
@@ -75,8 +85,16 @@ export const SNAPSHOT_ROBOT_BYTES = 16
 export const SNAPSHOT_UFO_BYTES = 41
 export const SNAPSHOT_SPIDER_BYTES = 47
 
-/** What a goal is, by the byte that says so: none first. */
-const GOAL_CODES: readonly (GoalKind | 'none')[] = ['none', ...GOAL_KINDS]
+/** What a game is, by the byte that says so: none first. */
+const GAME_CODES: readonly (GameKind | 'none')[] = ['none', ...GAME_KINDS]
+/** What count a car plays for, by the byte that says so: none first. */
+const COUNT_CODES: readonly (CountKind | 'none')[] = ['none', ...COUNT_KINDS]
+
+/** A car in no race, on the wire. */
+const NOT_RACING_BYTE = 0xff
+
+/** How finely a race's mark is told: a way out of unit length, in steps of about 2 cm on the planet's ground. */
+const MARK_STEP = 1 / 32767
 
 /** What a vehicle can carry, by the byte that says so: nothing first. */
 const WEAPON_CODES: readonly Weapon[] = ['none', ...WEAPONS]
@@ -136,13 +154,14 @@ export interface VehicleSnapshot {
   wrecked: boolean
   /** Bananas held. */
   score: number
-  /** Bananas taken since sitting down, all told, and cars its weapons have wrecked. */
+  /** Bananas taken since sitting down, all told, other players' cars its weapons have wrecked, and robots they have brought down. */
   collected: number
   kills: number
   robotKills: number
-  /** The goal it is playing for, if any, and how many it has reached, counted around past 255. */
-  goal: Goal | null
-  goalsWon: number
+  /** The count it is playing for, if any, how many games it has won, counted around past 255, and how many of the race's marks it has passed, or `NOT_RACING`. */
+  game: Game | null
+  gamesWon: number
+  racePassed: number
   /** What it is carrying, and how long the machine gun has left. */
   weapon: Weapon
   /** How many weapons it has won, counted around past 255. */
@@ -269,6 +288,8 @@ export interface SnapshotMessage {
    * so the two are one thing on screen and not one gone and another come.
    */
   looseNext: number
+  /** The race on over the island, if any. */
+  race: Race | null
   vehicles: VehicleSnapshot[]
   /** The slots whose banana has moved on since the snapshot before; every slot when full. */
   pickups: PickupSnapshot[]
@@ -603,29 +624,29 @@ export function decodeChangeVehicle(payload: Uint8Array): VehicleProfileId | nul
   return VEHICLE_PROFILE_IDS[payload[1]!] ?? null
 }
 
-export function encodeGoal(goal: GoalRequest | null): Uint8Array {
-  const writer = new Writer(GOAL_BYTES)
-  writer.u8(CLIENT_GOAL)
-  writer.u8(goal === null ? 0 : GOAL_CODES.indexOf(goal.kind))
-  writer.u16(goal === null ? 0 : Math.min(Math.max(goal.target, 0), 0xffff))
-  writer.f32(goal?.x ?? 0)
-  writer.f32(goal?.y ?? 0)
-  writer.f32(goal?.z ?? 0)
+export function encodeGame(game: GameRequest | null): Uint8Array {
+  const course = (game?.course ?? []).slice(0, RACE_MARKS_MOST)
+  const writer = new Writer(GAME_HEADER_BYTES + course.length * GAME_MARK_BYTES)
+  writer.u8(CLIENT_GAME)
+  writer.u8(game === null ? 0 : GAME_CODES.indexOf(game.kind))
+  writer.u16(game === null ? 0 : Math.min(Math.max(game.target, 0), 0xffff))
+  writer.u8(course.length)
+  for (const mark of course) writer.vec3(mark)
   return writer.bytes
 }
 
-/** The goal a message asks for, `null` for none, or `undefined` if it is not a goal message at all. */
-export function decodeGoal(payload: Uint8Array): GoalRequest | null | undefined {
-  if (payload.length !== GOAL_BYTES || messageTypeOf(payload) !== CLIENT_GOAL) return undefined
+/** The game a message asks for, `null` for none, or `undefined` if it is not a game message at all. */
+export function decodeGame(payload: Uint8Array): GameRequest | null | undefined {
+  if (payload.length < GAME_HEADER_BYTES || messageTypeOf(payload) !== CLIENT_GAME) return undefined
   const reader = new Reader(payload)
   reader.u8()
-  const kind = GOAL_CODES[reader.u8()]
+  const kind = GAME_CODES[reader.u8()]
   const target = reader.u16()
-  const x = reader.f32()
-  const y = reader.f32()
-  const z = reader.f32()
-  if (kind === undefined) return undefined
-  return kind === 'none' ? null : { kind, target, x, y, z }
+  const marks = reader.u8()
+  if (kind === undefined || marks > RACE_MARKS_MOST || payload.length !== GAME_HEADER_BYTES + marks * GAME_MARK_BYTES) return undefined
+  const course: Vec3[] = []
+  for (let k = 0; k < marks; k++) course.push(reader.vec3())
+  return kind === 'none' ? null : { kind, target, course }
 }
 
 export function encodeRoomsRequest(): Uint8Array {
@@ -679,8 +700,9 @@ function hasExtras(vehicle: VehicleSnapshot): boolean {
     vehicle.collected !== 0 ||
     vehicle.kills !== 0 ||
     vehicle.robotKills !== 0 ||
-    vehicle.goal !== null ||
-    vehicle.goalsWon !== 0 ||
+    vehicle.game !== null ||
+    vehicle.gamesWon !== 0 ||
+    vehicle.racePassed !== NOT_RACING ||
     vehicle.weapon !== 'none' ||
     vehicle.wins !== 0 ||
     vehicle.ammoTicks !== 0 ||
@@ -696,6 +718,10 @@ function hasExtras(vehicle: VehicleSnapshot): boolean {
     vehicle.grappleTicks !== 0 ||
     vehicle.grappleTarget !== NO_TARGET
   )
+}
+
+function raceBytes(race: Race | null): number {
+  return race === null ? 0 : SNAPSHOT_RACE_BYTES + Math.min(race.course.length, RACE_MARKS_MOST) * SNAPSHOT_MARK_BYTES
 }
 
 function vehicleBytes(vehicles: readonly VehicleSnapshot[]): number {
@@ -714,8 +740,9 @@ function quietVehicle(): Omit<
     collected: 0,
     kills: 0,
     robotKills: 0,
-    goal: null,
-    goalsWon: 0,
+    game: null,
+    gamesWon: 0,
+    racePassed: NOT_RACING,
     weapon: 'none',
     wins: 0,
     ammoTicks: 0,
@@ -737,6 +764,7 @@ function quietVehicle(): Omit<
 export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   const writer = new Writer(
     SNAPSHOT_HEADER_BYTES +
+      raceBytes(message.race) +
       vehicleBytes(message.vehicles) +
       message.pickups.length * SNAPSHOT_PICKUP_BYTES +
       message.loose.length * SNAPSHOT_SPILLED_BYTES +
@@ -761,6 +789,12 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.robots.length)
   writer.u8(message.ufos.length)
   writer.u8(message.spiders.length)
+  writer.u8(message.race === null ? 0 : Math.min(message.race.course.length, RACE_MARKS_MOST))
+  if (message.race !== null) {
+    writer.u8(message.race.starter)
+    writer.u32(message.race.startTick >>> 0)
+    for (const mark of message.race.course.slice(0, RACE_MARKS_MOST)) writer.steps(mark, MARK_STEP)
+  }
   for (const vehicle of message.vehicles) {
     const extras = hasExtras(vehicle)
     writer.u8(vehicle.seat)
@@ -781,13 +815,11 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u16(Math.min(vehicle.collected, 0xffff))
     writer.u16(Math.min(vehicle.kills, 0xffff))
     writer.u16(Math.min(vehicle.robotKills, 0xffff))
-    writer.u8(vehicle.goal === null ? 0 : GOAL_CODES.indexOf(vehicle.goal.kind))
-    writer.u16(Math.min(vehicle.goal?.target ?? 0, 0xffff))
-    writer.u16(Math.min(Math.max(vehicle.goal?.from ?? 0, 0), 0xffff))
-    writer.f32(vehicle.goal?.x ?? 0)
-    writer.f32(vehicle.goal?.y ?? 0)
-    writer.f32(vehicle.goal?.z ?? 0)
-    writer.u8(vehicle.goalsWon & 0xff)
+    writer.u8(vehicle.game === null ? 0 : COUNT_CODES.indexOf(vehicle.game.kind))
+    writer.u16(Math.min(vehicle.game?.target ?? 0, 0xffff))
+    writer.u16(Math.min(Math.max(vehicle.game?.from ?? 0, 0), 0xffff))
+    writer.u8(vehicle.gamesWon & 0xff)
+    writer.u8(vehicle.racePassed === NOT_RACING ? NOT_RACING_BYTE : Math.min(vehicle.racePassed, RACE_MARKS_MOST))
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
     writer.u8(vehicle.wins & 0xff)
     writer.u16(Math.min(Math.max(vehicle.ammoTicks, 0), 0xffff))
@@ -901,6 +933,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const robotCount = reader.u8()
   const ufoCount = reader.u8()
   const spiderCount = reader.u8()
+  const raceMarks = reader.u8()
+  if (raceMarks > RACE_MARKS_MOST) return null
   const rest =
     pickupCount * SNAPSHOT_PICKUP_BYTES +
     looseCount * SNAPSHOT_SPILLED_BYTES +
@@ -910,7 +944,16 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     robotCount * SNAPSHOT_ROBOT_BYTES +
     ufoCount * SNAPSHOT_UFO_BYTES +
     spiderCount * SNAPSHOT_SPIDER_BYTES
-  if (payload.length < SNAPSHOT_HEADER_BYTES + count * SNAPSHOT_VEHICLE_CORE_BYTES + rest) return null
+  const raceTold = raceMarks === 0 ? 0 : SNAPSHOT_RACE_BYTES + raceMarks * SNAPSHOT_MARK_BYTES
+  if (payload.length < SNAPSHOT_HEADER_BYTES + raceTold + count * SNAPSHOT_VEHICLE_CORE_BYTES + rest) return null
+  let race: Race | null = null
+  if (raceMarks > 0) {
+    const starter = reader.u8()
+    const startTick = reader.u32()
+    const course: Vec3[] = []
+    for (let k = 0; k < raceMarks; k++) course.push(reader.steps(MARK_STEP))
+    race = { course, starter, startTick }
+  }
 
   const vehicles: VehicleSnapshot[] = []
   for (let i = 0; i < count; i++) {
@@ -951,15 +994,15 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     vehicle.collected = reader.u16()
     vehicle.kills = reader.u16()
     vehicle.robotKills = reader.u16()
-    const goalKind = GOAL_CODES[reader.u8()]
+    const gameKind = COUNT_CODES[reader.u8()]
     const target = reader.u16()
     const from = reader.u16()
-    const x = reader.f32()
-    const y = reader.f32()
-    const z = reader.f32()
-    if (goalKind === undefined) return null
-    vehicle.goal = goalKind === 'none' ? null : { kind: goalKind, target, from, x, y, z }
-    vehicle.goalsWon = reader.u8()
+    if (gameKind === undefined) return null
+    vehicle.game = gameKind === 'none' ? null : { kind: gameKind, target, from }
+    vehicle.gamesWon = reader.u8()
+    const passed = reader.u8()
+    if (passed !== NOT_RACING_BYTE && passed > RACE_MARKS_MOST) return null
+    vehicle.racePassed = passed === NOT_RACING_BYTE ? NOT_RACING : passed
     const weapon = WEAPON_CODES[reader.u8()]
     if (weapon === undefined) return null
     vehicle.weapon = weapon
@@ -1088,6 +1131,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
     full,
     looseNext,
+    race,
     vehicles,
     pickups,
     loose,

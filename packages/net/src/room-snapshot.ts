@@ -1,4 +1,4 @@
-import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
+import { NOT_RACING, NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
 import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, SpiderSnapshot, UfoSnapshot, VehicleSnapshot } from './wire.ts'
@@ -60,6 +60,7 @@ export function gatherSnapshot(
     ackInputTick: -1,
     full: whole,
     looseNext: arena.looseNext,
+    race: arena.race,
     vehicles: gatherVehicles(arena, out, appliedInputOf),
     pickups: gatherPickups(arena, out, whole),
     loose: gatherLoose(arena, out, whole),
@@ -102,8 +103,9 @@ function gatherVehicles(
       collected: 0,
       kills: 0,
       robotKills: 0,
-      goal: null,
-      goalsWon: 0,
+      game: null,
+      gamesWon: 0,
+      racePassed: NOT_RACING,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -138,8 +140,9 @@ function gatherVehicles(
     vehicle.collected = seat.collected
     vehicle.kills = seat.kills
     vehicle.robotKills = seat.robotKills
-    vehicle.goal = seat.goal
-    vehicle.goalsWon = seat.goalsWon
+    vehicle.game = seat.game
+    vehicle.gamesWon = seat.gamesWon
+    vehicle.racePassed = seat.racePassed
     vehicle.weapon = seat.weapon
     vehicle.wins = seat.wins
     vehicle.ammoTicks = seat.ammoTicks

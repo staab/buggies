@@ -1,3 +1,4 @@
+import { NOT_RACING } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -13,6 +14,8 @@ import {
   encodePeek,
   encodePeekRequest,
   SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_MARK_BYTES,
+  SNAPSHOT_RACE_BYTES,
   SNAPSHOT_PROP_BYTES,
   SNAPSHOT_ROBOT_BYTES,
   SNAPSHOT_SPIDER_BYTES,
@@ -36,8 +39,8 @@ import {
   encodeRoomsRequest,
   encodeSnapshot,
   encodeWelcome,
-  decodeGoal,
-  encodeGoal,
+  decodeGame,
+  encodeGame,
   isRespawn,
   isRoomsRequest,
   NO_ARRIVAL,
@@ -53,6 +56,15 @@ const snapshot: SnapshotMessage = {
   ackInputTick: 123450,
   full: true,
   looseNext: 4321,
+  race: {
+    course: [
+      { x: 0.6, y: 0, z: 0.8 },
+      { x: 0, y: 1, z: 0 },
+      { x: -0.48, y: 0.6, z: 0.64 },
+    ],
+    starter: 5,
+    startTick: 120000,
+  },
   vehicles: [
     {
       seat: 0,
@@ -68,8 +80,9 @@ const snapshot: SnapshotMessage = {
       collected: 1234,
       robotKills: 1,
     kills: 7,
-      goal: { kind: 'location', target: 0, from: 0, x: 0.5, y: 0, z: 0.75 },
-      goalsWon: 3,
+      game: { kind: 'robots', target: 4, from: 1 },
+      gamesWon: 3,
+      racePassed: 2,
       weapon: 'machineGun',
       wins: 255,
       ammoTicks: 1234,
@@ -104,8 +117,9 @@ const snapshot: SnapshotMessage = {
       collected: 3,
       robotKills: 1,
     kills: 0,
-      goal: { kind: 'kills', target: 5, from: 2, x: 0, y: 0, z: 0 },
-      goalsWon: 0,
+      game: { kind: 'kills', target: 5, from: 2 },
+      gamesWon: 0,
+      racePassed: NOT_RACING,
       weapon: 'none',
       wins: 0,
       ammoTicks: 0,
@@ -200,27 +214,30 @@ describe('wire', () => {
     expect(out).toEqual(input)
   })
 
-  it('round-trips a goal, a count or a spot, and the clearing of one', () => {
-    expect(decodeGoal(encodeGoal({ kind: 'score', target: 20, x: 0, y: 0, z: 0 }))).toEqual({ kind: 'score', target: 20, x: 0, y: 0, z: 0 })
-    expect(decodeGoal(encodeGoal({ kind: 'location', target: 0, x: 0.625, y: -0.5, z: 0.25 }))).toEqual({
-      kind: 'location',
-      target: 0,
-      x: 0.625,
-      y: -0.5,
-      z: 0.25,
-    })
-    expect(decodeGoal(encodeGoal(null))).toBeNull()
-    // Not a goal at all: the wrong length, or a kind that is none of them.
-    expect(decodeGoal(encodeRespawn())).toBeUndefined()
-    const bad = encodeGoal(null)
+  it('round-trips a game, a count or a race, and the clearing of one', () => {
+    expect(decodeGame(encodeGame({ kind: 'score', target: 20, course: [] }))).toEqual({ kind: 'score', target: 20, course: [] })
+    const course = [
+      { x: 0.625, y: -0.5, z: 0.25 },
+      { x: 0, y: 1, z: 0 },
+      { x: 0.5, y: 0.5, z: -0.25 },
+    ]
+    expect(decodeGame(encodeGame({ kind: 'race', target: 0, course }))).toEqual({ kind: 'race', target: 0, course })
+    expect(decodeGame(encodeGame(null))).toBeNull()
+    // Not a game at all: the wrong length, or a kind that is none of them.
+    expect(decodeGame(encodeRespawn())).toBeUndefined()
+    const bad = encodeGame(null)
     bad[1] = 99
-    expect(decodeGoal(bad)).toBeUndefined()
+    expect(decodeGame(bad)).toBeUndefined()
+    const short = encodeGame({ kind: 'race', target: 0, course })
+    expect(decodeGame(short.slice(0, short.length - 1))).toBeUndefined()
   })
 
   it('round-trips a snapshot, every vehicle and field', () => {
     const payload = encodeSnapshot(snapshot)
     expect(payload.length).toBe(
       SNAPSHOT_HEADER_BYTES +
+        SNAPSHOT_RACE_BYTES +
+        3 * SNAPSHOT_MARK_BYTES +
         snapshot.props.length * SNAPSHOT_PROP_BYTES +
         snapshot.robots.length * SNAPSHOT_ROBOT_BYTES +
         snapshot.ufos.length * SNAPSHOT_UFO_BYTES +
@@ -236,6 +253,10 @@ describe('wire', () => {
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
     expect(decoded.full).toBe(true)
     expect(decoded.looseNext).toBe(4321)
+    expect(decoded.race).toMatchObject({ starter: 5, startTick: 120000 })
+    for (const [k, mark] of snapshot.race!.course.entries()) {
+      for (const axis of ['x', 'y', 'z'] as const) expect(decoded.race!.course[k]![axis]).toBeCloseTo(mark[axis], 4)
+    }
     expect(decoded.pickups).toEqual(snapshot.pickups)
     expect(decoded.removed).toEqual(snapshot.removed)
     for (const [i, rocket] of snapshot.rockets.entries()) {
@@ -249,9 +270,9 @@ describe('wire', () => {
     expect(decoded.robots).toEqual(snapshot.robots)
     expect(decoded.ufos).toEqual(snapshot.ufos)
     // With nothing changed, a snapshot is its vehicles, robots and saucers alone.
-    const quiet = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [] }
+    const quiet = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [] }
     expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES + SNAPSHOT_UFO_BYTES + SNAPSHOT_SPIDER_BYTES)
-    expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, pickups: [], loose: [], removed: [] })
+    expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, race: null, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
       const got = decoded.loose[i]!
       expect(got).toMatchObject({ id: loose.id, kind: loose.kind, owner: loose.owner, age: loose.age })
@@ -289,7 +310,9 @@ describe('wire', () => {
       expect(throttle).toBeCloseTo(vehicle.appliedInput.throttle, 2)
       expect(brake).toBeCloseTo(vehicle.appliedInput.brake, 2)
       expect(buttons).toEqual({ handbrake: vehicle.appliedInput.handbrake, fire: vehicle.appliedInput.fire, ability: vehicle.appliedInput.ability })
-      expect(got.goal).toEqual(vehicle.goal)
+      expect(got.game).toEqual(vehicle.game)
+      expect(got.gamesWon).toBe(vehicle.gamesWon)
+      expect(got.racePassed).toBe(vehicle.racePassed)
       expect(got.npc).toBe(vehicle.npc)
       for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
         for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(vehicle[key][axis], 4)
@@ -315,21 +338,21 @@ describe('wire', () => {
       score: 0,
       collected: 0,
       robotKills: 0,
-      goal: null,
+      game: null,
       rocketsFired: 0,
       grappleTarget: -1,
       abilityHeld: false,
       appliedInput: { steer: 0.25, throttle: 0.6, brake: 0, handbrake: false, fire: false, ability: false },
     }
     const busy: VehicleSnapshot = { ...quiet, seat: 10, weapon: 'shield', shieldTicks: 90 }
-    const message = { ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [], vehicles: [quiet, busy, driven] }
+    const message = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [], vehicles: [quiet, busy, driven] }
     const payload = encodeSnapshot(message)
     expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_CORE_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
     const [gotQuiet, gotBusy, gotDriven] = decodeSnapshot(payload)!.vehicles
-    expect(gotQuiet).toMatchObject({ seat: 9, npc: true, score: 0, goal: null, weapon: 'none', grappleTarget: -1, shieldTicks: 0 })
+    expect(gotQuiet).toMatchObject({ seat: 9, npc: true, score: 0, game: null, racePassed: NOT_RACING, weapon: 'none', grappleTarget: -1, shieldTicks: 0 })
     expect(gotQuiet!.appliedInput.throttle).toBeCloseTo(0.6, 2)
     expect(gotBusy).toMatchObject({ seat: 10, npc: true, weapon: 'shield', shieldTicks: 90 })
-    expect(gotDriven).toMatchObject({ seat: driven.seat, npc: false, score: driven.score, goal: driven.goal })
+    expect(gotDriven).toMatchObject({ seat: driven.seat, npc: false, score: driven.score, game: driven.game })
   })
 
   it('tells any turn, however it is written, to within a hundred-thousandth, and a velocity to within a step', () => {
@@ -401,7 +424,7 @@ describe('wire', () => {
 
     // An unknown vehicle profile is not guessed at.
     const badProfile = encodeSnapshot(snapshot)
-    badProfile[SNAPSHOT_HEADER_BYTES + 2] = 200
+    badProfile[SNAPSHOT_HEADER_BYTES + SNAPSHOT_RACE_BYTES + 3 * SNAPSHOT_MARK_BYTES + 2] = 200
     expect(decodeSnapshot(badProfile)).toBeNull()
 
     const wrongType = encodeInput(1, snapshot.vehicles[0]!.appliedInput)

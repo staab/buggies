@@ -1,4 +1,4 @@
-import type { GoalRequest, VehicleInput, VehicleProfileId } from '@buggies/game'
+import type { GameRequest, VehicleInput, VehicleProfileId } from '@buggies/game'
 
 import { BananaLedger } from './ledger.ts'
 import type { PredictionUpdate } from './prediction.ts'
@@ -21,7 +21,7 @@ import {
   encodeHello,
   encodeInput,
   encodeChangeVehicle,
-  encodeGoal,
+  encodeGame,
   encodeRespawn,
   messageTypeOf,
   type SnapshotMessage,
@@ -220,10 +220,10 @@ export class NetClient {
     this.transport.send(encodeRespawn())
   }
 
-  /** Play for this goal, or for none: free play again. */
-  setGoal(goal: GoalRequest | null): void {
+  /** Play this game, or none: free play again. */
+  setGame(game: GameRequest | null): void {
     if (this.welcomeMessage === null || this.closedReason !== null) return
-    this.transport.send(encodeGoal(goal))
+    this.transport.send(encodeGame(game))
   }
 
   /** Everyone else, where they were a moment ago. */

@@ -90,18 +90,19 @@ body {
   font-size: 11px;
   color: var(--dim);
 }
-/* The goal being played for, under the bananas: gold when one is reached. */
-.goal {
+/* The games being played, under the bananas, a line each: gold when one is won. */
+.game {
   font-size: 12px;
   color: var(--dim);
+  white-space: pre-line;
 }
-.goal.won {
+.game.won {
   color: #ffd24a;
   font-weight: 600;
 }
-/* A speaker in the corner, crossed out when muted, and a trophy beside it for setting a goal. */
+/* A speaker in the corner, crossed out when muted, and a trophy beside it for the games. */
 #mute,
-#goal {
+#trophy {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -115,42 +116,42 @@ body {
   background: var(--panel);
   color: var(--ink);
 }
-#goal {
+#trophy {
   right: 58px;
 }
-#goal[hidden] {
+#trophy[hidden] {
   display: none;
 }
 #mute svg,
-#goal svg {
+#trophy svg {
   width: 20px;
   height: 20px;
 }
-#goals {
+#games {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 15;
 }
-#goals[hidden] {
+#games[hidden] {
   display: none;
 }
-/* The goal panel, under the trophy in the corner. */
-.panel.goals {
+/* The games panel, under the trophy in the corner. */
+.panel.games {
   left: auto;
   right: 16px;
   top: 60px;
   bottom: auto;
   max-height: calc(100vh - 76px);
 }
-.goals .amount {
+.games .amount {
   display: flex;
   align-items: center;
   gap: 12px;
   margin: 0 0 12px;
   font-size: 13px;
 }
-.goals .amount input {
+.games .amount input {
   width: 90px;
   font: inherit;
   color: inherit;
@@ -159,12 +160,17 @@ body {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.28);
 }
-.goals .spot canvas {
+.games .course canvas {
   display: block;
   width: 100%;
   height: auto;
   border-radius: 8px;
   cursor: crosshair;
+}
+.games .course .tools {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 0;
 }
 #mute .off {
   display: none;

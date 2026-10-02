@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 36
+export const PROTOCOL_VERSION = 37
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND
@@ -27,8 +27,8 @@ export const CLIENT_RESPAWN = 0x03
 export const CLIENT_ROOMS = 0x04
 /** Into another vehicle, where the car is: the seat, its bananas and the island stay. */
 export const CLIENT_CHANGE_VEHICLE = 0x05
-/** A goal to play for, or none: free play again. */
-export const CLIENT_GOAL = 0x06
+/** A game to play, or none: free play again. */
+export const CLIENT_GAME = 0x06
 /** Instead of a hello: where every car on one island is. The answer ends the connection. */
 export const CLIENT_PEEK = 0x07
 

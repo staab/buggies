@@ -3,7 +3,10 @@ import {
   NPC_CARS,
   PLAYABLE_PROFILE_IDS,
   advance,
-  awardGoals,
+  awardGames,
+  endRace,
+  playRace,
+  startRace,
   carriedOf,
   carryOver,
   changeVehicle,
@@ -17,9 +20,9 @@ import {
   respawn,
   respawnNearby,
   seatNpc,
-  setGoal,
+  setGame,
   spawnWhere,
-  validGoal,
+  validGame,
   type Arena,
   type Carried,
   type Seat,
@@ -30,7 +33,7 @@ import { vdistance } from '@buggies/physics'
 import { InputTimeline } from './input-timeline.ts'
 import {
   CLIENT_CHANGE_VEHICLE,
-  CLIENT_GOAL,
+  CLIENT_GAME,
   CLIENT_HELLO,
   CLIENT_INPUT,
   INPUT_TIMELINE_TICKS,
@@ -49,7 +52,7 @@ import { createRoomSnapshots, gatherSnapshot, rememberTold, type RoomSnapshots }
 import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
   decodeChangeVehicle,
-  decodeGoal,
+  decodeGame,
   NO_ARRIVAL,
   NO_PASS,
   decodeHello,
@@ -97,9 +100,12 @@ export interface GameServerEvents {
   onRejected(connectionId: number, reason: string): void
   onRespawned(seat: Seat, why: 'lost' | 'asked'): void
   onChangedVehicle(seat: Seat): void
-  /** A player has set a goal, or cleared theirs, and has reached one. */
-  onGoalSet?(seat: Seat): void
-  onGoalReached?(seat: Seat): void
+  /** A player has set a count to play for, or cleared theirs, and has won one. */
+  onGameSet?(seat: Seat): void
+  onGameWon?(seat: Seat): void
+  /** A player has set a race going on their island, and a race is over, won or called off. */
+  onRaceStarted?(seat: Seat, racers: readonly Seat[]): void
+  onRaceEnded?(seed: number, winner: Seat | null): void
   /** A room has been made for a seed nobody was on, or closed behind the last to leave it. */
   onRoomOpened(seed: number): void
   onRoomClosed(seed: number): void
@@ -275,7 +281,9 @@ export class GameServer implements TransportHandlers {
         seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? NEUTRAL_INPUT),
       )
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
-      for (const seat of awardGoals(room.arena.seats, room.arena.planet.radius)) this.events.onGoalReached?.(seat)
+      for (const seat of awardGames(room.arena.seats)) this.events.onGameWon?.(seat)
+      const raced = playRace(room.arena)
+      if (raced !== null) this.events.onRaceEnded?.(room.arena.planet.seed, raced.winner)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
     this.expireHandshakes()
@@ -327,15 +335,27 @@ export class GameServer implements TransportHandlers {
       return
     }
 
-    if (messageTypeOf(payload) === CLIENT_GOAL) {
-      const request = decodeGoal(payload)
-      const goal = request === null ? null : request === undefined ? undefined : validGoal(request)
-      if (goal === undefined || (request !== null && goal === null)) {
+    if (messageTypeOf(payload) === CLIENT_GAME) {
+      const request = decodeGame(payload)
+      const game = request === null ? null : request === undefined ? undefined : validGame(request, arena.planet.radius)
+      if (game === undefined || (request !== null && game === null)) {
         this.reject(connection, REJECT_MALFORMED_MESSAGE)
         return
       }
-      setGoal(player.seat, goal)
-      this.events.onGoalSet?.(player.seat)
+      if (game === null) {
+        // Clearing is of the player's own count, and of the race on if they set it going.
+        setGame(player.seat, null)
+        if (arena.race?.starter === player.seat.id) {
+          endRace(arena)
+          this.events.onRaceEnded?.(arena.planet.seed, null)
+        }
+      } else if (game.kind !== 'race') setGame(player.seat, { kind: game.kind, target: game.target })
+      else if (arena.race === null) {
+        // One race at a time: asked for while another is on, it is too late, and nothing comes of it.
+        this.events.onRaceStarted?.(player.seat, startRace(arena, game.course, player.seat))
+        return
+      } else return
+      this.events.onGameSet?.(player.seat)
       return
     }
 

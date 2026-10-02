@@ -3,7 +3,9 @@ import {
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
   BANANAS_PER_WEAPON,
-  GOAL_PRIZE,
+  GAME_PRIZE,
+  NOT_RACING,
+  RACE_LEG_LEAST,
   MAX_PLAYERS,
   NPC_CARS,
   ROBOTS,
@@ -177,8 +179,10 @@ class Session {
         onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
         onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
         onChangedVehicle: (seat) => this.events.push(`changed ${seat.id} ${seat.profile}`),
-        onGoalSet: (seat) => this.events.push(`goal ${seat.id} ${seat.goal === null ? 'none' : `${seat.goal.kind} ${seat.goal.target}`}`),
-        onGoalReached: (seat) => this.events.push(`reached ${seat.id}`),
+        onGameSet: (seat) => this.events.push(`game ${seat.id} ${seat.game === null ? 'none' : `${seat.game.kind} ${seat.game.target}`}`),
+        onGameWon: (seat) => this.events.push(`won ${seat.id}`),
+        onRaceStarted: (seat, racers) => this.events.push(`race ${seat.id} started ${racers.length}`),
+        onRaceEnded: (_, winner) => this.events.push(`race ended ${winner === null ? 'none' : winner.id}`),
         onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
         onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
       },
@@ -713,40 +717,90 @@ describe('a session', () => {
     session.dispose()
   })
 
-  it('sets a goal for a player, pays it once reached, and tells their prediction of both', async () => {
+  it('sets a count for a player, pays it once reached, and tells their prediction of both', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
     session.run(0.5)
     const seat = session.arena.seats[a.client.welcome!.seat]!
     // Counted from whatever it has taken already, a banana by the spawn perhaps.
     const collected = seat.collected
-    a.client.setGoal({ kind: 'score', target: 2, x: 0, y: 0, z: 0 })
+    a.client.setGame({ kind: 'score', target: 2, course: [] })
     session.run(0.5)
-    expect(session.events).toContain('goal 0 score 2')
-    expect(seat.goal).toEqual({ kind: 'score', target: 2, x: 0, y: 0, z: 0, from: collected })
-    expect(a.prediction.ownSeat.goal).toEqual(seat.goal)
+    expect(session.events).toContain('game 0 score 2')
+    expect(seat.game).toEqual({ kind: 'score', target: 2, from: collected })
+    expect(a.prediction.ownSeat.game).toEqual(seat.game)
 
-    // Two bananas more, and the prize is paid: once, and the goal is done with.
+    // Two bananas more, and the prize is paid: once, and the game is done with.
     // Carrying something already, the car keeps the prize rather than spending it.
     arm(seat, 'rocket')
     const held = seat.score
     seat.collected += 2
     session.run(0.5)
-    expect(session.events).toContain('reached 0')
-    expect(seat.score).toBe(held + GOAL_PRIZE)
-    expect(seat.goal).toBeNull()
-    expect(a.prediction.ownSeat.goalsWon).toBe(1)
-    expect(a.prediction.ownSeat.goal).toBeNull()
+    expect(session.events).toContain('won 0')
+    expect(seat.score).toBe(held + GAME_PRIZE)
+    expect(seat.game).toBeNull()
+    expect(a.prediction.ownSeat.gamesWon).toBe(1)
+    expect(a.prediction.ownSeat.game).toBeNull()
 
-    // A spot on the map, where the car is, is reached as soon as it is set.
-    a.client.setGoal({ kind: 'location', target: 0, ...upOf(seat.vehicle.frame.position) })
-    session.run(0.5)
-    expect(seat.goalsWon).toBe(2)
-
-    // A goal that cannot be played for is refused, and the player with it.
-    a.client.setGoal({ kind: 'kills', target: 0, x: 0, y: 0, z: 0 })
+    // A game that cannot be played for is refused, and the player with it.
+    a.client.setGame({ kind: 'kills', target: 0, course: [] })
     session.run(0.5)
     expect(a.client.closed).not.toBeNull()
+    session.dispose()
+  })
+
+  it('puts everyone on the island on the start of a race one of them sets going, and pays the first over the finish', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    const b = await session.join('sportsCar')
+    session.run(0.5)
+    const seatA = session.arena.seats[a.client.welcome!.seat]!
+    const seatB = session.arena.seats[b.client.welcome!.seat]!
+    const road = map.roads.filter((each) => each.kind === 'highway').sort((x, y) => y.points.length - x.points.length)[0]!
+    const marks: Vec3[] = [road.points[0]!]
+    for (const point of road.points) if (marks.length < 3 && groundDistance(point, marks.at(-1)!) > RACE_LEG_LEAST + 20) marks.push(point)
+    const course = marks.map((mark) => upOf(mark))
+
+    a.client.setGame({ kind: 'race', target: 0, course })
+    session.run(0.5)
+    expect(session.events).toContain(`race ${seatA.id} started 2`)
+    for (const player of [a, b]) {
+      expect(groundDistance(session.serverPositionOf(player), marks[0]!)).toBeLessThan(40)
+      // Everyone's mirror knows of the race, and of how far along it they are.
+      expect(player.prediction.race?.starter).toBe(seatA.id)
+      expect(player.prediction.ownSeat.racePassed).toBe(1)
+    }
+
+    // Another race asked for while one is on comes to nothing.
+    b.client.setGame({ kind: 'race', target: 0, course: [...course].reverse() })
+    session.run(0.5)
+    expect(session.arena.race?.starter).toBe(seatA.id)
+    expect(b.client.closed).toBeNull()
+
+    // Carrying something already, the car keeps the prize rather than spending it.
+    arm(seatB, 'rocket')
+    const held = seatB.score
+    for (const mark of marks.slice(1)) {
+      respawn(seatB, spawnHere(mark, tangentFrame(upOf(mark)).east))
+      session.run(0.25)
+    }
+    expect(session.events).toContain(`race ended ${seatB.id}`)
+    expect(seatB.score).toBe(held + GAME_PRIZE)
+    expect(session.arena.race).toBeNull()
+    expect(b.prediction.ownSeat.gamesWon).toBe(1)
+    expect(a.prediction.race).toBeNull()
+    expect(a.prediction.ownSeat.racePassed).toBe(NOT_RACING)
+
+    // Whoever set a race going may call it off.
+    a.client.setGame({ kind: 'race', target: 0, course })
+    session.run(0.5)
+    b.client.setGame(null)
+    session.run(0.25)
+    expect(session.arena.race).not.toBeNull()
+    a.client.setGame(null)
+    session.run(0.25)
+    expect(session.arena.race).toBeNull()
+    expect(session.events.at(-2)).toBe('race ended none')
     session.dispose()
   })
 

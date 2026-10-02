@@ -1,5 +1,5 @@
 import type { IslandMark } from '@buggies/net'
-import type { Goal, GoalRequest, VehicleProfileId } from '@buggies/game'
+import type { Game, GameRequest, Race, VehicleProfileId } from '@buggies/game'
 import type { World } from '@buggies/terrain'
 import type * as THREE from 'three'
 
@@ -24,14 +24,16 @@ export interface ModeView {
   hud(): readonly HudState[]
   /** Put everyone on this screen into these vehicles, one a player, where they are; a mode with no one driving has none. */
   changeVehicles?(profiles: readonly VehicleProfileId[]): void
-  /** The island being driven, for a goal to be picked on; a mode with no one driving has none. */
+  /** The island being driven, for a race to be picked on; a mode with no one driving has none. */
   readonly map?: World
   /** Where the first player on this screen is. */
   position?(): { x: number; y: number; z: number }
-  /** The goal the first player on this screen is playing for, if any. */
-  goal?(): Goal | null
-  /** Put everyone on this screen to playing for this goal, or for none. */
-  setGoal?(goal: GoalRequest | null): void
+  /** The count the first player on this screen is playing for, if any. */
+  game?(): Game | null
+  /** The race on over the island, if any, and whether someone on this screen set it going. */
+  race?(): { race: Race; mine: boolean } | null
+  /** Put everyone on this screen to playing for this count, set a race going for the whole island, or stop. */
+  setGame?(game: GameRequest | null): void
   /** The portal anyone on this screen has driven through since last asked, or -1. */
   portal?(): number
   /** Why the connection to the server was lost, if it has been, for the game to be joined again. */

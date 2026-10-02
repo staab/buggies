@@ -451,7 +451,7 @@ export interface Gunner {
   readonly occupied: boolean
   /** A car nobody drives, which weapons hurt all the more. */
   readonly npc: boolean
-  /** How many cars its weapons have wrecked since it sat down, and how many robots they have brought down. */
+  /** How many other players' cars its weapons have wrecked since it sat down, and how many robots they have brought down. */
   kills: number
   robotKills: number
   readonly vehicle: Vehicle
@@ -860,14 +860,15 @@ export function shielded(seat: Gunner): boolean {
 
 /**
  * Take this much of a car's life with a weapon, unless its shield is up. A
- * hit that wrecks it is a kill to whoever fired, if that is someone else.
+ * hit that wrecks another player's car is a kill to whoever fired: a car
+ * nobody drives is no kill to anyone.
  */
 export function harm(seat: Gunner, damage: number, by?: Gunner): void {
   if (shielded(seat)) return
   const whole = !seat.vehicle.wrecked
   // A car nobody drives has its toughness cut by its fragility, which its armor already takes the root of.
   hurtVehicle(seat.vehicle, seat.tuning, damage * (seat.npc ? Math.sqrt(NPC_FRAGILITY) : 1))
-  if (whole && seat.vehicle.wrecked && by !== undefined && by.id !== seat.id && by.occupied) by.kills += 1
+  if (whole && seat.vehicle.wrecked && !seat.npc && by !== undefined && by.id !== seat.id && by.occupied) by.kills += 1
 }
 
 /** How much of their grip a car's tires have: a share of it while they slip on oil. */
