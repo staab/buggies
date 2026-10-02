@@ -242,10 +242,11 @@ export class Shell implements MenuHost {
     }
   }
 
-  /** Put the island with this seed on show, to be looked over, and say what it is like. */
+  /** Put the island with this seed on show, to be looked over, and say what it is like. The address bar names it as soon as it is picked. */
   async showIsland(seed: number): Promise<string> {
     const stamp = ++this.generation
     this.choiceNow = { ...this.choiceNow, seed }
+    this.settle(this.choiceNow)
     if (this.backdrop?.kind === 'island' && this.backdrop.seed === seed && this.map !== null) {
       return islandSummary(this.map)
     }
@@ -316,7 +317,6 @@ export class Shell implements MenuHost {
         return
       }
       this.setGame({ mode, choice: next, world: next.seed })
-      this.settle(next)
     } catch (error: unknown) {
       if (stamp !== this.generation) return
       const why = error instanceof Error ? error.message : String(error)

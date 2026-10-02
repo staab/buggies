@@ -353,6 +353,8 @@ import {
   harm,
   hinder,
   ROBOT_TARGET,
+  SPIDER_TARGET,
+  UFO_TARGET,
   strike,
   hooked,
   lifting,
@@ -808,13 +810,15 @@ export function advance(
     seat.vehicle.grip = gripOf(seat)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     pushWithWeapons(seat, gravity)
-    reel(arena, seat)
     hinder(seat)
     mend(seat)
     const level = waterAt(arena, seat)
     seat.submersion =
       level === DRY ? 0 : applyWaterResponse(seat.vehicle, seat.tuning, arena.worldTuning, level, heightOver(arena.planet, seat.vehicle.frame.position))
   }
+  // The grappling lines pull once every car has been driven: a car's own step
+  // clears what was pulling on it, so a pull on a car later in the seats would be lost.
+  for (const seat of arena.seats) if (seat.occupied && !seat.coasting) reel(arena, seat)
   // The robots roll on, their bodies carried there over the step.
   for (const robot of arena.robots) {
     walkRobot(arena.planet, robot, dt)
@@ -838,11 +842,23 @@ export function advance(
   fireRobots(arena)
   armFromBananas(arena)
   flyRockets(arena, dt)
-  // A machine the weapons have brought down comes back whole elsewhere.
+  // A machine the weapons have brought down spills its bananas where it fell, and comes back whole elsewhere.
   if (!arena.mirror) {
-    for (const robot of arena.robots) if (robot.damage >= 1) rebuildRobot(arena.planet, robot)
-    for (const ufo of arena.ufos) if (ufo.damage >= 1) rebuildUfo(arena.planet, ufo)
-    for (const spider of arena.spiders) if (spider.damage >= 1) rebuildSpider(arena.planet, spider)
+    for (const robot of arena.robots) {
+      if (robot.damage < 1) continue
+      spillMachine(arena, ROBOT_TARGET + robot.id, robot.position)
+      rebuildRobot(arena.planet, robot)
+    }
+    for (const ufo of arena.ufos) {
+      if (ufo.damage < 1) continue
+      spillMachine(arena, UFO_TARGET + ufo.id, ufo.position)
+      rebuildUfo(arena.planet, ufo)
+    }
+    for (const spider of arena.spiders) {
+      if (spider.damage < 1) continue
+      spillMachine(arena, SPIDER_TARGET + spider.id, spider.position)
+      rebuildSpider(arena.planet, spider)
+    }
   }
   trimLoose(arena)
 }
@@ -1073,6 +1089,16 @@ function spillBananas(arena: Arena): void {
     arena.looseNext = (arena.looseNext + count) % LOOSE_IDS
     seat.score = 0
   }
+}
+
+/** How many bananas a robot, a saucer or a spider spills when it is brought down. */
+export const MACHINE_BANANAS = 10
+
+/** A machine brought down spills its bananas about the ground under where it fell, for anyone to come and take. */
+function spillMachine(arena: Arena, target: number, at: Vec3): void {
+  const count = holdBananaSlots(arena, MACHINE_BANANAS)
+  arena.loose.push(...spillFrom(arena.planet, at, count, target, arena.tick, arena.looseNext, NO_TARGET))
+  arena.looseNext = (arena.looseNext + count) % LOOSE_IDS
 }
 
 /** A bomb falls from a spider's belly to float over the ground under it, for the next car to run into. */

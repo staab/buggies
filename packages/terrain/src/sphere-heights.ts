@@ -14,7 +14,7 @@ import { arcDistance, gridDirection, groundIndex, type SphereGround } from './sp
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
-const { hypot } = exact
+const { exp, hypot } = exact
 
 /** An island on the sphere: the way out to its middle, and how far its land reaches along the surface, in meters. */
 export interface SphereIsland {
@@ -79,8 +79,33 @@ function smoothMax(a: number, b: number, blend: number): number {
   return Math.max(a, b) + (h * h * blend) / 4
 }
 
+/**
+ * How much of a mountain's height its foothills carry, and how many times
+ * farther than its skirt they run out: a wide, gentle apron that a road can
+ * wind its way up, before the steep climb to the peak.
+ */
+const FOOTHILL_SHARE = 0.3
+const FOOTHILL_REACH = 6
+
 /** How much overlapping mountains reinforce each other, 0 = max, 1 = pure sum. */
 const MOUNTAIN_OVERLAP = 0.6
+
+/**
+ * Where the peaks of a range running together start to be eased down, and
+ * the height they never quite reach: well under the clouds, however many
+ * stand together.
+ */
+const MOUNTAIN_KNEE = 70
+const MOUNTAIN_CAP = 95
+
+/** A mountain's height, eased past the knee toward the cap. */
+function capped(height: number): number {
+  if (height <= MOUNTAIN_KNEE) return height
+  const room = MOUNTAIN_CAP - MOUNTAIN_KNEE
+  // tanh, by the exact exp, so every machine eases it the same.
+  const e = exp((-2 * (height - MOUNTAIN_KNEE)) / room)
+  return MOUNTAIN_KNEE + (room * (1 - e)) / (1 + e)
+}
 
 /** Everything the raising reads, in meters. */
 export interface SphereRelief {
@@ -114,7 +139,7 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
       hypot(mountain.triangle.ax, mountain.triangle.az),
       hypot(mountain.triangle.bx, mountain.triangle.bz),
       hypot(mountain.triangle.cx, mountain.triangle.cz),
-    ) + mountain.skirt,
+    ) + mountain.skirt * FOOTHILL_REACH,
   }))
   const direction = { x: 0, y: 0, z: 0 }
   const warped = { x: 0, y: 0, z: 0 }
@@ -157,16 +182,18 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
           if (toward <= 0.2 || arcDistance(direction, shape.center, radius) > shape.reach) continue
           const at = onTangentPlane(direction, shape.center, shape.east, shape.north, radius)
           const signed = signedDistanceToTriangle(at.x, at.z, shape.triangle)
-          if (signed <= -shape.skirt) continue
+          if (signed <= -shape.skirt * FOOTHILL_REACH) continue
           if (roughness < 0) roughness = ridged3D(px * roughFrequency, py * roughFrequency, pz * roughFrequency, seed + 2, 5)
+          const foothills = smoothstep(-shape.skirt * FOOTHILL_REACH, -shape.skirt, signed)
           const factor = smoothstep(-shape.skirt, shape.inradius, signed)
-          const contribution = shape.height * factor * (0.6 + 0.4 * roughness)
+          // The foothills roll smoothly, barely touched by the crags the peaks are roughened by.
+          const contribution = shape.height * (FOOTHILL_SHARE * foothills * (0.9 + 0.1 * roughness) + (1 - FOOTHILL_SHARE) * factor * (0.6 + 0.4 * roughness))
           const high = Math.max(mountain, contribution)
           const low = Math.min(mountain, contribution)
           mountain = high + MOUNTAIN_OVERLAP * low
         }
 
-        heights[groundIndex(ground, face, i, j)] = (land + mountain) * mask - oceanDepth * (1 - mask)
+        heights[groundIndex(ground, face, i, j)] = (land + capped(mountain)) * mask - oceanDepth * (1 - mask)
       }
     }
   }

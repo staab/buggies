@@ -185,8 +185,8 @@ describe('weapons', () => {
 
   it('the machine gun trains itself on the car ahead, fires while the button is held, and runs dry', () => {
     const arena = createArena(map)
-    // Ahead and well off to one side: in the gun's sweep, not on its line.
-    const [a, b] = pair(arena, 25, 12)
+    // Ahead and off to one side, on the road: in the gun's sweep, not on its line.
+    const [a, b] = pair(arena, 25, 6)
     arm(a, 'machineGun')
     // Not held: nothing fired, but the gun is on the car already.
     for (let i = 0; i < 10; i++) advance(arena)
@@ -623,7 +623,7 @@ describe("the car's own key", () => {
 
   it('the small car fires its own gun from its nose for as long as the key is held, trained on the car ahead, with the full bite', () => {
     const arena = createArena(map)
-    const [a, b] = twoCars(arena, 'smallCar', 'sportsCar', 25, 12)
+    const [a, b] = twoCars(arena, 'smallCar', 'sportsCar', 25, 6)
     expect(hold(arena, a, 60)).toBe(10)
     expect(a.aimTarget).toBe(b.id)
     expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * OWN_GUN_POWER) / DURABILITY, 6)
@@ -662,7 +662,7 @@ describe("the car's own key", () => {
 
   it('a police car takes half the bite of a machine gun', () => {
     const arena = createArena(map)
-    const [a, b] = twoCars(arena, 'sportsCar', 'police', 25, 12)
+    const [a, b] = twoCars(arena, 'sportsCar', 'police', 25, 6)
     arm(a, 'machineGun')
     expect(hold(arena, a, 60, FIRE)).toBe(10)
     expect(b.vehicle.damage).toBeCloseTo((10 * MACHINE_GUN_DAMAGE * POLICE_SHOT_SHARE * armorShare(b.tuning)) / DURABILITY, 6)
@@ -971,11 +971,34 @@ describe("the car's own key", () => {
     fire(arena, a, 1)
     expect(a.weapon).toBe('none')
     expect(a.grappleTarget).toBe(b.id)
-    for (let i = 0; i < 120; i++) advance(arena)
-    expect(gap()).toBeLessThan(before - 5)
+    for (let i = 0; i < 60; i++) advance(arena)
+    // The car caught is dragged back toward the one that caught it, not only the other way.
+    expect(b.vehicle.speed).toBeGreaterThan(3)
+    for (let i = 0; i < 60; i++) advance(arena)
+    expect(gap()).toBeLessThan(before - 20)
     for (let i = 0; i < GRAPPLE_TICKS; i++) advance(arena)
     expect(a.grappleTicks).toBe(0)
     expect(a.grappleTarget).toBe(NO_TARGET)
+    arena.world.free()
+  })
+
+  it('the grappling hook catches a car past a robot nearer ahead of it, never the robot', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    const b = takeSeat(arena, 1, 'sportsCar')
+    advance(arena)
+    // Either side of a robot on its round, the car with the hook facing it and the other car past it.
+    const robot = arena.robots[0]!
+    const { east } = tangentFrame(upOf(robot.position))
+    const west = { x: -east.x, y: -east.y, z: -east.z }
+    setDown(a, ahead(robot.position, east, 15), west)
+    setDown(b, ahead(robot.position, west, 20), west)
+    for (let i = 0; i < 5; i++) advance(arena)
+    arm(a, 'grapple')
+    fire(arena, a, 1)
+    expect(a.grappleTarget).toBe(b.id)
+    for (let i = 0; i < 30; i++) advance(arena)
+    expect(a.grappleTarget).toBe(b.id)
     arena.world.free()
   })
 

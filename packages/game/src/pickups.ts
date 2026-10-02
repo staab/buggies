@@ -308,7 +308,8 @@ export interface Loose {
 /**
  * Where a wreck's bananas land: scattered about it, every one of them
  * worked out from the map, the seat and the tick, so that everyone who
- * knows those agrees.
+ * knows those agrees. A machine brought down spills by its target number
+ * instead of a seat, and its bananas are nobody's.
  */
 export function spillFrom(
   map: World,
@@ -317,6 +318,7 @@ export function spillFrom(
   seat: number,
   tick: number,
   firstId: number,
+  owner = seat,
 ): Loose[] {
   const rng = createRng(pickupSeed(map.seed, PICKUP_SLOTS + seat, tick))
   const loose: Loose[] = []
@@ -331,7 +333,7 @@ export function spillFrom(
     loose.push({
       id: (firstId + i) % LOOSE_IDS,
       kind: 'banana',
-      owner: seat,
+      owner,
       power: 0,
       from: origin,
       position: overSurface(map, landing, PICKUP_HEIGHT),

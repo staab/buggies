@@ -28,7 +28,8 @@ export interface GlobeRoads {
 
 /**
  * Build a planet's roads and shape its ground to them. `water` is the
- * water's surface over each grid point of the ground, or `DRY`.
+ * water's surface over each grid point of the ground, or `DRY`; `ranges`
+ * are the middles of its mountain ranges, for arterials to climb.
  */
 export function buildGlobeRoads(
   ground: SphereGround,
@@ -37,6 +38,7 @@ export function buildGlobeRoads(
   districts: readonly WorldDistrict[],
   districtOf: Uint8Array,
   seed: number,
+  ranges: readonly Vec3[] = [],
 ): GlobeRoads {
   const nav = buildNav(ground, water, seaLevel)
   const planet: Planet = { ground, nav, water, seaLevel, districts }
@@ -48,7 +50,7 @@ export function buildGlobeRoads(
     (city) => !made.cities.includes(city) && highway.points.every((point) => angleBetween(city.center, unit(point)) * ground.radius > city.radius),
   )
   const crossRoads = access.filter((road) => road.kind === 'cross')
-  const arterials = buildGlobeArterials(planet, crossRoads, offHighway, [highway, ...access], (seed ^ ARTERIAL_SALT) >>> 0, access.length + 1)
+  const arterials = buildGlobeArterials(planet, crossRoads, offHighway, ranges, [highway, ...access], (seed ^ ARTERIAL_SALT) >>> 0, access.length + 1)
   const network = [highway, ...access, ...arterials]
   const { streets, grids } = buildGlobeStreets(planet, districtOf, network, footprints, network.length)
   const on = groundOf(ground, groundNeighbors(ground), groundDirections(ground))

@@ -48,20 +48,47 @@ import { navApart, navDirection, navPoint, route } from './nav.ts'
 
 const { cos, sin } = exact
 
-/** A node an arterial may end at: where it is, how high, and which cross road it is an end of, or whether it is a city's middle. */
+/** A node an arterial may end at: where it is, how high, and which cross road it is an end of, or whether it is a city's middle or up a mountain range. */
 interface Node {
   readonly direction: Vec3
   readonly height: number
   readonly cross: number
   readonly city: boolean
+  readonly climb?: boolean
 }
 
 /** How far apart, along the ground, the points a city's middle is looked for dry ground out from are, and how many bearings on each ring. */
 const CITY_NODE_STEP = 8
 const CITY_NODE_BEARINGS = 16
 
-/** The nodes: the cross roads' ends, the middles of the cities off the highway, and points spread over the land. */
-function buildNodes(planet: Planet, crossRoads: readonly WorldRoad[], cities: readonly WorldDistrict[], seed: number): Node[] {
+/**
+ * How far up a mountain range an arterial is drawn, as a share of the
+ * height of its middle over the sea: up its foothills, to the foot of the
+ * climb to the peaks. Then how far apart the points are that a spot that
+ * high is looked for along, and along how many bearings.
+ */
+const CLIMB_SHARE = 0.45
+const CLIMB_STEP = 6
+const CLIMB_BEARINGS = 8
+/** How many spots up a range, each from its own bearing, a spur is tried to. */
+const CLIMB_WAYS = 4
+/** How many of the nearest nodes of the network a spur up a range is tried from, and how steep it may climb: a mountain road's grade, steeper than an arterial's on the plains. */
+const CLIMB_TRIES = 4
+const CLIMB_GRADE = 0.12
+
+/**
+ * The nodes: the cross roads' ends, the middles of the cities off the
+ * highway, a spot partway up each mountain range, and points spread over
+ * the land. With them, for each range, its node and the spots up it from
+ * other bearings, to try a road up from should none reach that one.
+ */
+function buildNodes(
+  planet: Planet,
+  crossRoads: readonly WorldRoad[],
+  cities: readonly WorldDistrict[],
+  ranges: readonly Vec3[],
+  seed: number,
+): { nodes: Node[]; climbs: { node: number; spares: Node[] }[] } {
   const { ground, seaLevel } = planet
   const { radius } = ground
   const nodes: Node[] = []
@@ -84,8 +111,34 @@ function buildNodes(planet: Planet, crossRoads: readonly WorldRoad[], cities: re
     }
     if (spot !== null) nodes.push({ direction: spot, height: sphereHeight(ground, spot), cross: -1, city: true })
   }
-  // Points spread over the land, about the spacing apart.
+  // A spot on the shoulder of each range's foothills, for an arterial to wind its way up to.
   const rng = createRng(seed)
+  const climbs: { node: number; spares: Node[] }[] = []
+  for (const middle of ranges) {
+    const top = sphereHeight(ground, middle)
+    if (top <= seaLevel) continue
+    const { east, north } = tangentFrame(middle)
+    const turn = rng() * Math.PI * 2
+    const spots: Node[] = []
+    for (let k = 0; k < CLIMB_BEARINGS; k++) {
+      const angle = turn + (k / CLIMB_BEARINGS) * Math.PI * 2
+      const way = unit({ x: east.x * cos(angle) + north.x * sin(angle), y: east.y * cos(angle) + north.y * sin(angle), z: east.z * cos(angle) + north.z * sin(angle) })
+      let spot: Vec3 | null = null
+      for (let out = CLIMB_STEP; out < radius; out += CLIMB_STEP) {
+        const at = along(middle, way, out, radius)
+        const height = sphereHeight(ground, at)
+        if (height <= seaLevel) break
+        if (height - seaLevel > (top - seaLevel) * CLIMB_SHARE) continue
+        if (dry(at)) spot = at
+        break
+      }
+      if (spot !== null) spots.push({ direction: spot, height: sphereHeight(ground, spot), cross: -1, city: false, climb: true })
+    }
+    if (spots.length === 0) continue
+    nodes.push(spots[0]!)
+    climbs.push({ node: nodes.length - 1, spares: spots.slice(1, CLIMB_WAYS) })
+  }
+  // Points spread over the land, about the spacing apart.
   const tries = Math.ceil((4 * Math.PI * radius * radius) / (ARTERIAL_FIELD_SPACING * ARTERIAL_FIELD_SPACING)) * 6
   const direction = { x: 0, y: 0, z: 0 }
   for (let attempt = 0; attempt < tries; attempt++) {
@@ -94,7 +147,7 @@ function buildNodes(planet: Planet, crossRoads: readonly WorldRoad[], cities: re
     if (nodes.some((node) => angleBetween(node.direction, direction) * radius < ARTERIAL_FIELD_SPACING * 0.45)) continue
     nodes.push({ direction: { ...direction }, height: sphereHeight(ground, direction), cross: -1, city: false })
   }
-  return nodes
+  return { nodes, climbs }
 }
 
 /**
@@ -208,13 +261,14 @@ export function buildGlobeArterials(
   planet: Planet,
   crossRoads: readonly WorldRoad[],
   cities: readonly WorldDistrict[],
+  ranges: readonly Vec3[],
   existing: readonly WorldRoad[],
   seed: number,
   firstId: number,
 ): WorldRoad[] {
   const { nav, ground } = planet
   const { radius } = ground
-  const nodes = buildNodes(planet, crossRoads, cities, seed)
+  const { nodes, climbs } = buildNodes(planet, crossRoads, cities, ranges, seed)
   if (nodes.length < 2) return []
   const { label, adjacent } = nearestNodes(planet, nodes)
   const edges = linkNodes(nodes, adjacent, radius)
@@ -251,7 +305,7 @@ export function buildGlobeArterials(
   let id = firstId
 
   /** The road a routed way comes to: eased, walked at even steps, its ends on its nodes, following the ground, bridging the water. */
-  const makeRoad = (a: number, b: number, way: readonly number[]): WorldRoad | null => {
+  const makeRoad = (a: number, b: number, way: readonly number[], steepest: number): WorldRoad | null => {
     const line = way.map((at) => navDirection(nav, at))
     line[0] = nodes[a]!.direction
     line[line.length - 1] = nodes[b]!.direction
@@ -267,7 +321,7 @@ export function buildGlobeArterials(
       const floor = sphereHeight(ground, direction)
       return level !== DRY ? Math.max(level + ARTERIAL_BRIDGE_CLEARANCE, floor) : wet[index] ? Math.max(planet.seaLevel + ARTERIAL_BRIDGE_CLEARANCE, floor) : floor
     })
-    limitSweepGradeAlong(heights, lengths, MAX_ARTERIAL_GRADE)
+    limitSweepGradeAlong(heights, lengths, steepest)
     const structure = new Uint8Array(course.length - 1)
     for (let i = 0; i < structure.length; i++) structure[i] = wet[i] || wet[i + 1] ? ROAD_BRIDGE : ROAD_GRADE
     return {
@@ -280,13 +334,15 @@ export function buildGlobeArterials(
     }
   }
 
-  /** Whether a road would run into one already built, anywhere but at its own ends. */
+  /** Whether a road would run into one already built, anywhere but at its own ends; of those built, only the ones still kept, once some have gone. */
+  let kept: boolean[] | null = null
   const clashes = (road: WorldRoad): boolean => {
     const ends = [unit(road.points[0]!), unit(road.points.at(-1)!)]
+    const others = [...existing, ...roads.filter((_, k) => kept === null || kept[k] !== false)]
     for (const point of road.points) {
       const here = unit(point)
       if (ends.some((end) => angleBetween(end, here) * radius < ARTERIAL_MERGE_REACH)) continue
-      for (const other of [...existing, ...roads]) {
+      for (const other of others) {
         for (const there of other.points) if (angleBetween(unit(there), here) * radius < ARTERIAL_WIDTH) return true
       }
     }
@@ -297,7 +353,7 @@ export function buildGlobeArterials(
     const heading = tangentAt(road.points, fromStart ? 0 : road.points.length - 1, false)
     const way = fromStart ? heading : { x: -heading.x, y: -heading.y, z: -heading.z }
     for (const [k, [from, to]] of endpoints.entries()) {
-      if (from !== node && to !== node) continue
+      if ((from !== node && to !== node) || kept?.[k] === false) continue
       const other = roads[k]!
       const otherHeading = tangentAt(other.points, from === node ? 0 : other.points.length - 1, false)
       const otherWay = from === node ? otherHeading : { x: -otherHeading.x, y: -otherHeading.y, z: -otherHeading.z }
@@ -306,7 +362,7 @@ export function buildGlobeArterials(
     return false
   }
 
-  const buildRoad = (a: number, b: number, relaxed: boolean, openSea: boolean): boolean => {
+  const buildRoad = (a: number, b: number, relaxed: boolean, openSea: boolean, steepest = MAX_ARTERIAL_GRADE): boolean => {
     const start = navPoint(nav, nodes[a]!.direction)
     const goal = navPoint(nav, nodes[b]!.direction)
     const way = route(
@@ -317,7 +373,7 @@ export function buildGlobeArterials(
         const arrives = to === goal
         const wetStep = nav.water[from] !== DRY || nav.water[to] !== DRY
         const grade = Math.abs(heightOf(to) - heightOf(from)) / run
-        if (grade > (wetStep ? ARTERIAL_BRIDGE_GRADE : MAX_ARTERIAL_GRADE)) return Infinity
+        if (grade > (wetStep ? ARTERIAL_BRIDGE_GRADE : steepest)) return Infinity
         if (charged[to] && navApart(nav, to, start) > ARTERIAL_MERGE_REACH && navApart(nav, to, goal) > ARTERIAL_MERGE_REACH) return Infinity
         if (nav.sea[to] && !arrives && !openSea) return Infinity
         let cost = run + grade * ARTERIAL_SLOPE_COST
@@ -334,7 +390,7 @@ export function buildGlobeArterials(
       ARTERIAL_MAX_EXPANSIONS,
     )
     if (way === null) return false
-    const road = makeRoad(a, b, way)
+    const road = makeRoad(a, b, way, steepest)
     if (road === null || clashes(road) || sharpAt(a, road, true) || sharpAt(b, road, false)) return false
     for (const at of way) density[at] = density[at]! + 1
     roads.push(road)
@@ -428,6 +484,34 @@ export function buildGlobeArterials(
       }
     }
     for (const [k, [a]] of endpoints.entries()) if (find(a) !== find(firstCross)) alive[k] = false
+
+    // Up each mountain range with no road left to it, a spur from the nearest nodes of the network
+    // that the ground lets one wind its way up from, to its node or a spot up it from another bearing:
+    // a dead end, which the traffic turns back at.
+    kept = alive
+    const joined = (node: number): boolean => endpoints.some(([x, y], k) => alive[k] && (x === node || y === node))
+    for (const climb of climbs) {
+      if (joined(climb.node)) continue
+      const network = nodes.map((_, k) => k).filter((k) => find(k) === find(firstCross) && joined(k))
+      let built = false
+      for (const spot of [nodes[climb.node]!, ...climb.spares]) {
+        if (built) break
+        let a = nodes.indexOf(spot)
+        if (a < 0) {
+          nodes.push(spot)
+          parent.push(nodes.length - 1)
+          a = nodes.length - 1
+        }
+        const nearest = [...network].sort((p, q) => angleBetween(spot.direction, nodes[p]!.direction) - angleBetween(spot.direction, nodes[q]!.direction))
+        for (const b of nearest.slice(0, CLIMB_TRIES)) {
+          if (!buildRoad(Math.min(a, b), Math.max(a, b), true, false, CLIMB_GRADE)) continue
+          alive.push(true)
+          union(a, b)
+          built = true
+          break
+        }
+      }
+    }
   }
   return roads.filter((_, k) => alive[k]).map((road, index) => ({ ...road, id: firstId + index }))
 }

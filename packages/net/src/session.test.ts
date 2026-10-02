@@ -520,17 +520,18 @@ describe('a session', () => {
     const a = await session.join('sportsCar')
     const b = await session.join('sportsCar')
     a.watching = b.client.welcome!.seat
-    b.input = { ...NEUTRAL_INPUT, throttle: 1 }
+    // Not flat out: at full speed the car outruns the bend in the highway ahead of the spawn.
+    b.input = { ...NEUTRAL_INPUT, throttle: 0.6 }
     session.run(5)
     expect(session.serverPositionOf(b).x).not.toBe(session.predictedPositionOf(a).x)
-    // Straight and flat out, the mirror's guess is right and stays right.
+    // Straight and steady, the mirror's guess is right and stays right.
     expect(a.largestWatchedCorrection).toBeLessThan(0.6)
 
     // Weaving, every change of steering is a surprise to the mirror, and
     // each one is a nudge, not a jump.
     a.largestWatchedCorrection = 0
     for (let i = 0; i < 8; i++) {
-      b.input = { ...NEUTRAL_INPUT, throttle: 1, steer: i % 2 === 0 ? 0.4 : -0.4 }
+      b.input = { ...NEUTRAL_INPUT, throttle: 0.6, steer: i % 2 === 0 ? 0.4 : -0.4 }
       session.run(0.5)
     }
     expect(a.largestWatchedCorrection).toBeGreaterThan(0)

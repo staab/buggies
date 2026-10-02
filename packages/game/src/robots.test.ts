@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   DURABILITY,
+  MACHINE_BANANAS,
   NO_TARGET,
   ROBOT_BEAM_TICKS,
   ROBOT_DAMAGE,
@@ -77,6 +78,26 @@ describe('robots', () => {
     expect(robot!.cooldownTicks).toBeGreaterThan(0)
     const eyes = robotEyes({ x: 0, y: 0, z: 0 }, robot!)
     expect(over(eyes, robot!.position)).toBeGreaterThan(4)
+    arena.world.free()
+  }, 60_000)
+
+  it('spill their bananas where they fall when brought down, as the saucers and spiders do', () => {
+    const arena = createArena(map)
+    const robot = arena.robots[0]!
+    const ufo = arena.ufos[0]!
+    robot.damage = 1
+    ufo.damage = 1
+    const fell = [{ ...robot.position }, { ...ufo.position }]
+    advance(arena)
+    const bananas = arena.loose.filter((loose) => loose.kind === 'banana')
+    expect(bananas).toHaveLength(2 * MACHINE_BANANAS)
+    for (const [k, at] of fell.entries()) {
+      for (const banana of bananas.slice(k * MACHINE_BANANAS, (k + 1) * MACHINE_BANANAS)) {
+        expect(banana.owner).toBe(NO_TARGET)
+        expect(apart(banana.position, at)).toBeLessThan(20)
+      }
+    }
+    expect(robot.damage).toBe(0)
     arena.world.free()
   }, 60_000)
 })

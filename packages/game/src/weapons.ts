@@ -965,8 +965,8 @@ export function sightLine(map: World, from: Vec3, to: Vec3): number {
 }
 const sighted = v3()
 
-/** The nearest car within this far and this near dead ahead of the gun, or none. */
-function pickOut(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sweepCos: number): number {
+/** The nearest car, or machine where they count, within this far and this near dead ahead of the gun, or none. */
+function pickOut(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sweepCos: number, machines = true): number {
   const { forward } = seat.vehicle.frame
   let target = NO_TARGET
   let nearest = range
@@ -979,7 +979,7 @@ function pickOut(arena: Battlefield, seat: Gunner, from: Vec3, range: number, sw
     nearest = distance
   }
   for (const other of arena.seats) if (inPlay(seat, other)) consider(other.id, other.vehicle.frame.position)
-  machinesOf(arena, consider)
+  if (machines) machinesOf(arena, consider)
   return target
 }
 
@@ -1400,8 +1400,8 @@ function useAtOnce(arena: Battlefield, seat: Gunner): boolean {
       seat.plowTicks = PLOW_TICKS
       break
     case 'grapple': {
-      // With nothing ahead to catch, the line shoots out and back, and the hook is spent all the same.
-      const target = pickOut(arena, seat, seat.vehicle.frame.position, GRAPPLE_RANGE, GRAPPLE_COS)
+      // It catches cars only: with none ahead to catch, the line shoots out and back, and the hook is spent all the same.
+      const target = pickOut(arena, seat, seat.vehicle.frame.position, GRAPPLE_RANGE, GRAPPLE_COS, false)
       seat.grappleTarget = target
       seat.grappleTicks = target === NO_TARGET ? GRAPPLE_MISS_TICKS : GRAPPLE_TICKS
       break

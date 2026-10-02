@@ -12,7 +12,7 @@ const { cos, sin } = exact
 /** How high over the planet's radius the clouds float, in meters: well over the tallest tower and the highest peak. */
 export const CLOUD_HEIGHT = 130
 /** How high over the planet's radius anything driven or flown may go: a little over the clouds. */
-export const CEILING = CLOUD_HEIGHT + 30
+export const CEILING = CLOUD_HEIGHT + 10
 /** How long a day takes, in seconds of the game's time. */
 export const DAY_SECONDS = 240
 /** How far north of the equator the sun stands, as the planet's axis is tilted from it. */

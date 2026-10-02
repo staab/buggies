@@ -8,7 +8,7 @@
  */
 
 import * as exact from '@buggies/physics'
-import { createRng, randomInt, randomRange, type Rng } from '@buggies/physics'
+import { createRng, randomInt, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 
 import { orientedTriangle } from '../mountain.ts'
 import { generateSphereDistricts } from '../sphere-districts.ts'
@@ -40,15 +40,22 @@ const ISLAND_COUNT = { min: 8, max: 15 } as const
 const ISLAND_RADIUS = { least: 28.5, most: 660 } as const
 /** The first island is at least this share of the largest, so every planet has room for its cities. */
 const FIRST_ISLAND_LEAST = 0.75
-/** How many mountains a planet has, how big and how tall, and how far out from an island's middle they stand, as a share of its radius. */
-const MOUNTAIN_COUNT = { min: 1, max: 4 } as const
+/**
+ * How many ranges of mountains a planet has, how many peaks a range has,
+ * and how far a range's peaks stand from its middle, as a share of a
+ * peak's size: near enough that they run together into one range.
+ */
+const RANGE_COUNT = { min: 2, max: 4 } as const
+const RANGE_PEAKS = { min: 2, max: 4 } as const
+const RANGE_SPREAD = 1.1
+/** How big and how tall each peak is, and how far out from an island's middle a range stands, as a share of its radius. */
 const MOUNTAIN_RADIUS = { min: 55.5, max: 88.8 } as const
 const MOUNTAIN_SKIRT = { min: 24.4, max: 42.2 } as const
 const MOUNTAIN_HEIGHT = { min: 47.4, max: 73 } as const
 const MOUNTAIN_REACH = 0.5
 /** An island this small carries no mountain. */
 const MOUNTAIN_ISLAND_LEAST = 66.6
-/** The odds a mountain has a river off it; every planet has at least one. */
+/** The odds a range has a river off it; every planet has at least one. */
 const RIVER_CHANCE = 0.5
 /** How many cities a planet has. */
 const CITY_COUNT = { min: 3, max: 5 } as const
@@ -65,12 +72,13 @@ function layIslands(rng: Rng, count: number): SphereIsland[] {
 }
 
 /**
- * Mountains on the islands, each on an island picked in proportion to its
- * area among those big enough to carry one, anywhere within
- * `MOUNTAIN_REACH` of its middle: a triangle laid on the plane touching the
- * planet at the mountain's middle, with a skirt and a height.
+ * Ranges of mountains on the islands, each on an island picked in
+ * proportion to its area among those big enough to carry one, its middle
+ * anywhere within `MOUNTAIN_REACH` of the island's: a few peaks clustered
+ * about that, each a triangle laid on the plane touching the planet at its
+ * middle, with a skirt and a height. Returns the ranges, each its peaks.
  */
-function createMountains(rng: Rng, count: number, islands: readonly SphereIsland[], radius: number): SphereMountain[] {
+function createRanges(rng: Rng, count: number, islands: readonly SphereIsland[], radius: number): SphereMountain[][] {
   const hosts = islands.filter((island) => island.radius >= MOUNTAIN_ISLAND_LEAST)
   const pool = hosts.length > 0 ? hosts : islands.slice(0, 1)
   const total = pool.reduce((sum, island) => sum + island.radius * island.radius, 0)
@@ -88,27 +96,40 @@ function createMountains(rng: Rng, count: number, islands: readonly SphereIsland
     const offset = island.radius * MOUNTAIN_REACH * Math.sqrt(rng())
     const { east, north } = tangentFrame(island.center)
     const way = { x: east.x * cos(bearing) + north.x * sin(bearing), y: east.y * cos(bearing) + north.y * sin(bearing), z: east.z * cos(bearing) + north.z * sin(bearing) }
-    const center = along(island.center, way, offset, radius)
-    const size = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
-    const rotation = randomRange(rng, 0, Math.PI * 2)
-    const corner = (k: number): { x: number; z: number } => {
-      const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
-      const r = size * randomRange(rng, 0.65, 1.05)
-      return { x: cos(angle) * r, z: sin(angle) * r }
-    }
-    const a = corner(0)
-    const b = corner(1)
-    const c = corner(2)
-    const frame = tangentFrame(center)
-    return {
-      center,
-      east: frame.east,
-      north: frame.north,
-      triangle: orientedTriangle({ ax: a.x, az: a.z, bx: b.x, bz: b.z, cx: c.x, cz: c.z }),
-      skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max),
-      height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max),
-    }
+    const middle = along(island.center, way, offset, radius)
+    return Array.from({ length: randomInt(rng, RANGE_PEAKS.min, RANGE_PEAKS.max) }, (_, k) => createPeak(rng, k === 0 ? middle : beside(rng, middle, radius)))
   })
+}
+
+/** A spot a peak of a range may stand on, round its middle. */
+function beside(rng: Rng, middle: Vec3, radius: number): Vec3 {
+  const bearing = randomRange(rng, 0, Math.PI * 2)
+  const { east, north } = tangentFrame(middle)
+  const way = { x: east.x * cos(bearing) + north.x * sin(bearing), y: east.y * cos(bearing) + north.y * sin(bearing), z: east.z * cos(bearing) + north.z * sin(bearing) }
+  return along(middle, way, MOUNTAIN_RADIUS.max * RANGE_SPREAD * randomRange(rng, 0.5, 1), radius)
+}
+
+/** A peak standing here: a triangle of a size and turn picked at random, with a skirt and a height. */
+function createPeak(rng: Rng, center: Vec3): SphereMountain {
+  const size = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
+  const rotation = randomRange(rng, 0, Math.PI * 2)
+  const corner = (k: number): { x: number; z: number } => {
+    const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
+    const r = size * randomRange(rng, 0.65, 1.05)
+    return { x: cos(angle) * r, z: sin(angle) * r }
+  }
+  const a = corner(0)
+  const b = corner(1)
+  const c = corner(2)
+  const frame = tangentFrame(center)
+  return {
+    center,
+    east: frame.east,
+    north: frame.north,
+    triangle: orientedTriangle({ ax: a.x, az: a.z, bx: b.x, bz: b.z, cx: c.x, cz: c.z }),
+    skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max),
+    height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max),
+  }
 }
 
 /** Make a planet from a seed. */
@@ -117,9 +138,10 @@ export function generatePlanet(seed: number): World {
   const seaLevel = SEA_LEVEL
   const rng = createRng(seed)
   const islands = layIslands(rng, randomInt(rng, ISLAND_COUNT.min, ISLAND_COUNT.max))
-  const mountains = createMountains(rng, randomInt(rng, MOUNTAIN_COUNT.min, MOUNTAIN_COUNT.max), islands, radius)
-  // Up to one river a mountain, and always at least one.
-  const springs = mountains.filter(() => rng() < RIVER_CHANCE)
+  const ranges = createRanges(rng, randomInt(rng, RANGE_COUNT.min, RANGE_COUNT.max), islands, radius)
+  const mountains = ranges.flat()
+  // Up to one river a range, off its first peak, and always at least one.
+  const springs = ranges.filter(() => rng() < RIVER_CHANCE).map((range) => range[0]!)
   if (springs.length === 0 && mountains.length > 0) springs.push(mountains[0]!)
   const cityCount = randomInt(rng, CITY_COUNT.min, CITY_COUNT.max)
 
@@ -133,7 +155,7 @@ export function generatePlanet(seed: number): World {
   const land: Land = { ground, neighbors, directions, water: new Float32Array(0), districtOf: new Uint8Array(0), seaLevel, radius }
   const { rivers, lakes, water, inland } = settleWater(land, courses, found)
   const { districts, districtOf } = generateSphereDistricts(ground, seed, seaLevel, inland, cityCount)
-  const { roads, grids } = buildGlobeRoads(ground, water, seaLevel, districts, districtOf, seed)
+  const { roads, grids } = buildGlobeRoads(ground, water, seaLevel, districts, districtOf, seed, ranges.map((range) => range[0]!.center))
   const stands = buildGlobeStands(ground, water, districtOf, seaLevel, districts, grids, roads, rivers, mountains, seed)
   const { bored, holes } = boreGround({ ...land, water, districtOf }, roads)
   return {

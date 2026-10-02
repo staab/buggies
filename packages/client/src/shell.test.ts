@@ -218,7 +218,7 @@ async function settle(): Promise<void> {
 
 describe('the shell', () => {
   it('opens the menu with the island coming up behind it, made once', async () => {
-    const { shell, menu, islands, generated } = build()
+    const { shell, menu, islands, generated, settled } = build()
     shell.welcome()
     await settle()
     expect(menu.open).toBe(true)
@@ -230,6 +230,8 @@ describe('the shell', () => {
     expect(generated).toEqual([5])
     await shell.showIsland(9)
     expect(generated).toEqual([5, 9])
+    // The address bar names the island picked, before any game is started on it.
+    expect(settled.at(-1)?.seed).toBe(9)
     expect(islands[0]!.disposed).toBe(true)
     expect(islands[1]!.seed).toBe(9)
   })
