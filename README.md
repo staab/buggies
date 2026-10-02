@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. To join from a second screen, open the same URL.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. The address bar names the island being played as `/{seed}`: to join from a second screen, open the same URL. A game cut off from the server joins it again by itself, with each car back where it was and holding what it held, if the server still has it.
 
 The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 

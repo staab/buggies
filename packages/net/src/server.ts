@@ -18,6 +18,7 @@ import {
   respawnNearby,
   seatNpc,
   setGoal,
+  spawnWhere,
   validGoal,
   type Arena,
   type Carried,
@@ -87,7 +88,7 @@ const INPUTS_PER_TICK = 2
 /** A player heard nothing from for this long is let go: a tab left behind is not a driver. */
 const IDLE_TIMEOUT_TICKS = TICKS_PER_SECOND * 15
 
-/** How long what a player left a room holding waits for them to come out of a portal into the next. */
+/** How long what a player left a room holding waits for them to come out of a portal into the next, or back into it. */
 const CARRY_TICKS = TICKS_PER_SECOND * 30
 
 export interface GameServerEvents {
@@ -134,10 +135,16 @@ interface Player {
   pass: number
 }
 
-/** What a player left a room holding, and when, for the room they come out into. */
+/**
+ * What a player left a room holding, and when, for the room they come out
+ * into; and where, for them to be put back there if they only lost the
+ * connection and joined the same room again.
+ */
 interface Left {
   readonly carried: Carried
   readonly tick: number
+  readonly seed: number
+  readonly where: VehicleSpawn
 }
 
 interface Handshake {
@@ -352,17 +359,21 @@ export class GameServer implements TransportHandlers {
   onClose = (connection: TransportConnection): void => {
     this.handshaking.delete(connection.id)
     const player = this.players.get(connection.id)
-    if (player === undefined) return
+    if (player !== undefined) this.leave(player)
+  }
+
+  /** Let a player go, holding on to what they held. The last one out closes the room, unless it is about to be joined again. */
+  private leave(player: Player, keepRoom = false): void {
+    const { connection, room } = player
     this.players.delete(connection.id)
-    const { room } = player
     room.players.delete(connection.id)
-    // Gone through a portal, as far as anyone here knows: what they held waits for them on the other side.
-    this.left.set(player.pass, { carried: carriedOf(player.seat), tick: this.clock })
+    // Gone through a portal, or cut off, as far as anyone here knows: what they held waits for them.
+    this.left.set(player.pass, { carried: carriedOf(player.seat), tick: this.clock, seed: room.seed, where: spawnWhere(player.seat) })
     leaveSeat(room.arena, player.seat.id)
     this.topUpNpcs(room.arena)
     this.events.onLeft?.(player.seat, connection.id, room.seed)
-    // The last one out closes the room: an empty island is not worth stepping.
-    if (room.players.size === 0) this.closeRoom(room)
+    // An empty island is not worth stepping.
+    if (room.players.size === 0 && !keepRoom) this.closeRoom(room)
   }
 
   private playerIn(room: Room, seat: Seat): Player | undefined {
@@ -442,6 +453,13 @@ export class GameServer implements TransportHandlers {
     const handshake = this.handshaking.get(connection.id)
     // Asked twice while their island is made: the first is enough.
     if (handshake === undefined || handshake.waiting !== null) return
+    // Someone back with the pass of a player still seated has lost that connection
+    // without it closing yet: that one is let go, for them to take up where it left off.
+    const stale = hello.pass === NO_PASS ? undefined : [...this.players.values()].find((player) => player.pass === hello.pass)
+    if (stale !== undefined) {
+      this.leave(stale, stale.room.seed === hello.seed)
+      stale.connection.close('joined again')
+    }
     const existing = this.rooms.get(hello.seed)
     if (existing !== undefined) {
       this.seat(connection, hello, existing)
@@ -498,16 +516,20 @@ export class GameServer implements TransportHandlers {
 
     this.handshaking.delete(connection.id)
     const seat = takeSeat(arena, free.id, hello.profile)
+    const left = hello.pass === NO_PASS ? undefined : this.left.get(hello.pass)
     // Come through a portal, the car comes out of the one it arrives by, beside anyone already there.
-    if (hello.arrival !== NO_ARRIVAL) {
+    const through = hello.arrival !== NO_ARRIVAL
+    if (through) {
       const out = arrivalSpawn(arena, hello.arrival, seat)
       if (out !== null) respawn(seat, out)
-      // With what it held when it went in, if it shows the pass it was given for it.
-      const left = hello.pass === NO_PASS ? undefined : this.left.get(hello.pass)
-      if (left !== undefined) {
-        this.left.delete(hello.pass)
-        carryOver(seat, left.carried)
-      }
+    } else if (left !== undefined && left.seed === room.seed) {
+      // Back on the island it was cut off from: where it was.
+      respawn(seat, left.where)
+    }
+    // With what it held when it went, if it shows the pass it was given for it.
+    if (left !== undefined && (through || left.seed === room.seed)) {
+      this.left.delete(hello.pass)
+      carryOver(seat, left.carried)
     }
     const player: Player = {
       connection,

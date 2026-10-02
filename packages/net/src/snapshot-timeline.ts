@@ -14,6 +14,13 @@ export const INTERPOLATION_DELAY_MS = 100
 const MAX_BUFFERED_SNAPSHOTS = 32
 const CLOCK_OFFSET_SMOOTHING = 0.05
 const CLOCK_OFFSET_RESYNC_MS = 1000
+/**
+ * How far back the clock looks for the snapshot that came quickest. One
+ * arriving late says only that it was held up on the way, as snapshots
+ * bunched behind a stall on a slow link all are; only when every one for
+ * this long has come later is the server's clock really further behind.
+ */
+const CLOCK_WINDOW_MS = 2000
 
 /** Where a vehicle is drawn: a blend of the two snapshots around now. */
 export interface VehicleRenderState {
@@ -86,28 +93,31 @@ function writeBlend(
 
 /**
  * Snapshots as they arrive, and the server clock as they imply it. The
- * offset between local time and server tick is learned from every snapshot's
- * arrival, leaning toward the earliest arrivals since those had the least
- * delay on the way.
+ * offset between local time and server tick is learned from the earliest
+ * arrival of the last little while, since that one had the least delay on
+ * the way.
  */
 export class SnapshotTimeline {
   private readonly buffer: BufferedSnapshot[] = []
   private readonly states = new Map<number, VehicleRenderState>()
   private readonly view: VehicleRenderState[] = []
   private clockOffsetMs: number | null = null
+  /** The offset each snapshot of the window implied, oldest first, with when it arrived. */
+  private readonly offsetSamples: { atMs: number; offsetMs: number }[] = []
 
   push(snapshot: SnapshotMessage, receivedAtMs: number): void {
     const serverTimeMs = snapshot.tick * MS_PER_TICK
-    const offsetSample = receivedAtMs - serverTimeMs
+    this.offsetSamples.push({ atMs: receivedAtMs, offsetMs: receivedAtMs - serverTimeMs })
+    while (this.offsetSamples[0]!.atMs < receivedAtMs - CLOCK_WINDOW_MS) this.offsetSamples.shift()
+    let floor = Infinity
+    for (const { offsetMs } of this.offsetSamples) floor = Math.min(floor, offsetMs)
 
-    if (
-      this.clockOffsetMs === null ||
-      offsetSample < this.clockOffsetMs ||
-      Math.abs(offsetSample - this.clockOffsetMs) > CLOCK_OFFSET_RESYNC_MS
-    ) {
-      this.clockOffsetMs = offsetSample
+    // Quicker than before is taken at once, and so is a floor gone up by
+    // more than jitter, as after the server stalls; a floor creeping up is followed.
+    if (this.clockOffsetMs === null || floor < this.clockOffsetMs || floor - this.clockOffsetMs > CLOCK_OFFSET_RESYNC_MS) {
+      this.clockOffsetMs = floor
     } else {
-      this.clockOffsetMs += (offsetSample - this.clockOffsetMs) * CLOCK_OFFSET_SMOOTHING
+      this.clockOffsetMs += (floor - this.clockOffsetMs) * CLOCK_OFFSET_SMOOTHING
     }
 
     const bySeat = new Map<number, VehicleSnapshot>()

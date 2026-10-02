@@ -1,4 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
+import { NO_ARRIVAL } from '@buggies/net'
 import { isMoon, moonOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
@@ -16,6 +17,8 @@ interface StubGame extends ModeView {
   kind: string
   /** The portal to say was driven through when next asked, if any. */
   through: number
+  /** Why the connection to the server is to be said lost, if it is. */
+  dropped: string | null
   disposed: boolean
   updates: { dt: number; active: boolean }[]
   /** The vehicles everyone was swapped into, where they were, one entry a swap. */
@@ -90,6 +93,7 @@ function build(refuse: string | null = null) {
   const settled: Choice[] = []
   const joined: string[] = []
   const arrivals: (number | undefined)[] = []
+  const passed: (readonly number[] | undefined)[] = []
   const hudStates: (HudState | null)[][] = [[], []]
   const rendered: string[] = []
   const menu = new StubMenu()
@@ -130,9 +134,10 @@ function build(refuse: string | null = null) {
       if (refuse !== null) throw new Error(refuse)
       return [{ seed: url.length, players: 3 }]
     },
-    play: async (_scene, url, seed, players, mapFor, _sound, _sun, arrival) => {
+    play: async (_scene, url, seed, players, mapFor, _sound, _sun, arrival, passes) => {
       joined.push(`${url}#${seed}`)
       arrivals.push(arrival)
+      passed.push(passes)
       if (refuse !== null) throw new Error(refuse)
       // Two players joining at once both ask for the island.
       await Promise.all(players.map(() => mapFor(seed)))
@@ -143,6 +148,13 @@ function build(refuse: string | null = null) {
           const through = game.through
           game.through = -1
           return through
+        },
+        dropped: null,
+        lost() {
+          return game.dropped
+        },
+        passes() {
+          return players.map((_, index) => 40 + index)
         },
         disposed: false,
         updates: [],
@@ -196,7 +208,7 @@ function build(refuse: string | null = null) {
     },
     CHOICE,
   )
-  return { shell, menu, games, showrooms, islands, generated, settled, joined, arrivals, hudStates, rendered }
+  return { shell, menu, games, showrooms, islands, generated, settled, joined, arrivals, passed, hudStates, rendered }
 }
 
 /** Let every promise the shell is waiting on settle. */
@@ -354,6 +366,21 @@ describe('the shell', () => {
     expect(joined.at(-1)).toBe(`${SERVER}#5`)
     expect(arrivals.at(-1)).toBe(2)
     expect(games[1]!.disposed).toBe(true)
+    expect(shell.onShow).toBe('game')
+  })
+
+  it('joins the same world again when the connection is lost, showing the passes it was given', async () => {
+    const { shell, games, joined, arrivals, passed } = build()
+    await shell.start({ ...CHOICE, mode: 'duo' })
+    await settle()
+    games[0]!.dropped = 'connection closed'
+    shell.frame(1 / 60)
+    await settle()
+    expect(games[0]!.disposed).toBe(true)
+    expect(joined).toEqual([`${SERVER}#5`, `${SERVER}#5`])
+    expect(arrivals.at(-1)).toBe(NO_ARRIVAL)
+    expect(passed.at(-1)).toEqual([40, 41])
+    expect(games[1]!.kind).toBe('sportsCar+raceCar on 5')
     expect(shell.onShow).toBe('game')
   })
 

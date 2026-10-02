@@ -140,6 +140,8 @@ export interface OnlineView {
   setGoal(goal: GoalRequest | null): void
   /** The portal the car has driven through since last asked, or -1. */
   portal(): number
+  /** Why the connection to the server was lost, if it has been. */
+  lost(): string | null
   dispose(): void
 }
 
@@ -279,8 +281,8 @@ export async function joinOnline(
       // The keys, told with what this car does of its own.
       const controls = player.keys.controls(OWN_ACTIONS[profile].label)
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
-      // Cut off from the server, there is nothing more to show but that, and what to do about it.
-      if (lost !== null) return { title, goal: `Disconnected from the server (${lost}). Pick the island again from the menu to rejoin.` }
+      // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
+      if (lost !== null) return { title, goal: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
       const sync =
         `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
@@ -307,6 +309,9 @@ export async function joinOnline(
       const through = crossed
       crossed = -1
       return through
+    },
+    lost() {
+      return lost
     },
     dispose() {
       window.removeEventListener('keydown', onKey)

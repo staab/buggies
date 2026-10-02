@@ -2,7 +2,6 @@ import {
   DEFAULT_VEHICLE_PROFILE,
   PLAYABLE_PROFILE_IDS,
   initPhysics,
-  type VehicleProfileId,
 } from '@buggies/game'
 import * as THREE from 'three'
 
@@ -12,7 +11,7 @@ import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
 import { GoalMenu } from './goal-menu.ts'
 import { Hud } from './hud.ts'
-import { Menu, type Choice, type Mode } from './menu.ts'
+import { Menu, type Choice } from './menu.ts'
 import { Shell } from './shell.ts'
 import { Sun } from './sun.ts'
 import { TerrainSource } from './terrain-source.ts'
@@ -71,29 +70,22 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 100000)
 }
 
-/** What the address bar asks for, with something sensible for whatever it leaves out. */
+/** What the address bar asks for: the island, as `/{seed}`, or a fresh one; who plays in what is the menu's to ask. */
 function readChoice(): Choice {
-  const params = new URLSearchParams(location.search)
-  const seed = Number(params.get('seed'))
-  const mode: Mode = params.get('mode') === 'duo' ? 'duo' : 'solo'
-  const profile = (name: string, fallback: VehicleProfileId): VehicleProfileId => {
-    const given = params.get(name)
-    return PLAYABLE_PROFILE_IDS.includes(given as VehicleProfileId) ? (given as VehicleProfileId) : fallback
-  }
+  // Links from before the seed moved into the path still name it as `?seed=`.
+  const given = location.pathname.split('/').find((part) => part !== '') ?? new URLSearchParams(location.search).get('seed')
+  const seed = Number(given)
   return {
-    mode,
-    seed: Number.isFinite(seed) && seed > 0 ? Math.floor(seed) : randomSeed(),
-    vehicle: profile('vehicle', DEFAULT_VEHICLE_PROFILE),
-    vehicle2: profile('vehicle2', PLAYABLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE),
+    mode: 'solo',
+    seed: Number.isInteger(seed) && seed > 0 ? seed : randomSeed(),
+    vehicle: DEFAULT_VEHICLE_PROFILE,
+    vehicle2: PLAYABLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE,
   }
 }
 
-/** Reflect what is being played in the address bar. */
+/** Reflect the island being played in the address bar. */
 function settle(choice: Choice): void {
-  const url =
-    `?mode=${choice.mode}&seed=${choice.seed}&vehicle=${choice.vehicle}` +
-    (choice.mode === 'duo' ? `&vehicle2=${choice.vehicle2}` : '')
-  history.replaceState(null, '', url)
+  history.replaceState(null, '', `/${choice.seed}`)
 }
 
 const shell = new Shell(

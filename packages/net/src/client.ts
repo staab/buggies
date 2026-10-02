@@ -64,11 +64,26 @@ const SLEW_SLACK_TICKS = 2
 const SLEW_BACK_INTERVAL_MS = 250
 const STALL_TICKS = INPUT_TIMELINE_TICKS / 2
 
+/**
+ * How long the server may say nothing before it is taken for gone. It
+ * sends twenty snapshots a second, so this is a link that has died without
+ * saying so, not a slow one.
+ */
+const SILENCE_MS = 5000
+
 export interface NetClientEvents {
   onClosed(reason: string): void
 }
 
-export class ConnectionFailure extends Error {}
+export class ConnectionFailure extends Error {
+  /** Why the server turned the connection away, if it did: one of the `REJECT_` reasons. */
+  readonly reject: number | null
+
+  constructor(message: string, reject: number | null = null) {
+    super(message)
+    this.reject = reject
+  }
+}
 
 /**
  * One player's side of the protocol: the handshake, a stream of inputs out,
@@ -91,6 +106,9 @@ export class NetClient {
   private leadRelaxedAtMs = 0
   private slewedAtMs = 0
   private closedReason: string | null = null
+  private rejectReason: number | null = null
+  /** When anything was last heard from the server. */
+  private heardAtMs = 0
   private ackTick = UNACKNOWLEDGED_INPUT_TICK
 
   constructor(transport: ClientTransport, clock: () => number, events: Partial<NetClientEvents> = {}) {
@@ -124,6 +142,7 @@ export class NetClient {
   /** Join the room for a seed, in a vehicle: out of one of its portals, if come through one to it, with what the seat left behind held, if it shows that seat's pass. */
   async connect(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS): Promise<WelcomeMessage> {
     try {
+      this.heardAtMs = this.clock()
       await this.transport.connect({
         onMessage: (payload) => this.receive(payload),
         onClose: (reason) => this.handleClose(reason),
@@ -134,7 +153,7 @@ export class NetClient {
       this.transport.send(encodeHello(profile, seed, arrival, pass))
       return await welcome
     } catch (error) {
-      throw new ConnectionFailure(error instanceof Error ? error.message : String(error))
+      throw new ConnectionFailure(error instanceof Error ? error.message : String(error), this.rejectReason)
     }
   }
 
@@ -145,6 +164,10 @@ export class NetClient {
 
   /** Once per local fixed step: the newest word from the server, and the input to run on. */
   pump(input: VehicleInput): PredictionUpdate {
+    if (this.welcomeMessage !== null && this.closedReason === null && this.clock() - this.heardAtMs > SILENCE_MS) {
+      this.handleClose('nothing heard from the server')
+      this.transport.close('nothing heard')
+    }
     return {
       estimatedServerTick: this.timeline.estimatedServerTick(this.clock()),
       stepsFor: (nextTick) => this.stepsFor(nextTick),
@@ -213,6 +236,7 @@ export class NetClient {
   }
 
   private receive(payload: Uint8Array): void {
+    this.heardAtMs = this.clock()
     const type = messageTypeOf(payload)
 
     if (type === SERVER_WELCOME) {
@@ -229,6 +253,7 @@ export class NetClient {
 
     if (type === SERVER_REJECT) {
       const message = decodeReject(payload)
+      this.rejectReason = message?.reason ?? null
       this.handleClose(message === null ? 'malformed reject' : rejectLabel(message.reason))
       return
     }

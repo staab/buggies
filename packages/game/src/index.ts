@@ -627,20 +627,25 @@ export function respawnNearby(arena: Arena, seat: Seat): void {
  * deck. The map, and the rest of the arena, go on as they were.
  */
 export function changeVehicle(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
+  const spawn = spawnWhere(seat)
+  reshape(arena, seat, profile)
+  respawn(seat, spawn)
+}
+
+/** A spawn right where a car is, upright and facing the way it was going, on whatever it is on. */
+export function spawnWhere(seat: Seat): VehicleSpawn {
   const { position, forward, up: roof } = seat.vehicle.frame
   const up = upOf(position)
-  // Upright, the old car stood its ride height over what it was on; on its
-  // side or roof, no more than its half height, so the new one is never set
-  // down under the ground.
+  // Upright, the car stands its ride height over what it is on; on its
+  // side or roof, no more than its half height, so one set down here is
+  // never set down under the ground.
   const below = vdot(roof, up) > UPRIGHT ? seat.vehicle.rideHeight : seat.tuning.chassisHalfHeight
   const heading = alongGround(forward, up)
-  const spawn: VehicleSpawn = {
+  return {
     position: vaddScaled(v3(), position, up, -below),
     up,
     rotation: uprightRotation(up, vdot(heading, heading) > 1e-12 ? heading : forwardOf(seat.spawn)),
   }
-  reshape(arena, seat, profile)
-  respawn(seat, spawn)
 }
 
 /** How far up a car's up has to point for it to count as on its wheels. */

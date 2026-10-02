@@ -34,6 +34,8 @@ export interface ModeView {
   setGoal?(goal: GoalRequest | null): void
   /** The portal anyone on this screen has driven through since last asked, or -1. */
   portal?(): number
+  /** Why the connection to the server was lost, if it has been, for the game to be joined again. */
+  lost?(): string | null
   /** What each player on this screen shows on coming through a portal, for what they hold to be carried over. */
   passes?(): readonly number[]
   /** Show where every car is on the island being looked over, as the server last said. */

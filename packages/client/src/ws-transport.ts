@@ -2,6 +2,9 @@ import type { ClientTransport, ClientTransportHandlers } from '@buggies/net'
 
 const NORMAL_CLOSE_CODE = 1000
 
+/** How long a socket may take to open before the server is taken to be out of reach. */
+const OPEN_TIMEOUT_MS = 10_000
+
 export class WebSocketClientTransport implements ClientTransport {
   private socket: WebSocket | null = null
 
@@ -14,14 +17,20 @@ export class WebSocketClientTransport implements ClientTransport {
       this.socket = socket
 
       let opened = false
+      const timeout = setTimeout(() => {
+        reject(new Error(`could not reach ${this.url}`))
+        socket.close()
+      }, OPEN_TIMEOUT_MS)
       socket.addEventListener('open', () => {
         opened = true
+        clearTimeout(timeout)
         resolve()
       })
       socket.addEventListener('error', () => {
         if (!opened) reject(new Error(`could not reach ${this.url}`))
       })
       socket.addEventListener('close', (event) => {
+        clearTimeout(timeout)
         if (!opened) reject(new Error(`could not reach ${this.url}`))
         else handlers.onClose(event.reason === '' ? 'connection closed' : event.reason)
       })

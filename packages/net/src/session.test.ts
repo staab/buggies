@@ -644,6 +644,56 @@ describe('a session', () => {
     session.dispose()
   })
 
+  it('puts a player who lost the connection back where they were, with what they held', async () => {
+    const session = new Session()
+    const a = await session.join()
+    a.input.throttle = 1
+    session.run(3)
+    const seat = session.arena.seats[a.client.welcome!.seat]!
+    arm(seat, 'rocket')
+    seat.score = 7
+    const at = { ...session.serverPositionOf(a) }
+    expect(distance(at, seat.spawn.position)).toBeGreaterThan(5)
+    const { pass } = a.client.welcome!
+    a.client.close('cut off')
+    session.players.splice(session.players.indexOf(a), 1)
+    session.run(0.2)
+
+    const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, pass)
+    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ weapon: 'rocket', score: 7 })
+    expect(distance(session.serverPositionOf(back), at)).toBeLessThan(3)
+    a.prediction.dispose()
+    session.dispose()
+  })
+
+  it('lets go of a connection that has gone quiet when its player joins again with its pass', async () => {
+    const session = new Session()
+    const a = await session.join()
+    const seat = session.arena.seats[a.client.welcome!.seat]!
+    arm(seat, 'rocket')
+    const { pass } = a.client.welcome!
+    // Cut off without the connection closing: the server still has them seated.
+    a.paused = true
+    session.run(0.2)
+
+    const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, pass)
+    expect(session.server.playerCount).toBe(1)
+    expect(session.server.roomCount).toBe(1)
+    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ weapon: 'rocket' })
+    expect(a.client.closed).not.toBeNull()
+    session.dispose()
+  })
+
+  it('gives up on a server that has said nothing for seconds', async () => {
+    const session = new Session()
+    const a = await session.join()
+    session.run(1)
+    session.serverStalled = true
+    session.run(6)
+    expect(a.client.closed).toBe('nothing heard from the server')
+    session.dispose()
+  })
+
   it('puts a player back on request, and the prediction follows the new epoch', async () => {
     const session = new Session()
     const a = await session.join()

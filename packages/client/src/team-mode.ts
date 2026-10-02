@@ -98,6 +98,14 @@ export async function createTeamMode(
         return through >= 0 ? through : crossed
       }, -1)
     },
+    lost() {
+      // One cut off is everyone rejoining: they came on together and go back together.
+      for (const view of views) {
+        const why = view.lost()
+        if (why !== null) return why
+      }
+      return null
+    },
     passes() {
       return views.map((view) => view.pass)
     },

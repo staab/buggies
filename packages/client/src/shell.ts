@@ -1,5 +1,5 @@
 import { portalLink, type VehicleProfileId } from '@buggies/game'
-import { fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
+import { ConnectionFailure, NO_ARRIVAL, REJECT_PROTOCOL_MISMATCH, fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
 import { isMoon, planetSeedOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -16,6 +16,13 @@ import type { Sun } from './sun.ts'
 import { createTeamMode } from './team-mode.ts'
 import { createTerrainView, moveBoats, moveClouds } from './terrain-view.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
+
+/** How long to wait before trying to rejoin again, after each try that fails: longer each time, up to the last. */
+const REJOIN_DELAYS_MS = [500, 1000, 2000, 4000, 8000]
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 /** The menu, as the shell drives it. */
 export interface ShellMenu {
@@ -350,6 +357,43 @@ export class Shell implements MenuHost {
   }
 
   /**
+   * Join the world being played again, everyone on this screen in the
+   * vehicles they were in, after the connection to the server was lost:
+   * back where they were, with what they held, if the server still has it.
+   * Tried until it works, or something else is asked for, or the server
+   * has moved on to a version this page does not speak.
+   */
+  private async rejoin(why: string): Promise<void> {
+    const { game } = this
+    if (game === null) return
+    const stamp = ++this.generation
+    const passes = game.mode.passes?.() ?? []
+    this.setGame(null)
+    for (let attempt = 0; ; attempt++) {
+      this.notice(`lost the server (${why}), reconnecting...`)
+      try {
+        const mode = await this.modes.play(this.scene, this.server, game.world, playersFor(game.choice), (seed) => this.mapFor(seed), this.sound, this.sun, NO_ARRIVAL, passes)
+        if (stamp !== this.generation) {
+          mode.dispose()
+          return
+        }
+        this.setGame({ mode, choice: game.choice, world: game.world })
+        return
+      } catch (error: unknown) {
+        if (stamp !== this.generation) return
+        if (error instanceof ConnectionFailure && error.reject === REJECT_PROTOCOL_MISMATCH) {
+          this.menu.show(this.choiceNow)
+          this.menu.notice('The server has been updated: reload the page to play on.')
+          return
+        }
+        why = error instanceof Error ? error.message : String(error)
+      }
+      await wait(REJOIN_DELAYS_MS[Math.min(attempt, REJOIN_DELAYS_MS.length - 1)]!)
+      if (stamp !== this.generation) return
+    }
+  }
+
+  /**
    * Go back to the game behind the menu, with the island it is played on
    * back in view: looking over another one will have taken it down.
    */
@@ -384,6 +428,9 @@ export class Shell implements MenuHost {
     // Through a portal, everyone on this screen goes over to the world it leads to.
     const through = game?.mode.portal?.() ?? -1
     if (through >= 0) void this.travel(through)
+    // Cut off from the server, everyone on this screen joins again.
+    const lost = game?.mode.lost?.() ?? null
+    if (lost !== null && this.game === game) void this.rejoin(lost)
     if (menu.open) backdrop?.mode.update(dt, false)
     // The island's clocks keep the game's time.
     if (this.view !== null) {
