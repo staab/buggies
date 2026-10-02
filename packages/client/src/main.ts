@@ -57,13 +57,15 @@ scene.add(sun.object)
 
 /**
  * The game server: named at build time by VITE_SERVER_URL, or else the one
- * next to whichever address the page was opened on.
+ * that served the page. Under Vite's dev server, that is the game server
+ * beside it on port 8787.
  */
 function serverUrl(): string {
   const configured = import.meta.env.VITE_SERVER_URL as string | undefined
   if (configured) return configured
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${scheme}://${location.hostname || 'localhost'}:8787`
+  if (import.meta.env.DEV) return `${scheme}://${location.hostname || 'localhost'}:8787`
+  return `${scheme}://${location.host}`
 }
 
 function randomSeed(): number {

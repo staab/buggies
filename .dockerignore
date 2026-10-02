@@ -8,8 +8,6 @@ node_modules
 **/*.tsbuildinfo
 coverage
 *.png
-packages/client/public
-packages/client/src
-packages/client/index.html
+!packages/client/public/**/*.png
 .env
 .env.*

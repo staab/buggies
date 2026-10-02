@@ -11,7 +11,7 @@ pnpm dev
 
 This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. The address bar names the island being played as `/{seed}`: to join from a second screen, open the same URL. A game cut off from the server joins it again by itself, with each car back where it was and holding what it held, if the server still has it.
 
-The client connects to a server on the same host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
+The game server also serves the built client (`pnpm build`) on its own port, answering any path that names no file, such as `/{seed}`, with `index.html`. A built client joins the server that served it, and the Vite client joins the server on port 8787 of the host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`, and `CLIENT_DIR` to serve the client from somewhere other than `packages/client/dist`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
 ## Keys
 
@@ -106,7 +106,7 @@ Each vehicle has its own armor, which sets how much it takes from crashes and we
 
 ## Docker
 
-The workflow in `.github/workflows/docker.yml` publishes the game server as an image at `ghcr.io/staab/buggies`. Every push to the default branch is tagged `latest` and with its commit, and a release tag such as `v1.2.0` is tagged with its version. The server listens on port 8787 and honors `HOST`, `PORT` and `TRUST_PROXY` as above.
+The workflow in `.github/workflows/docker.yml` publishes the game server, with the client built in, as an image at `ghcr.io/staab/buggies`. Every push to the default branch is tagged `latest` and with its commit, and a release tag such as `v1.2.0` is tagged with its version. The server listens on port 8787, serving both the page and its WebSockets there, and honors `HOST`, `PORT` and `TRUST_PROXY` as above. Nothing is baked in at build time: the page joins whatever address it is served from, so a reverse proxy in front only needs to pass WebSocket upgrades through to the same port.
 
 ```sh
 docker run --rm -p 8787:8787 ghcr.io/staab/buggies

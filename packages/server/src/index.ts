@@ -1,12 +1,17 @@
+import { fileURLToPath } from 'node:url'
+
 import { FIXED_TIMESTEP, createArena, initPhysics } from '@buggies/game'
 import { GameServer, SNAPSHOTS_PER_SECOND, TICKS_PER_SECOND } from '@buggies/net'
 import { MapMaker } from './maps.ts'
+import { serveClient } from './static.ts'
 import { WebSocketServerTransport } from './ws-transport.ts'
 
 const host = process.env.HOST ?? '0.0.0.0'
 const port = Number(process.env.PORT ?? 8787)
 /** Behind a reverse proxy, players are told apart by the address it forwards, not its own. */
 const trustProxy = process.env.TRUST_PROXY === '1'
+/** The built client, served on the same port; by default the workspace's own build, next door. */
+const clientDir = process.env.CLIENT_DIR ?? fileURLToPath(new URL('../../client/dist/', import.meta.url))
 
 /** How often the loop checks whether a step is due. Finer than a step. */
 const PUMP_INTERVAL_MS = 4
@@ -51,7 +56,7 @@ const server = new GameServer(
   },
 )
 
-const transport = new WebSocketServerTransport({ host, port }, { trustProxy })
+const transport = new WebSocketServerTransport({ host, port }, { trustProxy, onRequest: serveClient(clientDir) })
 const address = await transport.listen(server)
 
 let last = performance.now()
@@ -92,4 +97,4 @@ process.on('SIGINT', shutdown)
 process.on('SIGTERM', shutdown)
 
 log(`simulation ${TICKS_PER_SECOND}Hz, snapshots ${SNAPSHOTS_PER_SECOND}Hz, a room per seed`)
-log(`listening on ws://${address.host}:${address.port}`)
+log(`listening on http://${address.host}:${address.port}, serving the client from ${clientDir}`)

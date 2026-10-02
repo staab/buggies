@@ -1,4 +1,4 @@
-import type { IncomingMessage } from 'node:http'
+import { createServer, type IncomingMessage, type RequestListener, type Server } from 'node:http'
 
 import type { ServerTransport, TransportConnection, TransportHandlers } from '@buggies/net'
 import { WebSocketServer, type RawData, type WebSocket } from 'ws'
@@ -19,6 +19,8 @@ export interface TransportOptions {
    */
   trustProxy?: boolean
   connectionsPerAddress?: number
+  /** What answers a plain HTTP request on the same port, such as the client's page; left out, it is refused. */
+  onRequest?: RequestListener
 }
 
 function addressOf(request: IncomingMessage, trustProxy: boolean): string {
@@ -55,9 +57,11 @@ export interface ListenAddress {
 
 export class WebSocketServerTransport implements ServerTransport {
   private server: WebSocketServer | null = null
+  private http: Server | null = null
   private nextConnectionId = 1
   private readonly trustProxy: boolean
   private readonly connectionsPerAddress: number
+  private readonly onRequest: RequestListener
   /** How many connections each address holds just now. */
   private readonly perAddress = new Map<string, number>()
 
@@ -67,21 +71,24 @@ export class WebSocketServerTransport implements ServerTransport {
   ) {
     this.trustProxy = options.trustProxy ?? false
     this.connectionsPerAddress = options.connectionsPerAddress ?? DEFAULT_CONNECTIONS_PER_ADDRESS
+    this.onRequest =
+      options.onRequest ??
+      ((_request, response) => {
+        response.writeHead(426, { 'Content-Type': 'text/plain' })
+        response.end('Upgrade Required')
+      })
   }
 
   listen(handlers: TransportHandlers): Promise<ListenAddress> {
     return new Promise((resolve, reject) => {
-      const server = new WebSocketServer({
-        host: this.address.host,
-        port: this.address.port,
-        perMessageDeflate: false,
-        maxPayload: MAX_PAYLOAD_BYTES,
-      })
+      const http = createServer(this.onRequest)
+      const server = new WebSocketServer({ server: http, perMessageDeflate: false, maxPayload: MAX_PAYLOAD_BYTES })
+      this.http = http
       this.server = server
 
-      server.on('error', reject)
-      server.on('listening', () => {
-        const bound = server.address()
+      http.once('error', reject)
+      http.listen(this.address.port, this.address.host, () => {
+        const bound = http.address()
         const port = bound !== null && typeof bound !== 'string' ? bound.port : this.address.port
         resolve({ host: this.address.host, port })
       })
@@ -114,11 +121,16 @@ export class WebSocketServerTransport implements ServerTransport {
 
   close(): Promise<void> {
     const server = this.server
-    if (server === null) return Promise.resolve()
+    const http = this.http
+    if (server === null || http === null) return Promise.resolve()
     this.server = null
+    this.http = null
     return new Promise((resolve) => {
       for (const client of server.clients) client.terminate()
-      server.close(() => resolve())
+      server.close(() => {
+        http.close(() => resolve())
+        http.closeAllConnections()
+      })
     })
   }
 }

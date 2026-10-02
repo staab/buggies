@@ -1,6 +1,7 @@
-# The game server: the arena that counts, over WebSockets on port 8787.
-# Built from the workspace in one stage and run from the built packages in
-# another, with only what the server needs at runtime.
+# The game server: the arena that counts, over WebSockets on port 8787, and
+# the client's page on the same port. Built from the workspace in one stage
+# and run from the built packages in another, with only what the server
+# needs at runtime.
 
 FROM node:24-alpine AS base
 WORKDIR /app
@@ -19,12 +20,13 @@ COPY packages/net/package.json packages/net/
 COPY packages/server/package.json packages/server/
 COPY packages/client/package.json packages/client/
 
-# The build: every dependency, the sources, and the server with everything it depends on built.
+# The build: every dependency, the sources, the server with everything it
+# depends on, and the client, which joins whichever server served it.
 FROM manifests AS build
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages ./packages
-RUN pnpm --filter @buggies/server... run build
+RUN pnpm --filter @buggies/server... run build && pnpm --filter @buggies/client run build
 
 # The runtime dependencies alone, for the server and the workspace packages it uses.
 FROM manifests AS deps
@@ -43,6 +45,7 @@ COPY --from=build /app/packages/vehicle/dist ./packages/vehicle/dist
 COPY --from=build /app/packages/game/dist ./packages/game/dist
 COPY --from=build /app/packages/net/dist ./packages/net/dist
 COPY --from=build /app/packages/server/dist ./packages/server/dist
+COPY --from=build /app/packages/client/dist ./packages/client/dist
 USER node
 ENV HOST=0.0.0.0 PORT=8787
 EXPOSE 8787
