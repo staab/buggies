@@ -64,7 +64,7 @@ export const ROOM_BYTES = 5
 export const PEEK_REQUEST_BYTES = 5
 export const PEEK_HEADER_BYTES = 3
 export const PEEK_MARK_BYTES = 14
-export const SNAPSHOT_HEADER_BYTES = 25
+export const SNAPSHOT_HEADER_BYTES = 26
 /**
  * A vehicle in a snapshot: where it is and how it moves, how hurt it is and
  * what it was last driven with, always; and what it has won and what it has
@@ -84,6 +84,7 @@ export const SNAPSHOT_PROP_BYTES = 33
 export const SNAPSHOT_ROBOT_BYTES = 16
 export const SNAPSHOT_UFO_BYTES = 41
 export const SNAPSHOT_SPIDER_BYTES = 47
+export const SNAPSHOT_METEOR_BYTES = 28
 
 /** What a game is, by the byte that says so: none first. */
 const GAME_CODES: readonly (GameKind | 'none')[] = ['none', ...GAME_KINDS]
@@ -235,6 +236,15 @@ export interface SpiderSnapshot {
   deaths: number
 }
 
+/** A meteor coming down, as the server has it. */
+export interface MeteorSnapshot {
+  id: number
+  from: Vec3
+  to: Vec3
+  /** How many ticks before the snapshot's it was first seen. */
+  age: number
+}
+
 /** A rocket in the air, as the server has it. */
 export interface RocketSnapshot {
   id: number
@@ -305,6 +315,8 @@ export interface SnapshotMessage {
   robots: RobotSnapshot[]
   ufos: UfoSnapshot[]
   spiders: SpiderSnapshot[]
+  /** Every meteor coming down. */
+  meteors: MeteorSnapshot[]
 }
 
 /** Something loose on the map, a banana or a bomb, as the server has it. */
@@ -773,7 +785,8 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
       message.props.length * SNAPSHOT_PROP_BYTES +
       message.robots.length * SNAPSHOT_ROBOT_BYTES +
       message.ufos.length * SNAPSHOT_UFO_BYTES +
-      message.spiders.length * SNAPSHOT_SPIDER_BYTES,
+      message.spiders.length * SNAPSHOT_SPIDER_BYTES +
+      message.meteors.length * SNAPSHOT_METEOR_BYTES,
   )
   writer.u8(SERVER_SNAPSHOT)
   writer.u32(message.tick)
@@ -790,6 +803,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   writer.u8(message.ufos.length)
   writer.u8(message.spiders.length)
   writer.u8(message.race === null ? 0 : Math.min(message.race.course.length, RACE_MARKS_MOST))
+  writer.u8(message.meteors.length)
   if (message.race !== null) {
     writer.u8(message.race.starter)
     writer.u32(message.race.startTick >>> 0)
@@ -902,6 +916,12 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(Math.round(Math.min(Math.max(spider.damage, 0), 1) * 255))
     writer.u8(spider.deaths & 0xff)
   }
+  for (const meteor of message.meteors) {
+    writer.u16(meteor.id)
+    writer.vec3(meteor.from)
+    writer.vec3(meteor.to)
+    writer.u16(Math.min(Math.max(meteor.age, 0), 0xffff))
+  }
   return writer.bytes
 }
 
@@ -934,6 +954,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   const ufoCount = reader.u8()
   const spiderCount = reader.u8()
   const raceMarks = reader.u8()
+  const meteorCount = reader.u8()
   if (raceMarks > RACE_MARKS_MOST) return null
   const rest =
     pickupCount * SNAPSHOT_PICKUP_BYTES +
@@ -943,7 +964,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     propCount * SNAPSHOT_PROP_BYTES +
     robotCount * SNAPSHOT_ROBOT_BYTES +
     ufoCount * SNAPSHOT_UFO_BYTES +
-    spiderCount * SNAPSHOT_SPIDER_BYTES
+    spiderCount * SNAPSHOT_SPIDER_BYTES +
+    meteorCount * SNAPSHOT_METEOR_BYTES
   const raceTold = raceMarks === 0 ? 0 : SNAPSHOT_RACE_BYTES + raceMarks * SNAPSHOT_MARK_BYTES
   if (payload.length < SNAPSHOT_HEADER_BYTES + raceTold + count * SNAPSHOT_VEHICLE_CORE_BYTES + rest) return null
   let race: Race | null = null
@@ -1126,6 +1148,10 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       deaths: reader.u8(),
     })
   }
+  const meteors: MeteorSnapshot[] = []
+  for (let i = 0; i < meteorCount; i++) {
+    meteors.push({ id: reader.u16(), from: reader.vec3(), to: reader.vec3(), age: reader.u16() })
+  }
   return {
     tick,
     ackInputTick: ack === NO_TICK ? UNACKNOWLEDGED_INPUT_TICK : ack,
@@ -1141,6 +1167,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     robots,
     ufos,
     spiders,
+    meteors,
   }
 }
 

@@ -14,6 +14,7 @@ import {
   encodePeek,
   encodePeekRequest,
   SNAPSHOT_HEADER_BYTES,
+  SNAPSHOT_METEOR_BYTES,
   SNAPSHOT_MARK_BYTES,
   SNAPSHOT_RACE_BYTES,
   SNAPSHOT_PROP_BYTES,
@@ -187,6 +188,7 @@ const snapshot: SnapshotMessage = {
     },
   ],
   spiders: [{ id: 0, position: { x: 800.5, y: 12.25, z: 900.75 }, forward: { x: 0, y: 0.5, z: -0.75 }, legs: 4, target: { x: 1000.5, y: -2.5, z: 700.25 }, stride: 321.5, bombTicks: 1200, damage: 0, deaths: 2 }],
+  meteors: [{ id: 7, from: { x: 300.5, y: 250.25, z: -40.75 }, to: { x: 150.25, y: 20.5, z: -10.5 }, age: 90 }],
 }
 
 describe('wire', () => {
@@ -242,6 +244,7 @@ describe('wire', () => {
         snapshot.robots.length * SNAPSHOT_ROBOT_BYTES +
         snapshot.ufos.length * SNAPSHOT_UFO_BYTES +
         snapshot.spiders.length * SNAPSHOT_SPIDER_BYTES +
+        snapshot.meteors.length * SNAPSHOT_METEOR_BYTES +
         2 * SNAPSHOT_VEHICLE_BYTES +
         3 * SNAPSHOT_PICKUP_BYTES +
         snapshot.loose.length * SNAPSHOT_SPILLED_BYTES +
@@ -269,8 +272,9 @@ describe('wire', () => {
     }
     expect(decoded.robots).toEqual(snapshot.robots)
     expect(decoded.ufos).toEqual(snapshot.ufos)
+    expect(decoded.meteors).toEqual(snapshot.meteors)
     // With nothing changed, a snapshot is its vehicles, robots and saucers alone.
-    const quiet = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [] }
+    const quiet = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [], meteors: [] }
     expect(encodeSnapshot(quiet).length).toBe(SNAPSHOT_HEADER_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES + 2 * SNAPSHOT_ROBOT_BYTES + SNAPSHOT_UFO_BYTES + SNAPSHOT_SPIDER_BYTES)
     expect(decodeSnapshot(encodeSnapshot(quiet))).toMatchObject({ full: false, race: null, pickups: [], loose: [], removed: [] })
     for (const [i, loose] of snapshot.loose.entries()) {
@@ -345,7 +349,7 @@ describe('wire', () => {
       appliedInput: { steer: 0.25, throttle: 0.6, brake: 0, handbrake: false, fire: false, ability: false },
     }
     const busy: VehicleSnapshot = { ...quiet, seat: 10, weapon: 'shield', shieldTicks: 90 }
-    const message = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [], vehicles: [quiet, busy, driven] }
+    const message = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [], meteors: [], vehicles: [quiet, busy, driven] }
     const payload = encodeSnapshot(message)
     expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_CORE_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
     const [gotQuiet, gotBusy, gotDriven] = decodeSnapshot(payload)!.vehicles

@@ -32,6 +32,10 @@ Every island is wrapped round a planet about 612 m in radius, and you can drive,
 
 Three to five portals stand in the open country of every planet: glowing rings wide enough for a truck, with a clear run through them. Drive through one and you go to the planet's moon, coming out of its one portal. The moon is half the planet's size, gray and airless under a black sky, with craters, mountain ranges and valleys, and a flag beside the lander that brought it. Its portal leads back to the planet, out of the portal you left by. The moon is a room of its own on the server, so everyone who goes through meets there. The menu offers only planets: anyone on a moon is counted on its planet among the popular islands, and a link to a moon opens its planet.
 
+## Meteors
+
+Every six seconds a meteor comes down on the moon near someone driving there. It glows as it falls for three seconds on a slanting line from high overhead, trailing smoke, and a red ring on the ground marks where it will land, darkening as it nears. It blows up where it lands: a car at the middle takes half again a bomb's damage and is thrown out and up, less the further out, and nothing past 18 m is touched. A spider standing in the blast is hurt too.
+
 ## Bananas
 
 An island has 256 bananas, floating around it and turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has three bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills all of its bananas around the wreck for anyone to collect, and they lie there until someone does. Each spilled banana takes one of the island's 256: the ones waiting to reappear first, then ones out on the island, which vanish from where they were. An island holds at most 256 bombs, mines, oil slicks and rockets at once, and past that the oldest disappear.

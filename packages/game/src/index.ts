@@ -33,6 +33,7 @@ import type * as RAPIER from '@dimforge/rapier3d-compat'
 import { NOT_RACING, RACE_TICKS_MOST, runRace, type Game, type Race } from './games.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
+import { METEOR_DAMAGE, METEOR_EVERY_TICKS, METEOR_THROW, aimMeteor, meteorLanded, meteorShare, type Meteor } from './meteors.ts'
 import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, UNSTUCK_AHEAD, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
 import { ROVERS, createRover, roverSpawn, wander, type Rover } from './rovers.ts'
@@ -115,6 +116,18 @@ export {
 export { moveBoat, type Boat } from './boats.ts'
 export { spawnHere } from './spawns.ts'
 export { SPIDER_TARGET } from './weapons.ts'
+export {
+  METEOR_DAMAGE,
+  METEOR_EVERY_TICKS,
+  METEOR_FALL_TICKS,
+  METEOR_RANGE,
+  aimMeteor,
+  meteorAt,
+  meteorId,
+  meteorLanded,
+  meteorShare,
+  type Meteor,
+} from './meteors.ts'
 export {
   SPIDER_BELLY,
   SPIDER_BODY,
@@ -508,6 +521,8 @@ export interface Arena {
   readonly robots: readonly Robot[]
   /** The giant spiders. Replaced by the server's word, like the saucers. */
   readonly spiders: readonly Spider[]
+  /** The meteors coming down on a moon. Replaced whole by the server's word. */
+  meteors: Meteor[]
   /** The boats, meandering on the water as the time goes. */
   readonly boats: readonly Boat[]
   /** The flying saucers. Replaced by the server's word, too. */
@@ -594,6 +609,7 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
     robots: createRobots(planet, world),
     boats: createBoats(planet, world),
     spiders: createSpiders(planet, world),
+    meteors: [],
     ufos: createUfos(planet),
     race: null,
     tick: 0,
@@ -828,6 +844,12 @@ export function advance(
   for (const spider of arena.spiders) {
     if (walkSpider(arena.planet, spider, dt) && !arena.mirror) dropFromSpider(arena, spider)
   }
+  // A meteor comes down every so often near someone driving on a moon: on the server's word, in a mirror.
+  if (!arena.mirror && arena.planet.kind === 'moon' && arena.tick % METEOR_EVERY_TICKS === 0) {
+    const aims = arena.seats.filter((seat) => seat.occupied && !seat.npc).map((seat) => seat.vehicle.frame.position)
+    const meteor = aimMeteor(arena.planet, aims, arena.tick)
+    if (meteor !== null) arena.meteors.push(meteor)
+  }
   // The boats drift on to where the next tick has them.
   for (const boat of arena.boats) moveBoat(boat, arena.tick + 1, false)
   // The saucers fly on, and pull on whatever car they have in their beams.
@@ -842,6 +864,7 @@ export function advance(
   fireRobots(arena)
   armFromBananas(arena)
   flyRockets(arena, dt)
+  landMeteors(arena)
   // A machine the weapons have brought down spills its bananas where it fell, and comes back whole elsewhere.
   if (!arena.mirror) {
     for (const robot of arena.robots) {
@@ -1213,6 +1236,42 @@ function collectPickups(arena: Arena): void {
     if (robot === undefined) continue
     strike(arena, ROBOT_TARGET + robot.id, BOMB_DAMAGE * loose.power, arena.seats[loose.owner])
     arena.loose.splice(i, 1)
+  }
+}
+
+const thrown = v3()
+
+/**
+ * Every meteor that has come down this tick blows up where it lands: each
+ * car within reach takes some of its blast, as much as a bomb's would do
+ * it and more the nearer the middle, and is thrown out and up; a spider
+ * standing in it is hurt too.
+ */
+function landMeteors(arena: Arena): void {
+  for (let i = arena.meteors.length - 1; i >= 0; i--) {
+    const meteor = arena.meteors[i]!
+    if (!meteorLanded(meteor, arena.tick)) continue
+    arena.meteors.splice(i, 1)
+    for (const seat of arena.seats) {
+      if (!seat.occupied || seat.coasting) continue
+      const at = seat.vehicle.frame.position
+      const share = meteorShare(vdistance(at, meteor.to))
+      if (share === 0) continue
+      harm(seat, METEOR_DAMAGE * share * bombShare(seat.profile))
+      // Out from the middle along the ground, and up.
+      upOf(at, thrown)
+      const out = alongGround({ x: at.x - meteor.to.x, y: at.y - meteor.to.y, z: at.z - meteor.to.z }, thrown)
+      const length = Math.sqrt(out.x * out.x + out.y * out.y + out.z * out.z) || 1
+      const speed = seat.tuning.mass * METEOR_THROW * share
+      seat.vehicle.body.applyImpulse(
+        { x: (thrown.x + out.x / length) * speed, y: (thrown.y + out.y / length) * speed, z: (thrown.z + out.z / length) * speed },
+        true,
+      )
+    }
+    for (const spider of arena.spiders) {
+      const share = meteorShare(vdistance(spider.position, meteor.to))
+      if (share > 0) strike(arena, SPIDER_TARGET + spider.id, METEOR_DAMAGE * share)
+    }
   }
 }
 

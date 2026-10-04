@@ -21,6 +21,7 @@ import {
   type Ufo,
   type Spider,
   seatSpiderBody,
+  type Meteor,
   type Rocket,
   type Loose,
   type Seat,
@@ -236,6 +237,11 @@ export class LocalPrediction {
   /** The spiders, as the mirror has them: the server's word, run ahead. */
   get spiders(): readonly Spider[] {
     return this.mirror.spiders
+  }
+
+  /** The meteors coming down, as the mirror has them: the server's word, run ahead. */
+  get meteors(): readonly Meteor[] {
+    return this.mirror.meteors
   }
 
   /** Rockets in the air, as the mirror has them: the server's word, run ahead. */
@@ -482,6 +488,12 @@ export class LocalPrediction {
       spider.deaths = known.deaths
       seatSpiderBody(spider, true)
     }
+    this.mirror.meteors = snapshot.meteors.map((meteor) => ({
+      id: meteor.id,
+      from: { ...meteor.from },
+      to: { ...meteor.to },
+      bornTick: snapshot.tick - meteor.age,
+    }))
     this.mirror.rockets = snapshot.rockets.map((rocket) => ({
       id: rocket.id,
       owner: rocket.owner,

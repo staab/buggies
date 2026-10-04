@@ -6,6 +6,7 @@ import type { Sound } from './audio.ts'
 import type { PresenceEffects } from './car-presence.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import { Explosions } from './explosion.ts'
+import { MeteorsView, type MeteorSource } from './meteors-view.ts'
 import { PickupField, type PickupSource } from './pickups-view.ts'
 import { PropsView, type PropSource } from './props-view.ts'
 import { RobotsView, type RobotSource } from './robots-view.ts'
@@ -16,14 +17,14 @@ import { Tracers } from './tracers.ts'
 import { UfosView, type UfoSource } from './ufos-view.ts'
 
 /** Where everything on the island besides the cars is read from: an arena, or a mirror of one. */
-export interface ArenaSource extends PickupSource, RocketSource, PropSource, RobotSource, UfoSource, SpiderSource {
+export interface ArenaSource extends PickupSource, RocketSource, PropSource, RobotSource, UfoSource, SpiderSource, MeteorSource {
   readonly shots: readonly Shot[]
 }
 
 /**
  * Everything on the island besides the cars, as one thing on the screen:
  * the explosions and smoke every car feeds, the bananas and bombs, the
- * rockets in the air, the robots, the saucers and the tracers of the guns and lasers. It is what a view adds
+ * rockets in the air, the robots, the saucers, the spiders, the meteors and the tracers of the guns and lasers. It is what a view adds
  * to the scene around its cars, updated and let go of as one.
  */
 export class ArenaView {
@@ -41,6 +42,7 @@ export class ArenaView {
   private readonly robots: RobotsView
   private readonly ufos: UfosView
   private readonly spiders: SpidersView
+  private readonly meteors: MeteorsView
 
   constructor(source: ArenaSource, sound: Sound | null, ear: Ear, planet: World | null = null) {
     this.source = source
@@ -55,6 +57,7 @@ export class ArenaView {
     this.robots = new RobotsView(source, this.effects, ear)
     this.ufos = new UfosView(source, planet, this.effects, ear)
     this.spiders = new SpidersView(source, this.effects, ear)
+    this.meteors = new MeteorsView(source, this.effects, ear)
     this.object.add(
       this.explosions.object,
       this.smoke.object,
@@ -65,6 +68,7 @@ export class ArenaView {
       this.robots.object,
       this.ufos.object,
       this.spiders.object,
+      this.meteors.object,
     )
   }
 
@@ -87,6 +91,7 @@ export class ArenaView {
     this.robots.update(dt)
     this.ufos.update(dt, fraction)
     this.spiders.update(dt)
+    this.meteors.update(dt, fraction)
     this.smoke.update(dt)
     this.explosions.update(dt)
   }
@@ -97,6 +102,7 @@ export class ArenaView {
     this.robots.dispose()
     this.ufos.dispose()
     this.spiders.dispose()
+    this.meteors.dispose()
     this.rockets.dispose()
     this.pickups.dispose()
     this.explosions.dispose()

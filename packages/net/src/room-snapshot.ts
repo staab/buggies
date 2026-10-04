@@ -1,7 +1,7 @@
 import { NOT_RACING, NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
-import type { LooseSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, SpiderSnapshot, UfoSnapshot, VehicleSnapshot } from './wire.ts'
+import type { LooseSnapshot, MeteorSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, SpiderSnapshot, UfoSnapshot, VehicleSnapshot } from './wire.ts'
 
 /**
  * What a room's snapshots are gathered into, kept from one to the next so
@@ -17,6 +17,7 @@ export interface RoomSnapshots {
   readonly robots: RobotSnapshot[]
   readonly ufos: UfoSnapshot[]
   readonly spiders: SpiderSnapshot[]
+  readonly meteors: MeteorSnapshot[]
   readonly props: PropSnapshot[]
   /** Each slot's generation as last told, and which loose things were out. */
   readonly toldGenerations: number[]
@@ -34,6 +35,7 @@ export function createRoomSnapshots(): RoomSnapshots {
     robots: [],
     ufos: [],
     spiders: [],
+    meteors: [],
     props: [],
     toldGenerations: [],
     toldLoose: new Set(),
@@ -70,6 +72,7 @@ export function gatherSnapshot(
     robots: gatherRobots(arena, out),
     ufos: gatherUfos(arena, out),
     spiders: gatherSpiders(arena, out),
+    meteors: gatherMeteors(arena, out),
   }
 }
 
@@ -334,4 +337,18 @@ function gatherSpiders(arena: Arena, out: RoomSnapshots): SpiderSnapshot[] {
   })
   spiders.length = arena.spiders.length
   return spiders
+}
+
+/** Every meteor coming down: few, and short-lived, so all of them every time. */
+function gatherMeteors(arena: Arena, out: RoomSnapshots): MeteorSnapshot[] {
+  const { meteors } = out
+  arena.meteors.forEach((meteor, index) => {
+    const entry = (meteors[index] ??= { id: 0, from: v3(), to: v3(), age: 0 })
+    entry.id = meteor.id
+    vcopy(entry.from, meteor.from)
+    vcopy(entry.to, meteor.to)
+    entry.age = arena.tick - meteor.bornTick
+  })
+  meteors.length = arena.meteors.length
+  return meteors
 }
