@@ -7,13 +7,11 @@ import type { Sound } from './audio.ts'
 import { disposeObject } from './dispose.ts'
 import type { HudState } from './hud.ts'
 import { createIslandMode, islandSummary } from './island-mode.ts'
-import { LEFT_KEYS, RIGHT_KEYS, SOLO_KEYS } from './keys.ts'
 import type { Choice, MenuHost, Step } from './menu.ts'
 import type { ModeView } from './mode.ts'
-import type { OnlinePlayer } from './online-mode.ts'
+import { createOnlineMode } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
-import { createTeamMode } from './team-mode.ts'
 import { createTerrainView, moveBoats, moveClouds } from './terrain-view.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -59,12 +57,12 @@ export interface ShellModes {
     scene: THREE.Scene,
     url: string,
     seed: number,
-    players: readonly OnlinePlayer[],
+    profile: VehicleProfileId,
     mapFor: (seed: number) => Promise<World>,
     sound: Sound,
     sun: Sun,
     arrival?: number,
-    passes?: readonly number[],
+    pass?: number,
   ): Promise<ModeView>
 }
 
@@ -75,7 +73,7 @@ export const MODES: ShellModes = {
   showroom: createShowroomMode,
   rooms: (url) => fetchRooms(new WebSocketClientTransport(url)),
   peek: (url, seed) => fetchPeek(new WebSocketClientTransport(url), seed),
-  play: createTeamMode,
+  play: createOnlineMode,
 }
 
 export interface ShellDeps {
@@ -88,7 +86,7 @@ export interface ShellDeps {
   /** The light over the island, and its shadows, which follow the play. */
   sun: Sun
   islands: IslandSource
-  /** The game server everyone on this screen joins. */
+  /** The game server the player joins. */
   server: string
   /** The menu, made with the shell as its host. */
   createMenu: (host: MenuHost, choice: Choice) => ShellMenu
@@ -111,32 +109,18 @@ type Backdrop = { kind: 'island'; seed: number; mode: ModeView } | { kind: 'show
 /** What is on the screen, for anyone asking. */
 export type OnShow = 'game' | 'island' | 'showroom' | null
 
-/**
- * Whether a choice is the game already being played: the same island, the
- * same players in the same vehicles.
- */
+/** Whether a choice is the game already being played: the same island, in the same vehicle. */
 export function continues(running: Choice, next: Choice): boolean {
-  if (!sameSeats(running, next) || running.vehicle !== next.vehicle) return false
-  return next.mode === 'solo' || running.vehicle2 === next.vehicle2
+  return sameSeats(running, next) && running.vehicle === next.vehicle
 }
 
 /**
- * Whether a choice keeps everyone in the seats they have: the same island
- * and as many players. Vehicles are swapped where the cars are; anything
- * else means joining again.
+ * Whether a choice keeps the player in the seat they have: the same
+ * island. The vehicle is swapped where the car is; another island means
+ * joining again.
  */
 export function sameSeats(running: Choice, next: Choice): boolean {
-  return running.mode === next.mode && running.seed === next.seed
-}
-
-/** Who a choice puts on the server, on which keys. */
-export function playersFor(choice: Choice): OnlinePlayer[] {
-  return choice.mode === 'duo'
-    ? [
-        { profile: choice.vehicle, keys: LEFT_KEYS },
-        { profile: choice.vehicle2, keys: RIGHT_KEYS },
-      ]
-    : [{ profile: choice.vehicle, keys: SOLO_KEYS }]
+  return running.seed === next.seed
 }
 
 function disposeView(scene: THREE.Scene, group: THREE.Group): void {
@@ -171,7 +155,7 @@ export class Shell implements MenuHost {
   private idle = 0
   /** The planet's portal the moon was gone to by, to come back out of. */
   private cameFrom = 0
-  /** An island on its way, so that two players joining at once do not each make one. */
+  /** An island on its way, so that two asking for it at once do not each make one. */
   private making: { seed: number; island: Promise<World> } | null = null
   private game: Game | null = null
   private backdrop: Backdrop | null = null
@@ -238,7 +222,7 @@ export class Shell implements MenuHost {
         void this.resume()
       }
     } else {
-      this.menu.show(this.game?.choice ?? this.choiceNow, this.game === null ? 'mode' : 'car')
+      this.menu.show(this.game?.choice ?? this.choiceNow, this.game === null ? 'map' : 'car')
     }
   }
 
@@ -278,7 +262,7 @@ export class Shell implements MenuHost {
   }
 
   /**
-   * Join the server's room for the island with everyone on this screen in
+   * Join the server's room for the island in
    * the vehicles they asked for; or, if that is the game already being
    * played, go back to it.
    */
@@ -292,8 +276,8 @@ export class Shell implements MenuHost {
       return
     }
     const { game } = this
-    if (game?.mode.changeVehicles !== undefined && sameSeats(game.choice, next)) {
-      game.mode.changeVehicles(playersFor(next).map((player) => player.profile))
+    if (game?.mode.changeVehicle !== undefined && sameSeats(game.choice, next)) {
+      game.mode.changeVehicle(next.vehicle)
       game.choice = next
       await this.resume()
       return
@@ -307,7 +291,7 @@ export class Shell implements MenuHost {
         this.scene,
         this.server,
         next.seed,
-        playersFor(next),
+        next.vehicle,
         (seed) => this.mapFor(seed),
         this.sound,
         this.sun,
@@ -326,7 +310,7 @@ export class Shell implements MenuHost {
   }
 
   /**
-   * Take everyone on this screen through a portal: from a planet to its
+   * Take the player through a portal: from a planet to its
    * moon, or from the moon back to the planet, out of the portal they left
    * it by. They join the room for the world on the other side, in the
    * vehicles they are in.
@@ -337,12 +321,12 @@ export class Shell implements MenuHost {
     const link = portalLink(map, this.cameFrom)
     if (!isMoon(map.seed)) this.cameFrom = through
     const stamp = ++this.generation
-    // Taken before the game is let go, so that what everyone holds goes through with them.
-    const passes = game.mode.passes?.() ?? []
+    // Taken before the game is let go, so that what the car holds goes through with it.
+    const pass = game.mode.pass?.()
     this.setGame(null)
     this.notice(isMoon(link.to) ? 'through the portal to the moon...' : 'back through the portal...')
     try {
-      const mode = await this.modes.play(this.scene, this.server, link.to, playersFor(game.choice), (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, passes)
+      const mode = await this.modes.play(this.scene, this.server, link.to, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, pass)
       if (stamp !== this.generation) {
         mode.dispose()
         return
@@ -357,7 +341,7 @@ export class Shell implements MenuHost {
   }
 
   /**
-   * Join the world being played again, everyone on this screen in the
+   * Join the world being played again, in the
    * vehicles they were in, after the connection to the server was lost:
    * back where they were, with what they held, if the server still has it.
    * Tried until it works, or something else is asked for, or the server
@@ -367,12 +351,12 @@ export class Shell implements MenuHost {
     const { game } = this
     if (game === null) return
     const stamp = ++this.generation
-    const passes = game.mode.passes?.() ?? []
+    const pass = game.mode.pass?.()
     this.setGame(null)
     for (let attempt = 0; ; attempt++) {
       this.notice(`lost the server (${why}), reconnecting...`)
       try {
-        const mode = await this.modes.play(this.scene, this.server, game.world, playersFor(game.choice), (seed) => this.mapFor(seed), this.sound, this.sun, NO_ARRIVAL, passes)
+        const mode = await this.modes.play(this.scene, this.server, game.world, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, NO_ARRIVAL, pass)
         if (stamp !== this.generation) {
           mode.dispose()
           return
@@ -425,10 +409,10 @@ export class Shell implements MenuHost {
   frame(dt: number): void {
     const { menu, game, backdrop } = this
     game?.mode.update(dt, !menu.open && !this.overlay.open)
-    // Through a portal, everyone on this screen goes over to the world it leads to.
+    // Through a portal, the player goes over to the world it leads to.
     const through = game?.mode.portal?.() ?? -1
     if (through >= 0) void this.travel(through)
-    // Cut off from the server, everyone on this screen joins again.
+    // Cut off from the server, the player joins again.
     const lost = game?.mode.lost?.() ?? null
     if (lost !== null && this.game === game) void this.rejoin(lost)
     if (menu.open) backdrop?.mode.update(dt, false)

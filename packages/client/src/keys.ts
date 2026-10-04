@@ -1,5 +1,5 @@
 import type { ControlHint } from './hud.ts'
-import { LEFT_BINDINGS, RIGHT_BINDINGS, SOLO_BINDINGS, type KeyBindings } from './input.ts'
+import { SOLO_BINDINGS, type KeyBindings } from './input.ts'
 
 /** Which keys a driver has: to drive with, to get back on the road with, and what to tell them. */
 export interface DriverKeys {
@@ -20,34 +20,6 @@ export const SOLO_KEYS: DriverKeys = {
     { keys: ['F'], does: 'fire' },
     { keys: ['D'], does: ability.toLowerCase() },
     { keys: ['R'], does: 'respawn' },
-    { keys: ['Esc'], does: 'menu' },
-  ],
-}
-
-/** The left half of a split screen: the letters. */
-export const LEFT_KEYS: DriverKeys = {
-  bindings: LEFT_BINDINGS,
-  respawn: (event) => event.code === 'KeyQ',
-  controls: (ability) => [
-    { keys: ['W', 'A', 'S', 'D'], does: 'drive' },
-    { keys: ['Z'], does: 'handbrake' },
-    { keys: ['X'], does: 'fire' },
-    { keys: ['Shift'], does: ability.toLowerCase() },
-    { keys: ['Q'], does: 'respawn' },
-    { keys: ['Esc'], does: 'menu' },
-  ],
-}
-
-/** The right half of a split screen: the arrows. */
-export const RIGHT_KEYS: DriverKeys = {
-  bindings: RIGHT_BINDINGS,
-  respawn: (event) => event.key === 'Enter',
-  controls: (ability) => [
-    { keys: ['↑', '←', '↓', '→'], does: 'drive' },
-    { keys: [','], does: 'handbrake' },
-    { keys: ['.'], does: 'fire' },
-    { keys: ['M'], does: ability.toLowerCase() },
-    { keys: ['Enter'], does: 'respawn' },
     { keys: ['Esc'], does: 'menu' },
   ],
 }

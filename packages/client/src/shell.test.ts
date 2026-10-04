@@ -8,7 +8,7 @@ import type { Sound } from './audio.ts'
 import type { HudState } from './hud.ts'
 import type { Choice, MenuHost, Step } from './menu.ts'
 import type { ModeView } from './mode.ts'
-import { Shell, continues, playersFor, sameSeats, type ShellMenu, type ShellModes } from './shell.ts'
+import { Shell, continues, sameSeats, type ShellMenu, type ShellModes } from './shell.ts'
 import type { ShowroomView } from './showroom-mode.ts'
 import { Sun } from './sun.ts'
 
@@ -21,8 +21,8 @@ interface StubGame extends ModeView {
   dropped: string | null
   disposed: boolean
   updates: { dt: number; active: boolean }[]
-  /** The vehicles everyone was swapped into, where they were, one entry a swap. */
-  swaps: VehicleProfileId[][]
+  /** The vehicles the player was swapped into, where they were, one entry a swap. */
+  swaps: VehicleProfileId[]
 }
 
 interface StubShowroom extends ShowroomView {
@@ -75,7 +75,7 @@ class StubMenu implements ShellMenu {
   }
 }
 
-const CHOICE: Choice = { mode: 'solo', seed: 5, vehicle: 'sportsCar', vehicle2: 'raceCar' }
+const CHOICE: Choice = { seed: 5, vehicle: 'sportsCar' }
 const SERVER = 'ws://island:8787'
 
 /** An island being looked over, that only remembers what was done to it. */
@@ -93,8 +93,8 @@ function build(refuse: string | null = null) {
   const settled: Choice[] = []
   const joined: string[] = []
   const arrivals: (number | undefined)[] = []
-  const passed: (readonly number[] | undefined)[] = []
-  const hudStates: (HudState | null)[][] = [[], []]
+  const passed: (number | undefined)[] = []
+  const hudStates: (HudState | null)[][] = [[]]
   const rendered: string[] = []
   const menu = new StubMenu()
   const renderer = {
@@ -134,15 +134,14 @@ function build(refuse: string | null = null) {
       if (refuse !== null) throw new Error(refuse)
       return [{ seed: url.length, players: 3 }]
     },
-    play: async (_scene, url, seed, players, mapFor, _sound, _sun, arrival, passes) => {
+    play: async (_scene, url, seed, profile, mapFor, _sound, _sun, arrival, pass) => {
       joined.push(`${url}#${seed}`)
       arrivals.push(arrival)
-      passed.push(passes)
+      passed.push(pass)
       if (refuse !== null) throw new Error(refuse)
-      // Two players joining at once both ask for the island.
-      await Promise.all(players.map(() => mapFor(seed)))
+      await mapFor(seed)
       const game: StubGame = {
-        kind: `${players.map((player) => player.profile).join('+')} on ${seed}`,
+        kind: `${profile} on ${seed}`,
         through: -1,
         portal() {
           const through = game.through
@@ -153,8 +152,8 @@ function build(refuse: string | null = null) {
         lost() {
           return game.dropped
         },
-        passes() {
-          return players.map((_, index) => 40 + index)
+        pass() {
+          return 40
         },
         disposed: false,
         updates: [],
@@ -165,10 +164,10 @@ function build(refuse: string | null = null) {
           game.updates.push({ dt, active })
         },
         hud() {
-          return players.map((player) => ({ title: player.profile }))
+          return [{ title: profile }]
         },
-        changeVehicles(profiles) {
-          game.swaps.push([...profiles])
+        changeVehicle(next) {
+          game.swaps.push(next)
         },
         dispose() {
           game.disposed = true
@@ -281,7 +280,7 @@ describe('the shell', () => {
     expect(games[0]!.updates.at(-1)).toEqual({ dt: 0.016, active: true })
   })
 
-  it('goes back to the same game, swaps vehicles where the cars are, and rejoins for another island or a second player', async () => {
+  it('goes back to the same game, swaps vehicles where the car is, and rejoins for another island', async () => {
     const { shell, games, joined, generated } = build()
     await shell.start(CHOICE)
     await shell.start(CHOICE)
@@ -292,40 +291,33 @@ describe('the shell', () => {
     await shell.start({ ...CHOICE, vehicle: 'tank' })
     expect(joined).toHaveLength(1)
     expect(games[0]!.disposed).toBe(false)
-    expect(games[0]!.swaps).toEqual([['tank']])
+    expect(games[0]!.swaps).toEqual(['tank'])
     await shell.start({ ...CHOICE, vehicle: 'tank' })
     expect(games[0]!.swaps).toHaveLength(1)
 
-    await shell.start({ mode: 'duo', seed: 5, vehicle: 'tank', vehicle2: 'goKart' })
-    expect(joined).toHaveLength(2)
-    expect(games[0]!.disposed).toBe(true)
-    expect(games[1]!.kind).toBe('tank+goKart on 5')
-    await shell.start({ mode: 'duo', seed: 5, vehicle: 'tank', vehicle2: 'semi' })
-    expect(games[1]!.swaps).toEqual([['tank', 'semi']])
     // The island is kept: it is the same one.
     expect(generated).toEqual([5])
 
     // Another island is another room, made afresh.
     await shell.start({ ...CHOICE, seed: 6 })
     expect(joined.at(-1)).toBe(`${SERVER}#6`)
-    expect(games[2]!.kind).toBe('sportsCar on 6')
+    expect(games[0]!.disposed).toBe(true)
+    expect(games[1]!.kind).toBe('sportsCar on 6')
     expect(generated).toEqual([5, 6])
   })
 
   it('draws what is in front and fills a HUD a player from the game', async () => {
     const { shell, hudStates, rendered } = build()
-    await shell.start({ mode: 'duo', seed: 5, vehicle: 'sportsCar', vehicle2: 'semi' })
+    await shell.start({ ...CHOICE, vehicle: 'semi' })
     hudStates.forEach((states) => states.splice(0))
     shell.frame(0.01)
-    expect(rendered.at(-1)).toBe('sportsCar+semi on 5')
-    expect(hudStates[0]!.at(-1)).toEqual({ title: 'sportsCar' })
-    expect(hudStates[1]!.at(-1)).toEqual({ title: 'semi' })
+    expect(rendered.at(-1)).toBe('semi on 5')
+    expect(hudStates[0]!.at(-1)).toEqual({ title: 'semi' })
     shell.toggleMenu()
     shell.showVehicle('semi')
     shell.frame(0.01)
     expect(rendered.at(-1)).toBe('showroom')
     expect(hudStates[0]!.at(-1)).toBeNull()
-    expect(hudStates[1]!.at(-1)).toBeNull()
   })
 
   it('lets go of a join that something newer overtook', async () => {
@@ -373,7 +365,7 @@ describe('the shell', () => {
 
   it('joins the same world again when the connection is lost, showing the passes it was given', async () => {
     const { shell, games, joined, arrivals, passed } = build()
-    await shell.start({ ...CHOICE, mode: 'duo' })
+    await shell.start(CHOICE)
     await settle()
     games[0]!.dropped = 'connection closed'
     shell.frame(1 / 60)
@@ -381,8 +373,8 @@ describe('the shell', () => {
     expect(games[0]!.disposed).toBe(true)
     expect(joined).toEqual([`${SERVER}#5`, `${SERVER}#5`])
     expect(arrivals.at(-1)).toBe(NO_ARRIVAL)
-    expect(passed.at(-1)).toEqual([40, 41])
-    expect(games[1]!.kind).toBe('sportsCar+raceCar on 5')
+    expect(passed.at(-1)).toBe(40)
+    expect(games[1]!.kind).toBe('sportsCar on 5')
     expect(shell.onShow).toBe('game')
   })
 
@@ -390,14 +382,7 @@ describe('the shell', () => {
     expect(continues(CHOICE, CHOICE)).toBe(true)
     expect(continues(CHOICE, { ...CHOICE, seed: 6 })).toBe(false)
     expect(continues(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(false)
-    expect(continues(CHOICE, { ...CHOICE, vehicle2: 'tank' })).toBe(true)
-    const duo: Choice = { ...CHOICE, mode: 'duo' }
-    expect(continues(duo, { ...duo, vehicle2: 'tank' })).toBe(false)
-    expect(continues(CHOICE, duo)).toBe(false)
     expect(sameSeats(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(true)
     expect(sameSeats(CHOICE, { ...CHOICE, seed: 6 })).toBe(false)
-    expect(sameSeats(CHOICE, duo)).toBe(false)
-    expect(playersFor(CHOICE).map((player) => player.profile)).toEqual(['sportsCar'])
-    expect(playersFor(duo).map((player) => player.profile)).toEqual(['sportsCar', 'raceCar'])
   })
 })

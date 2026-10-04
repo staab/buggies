@@ -33,12 +33,14 @@ import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-came
 import { cameraBounds } from './driver-hud.ts'
 import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
-import type { DriverKeys } from './keys.ts'
+import { SOLO_KEYS } from './keys.ts'
+import type { ModeView } from './mode.ts'
+import { bendAround, bendMaterials } from './bend.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import { PredictedCar } from './predicted-car.ts'
 import type { RadarBlip, RadarState } from './radar.ts'
 import { standOn } from './stand.ts'
-import { SUN_DISTANCE } from './sun.ts'
+import { SUN_DISTANCE, type Sun } from './sun.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -120,16 +122,8 @@ function buildBeacon(): THREE.Mesh {
   return beacon
 }
 
-/** Someone to put on the server: in what, and on which keys. */
-export interface OnlinePlayer {
-  profile: VehicleProfileId
-  keys: DriverKeys
-}
-
-/** One player's connection, car and camera. */
-export interface OnlineView {
-  /** Everything this view draws, to be hidden while another view of the same scene is drawn. */
-  readonly root: THREE.Group
+/** The player's connection, car and camera. */
+interface OnlineView {
   readonly camera: THREE.PerspectiveCamera
   readonly seat: number
   /** What the server gave this seat to show on coming through a portal, for what it holds to be carried over. */
@@ -164,16 +158,13 @@ export interface OnlineView {
 /**
  * Join the server's room for an island and drive on it with whoever else is
  * there. The server has the last word on which island, so the map is asked
- * for once it has said: `mapFor` is asked for it then. `locals` are the
- * seats of everyone on this screen, kept between views so that a player
- * beside you is not also heard as a stranger in the distance.
+ * for once it has said: `mapFor` is asked for it then.
  */
-export async function joinOnline(
+async function joinOnline(
   scene: THREE.Scene,
   url: string,
   seed: number,
-  player: OnlinePlayer,
-  locals: Set<number>,
+  profile: VehicleProfileId,
   mapFor: (seed: number) => Promise<World>,
   sound: Sound,
   arrival = NO_ARRIVAL,
@@ -185,8 +176,7 @@ export async function joinOnline(
       lost = reason
     },
   })
-  const welcome = await client.connect(player.profile, seed, arrival, pass)
-  locals.add(welcome.seat)
+  const welcome = await client.connect(profile, seed, arrival, pass)
   const map = await mapFor(welcome.seed)
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.
@@ -196,14 +186,13 @@ export async function joinOnline(
 
   const root = new THREE.Group()
   scene.add(root)
-  const keyboard = new Keyboard(player.keys.bindings)
+  const keyboard = new Keyboard(SOLO_KEYS.bindings)
   // The island around the cars, heard from the local car.
   const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position, mirror.planet)
   root.add(arena.object)
   const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), arena.effects)
   root.add(car.object)
-  // A player beside you is seen from here, but heard from their own view.
-  const others = new MirrorCars(prediction, welcome.seat, arena.effects, (seat) => locals.has(seat))
+  const others = new MirrorCars(prediction, welcome.seat, arena.effects)
   root.add(others.object)
 
   const cameraTuning = createCameraTuning()
@@ -214,7 +203,7 @@ export async function joinOnline(
   const target = createChaseTarget()
 
   const onKey = (event: KeyboardEvent): void => {
-    if (player.keys.respawn(event)) client.requestRespawn()
+    if (SOLO_KEYS.respawn(event)) client.requestRespawn()
   }
   window.addEventListener('keydown', onKey)
 
@@ -234,7 +223,6 @@ export async function joinOnline(
   root.add(beacon)
 
   return {
-    root,
     camera: chase.camera,
     seat: welcome.seat,
     pass: welcome.pass,
@@ -305,7 +293,7 @@ export async function joinOnline(
       const players = client.playerCount
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
-      const controls = player.keys.controls(OWN_ACTIONS[profile].label)
+      const controls = SOLO_KEYS.controls(OWN_ACTIONS[profile].label)
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
@@ -358,5 +346,55 @@ export async function joinOnline(
       ;(beacon.material as THREE.Material).dispose()
       scene.remove(root)
     },
+  }
+}
+
+/**
+ * The player on the server, with the whole screen: the island drawn round
+ * their car, bent as though the planet were bigger, and the sun's shadows
+ * cast around it.
+ */
+export async function createOnlineMode(
+  scene: THREE.Scene,
+  url: string,
+  seed: number,
+  profile: VehicleProfileId,
+  mapFor: (seed: number) => Promise<World>,
+  sound: Sound,
+  sun: Sun,
+  arrival = NO_ARRIVAL,
+  pass = NO_PASS,
+): Promise<ModeView> {
+  const view = await joinOnline(scene, url, seed, profile, mapFor, sound, arrival, pass)
+  return {
+    camera: view.camera,
+    // The game's time, the same on every mirror, so the day, the boats and the clouds are where they are for everyone.
+    get tick() {
+      return view.tick
+    },
+    resize: (aspect) => view.resize(aspect),
+    update: (dt, active) => view.update(dt, active),
+    render(renderer) {
+      sun.follow(view.focus, view.up)
+      sun.shade(scene, view.map.kind === 'moon')
+      bendMaterials(scene)
+      bendAround(view.focus, view.map.radius)
+      renderer.render(scene, view.camera)
+      bendAround(null)
+    },
+    hud: () => [view.hud()],
+    portal: () => view.portal(),
+    lost: () => view.lost(),
+    pass: () => view.pass,
+    changeVehicle: (next) => view.changeVehicle(next),
+    map: view.map,
+    position: () => view.place,
+    game: () => view.game(),
+    race() {
+      const race = view.race()
+      return race === null ? null : { race, mine: view.seat === race.starter }
+    },
+    setGame: (game) => view.setGame(game),
+    dispose: () => view.dispose(),
   }
 }

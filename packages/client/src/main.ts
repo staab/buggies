@@ -1,8 +1,5 @@
-import {
-  DEFAULT_VEHICLE_PROFILE,
-  PLAYABLE_PROFILE_IDS,
-  initPhysics,
-} from '@buggies/game'
+import { DEFAULT_VEHICLE_PROFILE, initPhysics } from '@buggies/game'
+import { planetSeedOf } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import './styles.css'
@@ -72,16 +69,15 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 100000)
 }
 
-/** What the address bar asks for: the island, as `/{seed}`, or a fresh one; who plays in what is the menu's to ask. */
+/** What the address bar asks for: the island, as `/{seed}`, or a fresh one; a moon's names its planet. What to drive is the menu's to ask. */
 function readChoice(): Choice {
   // Links from before the seed moved into the path still name it as `?seed=`.
   const given = location.pathname.split('/').find((part) => part !== '') ?? new URLSearchParams(location.search).get('seed')
   const seed = Number(given)
+  const planet = Number.isInteger(seed) && seed > 0 ? planetSeedOf(seed) : 0
   return {
-    mode: 'solo',
-    seed: Number.isInteger(seed) && seed > 0 ? seed : randomSeed(),
+    seed: planet > 0 ? planet : randomSeed(),
     vehicle: DEFAULT_VEHICLE_PROFILE,
-    vehicle2: PLAYABLE_PROFILE_IDS[1] ?? DEFAULT_VEHICLE_PROFILE,
   }
 }
 
@@ -95,8 +91,7 @@ const shell = new Shell(
     renderer,
     scene,
     container,
-    // One HUD a viewport: the left, or only, and the right of a split screen.
-    huds: [new Hud(element('hud'), element('radar')), new Hud(element('hud-right'), element('radar-right'))],
+    huds: [new Hud(element('hud'), element('radar'))],
     sound,
     sun,
     islands: new TerrainSource(),

@@ -15,16 +15,14 @@ The game server also serves the built client (`pnpm build`) on its own port, ans
 
 ## Keys
 
-| | 1 player | 2 players, left | 2 players, right |
-| --- | --- | --- | --- |
-| Drive | arrows | `W` `A` `S` `D` | arrows |
-| Handbrake | `Space` | `Z` | `,` |
-| Fire the power-up | `F` | `X` | `.` |
-| Active ability | `D` | `Shift` | `M` |
-| Respawn on the road | `R` | `Q` | `Enter` |
-| Menu | `Esc` | `Esc` | `Esc` |
-
-In **2 players** mode, two people share one keyboard on a split screen, and each has their own seat on the server.
+| | |
+| --- | --- |
+| Drive | arrows |
+| Handbrake | `Space` |
+| Fire the power-up | `F` |
+| Active ability | `D` |
+| Respawn on the road | `R` |
+| Menu | `Esc` |
 
 ## The planet
 
@@ -32,7 +30,7 @@ Every island is wrapped round a planet about 612 m in radius, and you can drive,
 
 ## Portals
 
-Three to five portals stand in the open country of every planet: glowing rings wide enough for a truck, with a clear run through them. Drive through one and everyone on your screen goes to the planet's moon, coming out of its one portal. The moon is half the planet's size, gray and airless under a black sky, with craters, mountain ranges and valleys, and a flag beside the lander that brought it. Its portal leads back to the planet, out of the portal you left by. The moon is a room of its own on the server, so everyone who goes through meets there.
+Three to five portals stand in the open country of every planet: glowing rings wide enough for a truck, with a clear run through them. Drive through one and you go to the planet's moon, coming out of its one portal. The moon is half the planet's size, gray and airless under a black sky, with craters, mountain ranges and valleys, and a flag beside the lander that brought it. Its portal leads back to the planet, out of the portal you left by. The moon is a room of its own on the server, so everyone who goes through meets there. The menu offers only planets: anyone on a moon is counted on its planet among the popular islands, and a link to a moon opens its planet.
 
 ## Bananas
 

@@ -26,8 +26,6 @@ export class MirrorCars {
     private readonly prediction: LocalPrediction,
     private readonly ownSeat: number,
     private readonly effects: PresenceEffects,
-    /** Whose car is driven from this very screen, and so is heard from its own view, not here. */
-    private readonly isLocal: (seat: number) => boolean = () => false,
   ) {}
 
   /** After the server's word has been taken in: whoever is on the map has a car, eased onto where it now is. */
@@ -71,7 +69,7 @@ export class MirrorCars {
       }
       if (existing !== undefined && existing.profile === seat.profile) continue
       existing?.presence.dispose()
-      const presence = new CarPresence(seat, seatColor(seat.id), this.effects, { ear, heard: !this.isLocal(seat.id) })
+      const presence = new CarPresence(seat, seatColor(seat.id), this.effects, { ear, heard: true })
       presence.body.snapToBody()
       this.object.add(presence.object)
       this.entries.set(seat.id, { seat, profile: seat.profile, presence })

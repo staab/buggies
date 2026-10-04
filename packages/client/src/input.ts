@@ -24,32 +24,6 @@ export const SOLO_BINDINGS: KeyBindings = {
   KeyD: 'ability',
 }
 
-/**
- * The right of a shared keyboard: the arrows to drive, the comma and the
- * period under the same hand for the handbrake and to fire, and M for
- * what the car does of its own.
- */
-export const RIGHT_BINDINGS: KeyBindings = {
-  ArrowUp: 'forward',
-  ArrowDown: 'back',
-  ArrowLeft: 'left',
-  ArrowRight: 'right',
-  Comma: 'handbrake',
-  Period: 'fire',
-  KeyM: 'ability',
-}
-
-/** The same shape under the left hand, for whoever has the left of a shared keyboard. */
-export const LEFT_BINDINGS: KeyBindings = {
-  KeyW: 'forward',
-  KeyS: 'back',
-  KeyA: 'left',
-  KeyD: 'right',
-  KeyZ: 'handbrake',
-  KeyX: 'fire',
-  ShiftLeft: 'ability',
-}
-
 const RELEASED: Held = {
   forward: false,
   back: false,
