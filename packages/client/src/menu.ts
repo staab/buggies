@@ -1,4 +1,4 @@
-import { NATURE_NOTES, OWN_ACTIONS, PLAYABLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
+import { NATURE_NOTES, PLAYABLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
 import type { RoomSummary } from '@buggies/net'
 import { planetSeedOf } from '@buggies/terrain'
 
@@ -365,13 +365,10 @@ export class Menu {
     this.render()
   }
 
-  /** Say what a vehicle's active ability does, and its passive ability if it has one. */
+  /** Say what a vehicle is like by nature, if it is like anything: every car has every weapon. */
   private describe(vehicle: VehicleProfileId): void {
-    const own = OWN_ACTIONS[vehicle]
-    const active = line('active')
-    active.append(span('name', `Active ability: ${own.label}.`), ' ', span('note', own.about))
-    this.ability.replaceChildren(active)
     const notes = NATURE_NOTES[vehicle]
+    this.ability.replaceChildren()
     if (notes.length === 0) return
     const passive = line('passive')
     passive.append(span('name', 'Passive ability:'), ' ', span('note', notes.join(' ')))

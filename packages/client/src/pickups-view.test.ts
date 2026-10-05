@@ -1,4 +1,4 @@
-import { BANANA_SLOTS, LOOSE_KINDS, OIL_LIFE_TICKS, SPILL_FLIGHT_TICKS, type Pickup, type Loose } from '@buggies/game'
+import { BANANA_SLOTS, LOOSE_KINDS, SPILL_FLIGHT_TICKS, type Pickup, type Loose } from '@buggies/game'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -137,27 +137,12 @@ describe('bananas as drawn', () => {
     looseBananas.getMatrixAt(0, matrix)
     position.setFromMatrixPosition(matrix)
     expect(off(position, onPlanet(12, 3, 0))).toBeLessThan(0.3)
-    // Gone before its time: taken, and it pops where it lay.
+    // Gone: taken, and it pops where it lay.
     loose.length = 0
     field.update(0.1)
     expect(looseBananas.count).toBe(0)
     expect(field.popping).toBe(1)
     field.update(POP_LIFE)
-    // A slick gone at its time: faded, no pop.
-    loose.push({
-      id: 2,
-      kind: 'oil',
-      owner: 0,
-      power: 0,
-      from: onPlanet(0, 2, 0),
-      position: onPlanet(-8, 3, 4),
-      bornTick: 100,
-    })
-    field.update(0.1)
-    source.tick = 100 + OIL_LIFE_TICKS
-    loose.length = 0
-    field.update(0.1)
-    expect(field.popping).toBe(0)
     field.dispose()
   })
 
@@ -212,62 +197,30 @@ describe('bananas as drawn', () => {
     field.dispose()
   })
 
-  it('spread an oil slick out where it is dropped, rather than throw it there', () => {
-    const loose: Loose[] = [
-      { id: 8, kind: 'oil', owner: 0, power: 1, from: onPlanet(0, 2, 0), position: onPlanet(-4, 0.05, 0), bornTick: 0 },
-    ]
-    const source = { pickups: pickups(0), loose, tick: 0 }
-    const field = new PickupField(source)
-    const slicks = field.object.children[4] as THREE.InstancedMesh
-    const at = (): THREE.Vector3 => {
-      const matrix = new THREE.Matrix4()
-      slicks.getMatrixAt(0, matrix)
-      return new THREE.Vector3().setFromMatrixPosition(matrix)
-    }
-    const sizes: number[] = []
-    for (const tick of [0, SPILL_FLIGHT_TICKS / 4, SPILL_FLIGHT_TICKS / 2, SPILL_FLIGHT_TICKS]) {
-      source.tick = tick
-      field.update(0.1)
-      // On the ground where it lies the whole time.
-      expect(off(at(), onPlanet(-4, 0.05, 0))).toBeLessThan(1e-3)
-      sizes.push(column(slicks, 0))
-    }
-    expect(sizes[0]).toBeLessThan(0.1)
-    for (let k = 1; k < sizes.length; k++) expect(sizes[k]!).toBeGreaterThan(sizes[k - 1]!)
-    expect(sizes.at(-1)).toBeCloseTo(1, 5)
-    field.dispose()
-  })
-
-  it('sit mines on the ground and burst them when they go, and lie oil flat, to fade without a sound', () => {
+  it('sit mines on the ground and burst them when they go', () => {
     const loose: Loose[] = [
       { id: 7, kind: 'mine', owner: 0, power: 0.3, from: onPlanet(0, 2, 0), position: onPlanet(4, 0.1, 0), bornTick: 0 },
-      { id: 8, kind: 'oil', owner: 0, power: 1, from: onPlanet(0, 2, 0), position: onPlanet(-4, 0.05, 0), bornTick: 0 },
     ]
     const source = { pickups: pickups(0), loose, tick: SPILL_FLIGHT_TICKS + 10 }
     const wentOff: number[] = []
     const field = new PickupField(source, (at) => wentOff.push(at.x))
     field.update(0.1)
-    const [, , , mines, slicks] = field.object.children as THREE.InstancedMesh[]
+    const [, , , mines] = field.object.children as THREE.InstancedMesh[]
     expect(mines!.count).toBe(1)
-    expect(slicks!.count).toBe(1)
-    // Still where they lie, frame to frame.
+    // Still where it lies, frame to frame.
     const matrix = new THREE.Matrix4()
-    const position = new THREE.Vector3()
-    slicks!.getMatrixAt(0, matrix)
-    position.setFromMatrixPosition(matrix)
-    expect(off(position, onPlanet(-4, 0.05, 0))).toBeLessThan(1e-3)
+    mines!.getMatrixAt(0, matrix)
+    const first = new THREE.Vector3().setFromMatrixPosition(matrix)
     field.update(0.5)
-    slicks!.getMatrixAt(0, matrix)
-    expect(off(new THREE.Vector3().setFromMatrixPosition(matrix), onPlanet(-4, 0.05, 0))).toBeLessThan(1e-3)
-    // The mine set off, and the slick faded: one burst, and nothing popped.
-    source.tick = OIL_LIFE_TICKS
+    mines!.getMatrixAt(0, matrix)
+    expect(off(new THREE.Vector3().setFromMatrixPosition(matrix), first)).toBeLessThan(1e-3)
+    // Set off: one burst, and nothing popped.
     loose.length = 0
     field.update(0.1)
     expect(wentOff).toHaveLength(1)
     expect(wentOff[0]!).toBeCloseTo(4, 3)
     expect(field.popping).toBe(0)
     expect(mines!.count).toBe(0)
-    expect(slicks!.count).toBe(0)
     field.dispose()
   })
 })

@@ -1,8 +1,6 @@
 import {
   LOOSE_KINDS,
   LOOSE_MOST,
-  OIL_LIFE_TICKS,
-  OIL_REACH,
   SPILL_FLIGHT_TICKS,
   pickupKind,
   pickupOut,
@@ -174,34 +172,10 @@ export function healthGeometry(diameter = HEALTH_DIAMETER): THREE.BufferGeometry
   return mergePainted(parts)
 }
 
-/** How big an oil slick starts, as a share of its full size, the moment it is dropped. */
-const OIL_SEED = 0.05
-
-/** An oil slick: a flat, ragged black pool, as wide as a car has to come to it. Built once and shared. */
-export function oilGeometry(radius = OIL_REACH): THREE.BufferGeometry {
-  const around = 24
-  const shape = new THREE.Shape()
-  for (let k = 0; k <= around; k++) {
-    const angle = (k / around) * Math.PI * 2
-    // Ragged, the same way every time: a few lobes and a little wobble.
-    const reach = radius * (0.85 + 0.1 * Math.sin(angle * 3 + 1) + 0.05 * Math.sin(angle * 7))
-    if (k === 0) shape.moveTo(Math.cos(angle) * reach, Math.sin(angle) * reach)
-    else shape.lineTo(Math.cos(angle) * reach, Math.sin(angle) * reach)
-  }
-  return new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2)
-}
-
-/** When a loose thing would fade on its own: a slick in time, a banana, a bomb or a mine never. */
-function goneTick(thing: Loose): number {
-  if (thing.kind === 'oil') return thing.bornTick + OIL_LIFE_TICKS
-  return Number.POSITIVE_INFINITY
-}
-
-/** What a loose thing is known by from one frame to the next: what it is, where it was last drawn, and when it would fade. */
+/** What a loose thing is known by from one frame to the next: what it is, and where it was last drawn. */
 interface Seen {
   kind: LooseKind
   position: THREE.Vector3
-  goneTick: number
 }
 
 interface Pop {
@@ -220,10 +194,10 @@ interface Pop {
 /**
  * The map's bananas, drawn where the simulation has them, turning slowly
  * and bobbing; the bananas spilled from wrecks, each flying out of the
- * blast in an arc, spinning, to lie where it lands; and what cars drop
- * behind them: bombs floating where they were left, mines sitting there,
- * and oil slicks spreading flat where they are dropped. A banana taken pops: it shoots up spinning
- * and shrinks away in a ring of sparks. A bomb or a mine gone went off,
+ * blast in an arc, spinning, to lie where it lands; and what is dropped:
+ * bombs floating where the spiders let them fall, and mines sitting where
+ * cars laid them. A banana taken pops: it shoots up spinning and shrinks
+ * away in a ring of sparks. A bomb or a mine gone went off,
  * and whoever draws the field is told where.
  */
 export class PickupField {
@@ -245,7 +219,6 @@ export class PickupField {
   /** Which mesh each slot is drawn by, and where in it. */
   private readonly drawnBy: { mesh: THREE.InstancedMesh; index: number }[]
   private readonly bombMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.3 })
-  private readonly oilMaterial = new THREE.MeshStandardMaterial({ color: '#0d0e10', roughness: 0.08, metalness: 0.4 })
   /** Everything loose, a mesh a kind. */
   private readonly loose: Readonly<Record<LooseKind, THREE.InstancedMesh>>
   private readonly onBomb: (at: Vec3) => void
@@ -272,16 +245,12 @@ export class PickupField {
       banana: new THREE.InstancedMesh(this.bananaShape, this.bananaMaterial, LOOSE_MOST),
       bomb: new THREE.InstancedMesh(bombGeometry(), this.bombMaterial, LOOSE_MOST),
       mine: new THREE.InstancedMesh(mineGeometry(), this.bombMaterial, LOOSE_MOST),
-      oil: new THREE.InstancedMesh(oilGeometry(), this.oilMaterial, LOOSE_MOST),
     }
     for (const mesh of [this.bananas, ...Object.values(this.loose), this.health]) {
       mesh.castShadow = true
       mesh.frustumCulled = false
       this.object.add(mesh)
     }
-    // An oil slick is a film on the road: it takes shadows, and casts none.
-    this.loose.oil.castShadow = false
-    this.loose.oil.receiveShadow = true
     this.bananas.count = counts.banana
     this.health.count = counts.health
     for (const mesh of Object.values(this.loose)) mesh.count = 0
@@ -325,25 +294,21 @@ export class PickupField {
 
   /**
    * The loose things: bananas in the air for a while after the blast, then
-   * lying where they land; bombs floating where they were dropped, mines
-   * sitting there and oil slicks lying flat. A banana that goes before its
+   * lying where they land; bombs floating where they were dropped, and mines
+   * sitting there. A banana that goes before its
    * time was taken, and pops; a bomb or a mine that goes went off.
    */
   private updateLoose(): void {
     const { tick } = this.source
     const seen = new Map<number, Seen>()
-    const drawn: Record<LooseKind, number> = { banana: 0, bomb: 0, mine: 0, oil: 0 }
+    const drawn: Record<LooseKind, number> = { banana: 0, bomb: 0, mine: 0 }
     for (const thing of this.source.loose) {
       const { kind } = thing
       const slot = drawn[kind]
       if (slot >= LOOSE_MOST) continue
       const flight = Math.min(Math.max((tick - thing.bornTick) / SPILL_FLIGHT_TICKS, 0), 1)
       const { from, position } = thing
-      if (kind === 'oil') {
-        // A slick is not thrown: it spreads where it lies, out to its full size as it would have landed.
-        this.place(thing, slot)
-        this.placer.scale.setScalar(Math.max(1 - (1 - flight) * (1 - flight), OIL_SEED))
-      } else if (flight < 1) {
+      if (flight < 1) {
         // Out of the blast, or off the back of the car, in an arc, tumbling.
         const across = groundDistance(position, from)
         const lift = Math.sin(Math.PI * flight) * (FLING_HEIGHT + FLING_LIFT * across)
@@ -363,12 +328,12 @@ export class PickupField {
       const known = this.looseSeen.get(thing.id)
       const at = known?.position ?? new THREE.Vector3()
       at.copy(this.placer.position)
-      seen.set(thing.id, { kind, position: at, goneTick: goneTick(thing) })
+      seen.set(thing.id, { kind, position: at })
     }
     for (const [id, known] of this.looseSeen) {
       if (seen.has(id)) continue
       if (known.kind === 'bomb' || known.kind === 'mine') this.onBomb(known.position.clone())
-      else if (known.kind === 'banana' && tick < known.goneTick) this.pop(known.position)
+      else if (known.kind === 'banana') this.pop(known.position)
     }
     this.looseSeen = seen
     for (const kind of LOOSE_KINDS) {
@@ -377,7 +342,7 @@ export class PickupField {
     }
   }
 
-  /** Put a loose thing that has landed where it lies: a banana or a bomb bobbing and turning, a mine or a slick still. */
+  /** Put a loose thing that has landed where it lies: a banana or a bomb bobbing and turning, a mine still. */
   /** Put the placer this far up from a point, stood upright there and turned by these angles about its own axes. */
   private stand(at: Vec3, rise: number, x: number, y: number, z: number): void {
     lifted(at, rise, this.placer.position)
@@ -418,7 +383,6 @@ export class PickupField {
     this.healthShape.dispose()
     this.healthMaterial.dispose()
     this.bombMaterial.dispose()
-    this.oilMaterial.dispose()
     this.spark.dispose()
     this.ringGeometry.dispose()
   }

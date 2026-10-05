@@ -3,26 +3,10 @@ import type { Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
 import { disposeObject } from './dispose.ts'
-import {
-  buildBolt,
-  buildBomb,
-  buildEngine,
-  buildGrapple,
-  buildGun,
-  buildLaser,
-  buildHorn,
-  buildMagnet,
-  buildMines,
-  buildOil,
-  buildPlow,
-  buildRocket,
-  buildShield,
-  buildTripleRocket,
-  buildWings,
-} from './weapon-models.ts'
+import { buildBolt, buildEngine, buildGun, buildLaser, buildMagnet, buildMines, buildPlow, buildRocket, buildWings } from './weapon-models.ts'
 
 /** What a car with a gun of its own fires from that gun, and so does not carry over its roof. */
-const FROM_THE_GUN: readonly Weapon[] = ['rocket', 'machineGun', 'tripleRocket', 'laser']
+const FROM_THE_GUN: readonly Weapon[] = ['rocket', 'machineGun', 'laser']
 
 /** How the mount bobs and sways as it hovers. */
 const BOB = 0.08
@@ -38,9 +22,8 @@ const gunAt = new THREE.Vector3()
 const mountTurn = new THREE.Quaternion()
 
 /**
- * What a car is carrying, hovering over its roof for everyone to see: the
- * rocket until it goes, the gun until it runs dry, swung onto whatever it
- * is trained on. It bobs a little.
+ * The weapon a car picked last, hovering over its roof for everyone to
+ * see: the gun swung onto whatever it is trained on. It bobs a little.
  */
 export class WeaponMount {
   readonly object = new THREE.Group()
@@ -48,38 +31,28 @@ export class WeaponMount {
   private readonly gun = buildGun()
   private readonly laser = buildLaser()
   private readonly engine = buildEngine()
-  private readonly horn = buildHorn()
-  /** A model for everything that can be carried, one each. */
+  /** A model for every weapon, one each. */
   private readonly models: Readonly<Record<Exclude<Weapon, 'none'>, THREE.Object3D>> = {
     rocket: buildRocket(),
     machineGun: this.gun,
-    bomb: buildBomb(),
+    mines: buildMines(),
     engine: this.engine.model,
     wings: buildWings(),
-    shockwave: buildBolt(),
-    siren: this.horn,
-    oil: buildOil(),
-    shield: buildShield(),
     magnet: buildMagnet(),
-    tripleRocket: buildTripleRocket(),
     plow: buildPlow(),
-    grapple: buildGrapple(),
-    mines: buildMines(),
     laser: this.laser,
+    shockwave: buildBolt(),
   }
   private readonly height: number
   /** Whether the car has a gun of its own: the rocket and the gun are not mounted over its roof. */
   private readonly builtInGun: boolean
-  /** Where the siren's base stands still on the roof, in the car's frame; it hovers with the rest when unknown. */
-  private readonly sirenRest: number | null
   private readonly desired = AHEAD.clone()
   private shownWeapon: Weapon = 'none'
   private time = 0
 
-  constructor(height: number, builtInGun = false, sirenRest: number | null = null) {
+  constructor(height: number, builtInGun = false) {
     this.height = height
     this.builtInGun = builtInGun
-    this.sirenRest = sirenRest
     this.object.position.y = height
     for (const model of Object.values(this.models)) {
       model.visible = false
@@ -128,10 +101,6 @@ export class WeaponMount {
     this.time += dt
     this.object.position.y = this.height + Math.sin(this.time * BOB_RATE) * BOB
     this.object.rotation.y = Math.sin(this.time * SWAY_RATE) * SWAY
-    if (this.sirenRest !== null) {
-      this.horn.position.y = this.sirenRest - this.object.position.y
-      this.horn.rotation.y = -this.object.rotation.y
-    }
   }
 
   /** Whether the engine's flame is out behind it, flickering. */

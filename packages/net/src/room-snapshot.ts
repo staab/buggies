@@ -110,23 +110,14 @@ function gatherVehicles(
       gamesWon: 0,
       racePassed: NOT_RACING,
       weapon: 'none',
-      wins: 0,
-      ammoTicks: 0,
-      actionTicks: 0,
-      cooldownTicks: 0,
-      lightsOn: false,
-      abilityHeld: false,
+      weaponHeld: 0,
+      burnLeft: 0,
       npc: false,
       rocketsFired: 0,
       stunnedTicks: 0,
-      slowedTicks: 0,
-      slowedBy: 0,
-      shieldTicks: 0,
+      shockTicks: 0,
       magnetTicks: 0,
       plowTicks: 0,
-      slipTicks: 0,
-      grappleTicks: 0,
-      grappleTarget: NO_TARGET,
       appliedInput: createVehicleInput(),
     })
     vehicle.seat = seat.id
@@ -147,22 +138,13 @@ function gatherVehicles(
     vehicle.gamesWon = seat.gamesWon
     vehicle.racePassed = seat.racePassed
     vehicle.weapon = seat.weapon
-    vehicle.wins = seat.wins
-    vehicle.ammoTicks = seat.ammoTicks
-    vehicle.actionTicks = seat.actionTicks
-    vehicle.cooldownTicks = seat.cooldownTicks
-    vehicle.lightsOn = seat.lightsOn
-    vehicle.abilityHeld = seat.abilityHeld
+    vehicle.weaponHeld = seat.weaponHeld
+    vehicle.burnLeft = seat.burnLeft
     vehicle.rocketsFired = seat.rocketsFired
     vehicle.stunnedTicks = seat.stunnedTicks
-    vehicle.slowedTicks = seat.slowedTicks
-    vehicle.slowedBy = seat.slowedBy
-    vehicle.shieldTicks = seat.shieldTicks
+    vehicle.shockTicks = seat.shockTicks
     vehicle.magnetTicks = seat.magnetTicks
     vehicle.plowTicks = seat.plowTicks
-    vehicle.slipTicks = seat.slipTicks
-    vehicle.grappleTicks = seat.grappleTicks
-    vehicle.grappleTarget = seat.grappleTarget
     Object.assign(vehicle.appliedInput, appliedInputOf(seat))
     count += 1
   }

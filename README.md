@@ -19,8 +19,7 @@ The game server also serves the built client (`pnpm build`) on its own port, ans
 | --- | --- |
 | Drive | arrows |
 | Handbrake | `Space` |
-| Fire the power-up | `F` |
-| Active ability | `D` |
+| Weapons | `1`–`9` |
 | Respawn on the road | `R` |
 | Menu | `Esc` |
 
@@ -38,7 +37,7 @@ Every six seconds a meteor comes down on the moon near someone driving there. It
 
 ## Bananas
 
-An island has 256 bananas, floating around it and turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Once a car carrying nothing has three bananas, it spends them on a power-up immediately. The power-up is rolled like a slot machine and carried over the roof for everyone to see. Bananas collected while the car carries something are saved toward the next one. A wrecked car spills all of its bananas around the wreck for anyone to collect, and they lie there until someone does. Each spilled banana takes one of the island's 256: the ones waiting to reappear first, then ones out on the island, which vanish from where they were. An island holds at most 256 bombs, mines, oil slicks and rockets at once, and past that the oldest disappear.
+An island has 256 bananas, floating around it and turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Bananas are the fuel every weapon runs on. A wrecked car spills all of its bananas around the wreck for anyone to collect, and they lie there until someone does. Each spilled banana takes one of the island's 256: the ones waiting to reappear first, then ones out on the island, which vanish from where they were. An island holds at most 256 bombs, mines and rockets at once, and past that the oldest disappear.
 
 Thirty-two health packs, red crosses on white discs, are scattered the same way. A damaged car that drives through one has half its damage mended, and another pack appears somewhere else a little later. A car with no damage passes through and leaves the pack for someone else, and a magnet does not pull health packs.
 
@@ -48,7 +47,7 @@ Two robots patrol the arterials of every island, rolling slowly along one road a
 
 ## Flying saucer
 
-A flying saucer cruises high over every island, shown in green on the mini-map. Every forty seconds or so it goes after the nearest car within 250 m, comes down over it, and lifts it up a green beam for three seconds. It then carries the car off across the island at 40 m/s and lowers it onto a road there. A car that gets clear of the beam while it is being lifted, or has its shield up, is let go. The saucer can be shot down as a robot can, and comes back high over somewhere else.
+A flying saucer cruises high over every island, shown in green on the mini-map. Every forty seconds or so it goes after the nearest car within 250 m, comes down over it, and lifts it up a green beam for three seconds. It then carries the car off across the island at 40 m/s and lowers it onto a road there. A car that gets clear of the beam while it is being lifted is let go. The saucer can be shot down as a robot can, and comes back high over somewhere else.
 
 ## Spider
 
@@ -62,49 +61,49 @@ Twenty cars nobody drives potter slowly around the arterials of every island in 
 
 The game is free play, but the trophy beside the speaker, in the top corner while an island is being played, opens a panel of games to play. A game is one of four kinds:
 
-- **Score** asks for a number of bananas collected from when the game is set. Bananas spent on power-ups still count.
-- **Kills** asks for a number of other players' cars wrecked by the player's own weapons from when the game is set: any hit that finishes a car, whether from a power-up or the vehicle's own ability. Cars nobody drives don't count.
+- **Score** asks for a number of bananas collected from when the game is set. Bananas spent on weapons still count.
+- **Kills** asks for a number of other players' cars wrecked by the player's own weapons from when the game is set: any weapon hit that finishes a car. Cars nobody drives don't count.
 - **Robots** asks for a number of robots brought down by the player's own weapons from when the game is set.
 - **Race** is played by everyone on the island. The player picks a course on a map of it: a start, one or more checkpoints and a finish, each mark on land and at least 200 m from the one before it. Starting the race puts every player on the island on a starting grid at the start, facing the first checkpoint. Each checkpoint has to be passed in order, within 20 m, and a wreck passes nothing. A gold beacon stands over each racer's next mark, which also shows on the mini-map. The first over the finish wins. Only one race runs at a time. A race is called off after five minutes with no winner, or when the player who started it stops it.
 
-The HUD shows how each game is going. Winning one pays 100 bananas. A count then returns to free play, and a race ends for everyone. In two-player mode a count is set for both players, and each is paid for reaching it. Escape closes the panel.
+The HUD shows how each game is going. Winning one pays 100 bananas. A count then returns to free play, and a race ends for everyone. Escape closes the panel.
 
-## Power-ups
+## Weapons
 
-The fire key uses whatever the car carries.
+Every car has all nine weapons, each on its own number key, and pays for them in bananas. A weapon that goes all at once costs its price on each press, and only if the car has that many bananas. A weapon that lasts burns its price every second its key is held, a banana at a time, and stops when the bananas run out. What is left of a banana broken into keeps for the next lasting weapon. Pressing a key picks its weapon, which then rides over the roof for everyone to see. The HUD lists the nine with their prices, dims those the car can't pay for, and lights the one in use.
+
+| Key | Weapon | Cost |
+| --- | --- | --- |
+| `1` | Rocket | 2 a shot |
+| `2` | Machine gun | 1 a second |
+| `3` | Mine field | 3 a field |
+| `4` | Rocket engine | 1 a second |
+| `5` | Wings | 1 a second |
+| `6` | Magnet | 2 |
+| `7` | Ram plow | 3 |
+| `8` | Laser | 2 a second |
+| `9` | Shockwave | 3 |
 
 - **Rocket** chases the nearest car ahead, turning no tighter than a 25 m circle, and takes a fifth of its health when it hits. A car that swerves late or close can make it miss.
-- **Machine gun** aims at the nearest car ahead and fires while the key is held, for five seconds in total. Its full five seconds of hits takes a third of a car's health.
-- **Bomb** drops behind the car and floats there until a car runs into it, taking a third of that car's health. Once it has landed, it goes off under the car that dropped it too.
-- **Rocket engine** pushes the car forward while the key is held, for ten seconds in total.
-- **Wings** lift the car into the air while the key is held, for twenty seconds in total. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. A car carrying wings steers this way whenever it is airborne, whether or not the key is held.
-- **Shockwave** stuns every other car within 30 meters for five seconds.
-- **Siren** slows every other car within 30 meters by half while the key is held, for five seconds in total.
-- **Oil slick** drops a pool of oil behind the car that lasts a minute. Any car that drives into it, including the one that dropped it once it has landed, keeps a fifth of its grip while in it and for five seconds after.
-- **Shield** protects the car for ten seconds from weapon damage, stuns and slows, and from being shoved by a ram plow or dragged by a grappling hook.
+- **Machine gun** aims at the nearest car ahead and fires ten shots a second while the key is held. Five seconds of hits take a third of a car's health.
+- **Mine field** lays five mines on the ground in a spread behind the car. Each mine goes off with 30% of a bomb's blast on the first car to reach it, the one that laid it too once it has landed.
+- **Rocket engine** pushes the car forward while the key is held.
+- **Wings** lift the car into the air while the key is held. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. With wings picked and bananas to fly on, a car steers this way whenever it is airborne, whether or not the key is held.
 - **Magnet** collects every banana within 50 meters for 30 seconds.
-- **Triple rocket** fires three rockets in a fan, each with half the blast of a rocket. Each chases a different car ahead, nearest first, and any rocket left over chases the nearest.
 - **Ram plow** mounts a blade on the front of the car for ten seconds. Cars and props in front of it are thrown forward, faster than the car is closing on them.
-- **Grappling hook** catches the nearest car within 60 meters ahead and reels the two together for four seconds, pulling the car that fired it harder. With no car ahead, the line shoots out and back and the hook is spent.
-- **Mine field** lays five mines on the ground in a spread behind the car. Each mine goes off with 30% of a bomb's blast.
-- **Laser** burns the nearest car ahead within 100 m for as long as the key is held, for four seconds in total. Its beam is steadier than the machine gun's, and its four seconds take about half of a car's health.
+- **Laser** burns the nearest car ahead within 100 m for as long as the key is held. Its beam is steadier than the machine gun's, and four seconds of it take about half of a car's health.
+- **Shockwave** stuns every other car within 30 meters for five seconds.
 
 ## Vehicles
 
-Each vehicle has an active ability on its own key, separate from any power-up it carries. Most are weaker forms of the power-ups, and only the tank's, the small car's and the pickup's have a cooldown. Active abilities are not mounted over the roof or shown in the HUD, and their shots and missiles come from the front of the car. Some vehicles also have a passive ability. The vehicle page of the menu describes both.
+The vehicles differ in how they drive and what they can take, not in their weapons. Each has its own armor, which sets how much it takes from crashes and weapons alike. Against a weapon, the tank takes under half of what the sports car takes, and the go-kart takes a little more. Some vehicles also have a passive ability, which the vehicle page of the menu describes.
 
-Each vehicle has its own armor, which sets how much it takes from crashes and weapons alike. Against a weapon, the tank takes under half of what the sports car takes, and the go-kart takes a little more.
-
-- **Tank** fires a missile from its gun with the blast of the rocket power-up, every eight seconds. Its rocket, triple rocket and machine gun power-ups also fire from its gun, with nothing mounted over its roof.
-- **Go-kart** jumps into the air whenever it is on the ground.
-- **Race car** boosts with the force of the rocket engine power-up while the key is held.
-- **Sports car** drops an oil slick behind, as slippery as the oil slick power-up, every three seconds. Up to three can be out at once, and a fourth replaces the oldest.
-- **Small car** fires a machine gun from its nose at the car ahead while the key is held, with the damage of the machine gun power-up.
-- **Semi truck** honks its horn, stunning every car within 30 meters for five seconds, every five seconds.
-- **Heavy pickup** drops a bomb behind with the blast of the bomb power-up, every five seconds. Up to five can be out at once, and a sixth replaces the oldest.
-- **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets. It fires three rockets in a fan, as the triple rocket power-up does, every thirty seconds.
-- **Amphibian** is a boat's hull on four wheels: slow on the road, but it floats, and in the water its throttle and steering drive it like a boat. It is never put back on shore. Its own key burns the car ahead with a laser while held, with the bite of the laser power-up, so it is never given the laser.
-- **Police car, ambulance and fire truck** turn their lights on or off. While the lights are on, every car within 30 meters is slowed by half. As a passive ability, none of them is slowed by sirens or lights. The ambulance also repairs 1% of its health every five seconds, the fire truck takes a tenth of the damage from bombs, and the police car takes half damage from machine guns.
+- **Tank** fires its rockets, machine gun and laser from its own gun, with nothing mounted over its roof for them.
+- **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets.
+- **Amphibian** is a boat's hull on four wheels: slow on the road, but it floats, and in the water its throttle and steering drive it like a boat. It is never put back on shore.
+- **Ambulance** repairs 1% of its health every five seconds.
+- **Fire truck** takes a tenth of the damage from bombs, mines and meteors.
+- **Police car** takes half damage from machine guns.
 
 ## Docker
 

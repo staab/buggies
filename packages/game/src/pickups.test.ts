@@ -3,7 +3,6 @@ import type { Vec3 } from '@buggies/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
-  arm,
   BANANA_REACH,
   BANANA_SLOTS,
   HEALTH_MEND,
@@ -77,9 +76,7 @@ describe('pickups', () => {
   function driveOnto(arena: Arena, slot: number): ReturnType<typeof takeSeat> {
     const seat = takeSeat(arena, 0, 'sportsCar')
     const { position } = arena.pickups[slot]!
-    // On the ground under the pickup, rolling, and armed already, so the
-    // banana it takes is kept and counted rather than spent on a weapon.
-    arm(seat, 'rocket')
+    // On the ground under the pickup, rolling.
     respawn(seat, under(position))
     return seat
   }
@@ -156,7 +153,6 @@ describe('pickups', () => {
     const alone = (banana: Loose): number => Math.min(...arena.loose.filter((other) => other !== banana).map((other) => apart(other.position, banana.position)))
     const target = arena.loose.reduce((best, banana) => (alone(banana) > alone(best) ? banana : best))
     expect(alone(target)).toBeGreaterThan(BANANA_REACH + 1)
-    arm(b, 'rocket')
     respawn(b, under(target.position))
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(b.score).toBe(0)
@@ -190,9 +186,8 @@ describe('pickups', () => {
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(0)
     expect(arena.pickups[5]!.generation).toBe(0)
-    // Back on its wheels, and armed again, since a wreck is disarmed: the banana is taken and kept.
+    // Back on its wheels, the banana is taken.
     seat.vehicle.wrecked = false
-    arm(seat, 'rocket')
     for (let i = 0; i < 10; i++) advance(arena, () => NEUTRAL_INPUT)
     expect(seat.score).toBe(1)
     // Sitting down afresh starts from nothing.

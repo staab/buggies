@@ -4,7 +4,6 @@ import {
   GAME_PRIZE,
   NEUTRAL_INPUT,
   NOT_RACING,
-  OWN_ACTIONS,
   VEHICLE_PROFILE_LABELS,
   createArena,
   gameProgress,
@@ -27,7 +26,7 @@ import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
-import { aimPointOf, hookPointOf } from './car-presence.ts'
+import { aimPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
@@ -246,8 +245,6 @@ async function joinOnline(
       // With the menu up the car is not driven, but the world does not wait:
       // the server keeps going, and so must the mirror.
       const held = active ? keyboard.read() : null
-      // Nothing goes while the roll that reveals what was won is still on.
-      if (held !== null && car.presence.rolling) held.fire = false
       const input = held ?? NEUTRAL_INPUT
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
@@ -262,7 +259,6 @@ async function joinOnline(
       }
       others.render(owed / FIXED_TIMESTEP, dt)
       car.presence.aimAt(aimPointOf(prediction.ownSeat, prediction))
-      car.presence.hookAt(hookPointOf(prediction.ownSeat, prediction.seats))
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       arena.update(dt, owed / FIXED_TIMESTEP)
       const own = prediction.ownSeat
@@ -293,7 +289,7 @@ async function joinOnline(
       const players = client.playerCount
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
-      const controls = SOLO_KEYS.controls(OWN_ACTIONS[profile].label)
+      const { controls } = SOLO_KEYS
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }

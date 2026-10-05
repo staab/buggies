@@ -71,7 +71,7 @@ export const SNAPSHOT_HEADER_BYTES = 26
  * going on, only when it has any, which a car nobody drives mostly has not.
  */
 export const SNAPSHOT_VEHICLE_CORE_BYTES = 40
-export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 40
+export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 27
 /** The race on, if any, told after the header: who set it going and when, and each of its marks. */
 export const SNAPSHOT_RACE_BYTES = 5
 export const SNAPSHOT_MARK_BYTES = 6
@@ -163,31 +163,20 @@ export interface VehicleSnapshot {
   game: Game | null
   gamesWon: number
   racePassed: number
-  /** What it is carrying, and how long the machine gun has left. */
+  /** The weapon last picked, the weapon key held on the tick, and what is left of the banana last broken into. */
   weapon: Weapon
-  /** How many weapons it has won, counted around past 255. */
-  wins: number
-  ammoTicks: number
-  /** Its own action: how long it has left, how long before it may go again, whether its lights are on, and whether its own key was down on the tick. */
-  actionTicks: number
-  cooldownTicks: number
-  lightsOn: boolean
-  abilityHeld: boolean
+  weaponHeld: number
+  burnLeft: number
   /** A car nobody drives. */
   npc: boolean
   /** How many rockets it has fired, which numbers the next. */
   rocketsFired: number
-  /** How long it is stunned for, and slowed for, by this share of a full slow. */
+  /** How long it is stunned for, and how long its own shockwave is seen going for. */
   stunnedTicks: number
-  slowedTicks: number
-  slowedBy: number
-  /** How much longer its shield, magnet, plow, slipping on oil and grappling hook last, and whom the hook has caught, or NO_TARGET. */
-  shieldTicks: number
+  shockTicks: number
+  /** How much longer its magnet and plow last. */
   magnetTicks: number
   plowTicks: number
-  slipTicks: number
-  grappleTicks: number
-  grappleTarget: number
   /** What the driver was asking for on the tick this was taken. */
   appliedInput: VehicleInput
 }
@@ -374,7 +363,7 @@ class Writer {
     this.f32(value.steer)
     this.f32(value.throttle)
     this.f32(value.brake)
-    this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0) | (value.ability ? 4 : 0))
+    this.u8(buttons(value))
   }
 
   i16(value: number): void {
@@ -417,7 +406,7 @@ class Writer {
     this.at += 1
     this.u8(share(value.throttle))
     this.u8(share(value.brake))
-    this.u8((value.handbrake ? 1 : 0) | (value.fire ? 2 : 0) | (value.ability ? 4 : 0))
+    this.u8(buttons(value))
   }
 }
 
@@ -489,10 +478,7 @@ class Reader {
     this.at += 1
     out.throttle = this.u8() / 255
     out.brake = this.u8() / 255
-    const buttons = this.u8()
-    out.handbrake = (buttons & 1) === 1
-    out.fire = (buttons & 2) === 2
-    out.ability = (buttons & 4) === 4
+    readButtons(this.u8(), out)
     return out
   }
 
@@ -506,12 +492,22 @@ class Reader {
     out.steer = within(this.f32(), -1, 1)
     out.throttle = within(this.f32(), 0, 1)
     out.brake = within(this.f32(), 0, 1)
-    const buttons = this.u8()
-    out.handbrake = (buttons & 1) === 1
-    out.fire = (buttons & 2) === 2
-    out.ability = (buttons & 4) === 4
+    readButtons(this.u8(), out)
     return out
   }
+}
+
+/** The buttons of an input, in a byte: the handbrake in the lowest bit, and the weapon key held over it. */
+function buttons(value: VehicleInput): number {
+  const key = Number.isInteger(value.weapon) && value.weapon > 0 && value.weapon <= WEAPONS.length ? value.weapon : 0
+  return (value.handbrake ? 1 : 0) | (key << 1)
+}
+
+/** An input's buttons from their byte; a weapon key past the last is none. */
+function readButtons(byte: number, out: VehicleInput): void {
+  out.handbrake = (byte & 1) === 1
+  const key = byte >> 1
+  out.weapon = key <= WEAPONS.length ? key : 0
 }
 
 /** A share of something, 0 to 1, as the byte that says so. */
@@ -716,19 +712,13 @@ function hasExtras(vehicle: VehicleSnapshot): boolean {
     vehicle.gamesWon !== 0 ||
     vehicle.racePassed !== NOT_RACING ||
     vehicle.weapon !== 'none' ||
-    vehicle.wins !== 0 ||
-    vehicle.ammoTicks !== 0 ||
-    vehicle.actionTicks !== 0 ||
-    vehicle.cooldownTicks !== 0 ||
+    vehicle.weaponHeld !== 0 ||
+    vehicle.burnLeft !== 0 ||
     vehicle.stunnedTicks !== 0 ||
-    vehicle.slowedTicks !== 0 ||
+    vehicle.shockTicks !== 0 ||
     vehicle.rocketsFired !== 0 ||
-    vehicle.shieldTicks !== 0 ||
     vehicle.magnetTicks !== 0 ||
-    vehicle.plowTicks !== 0 ||
-    vehicle.slipTicks !== 0 ||
-    vehicle.grappleTicks !== 0 ||
-    vehicle.grappleTarget !== NO_TARGET
+    vehicle.plowTicks !== 0
   )
 }
 
@@ -745,7 +735,7 @@ function vehicleBytes(vehicles: readonly VehicleSnapshot[]): number {
 /** What a vehicle told of without its extras has: nothing going on. */
 function quietVehicle(): Omit<
   VehicleSnapshot,
-  'seat' | 'epoch' | 'profile' | 'position' | 'rotation' | 'linearVelocity' | 'angularVelocity' | 'damage' | 'wrecked' | 'lightsOn' | 'abilityHeld' | 'npc' | 'appliedInput'
+  'seat' | 'epoch' | 'profile' | 'position' | 'rotation' | 'linearVelocity' | 'angularVelocity' | 'damage' | 'wrecked' | 'npc' | 'appliedInput'
 > {
   return {
     score: 0,
@@ -756,20 +746,13 @@ function quietVehicle(): Omit<
     gamesWon: 0,
     racePassed: NOT_RACING,
     weapon: 'none',
-    wins: 0,
-    ammoTicks: 0,
-    actionTicks: 0,
-    cooldownTicks: 0,
+    weaponHeld: 0,
+    burnLeft: 0,
     stunnedTicks: 0,
-    slowedTicks: 0,
-    slowedBy: 0,
+    shockTicks: 0,
     rocketsFired: 0,
-    shieldTicks: 0,
     magnetTicks: 0,
     plowTicks: 0,
-    slipTicks: 0,
-    grappleTicks: 0,
-    grappleTarget: NO_TARGET,
   }
 }
 
@@ -815,7 +798,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(vehicle.epoch)
     writer.u8(profileIndex(vehicle.profile))
     writer.u8(
-      (vehicle.lightsOn ? 1 : 0) | (vehicle.abilityHeld ? 2 : 0) | (vehicle.npc ? 4 : 0) | (vehicle.wrecked ? 8 : 0) | (extras ? 16 : 0),
+      (vehicle.npc ? 4 : 0) | (vehicle.wrecked ? 8 : 0) | (extras ? 16 : 0),
     )
     writer.vec3(vehicle.position)
     writer.rotation(vehicle.rotation)
@@ -835,18 +818,13 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(vehicle.gamesWon & 0xff)
     writer.u8(vehicle.racePassed === NOT_RACING ? NOT_RACING_BYTE : Math.min(vehicle.racePassed, RACE_MARKS_MOST))
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
-    writer.u8(vehicle.wins & 0xff)
-    writer.u16(Math.min(Math.max(vehicle.ammoTicks, 0), 0xffff))
-    writer.u16(Math.min(Math.max(vehicle.actionTicks, 0), 0xffff))
-    writer.u16(Math.min(Math.max(vehicle.cooldownTicks, 0), 0xffff))
-    writer.u16(Math.min(Math.max(vehicle.stunnedTicks, 0), 0xffff))
-    writer.u8(Math.min(Math.max(vehicle.slowedTicks, 0), 0xff))
-    writer.u8(Math.round(Math.min(Math.max(vehicle.slowedBy, 0), 1) * 255))
+    writer.u8(Math.min(Math.max(vehicle.weaponHeld, 0), WEAPONS.length))
+    writer.u8(Math.min(Math.max(vehicle.burnLeft, 0), 0xff))
     writer.u16(vehicle.rocketsFired & 0xffff)
-    for (const ticks of [vehicle.shieldTicks, vehicle.magnetTicks, vehicle.plowTicks, vehicle.slipTicks, vehicle.grappleTicks]) {
-      writer.u16(Math.min(Math.max(ticks, 0), 0xffff))
-    }
-    writer.u8(vehicle.grappleTarget === NO_TARGET ? NOBODY_BYTE : vehicle.grappleTarget)
+    writer.u16(Math.min(Math.max(vehicle.stunnedTicks, 0), 0xffff))
+    writer.u8(Math.min(Math.max(vehicle.shockTicks, 0), 0xff))
+    writer.u16(Math.min(Math.max(vehicle.magnetTicks, 0), 0xffff))
+    writer.u16(Math.min(Math.max(vehicle.plowTicks, 0), 0xffff))
   }
   for (const pickup of message.pickups) {
     writer.u16(pickup.slot)
@@ -1004,8 +982,6 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       angularVelocity,
       damage,
       wrecked: (flags & 8) === 8,
-      lightsOn: (flags & 1) === 1,
-      abilityHeld: (flags & 2) === 2,
       npc: (flags & 4) === 4,
       appliedInput,
     }
@@ -1028,21 +1004,15 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const weapon = WEAPON_CODES[reader.u8()]
     if (weapon === undefined) return null
     vehicle.weapon = weapon
-    vehicle.wins = reader.u8()
-    vehicle.ammoTicks = reader.u16()
-    vehicle.actionTicks = reader.u16()
-    vehicle.cooldownTicks = reader.u16()
-    vehicle.stunnedTicks = reader.u16()
-    vehicle.slowedTicks = reader.u8()
-    vehicle.slowedBy = reader.u8() / 255
+    const held = reader.u8()
+    if (held > WEAPONS.length) return null
+    vehicle.weaponHeld = held
+    vehicle.burnLeft = reader.u8()
     vehicle.rocketsFired = reader.u16()
-    vehicle.shieldTicks = reader.u16()
+    vehicle.stunnedTicks = reader.u16()
+    vehicle.shockTicks = reader.u8()
     vehicle.magnetTicks = reader.u16()
     vehicle.plowTicks = reader.u16()
-    vehicle.slipTicks = reader.u16()
-    vehicle.grappleTicks = reader.u16()
-    const hooked = reader.u8()
-    vehicle.grappleTarget = hooked === NOBODY_BYTE ? NO_TARGET : hooked
   }
   // What is left is exactly the rest: a message longer than it says is refused, as a shorter one is.
   if (payload.length - reader.offset !== rest) return null

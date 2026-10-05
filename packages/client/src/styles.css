@@ -177,15 +177,11 @@ body {
 #hud > [hidden] {
   display: none;
 }
-/* The bananas taken and what the car is carrying, side by side. */
+/* The bananas held. */
 .row {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.row .weapon {
-  flex: 1;
-  min-width: 0;
 }
 .score {
   display: flex;
@@ -198,31 +194,52 @@ body {
   width: 22px;
   height: 22px;
 }
-/* What the car is carrying, in a slot of its own: empty when nothing. */
-.weapon {
+/* The weapons on their number keys: dim when there are not the bananas for one, outlined when picked, lit while going. */
+.weapons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+.weapons .slot {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  min-height: 24px;
-  padding: 3px 10px;
-  border: 1px dashed var(--edge);
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.weapon::before {
-  content: 'power-up';
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.16em;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 11px;
   color: var(--dim);
+  opacity: 0.55;
 }
-.weapon.rolling {
+.weapons .slot.ready {
+  color: inherit;
+  opacity: 1;
+}
+.weapons .slot.picked {
+  border-color: var(--edge);
+}
+.weapons .slot.firing {
+  border-color: var(--accent);
   color: var(--accent);
-  border-style: solid;
+}
+.weapons .slot kbd {
+  flex: none;
+}
+.weapons .slot .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.weapons .slot .cost {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.weapons .slot .cost::after {
+  content: '🍌';
+  font-size: 9px;
 }
 .gauges {
   display: flex;

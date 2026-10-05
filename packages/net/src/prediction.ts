@@ -416,23 +416,14 @@ export class LocalPrediction {
       seat.gamesWon = vehicle.gamesWon
       seat.racePassed = vehicle.racePassed
       seat.weapon = vehicle.weapon
-      seat.wins = vehicle.wins
-      seat.ammoTicks = vehicle.ammoTicks
-      seat.actionTicks = vehicle.actionTicks
-      seat.cooldownTicks = vehicle.cooldownTicks
-      seat.lightsOn = vehicle.lightsOn
-      // Whether the key was down, so that a replay from here tells a press from a hold as the server will.
-      seat.abilityHeld = vehicle.abilityHeld
+      // Which key was down, so that a replay from here tells a press from a hold as the server will.
+      seat.weaponHeld = vehicle.weaponHeld
+      seat.burnLeft = vehicle.burnLeft
       seat.rocketsFired = vehicle.rocketsFired
       seat.stunnedTicks = vehicle.stunnedTicks
-      seat.slowedTicks = vehicle.slowedTicks
-      seat.slowedBy = vehicle.slowedBy
-      seat.shieldTicks = vehicle.shieldTicks
+      seat.shockTicks = vehicle.shockTicks
       seat.magnetTicks = vehicle.magnetTicks
       seat.plowTicks = vehicle.plowTicks
-      seat.slipTicks = vehicle.slipTicks
-      seat.grappleTicks = vehicle.grappleTicks
-      seat.grappleTarget = vehicle.grappleTarget
     }
     // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
     for (const moved of this.bananas.takeProps()) {

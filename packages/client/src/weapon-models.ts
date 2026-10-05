@@ -39,25 +39,6 @@ export function buildEngine(): { model: THREE.Group; flame: THREE.Mesh } {
   return { model, flame }
 }
 
-/** A siren: a brass horn on a small base, its bell ahead. */
-export function buildHorn(): THREE.Group {
-  const group = new THREE.Group()
-  const base = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.14, 0.4), metal(STEEL))
-  group.add(base)
-  const bell = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.6, 14, 1, true), metal(BRASS, 0.3))
-  bell.rotation.x = Math.PI / 2
-  bell.position.set(0, 0.24, -0.35)
-  group.add(bell)
-  const throat = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.4, 8), metal(BRASS, 0.3))
-  throat.rotation.x = Math.PI / 2
-  throat.position.set(0, 0.24, 0.1)
-  group.add(throat)
-  group.traverse((node) => {
-    if (node instanceof THREE.Mesh) node.castShadow = true
-  })
-  return group
-}
-
 /** A shockwave: a glowing yellow lightning bolt, standing up over the roof and seen from either side. */
 export function buildBolt(): THREE.Group {
   const group = new THREE.Group()
@@ -175,26 +156,6 @@ export function buildLaser(): THREE.Group {
   return group
 }
 
-/** A bomb: a black ball with a short fuse, its end glowing. */
-export function buildBomb(): THREE.Group {
-  const group = new THREE.Group()
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), metal(new THREE.Color('#202226'), 0.45))
-  group.add(ball)
-  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 6), metal(new THREE.Color('#8a7a5a'), 0.8))
-  fuse.position.y = 0.5
-  group.add(fuse)
-  const ember = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, 6, 5),
-    new THREE.MeshStandardMaterial({ color: '#ff9a3c', emissive: '#ff6a1c', emissiveIntensity: 1.5 }),
-  )
-  ember.position.y = 0.62
-  group.add(ember)
-  group.traverse((node) => {
-    if (node instanceof THREE.Mesh) node.castShadow = true
-  })
-  return group
-}
-
 function shadowed(group: THREE.Group): THREE.Group {
   group.traverse((node) => {
     if (node instanceof THREE.Mesh) node.castShadow = true
@@ -202,69 +163,7 @@ function shadowed(group: THREE.Group): THREE.Group {
   return group
 }
 
-const OIL = new THREE.Color('#15171b')
-const SHIELD = new THREE.Color('#7fd4ff')
 const MAGNET = new THREE.Color('#d8402c')
-
-/** An oil slick: a black drum with a spout, a drip hanging off it. */
-export function buildOil(): THREE.Group {
-  const group = new THREE.Group()
-  const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.7, 14), metal(OIL, 0.35))
-  drum.rotation.z = Math.PI / 2
-  group.add(drum)
-  for (const side of [-1, 1]) {
-    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.03, 6, 16), metal(BARREL, 0.5))
-    hoop.rotation.y = Math.PI / 2
-    hoop.position.x = side * 0.22
-    group.add(hoop)
-  }
-  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.2, 8), metal(BARREL, 0.4))
-  spout.rotation.x = Math.PI / 2
-  spout.position.set(0.1, 0.12, 0.34)
-  group.add(spout)
-  const drip = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), metal(OIL, 0.1))
-  drip.scale.y = 1.6
-  drip.position.set(0.1, 0.02, 0.44)
-  group.add(drip)
-  return shadowed(group)
-}
-
-/** A shield's outline: a flat top, straight sides, and curves meeting at a point at the bottom, this wide and this tall. */
-function shieldOutline(width: number, height: number): THREE.Shape {
-  const w = width / 2
-  const top = height / 2
-  const shoulder = top - height * 0.35
-  const outline = new THREE.Shape()
-  outline.moveTo(-w, top)
-  outline.lineTo(w, top)
-  outline.lineTo(w, shoulder)
-  outline.quadraticCurveTo(w, -top * 0.45, 0, -top)
-  outline.quadraticCurveTo(-w, -top * 0.45, -w, shoulder)
-  outline.closePath()
-  return outline
-}
-
-/**
- * A shield: a blue heater shield with a pale rim, standing up over the
- * roof and seen from either side.
- */
-export function buildShield(): THREE.Group {
-  const group = new THREE.Group()
-  const rim = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(shieldOutline(0.7, 0.85), { depth: 0.08, bevelEnabled: false }).translate(0, 0, -0.04),
-    metal(SHELL, 0.4),
-  )
-  group.add(rim)
-  const face = new THREE.MeshStandardMaterial({ color: SHIELD, emissive: SHIELD, emissiveIntensity: 0.35, roughness: 0.35 })
-  for (const side of [-1, 1]) {
-    const inlay = new THREE.Mesh(new THREE.ShapeGeometry(shieldOutline(0.56, 0.7)), face)
-    inlay.position.set(0, 0.01, side * 0.045)
-    if (side < 0) inlay.rotation.y = Math.PI
-    group.add(inlay)
-  }
-  group.position.y = 0.1
-  return shadowed(group)
-}
 
 /** A magnet: a red horseshoe, its silver ends pointing ahead. */
 export function buildMagnet(): THREE.Group {
@@ -282,21 +181,6 @@ export function buildMagnet(): THREE.Group {
     tip.rotation.x = Math.PI / 2
     tip.position.set(side * 0.3, 0, -0.27)
     group.add(tip)
-  }
-  return shadowed(group)
-}
-
-/** A triple rocket: three rockets side by side on a rack. */
-export function buildTripleRocket(): THREE.Group {
-  const group = new THREE.Group()
-  const rack = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.5), metal(STEEL))
-  rack.position.y = -0.2
-  group.add(rack)
-  for (const side of [-1, 0, 1]) {
-    const rocket = buildRocket()
-    rocket.scale.setScalar(0.75)
-    rocket.position.x = side * 0.36
-    group.add(rocket)
   }
   return shadowed(group)
 }
@@ -321,38 +205,6 @@ export function buildPlow(): THREE.Group {
   const edge = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.08), metal(new THREE.Color('#e8c23a'), 0.5))
   edge.position.set(0, -r * Math.SQRT1_2, r * Math.SQRT1_2)
   group.add(edge)
-  return shadowed(group)
-}
-
-/** A grappling hook's hook: a short shaft with three claws curling back from its tip, the tip toward -Z. */
-export function buildHook(): THREE.Group {
-  const group = new THREE.Group()
-  const iron = metal(BARREL, 0.35)
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4, 6), iron)
-  shaft.rotation.x = Math.PI / 2
-  shaft.position.z = 0.2
-  group.add(shaft)
-  for (let prong = 0; prong < 3; prong++) {
-    const pivot = new THREE.Group()
-    pivot.rotation.z = (prong * 2 * Math.PI) / 3
-    const claw = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.03, 6, 10, Math.PI), iron)
-    claw.rotation.y = Math.PI / 2
-    claw.position.y = 0.14
-    pivot.add(claw)
-    group.add(pivot)
-  }
-  return shadowed(group)
-}
-
-/** A grappling hook: a stubby launcher with its hook in its mouth. */
-export function buildGrapple(): THREE.Group {
-  const group = new THREE.Group()
-  const launcher = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.7, 12), metal(STEEL))
-  launcher.rotation.x = Math.PI / 2
-  group.add(launcher)
-  const hook = buildHook()
-  hook.position.z = -0.75
-  group.add(hook)
   return shadowed(group)
 }
 

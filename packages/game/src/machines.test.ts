@@ -10,7 +10,7 @@ import {
   ROVERS,
   createVehicleInput,
   npcInput,
-  arm,
+  keyOf,
   respawn,
   seatNpc,
   ROBOT_TARGET,
@@ -117,8 +117,8 @@ describe('the robots and the saucers', () => {
       advance(arena)
       facing(arena, seat, 25)
       for (let i = 0; i < 20; i++) advance(arena)
-      arm(seat, weapon)
-      for (let i = 0; i < 60; i++) advance(arena, (one) => (one === seat ? { ...NEUTRAL_INPUT, fire: true } : NEUTRAL_INPUT))
+      seat.score = 10
+      for (let i = 0; i < 60; i++) advance(arena, (one) => (one === seat ? { ...NEUTRAL_INPUT, weapon: keyOf(weapon) } : NEUTRAL_INPUT))
       expect(arena.robots[0]!.damage).toBeGreaterThan(0)
       arena.world.free()
     })

@@ -6,19 +6,18 @@ export interface DriverKeys {
   bindings: KeyBindings
   /** Whether a key press is this driver asking to be put back on the road. */
   respawn: (event: KeyboardEvent) => boolean
-  /** What to tell the driver, given what their car does of its own, by name. */
-  controls: (ability: string) => readonly ControlHint[]
+  /** What to tell the driver. */
+  controls: readonly ControlHint[]
 }
 
-/** Alone: the arrows, with the space bar, F, D and R under the other hand. */
+/** The arrows, with the space bar, the number keys for the weapons, and R. */
 export const SOLO_KEYS: DriverKeys = {
   bindings: SOLO_BINDINGS,
   respawn: (event) => event.code === 'KeyR',
-  controls: (ability) => [
+  controls: [
     { keys: ['↑', '←', '↓', '→'], does: 'drive' },
     { keys: ['Space'], does: 'handbrake' },
-    { keys: ['F'], does: 'fire' },
-    { keys: ['D'], does: ability.toLowerCase() },
+    { keys: ['1–9'], does: 'weapons' },
     { keys: ['R'], does: 'respawn' },
     { keys: ['Esc'], does: 'menu' },
   ],

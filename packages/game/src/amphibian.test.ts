@@ -62,18 +62,4 @@ describe('the amphibian', () => {
     expect(vdot(boat.vehicle.frame.up, boat.vehicle.up)).toBeGreaterThan(0.9)
     arena.world.free()
   })
-
-  it('burns the car ahead with its own laser while its key is held', () => {
-    const arena = createArena(map)
-    const boat = takeSeat(arena, 0, 'amphibian')
-    const car = takeSeat(arena, 1, 'sportsCar')
-    advance(arena)
-    const { position, forward } = boat.vehicle.frame
-    respawn(car, spawnHere(ahead(position, forward, 20), forward))
-    for (let i = 0; i < 20; i++) advance(arena)
-    for (let i = 0; i < 60; i++) advance(arena, (seat) => (seat === boat ? { ...NEUTRAL_INPUT, ability: true } : NEUTRAL_INPUT))
-    expect(car.vehicle.damage).toBeGreaterThan(0)
-    expect(arena.shots.some((shot) => shot.owner === boat.id && shot.kind === 'laser')).toBe(true)
-    arena.world.free()
-  })
 })

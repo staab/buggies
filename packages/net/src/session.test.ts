@@ -1,8 +1,6 @@
 import {
-  MACHINE_GUN_AMMO_TICKS,
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
-  BANANAS_PER_WEAPON,
   GAME_PRIZE,
   NOT_RACING,
   RACE_LEG_LEAST,
@@ -14,7 +12,7 @@ import {
   DURABILITY,
   PICKUP_SLOTS,
   ROCKET_DAMAGE,
-  arm,
+  keyOf,
   createArena,
   initPhysics,
   portalSpawn,
@@ -626,7 +624,7 @@ describe('a session', () => {
     const session = new Session()
     const a = await session.join()
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    arm(seat, 'rocket')
+    seat.weapon = 'rocket'
     seat.score = 7
     seat.collected = 12
     const { pass } = a.client.welcome!
@@ -655,7 +653,7 @@ describe('a session', () => {
     a.input.throttle = 1
     session.run(3)
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    arm(seat, 'rocket')
+    seat.weapon = 'rocket'
     seat.score = 7
     const at = { ...session.serverPositionOf(a) }
     expect(distance(at, seat.spawn.position)).toBeGreaterThan(5)
@@ -675,7 +673,7 @@ describe('a session', () => {
     const session = new Session()
     const a = await session.join()
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    arm(seat, 'rocket')
+    seat.weapon = 'rocket'
     const { pass } = a.client.welcome!
     // Cut off without the connection closing: the server still has them seated.
     a.paused = true
@@ -732,8 +730,6 @@ describe('a session', () => {
     expect(a.prediction.ownSeat.game).toEqual(seat.game)
 
     // Two bananas more, and the prize is paid: once, and the game is done with.
-    // Carrying something already, the car keeps the prize rather than spending it.
-    arm(seat, 'rocket')
     const held = seat.score
     seat.collected += 2
     session.run(0.5)
@@ -778,8 +774,6 @@ describe('a session', () => {
     expect(session.arena.race?.starter).toBe(seatA.id)
     expect(b.client.closed).toBeNull()
 
-    // Carrying something already, the car keeps the prize rather than spending it.
-    arm(seatB, 'rocket')
     const held = seatB.score
     for (const mark of marks.slice(1)) {
       respawn(seatB, spawnHere(mark, tangentFrame(upOf(mark)).east))
@@ -879,20 +873,17 @@ describe('a session', () => {
     }), () => 0)
     const welcome = await client.connect('semi', island.seed)
     const { arena } = server.roomFor(island.seed)!
-    // The player leans on the car's own key and the fire key, tick after tick.
+    // The player leans on a weapon's key, tick after tick.
     for (let tick = 0; tick < 60; tick++) {
-      client.sendInput(tick, { ...NEUTRAL_INPUT, ability: true, fire: true, throttle: 1 })
+      client.sendInput(tick, { ...NEUTRAL_INPUT, weapon: 9, throttle: 1 })
       server.advance()
     }
     const npcs = arena.seats.filter((seat) => seat.npc).map((seat) => seat.id)
     expect(npcs.length).toBeGreaterThan(0)
     const told = received.at(-1)!.vehicles.filter((vehicle) => npcs.includes(vehicle.seat))
     expect(told.length).toBe(npcs.length)
-    for (const vehicle of told) {
-      expect(vehicle.appliedInput.ability).toBe(false)
-      expect(vehicle.appliedInput.fire).toBe(false)
-    }
-    expect(received.at(-1)!.vehicles.find((vehicle) => vehicle.seat === welcome.seat)!.appliedInput.ability).toBe(true)
+    for (const vehicle of told) expect(vehicle.appliedInput.weapon).toBe(0)
+    expect(received.at(-1)!.vehicles.find((vehicle) => vehicle.seat === welcome.seat)!.appliedInput.weapon).toBe(9)
     client.close('done')
     server.dispose()
   }, 60_000)
@@ -903,8 +894,7 @@ describe('a session', () => {
     a.input.throttle = 1
     session.run(3)
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    // One short of what a power-up costs, so that they are kept rather than spent.
-    seat.score = BANANAS_PER_WEAPON - 1
+    seat.score = 7
     const before = session.serverPositionOf(a)
     expect(distance(before, seat.spawn.position)).toBeGreaterThan(5)
 
@@ -915,7 +905,7 @@ describe('a session', () => {
     expect(session.server.playerCount).toBe(1)
     // The same seat, in a tank, where the sports car was, with the bananas it had.
     expect(seat.profile).toBe('tank')
-    expect(seat.score).toBe(BANANAS_PER_WEAPON - 1)
+    expect(seat.score).toBe(7)
     expect(distance(session.serverPositionOf(a), before)).toBeLessThan(3)
     // The prediction is in a tank too, where the server has it.
     expect(a.prediction.ownSeat.profile).toBe('tank')
@@ -1037,7 +1027,7 @@ describe('a session', () => {
     session.dispose()
   }, 120_000)
 
-  it('fires what a player is holding: everyone sees the rocket go, and the car it is after feels it', async () => {
+  it('fires the weapon whose key is held: everyone sees the rocket go, and the car it is after feels it', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
     const b = await session.join('tank')
@@ -1045,91 +1035,92 @@ describe('a session', () => {
     const aSeat = arena.seats[a.client.welcome!.seat]!
     const bSeat = arena.seats[b.client.welcome!.seat]!
     session.run(0.5)
-    // The tank is put down on the road thirty meters ahead of the sports car, which is handed a rocket.
+    // The tank is put down on the road thirty meters ahead of the sports car, which is handed bananas to spend.
     lineUp(arena, aSeat, bSeat, 30)
-    arm(aSeat, 'rocket')
+    aSeat.score = 20
     session.run(0.5)
-    expect(a.prediction.ownSeat.weapon).toBe('rocket')
-    expect(b.prediction.seats[aSeat.id]!.weapon).toBe('rocket')
+    expect(a.prediction.ownSeat.score).toBe(20)
 
-    // The button goes down: the rocket goes, after the tank, and the tank's mirror has it in the air too.
-    a.input.fire = true
+    // The rocket's key goes down: the rocket goes, after the tank, and the tank's mirror has it in the air too.
+    a.input.weapon = keyOf('rocket')
     session.run(0.3)
-    a.input.fire = false
-    expect(aSeat.weapon).toBe('none')
-    expect(a.prediction.ownSeat.weapon).toBe('none')
+    a.input.weapon = 0
+    expect(aSeat.weapon).toBe('rocket')
+    expect(aSeat.score).toBe(18)
     expect(arena.rockets).toHaveLength(1)
     expect(arena.rockets[0]!.target).toBe(bSeat.id)
     expect(b.prediction.rockets).toHaveLength(1)
     expect(b.prediction.rockets[0]!.id).toBe(arena.rockets[0]!.id)
-    session.run(1.5)
+    session.run(0.5)
+    expect(b.prediction.seats[aSeat.id]!.weapon).toBe('rocket')
+    session.run(1)
     expect(arena.rockets).toHaveLength(0)
     expect(bSeat.vehicle.damage).toBeCloseTo((ROCKET_DAMAGE * armorShare(bSeat.tuning)) / DURABILITY, 5)
     expect(b.prediction.vehicle.damage).toBeCloseTo((ROCKET_DAMAGE * armorShare(bSeat.tuning)) / DURABILITY, 1)
     expect(aSeat.vehicle.damage).toBe(0)
 
-    // A bomb dropped is numbered the same in the sports car's own prediction as on the server, so
-    // it is one bomb on screen from the drop onward, not one gone and another come.
-    arm(aSeat, 'bomb')
-    session.run(0.5)
-    a.input.fire = true
+    // A mine field laid is numbered the same in the sports car's own prediction as on the server, so
+    // it is the same mines on screen from the drop onward, not some gone and others come.
+    a.input.weapon = keyOf('mines')
     session.run(0.05)
-    a.input.fire = false
-    const predicted = a.prediction.loose.find((loose) => loose.kind === 'bomb')
-    expect(predicted).toBeDefined()
-    expect(arena.loose.some((loose) => loose.kind === 'bomb')).toBe(false)
+    a.input.weapon = 0
+    const mines = (loose: readonly Loose[]): number[] => loose.filter((thing) => thing.kind === 'mine').map((thing) => thing.id)
+    const predicted = mines(a.prediction.loose)
+    expect(predicted.length).toBeGreaterThan(0)
+    expect(mines(arena.loose)).toEqual([])
     session.run(0.5)
-    const dropped = arena.loose.find((loose) => loose.kind === 'bomb')
-    expect(dropped?.id).toBe(predicted!.id)
-    expect(a.prediction.loose.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
-    expect(b.prediction.loose.filter((loose) => loose.kind === 'bomb').map((loose) => loose.id)).toEqual([dropped!.id])
+    expect(mines(arena.loose)).toEqual(predicted)
+    expect(mines(a.prediction.loose)).toEqual(predicted)
+    expect(mines(b.prediction.loose)).toEqual(predicted)
 
-    // A machine gun, held for a second: shots the tank takes, and ammunition the sports car spends.
-    arm(aSeat, 'machineGun')
-    session.run(0.5)
-    a.input.fire = true
+    // A machine gun, held for a second: shots the tank takes, and a banana the sports car burns.
+    const left = aSeat.score
+    a.input.weapon = keyOf('machineGun')
     session.run(1)
-    a.input.fire = false
+    a.input.weapon = 0
     session.run(0.3)
     expect(bSeat.vehicle.damage).toBeGreaterThan(((ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE) * armorShare(bSeat.tuning)) / DURABILITY)
-    expect(aSeat.ammoTicks).toBeLessThan(MACHINE_GUN_AMMO_TICKS - 50)
-    expect(a.prediction.ownSeat.ammoTicks).toBe(aSeat.ammoTicks)
+    expect(aSeat.score).toBeLessThan(left)
+    expect(a.prediction.ownSeat.score).toBe(aSeat.score)
+    expect(a.prediction.ownSeat.burnLeft).toBe(aSeat.burnLeft)
     session.dispose()
   }, 120_000)
 
-  it("keeps a car's own bomb and missile on screen from the press onward, however long the key is held", async () => {
+  it('keeps a mine field and a rocket on screen from the press onward, however long the key is held', async () => {
     const session = new Session()
     const a = await session.join('pickup')
     const b = await session.join('tank')
     const { arena } = session
     session.run(0.5)
     // The tank is put down on the road thirty meters ahead of the pickup, facing away from it, so
-    // that its missile has nothing to go after and flies on for as long as the test watches it.
+    // that its rocket has nothing to go after and flies on for as long as the test watches it.
     const aSeat = arena.seats[a.client.welcome!.seat]!
     const bSeat = arena.seats[b.client.welcome!.seat]!
     lineUp(arena, aSeat, bSeat, 30)
+    aSeat.score = 10
+    bSeat.score = 10
     session.run(0.5)
-    const bombs = (loose: readonly Loose[]): number[] => loose.filter((thing) => thing.kind === 'bomb').map((thing) => thing.id)
-    // The pickup's key goes down and stays down. The bomb is predicted at once, and the server has it
-    // soon after with the same number; in between, the snapshots that know nothing of it say the key
-    // was up, so the replay from them drops it again rather than losing it for a moment.
-    a.input.ability = true
+    const mines = (loose: readonly Loose[]): number[] => loose.filter((thing) => thing.kind === 'mine').map((thing) => thing.id)
+    // The pickup's key goes down and stays down. The mines are predicted at once, and the server has
+    // them soon after with the same numbers; in between, the snapshots that know nothing of them say
+    // the key was up, so the replay from them lays them again rather than losing them for a moment.
+    a.input.weapon = keyOf('mines')
     session.run(0.05)
-    const predicted = bombs(a.prediction.loose)
-    expect(predicted).toHaveLength(1)
-    expect(bombs(arena.loose)).toEqual([])
+    const predicted = mines(a.prediction.loose)
+    expect(predicted.length).toBeGreaterThan(0)
+    expect(mines(arena.loose)).toEqual([])
     let told = false
     for (let i = 0; i < 30; i++) {
       session.step()
-      told ||= bombs(arena.loose).length > 0
-      if (!told) expect(bombs(a.prediction.loose)).toEqual(predicted)
+      told ||= mines(arena.loose).length > 0
+      if (!told) expect(mines(a.prediction.loose)).toEqual(predicted)
     }
     expect(told).toBe(true)
-    expect(bombs(arena.loose)).toEqual(predicted)
-    a.input.ability = false
-    // The tank's missile is one rocket from the press onward, the same way: the mirror never loses
+    expect(mines(arena.loose)).toEqual(predicted)
+    a.input.weapon = 0
+    // The tank's rocket is one rocket from the press onward, the same way: the mirror never loses
     // it before the server has had it, though the server's may go off on something before long.
-    b.input.ability = true
+    b.input.weapon = keyOf('rocket')
     session.run(0.05)
     const fired = b.prediction.rockets.map((rocket) => rocket.id)
     expect(fired).toHaveLength(1)
@@ -1208,7 +1199,7 @@ describe('a session', () => {
     session.run(0.5)
     const seat = a.client.welcome!.seat
     const seen = b.client.pump(b.input).newestSnapshot!.vehicles.find((vehicle) => vehicle.seat === seat)!
-    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, fire: false, ability: false })
+    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, weapon: 0 })
 
     // Inputs past what an honest client could send are dropped, not driven, and not held against them.
     const before = session.server.stats().inputsDropped

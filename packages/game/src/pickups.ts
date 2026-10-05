@@ -267,20 +267,16 @@ export const SPILL_FAR = 16
 /** How long a spilled banana is in the air, in ticks, before it can be taken. */
 export const SPILL_FLIGHT_TICKS = 60
 
-/** How many bombs, mines, oil slicks and rockets a map holds at once; past that the oldest go. Spilled bananas are held to the banana slots instead. */
+/** How many bombs, mines and rockets a map holds at once; past that the oldest go. Spilled bananas are held to the banana slots instead. */
 export const LOOSE_MOST = 256
 
-/** What lies loose on the map: a banana spilled from a wreck, or a bomb, a mine or an oil slick dropped from a car. */
-export type LooseKind = 'banana' | 'bomb' | 'mine' | 'oil'
-export const LOOSE_KINDS: readonly LooseKind[] = ['banana', 'bomb', 'mine', 'oil']
+/** What lies loose on the map: a banana spilled from a wreck, a bomb dropped from a spider, or a mine laid by a car. */
+export type LooseKind = 'banana' | 'bomb' | 'mine'
+export const LOOSE_KINDS: readonly LooseKind[] = ['banana', 'bomb', 'mine']
 
-/** How close a chassis has to come to a bomb or a mine to set it off, and to an oil slick to drive into it. */
+/** How close a chassis has to come to a bomb or a mine to set it off. */
 export const BOMB_REACH = 3.2
 export const MINE_REACH = 2.5
-export const OIL_REACH = 4
-
-/** How long an oil slick lies on the road before it is gone, in ticks. */
-export const OIL_LIFE_TICKS = 60 * 60
 
 /** Spilled bananas are numbered as they come, and the numbers come around after this many: far more than are ever out at once. */
 export const LOOSE_IDS = 0x10000
@@ -288,15 +284,14 @@ export const LOOSE_IDS = 0x10000
 /**
  * Something loose on the map: a banana spilled from a wreck, thrown from
  * where the car blew up to where it lands, to lie there for the taking
- * until it is taken or fades; or a bomb dropped behind a car, to float
- * there until any car runs into it, the one that dropped it included once
- * it has landed.
+ * until it is taken; or a bomb or a mine, to lie there until any car
+ * runs into it, the one that laid it included once it has landed.
  */
 export interface Loose {
   /** Its number, by which it is spoken of on the wire; no two out at once share one. */
   readonly id: number
   readonly kind: LooseKind
-  /** Whose it is: the seat of the wreck it spilled from, or of the car that dropped it. */
+  /** Whose it is: the seat of the wreck it spilled from, or of the car that laid it. */
   readonly owner: number
   /** How much of a full bomb's blast it goes off with; a banana has none. */
   readonly power: number
@@ -348,15 +343,9 @@ export function looseOut(loose: Loose, tick: number): boolean {
   return tick >= loose.bornTick + SPILL_FLIGHT_TICKS
 }
 
-/** Whether an oil slick has lain about long enough to be gone. A spilled banana lies there until it is taken, and a bomb or a mine until it goes off. */
-export function looseGone(loose: Loose, tick: number): boolean {
-  if (loose.kind === 'oil') return tick >= loose.bornTick + OIL_LIFE_TICKS
-  return false
-}
+const LOOSE_REACH: Readonly<Record<LooseKind, number>> = { banana: BANANA_REACH, bomb: BOMB_REACH, mine: MINE_REACH }
 
-const LOOSE_REACH: Readonly<Record<LooseKind, number>> = { banana: BANANA_REACH, bomb: BOMB_REACH, mine: MINE_REACH, oil: OIL_REACH }
-
-/** Whether something at this point has reached a loose banana, set off a bomb or a mine, or driven into oil; a banana from as far as a magnet's reach, if more. */
+/** Whether something at this point has reached a loose banana, or set off a bomb or a mine; a banana from as far as a magnet's reach, if more. */
 export function reachesLoose(loose: Loose, point: Vec3, magnet = 0): boolean {
   if (loose.kind === 'banana') return within(point, loose.position, Math.max(BANANA_REACH, magnet), Math.max(PICKUP_REACH_UP, magnet))
   return within(point, loose.position, LOOSE_REACH[loose.kind], PICKUP_REACH_UP)

@@ -43,29 +43,14 @@ describe('the weapon mount', () => {
     expect(mount.object.children.some((child) => child.visible)).toBe(false)
     mount.show('rocket')
     expect(mount.object.children.some((child) => child.visible)).toBe(false)
-    mount.show('bomb')
+    mount.show('mines')
     expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
-    mount.show('shield')
+    mount.show('magnet')
     expect(mount.object.children.filter((child) => child.visible)).toHaveLength(1)
     mount.dispose()
   })
 
-  it('stands the siren still on the roof while the rest hovers', () => {
-    const car = new THREE.Group()
-    const mount = new WeaponMount(1.8, false, 1.2)
-    car.add(mount.object)
-    mount.show('siren')
-    const horn = mount.object.children.find((child) => child.visible)!
-    for (let i = 0; i < 30; i++) {
-      mount.update(1 / 10)
-      car.updateMatrixWorld(true)
-      expect(horn.getWorldPosition(new THREE.Vector3()).y).toBeCloseTo(1.2, 5)
-    }
-    expect(mount.object.position.y).not.toBeCloseTo(1.8, 5)
-    mount.dispose()
-  })
-
-  it('shows one model for every power-up, and none of those a car with a gun of its own fires from it', () => {
+  it('shows one model for every weapon, and none of those a car with a gun of its own fires from it', () => {
     const mount = new WeaponMount(1.8)
     for (const weapon of WEAPONS) {
       mount.show(weapon)
@@ -75,7 +60,7 @@ describe('the weapon mount', () => {
     expect(mount.object.children.some((child) => child.visible)).toBe(false)
     mount.dispose()
     const tank = new WeaponMount(1.8, true)
-    tank.show('tripleRocket')
+    tank.show('laser')
     expect(tank.object.children.some((child) => child.visible)).toBe(false)
     tank.dispose()
   })

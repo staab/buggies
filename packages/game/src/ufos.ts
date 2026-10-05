@@ -58,8 +58,7 @@ export const UFO_STATES: readonly UfoState[] = ['roam', 'hunt', 'lift', 'carry',
 /**
  * A flying saucer: it cruises over the island from one waypoint to the
  * next, and every so often comes down over the nearest car it can find,
- * lifts it up its beam and sets it down somewhere else entirely. A car
- * with its shield up slips the beam.
+ * lifts it up its beam and sets it down somewhere else entirely.
  */
 export interface Ufo {
   readonly id: number
@@ -87,7 +86,6 @@ export interface Abductee {
   readonly occupied: boolean
   readonly vehicle: Vehicle
   readonly tuning: VehicleTuning
-  readonly shieldTicks: number
 }
 
 function ufoSeed(map: World, id: number): number {
@@ -233,9 +231,9 @@ function fly(map: World, ufo: Ufo, point: Vec3, height: number, speed: number, d
   return distance
 }
 
-/** Whether a car can be taken: in play, and not behind its shield. */
+/** Whether a car can be taken: in play. */
 function takeable(seat: Abductee | undefined): seat is Abductee {
-  return seat !== undefined && seat.occupied && !seat.vehicle.wrecked && seat.shieldTicks <= 0
+  return seat !== undefined && seat.occupied && !seat.vehicle.wrecked
 }
 
 /** Set a saucer back to cruising, to wait this long before it looks for a car again. */

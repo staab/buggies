@@ -89,20 +89,4 @@ describe('flying saucers', () => {
     expect(ufo!.cooldownTicks).toBeGreaterThan(UFO_COOLDOWN_TICKS - 130)
     arena.world.free()
   }, 60_000)
-
-  it('cannot take a car with its shield up', () => {
-    const arena = createArena(map)
-    const [ufo] = arena.ufos
-    const seat = takeSeat(arena, 0, 'sportsCar')
-    advance(arena)
-    seat.shieldTicks = 60 * 60
-    ufo!.cooldownTicks = 0
-    eastOf(arena, ufo!, seat.vehicle.frame.position, 20)
-    for (let i = 0; i < 60 * 10; i++) {
-      advance(arena)
-      expect(ufo!.state === 'carry' || ufo!.state === 'lower').toBe(false)
-    }
-    expect(ufo!.state).toBe('roam')
-    arena.world.free()
-  }, 60_000)
 })
