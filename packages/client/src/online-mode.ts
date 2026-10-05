@@ -5,13 +5,13 @@ import {
   NEUTRAL_INPUT,
   NOT_RACING,
   VEHICLE_PROFILE_LABELS,
+  hasSiren,
   createArena,
   gameProgress,
   nextMark,
   portalCrossed,
   takeSeat,
   type Game,
-  type GameRequest,
   type Race,
   type Robot,
   type Seat,
@@ -26,15 +26,14 @@ import * as THREE from 'three'
 
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
+import { bendAround, bendMaterials } from './bend.ts'
 import { aimPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
-import type { HudState } from './hud.ts'
 import { Keyboard } from './input.ts'
 import { SOLO_KEYS } from './keys.ts'
 import type { ModeView } from './mode.ts'
-import { bendAround, bendMaterials } from './bend.ts'
 import { MirrorCars } from './mirror-cars.ts'
 import { PredictedCar } from './predicted-car.ts'
 import type { RadarBlip, RadarState } from './radar.ts'
@@ -121,54 +120,24 @@ function buildBeacon(): THREE.Mesh {
   return beacon
 }
 
-/** The player's connection, car and camera. */
-interface OnlineView {
-  readonly camera: THREE.PerspectiveCamera
-  readonly seat: number
-  /** What the server gave this seat to show on coming through a portal, for what it holds to be carried over. */
-  readonly pass: number
-  /** Where the play is: the car, in the world, and on the map. */
-  readonly focus: Vec3
-  readonly place: Vec3
-  /** The way up where the car is. */
-  readonly up: Vec3
-  resize(aspect: number): void
-  update(dt: number, active: boolean): void
-  /** The mirror's tick: the game's time, the same on every mirror. */
-  readonly tick: number
-  hud(): HudState
-  /** Swap into another vehicle where the car is, keeping the seat and its bananas. */
-  changeVehicle(profile: VehicleProfileId): void
-  /** The island being played. */
-  readonly map: World
-  /** The count being played for, as the server last said, if any. */
-  game(): Game | null
-  /** The race on over the island, as the server last said, if any. */
-  race(): Race | null
-  /** Play this game, or none. */
-  setGame(game: GameRequest | null): void
-  /** The portal the car has driven through since last asked, or -1. */
-  portal(): number
-  /** Why the connection to the server was lost, if it has been. */
-  lost(): string | null
-  dispose(): void
-}
-
 /**
  * Join the server's room for an island and drive on it with whoever else is
- * there. The server has the last word on which island, so the map is asked
- * for once it has said: `mapFor` is asked for it then.
+ * there, with the whole screen: the island drawn round the car, bent as
+ * though the planet were bigger, and the sun's shadows cast around it. The
+ * server has the last word on which island, so the map is asked for once it
+ * has said: `mapFor` is asked for it then.
  */
-async function joinOnline(
+export async function createOnlineMode(
   scene: THREE.Scene,
   url: string,
   seed: number,
   profile: VehicleProfileId,
   mapFor: (seed: number) => Promise<World>,
   sound: Sound,
+  sun: Sun,
   arrival = NO_ARRIVAL,
   pass = NO_PASS,
-): Promise<OnlineView> {
+): Promise<ModeView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
     onClosed: (reason) => {
@@ -223,19 +192,20 @@ async function joinOnline(
 
   return {
     camera: chase.camera,
-    seat: welcome.seat,
-    pass: welcome.pass,
-    get focus() {
-      return prediction.vehicle.frame.position
-    },
-    get place() {
-      return prediction.vehicle.frame.position
-    },
-    get up() {
-      return prediction.vehicle.up
-    },
+    // The game's time, the same on every mirror, so the day, the boats and the clouds are where they are for everyone.
     get tick() {
       return prediction.tick
+    },
+    pass: () => welcome.pass,
+    position: () => prediction.vehicle.frame.position,
+    render(renderer) {
+      const { frame, up } = prediction.vehicle
+      sun.follow(frame.position, up)
+      sun.shade(scene, map.kind === 'moon')
+      bendMaterials(scene)
+      bendAround(frame.position, map.radius)
+      renderer.render(scene, chase.camera)
+      bendAround(null)
     },
     resize(aspect) {
       chase.camera.aspect = aspect
@@ -289,7 +259,7 @@ async function joinOnline(
       const players = client.playerCount
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
-      const { controls } = SOLO_KEYS
+      const controls = SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn')
       const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
@@ -318,7 +288,8 @@ async function joinOnline(
       return prediction.ownSeat.game
     },
     race() {
-      return prediction.race
+      const { race } = prediction
+      return race === null ? null : { race, mine: welcome.seat === race.starter }
     },
     setGame(game) {
       client.setGame(game)
@@ -342,55 +313,5 @@ async function joinOnline(
       ;(beacon.material as THREE.Material).dispose()
       scene.remove(root)
     },
-  }
-}
-
-/**
- * The player on the server, with the whole screen: the island drawn round
- * their car, bent as though the planet were bigger, and the sun's shadows
- * cast around it.
- */
-export async function createOnlineMode(
-  scene: THREE.Scene,
-  url: string,
-  seed: number,
-  profile: VehicleProfileId,
-  mapFor: (seed: number) => Promise<World>,
-  sound: Sound,
-  sun: Sun,
-  arrival = NO_ARRIVAL,
-  pass = NO_PASS,
-): Promise<ModeView> {
-  const view = await joinOnline(scene, url, seed, profile, mapFor, sound, arrival, pass)
-  return {
-    camera: view.camera,
-    // The game's time, the same on every mirror, so the day, the boats and the clouds are where they are for everyone.
-    get tick() {
-      return view.tick
-    },
-    resize: (aspect) => view.resize(aspect),
-    update: (dt, active) => view.update(dt, active),
-    render(renderer) {
-      sun.follow(view.focus, view.up)
-      sun.shade(scene, view.map.kind === 'moon')
-      bendMaterials(scene)
-      bendAround(view.focus, view.map.radius)
-      renderer.render(scene, view.camera)
-      bendAround(null)
-    },
-    hud: () => [view.hud()],
-    portal: () => view.portal(),
-    lost: () => view.lost(),
-    pass: () => view.pass,
-    changeVehicle: (next) => view.changeVehicle(next),
-    map: view.map,
-    position: () => view.place,
-    game: () => view.game(),
-    race() {
-      const race = view.race()
-      return race === null ? null : { race, mine: view.seat === race.starter }
-    },
-    setGame: (game) => view.setGame(game),
-    dispose: () => view.dispose(),
   }
 }

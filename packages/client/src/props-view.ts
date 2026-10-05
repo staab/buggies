@@ -34,11 +34,9 @@ const matrix = new THREE.Matrix4()
  */
 export class PropsView {
   readonly object = new THREE.Group()
-  private readonly source: PropSource
   private readonly meshes = new Map<PropKind, { mesh: THREE.InstancedMesh; props: ArenaProp[] }>()
 
   constructor(source: PropSource) {
-    this.source = source
     for (const kind of KINDS) {
       const props = source.props.filter((prop) => prop.kind === kind)
       if (props.length === 0) continue

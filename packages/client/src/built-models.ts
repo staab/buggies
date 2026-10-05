@@ -1,4 +1,4 @@
-import { DEFAULT_WORLD_TUNING, restingRideHeight, type VehicleTuning } from '@buggies/game'
+import type { VehicleTuning } from '@buggies/game'
 import * as THREE from 'three'
 
 import { hullGeometry } from './hull-geometry.ts'

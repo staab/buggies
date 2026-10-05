@@ -47,7 +47,6 @@ function rocketAt(arena: Arena, target: number, at: Vec3): void {
     position: ahead(at, east, -2),
     velocity: { x: east.x * 30, y: east.y * 30, z: east.z * 30 },
     bornTick: arena.tick,
-    power: 1,
   })
 }
 

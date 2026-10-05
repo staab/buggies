@@ -2,7 +2,6 @@
 // behaves in the air and in a crash. Each is measured off the model the
 // client draws it with, at the scale it is drawn.
 
-import { createRng } from '@buggies/physics'
 
 export interface VehicleTuning {
   chassisHalfWidth: number
@@ -1217,30 +1216,4 @@ export const DEFAULT_VEHICLE_PROFILE: VehicleProfileId = 'sportsCar'
 
 export function createVehicleTuning(profile: VehicleProfileId = DEFAULT_VEHICLE_PROFILE): VehicleTuning {
   return { ...VEHICLE_PROFILES[profile] }
-}
-
-export function createVehicleTuningByProfile(): Record<VehicleProfileId, VehicleTuning> {
-  const result = {} as Record<VehicleProfileId, VehicleTuning>
-
-  for (const profile of VEHICLE_PROFILE_IDS) result[profile] = createVehicleTuning(profile)
-
-  return result
-}
-
-export function resetVehicleTuning(tuning: VehicleTuning, profile: VehicleProfileId): void {
-  Object.assign(tuning, VEHICLE_PROFILES[profile])
-}
-
-export function nextVehicleProfile(profile: VehicleProfileId): VehicleProfileId {
-  const index = PLAYABLE_PROFILE_IDS.indexOf(profile)
-  const next = (index + 1) % PLAYABLE_PROFILE_IDS.length
-
-  return PLAYABLE_PROFILE_IDS[next] ?? DEFAULT_VEHICLE_PROFILE
-}
-
-export function profileForSeed(seed: number): VehicleProfileId {
-  const roll = createRng(seed)()
-  const index = Math.floor(roll * PLAYABLE_PROFILE_IDS.length)
-
-  return PLAYABLE_PROFILE_IDS[index] ?? DEFAULT_VEHICLE_PROFILE
 }

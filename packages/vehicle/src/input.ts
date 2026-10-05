@@ -10,6 +10,8 @@ export interface VehicleInput {
   handbrake: boolean
   /** Which weapon's number key is held, 1 to 9, or 0 for none. */
   weapon: number
+  /** The signal key: a siren turned on or off, or a horn blown. For show, and nothing more. */
+  signal: boolean
 }
 
 export interface DriverCommand {
@@ -18,6 +20,7 @@ export interface DriverCommand {
   brake: number
   handbrake: boolean
   weapon: number
+  signal: boolean
 }
 
 export const NEUTRAL_INPUT: Readonly<VehicleInput> = Object.freeze({
@@ -26,6 +29,7 @@ export const NEUTRAL_INPUT: Readonly<VehicleInput> = Object.freeze({
   brake: 0,
   handbrake: false,
   weapon: 0,
+  signal: false,
 } satisfies VehicleInput)
 
 export function createVehicleInput(): VehicleInput {
@@ -43,6 +47,7 @@ export function copyVehicleInput(out: VehicleInput, source: VehicleInput): Vehic
     brake: source.brake,
     handbrake: source.handbrake,
     weapon: source.weapon,
+    signal: source.signal,
   } satisfies VehicleInput)
 }
 
@@ -52,6 +57,7 @@ export function readDriverCommand(out: DriverCommand, input: VehicleInput): Driv
   out.brake = clamp(input.brake, 0, 1)
   out.handbrake = input.handbrake
   out.weapon = input.weapon
+  out.signal = input.signal
 
   return out
 }

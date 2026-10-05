@@ -38,11 +38,6 @@ export interface SphereGround {
   readonly heights: Float32Array
 }
 
-/** How many grid points a face has along a side. */
-export function sidePoints(ground: { n: number }): number {
-  return ground.n + 1
-}
-
 /** A new ground, level with the planet's radius everywhere. */
 export function createSphereGround(n: number, radius: number): SphereGround {
   const side = n + 1

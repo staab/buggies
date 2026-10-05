@@ -313,7 +313,6 @@ describe('weapons', () => {
       position: { x: 100, y: 500, z: 100 },
       velocity: { x: 0, y: 1, z: 0 },
       bornTick: arena.tick - 2,
-      power: 1,
     })
     const kinds = ['bomb', 'mine'] as const
     for (let i = 0; i < LOOSE_MOST + 40; i++) {

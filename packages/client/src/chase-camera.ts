@@ -77,10 +77,6 @@ export function createCameraTuning(): CameraTuning {
   return { ...DEFAULT_CAMERA_TUNING }
 }
 
-export function resetCameraTuning(tuning: CameraTuning): void {
-  Object.assign(tuning, DEFAULT_CAMERA_TUNING)
-}
-
 export interface ChaseTarget {
   position: Vec3
   rotation: Quat

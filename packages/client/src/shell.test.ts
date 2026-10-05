@@ -43,9 +43,6 @@ function stubShowroom(): StubShowroom {
     },
     resize() {},
     update() {},
-    hud() {
-      return []
-    },
     dispose() {
       showroom.disposed = true
     },
@@ -94,7 +91,7 @@ function build(refuse: string | null = null) {
   const joined: string[] = []
   const arrivals: (number | undefined)[] = []
   const passed: (number | undefined)[] = []
-  const hudStates: (HudState | null)[][] = [[]]
+  const hudStates: (HudState | null)[] = []
   const rendered: string[] = []
   const menu = new StubMenu()
   const renderer = {
@@ -113,9 +110,6 @@ function build(refuse: string | null = null) {
         camera: new THREE.PerspectiveCamera(),
         resize() {},
         update() {},
-        hud() {
-          return []
-        },
         dispose() {
           island.disposed = true
         },
@@ -164,7 +158,7 @@ function build(refuse: string | null = null) {
           game.updates.push({ dt, active })
         },
         hud() {
-          return [{ title: profile }]
+          return { title: profile }
         },
         changeVehicle(next) {
           game.swaps.push(next)
@@ -183,10 +177,10 @@ function build(refuse: string | null = null) {
       renderer,
       scene: new THREE.Scene(),
       container: { clientWidth: 800, clientHeight: 600 },
-      huds: hudStates.map((states) => ({
-        render: (state: HudState | null) => void states.push(state),
-        notice: (text: string) => void states.push({ title: text }),
-      })),
+      hud: {
+        render: (state: HudState | null) => void hudStates.push(state),
+        notice: (text: string) => void hudStates.push({ title: text }),
+      },
       sound: {} as Sound,
       sun: new Sun(),
       islands: {
@@ -309,15 +303,15 @@ describe('the shell', () => {
   it('draws what is in front and fills a HUD a player from the game', async () => {
     const { shell, hudStates, rendered } = build()
     await shell.start({ ...CHOICE, vehicle: 'semi' })
-    hudStates.forEach((states) => states.splice(0))
+    hudStates.splice(0)
     shell.frame(0.01)
     expect(rendered.at(-1)).toBe('semi on 5')
-    expect(hudStates[0]!.at(-1)).toEqual({ title: 'semi' })
+    expect(hudStates.at(-1)).toEqual({ title: 'semi' })
     shell.toggleMenu()
     shell.showVehicle('semi')
     shell.frame(0.01)
     expect(rendered.at(-1)).toBe('showroom')
-    expect(hudStates[0]!.at(-1)).toBeNull()
+    expect(hudStates.at(-1)).toBeNull()
   })
 
   it('lets go of a join that something newer overtook', async () => {

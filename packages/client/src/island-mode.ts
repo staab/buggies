@@ -102,9 +102,6 @@ export function createIslandMode(map: World, scene: THREE.Scene, surface: HTMLEl
       renderer.render(scene, camera)
       bendAround(null)
     },
-    hud() {
-      return []
-    },
     showMarks(marks) {
       beacons.clear()
       for (const mark of marks) {

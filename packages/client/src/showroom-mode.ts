@@ -166,9 +166,6 @@ export function createShowroomMode(sound: Sound | null = null): ShowroomView {
       const sinceBlip = running % BLIP_EVERY
       voice?.set(sinceBlip < BLIP_LENGTH ? BLIP_REV * Math.sin((Math.PI * sinceBlip) / BLIP_LENGTH) : IDLE_REV)
     },
-    hud() {
-      return []
-    },
     dispose() {
       voice?.stop()
       car?.dispose()

@@ -1,5 +1,5 @@
-import { generatePlanet, sphereHeight, tangentFrame, type World } from '@buggies/terrain'
-import { qmultiply, type Vec3 } from '@buggies/physics'
+import { generatePlanet, type World } from '@buggies/terrain'
+import type { Vec3 } from '@buggies/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT, advance, createArena, initPhysics, putPropBack, takeSeat, type VehicleInput } from './index.ts'

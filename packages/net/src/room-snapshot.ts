@@ -118,6 +118,9 @@ function gatherVehicles(
       shockTicks: 0,
       magnetTicks: 0,
       plowTicks: 0,
+      lightsOn: false,
+      hornTicks: 0,
+      signalHeld: false,
       appliedInput: createVehicleInput(),
     })
     vehicle.seat = seat.id
@@ -145,6 +148,9 @@ function gatherVehicles(
     vehicle.shockTicks = seat.shockTicks
     vehicle.magnetTicks = seat.magnetTicks
     vehicle.plowTicks = seat.plowTicks
+    vehicle.lightsOn = seat.lightsOn
+    vehicle.hornTicks = seat.hornTicks
+    vehicle.signalHeld = seat.signalHeld
     Object.assign(vehicle.appliedInput, appliedInputOf(seat))
     count += 1
   }
@@ -222,11 +228,10 @@ function gatherRockets(arena: Arena, out: RoomSnapshots): RocketSnapshot[] {
   const { rockets } = out
   let count = 0
   for (const rocket of arena.rockets) {
-    const entry = (rockets[count] ??= { id: 0, owner: 0, target: 0, position: v3(), velocity: v3(), age: 0, power: 1 })
+    const entry = (rockets[count] ??= { id: 0, owner: 0, target: 0, position: v3(), velocity: v3(), age: 0 })
     entry.id = rocket.id
     entry.owner = rocket.owner
     entry.target = rocket.target
-    entry.power = rocket.power
     vcopy(entry.position, rocket.position)
     vcopy(entry.velocity, rocket.velocity)
     entry.age = arena.tick - rocket.bornTick

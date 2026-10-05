@@ -424,6 +424,10 @@ export class LocalPrediction {
       seat.shockTicks = vehicle.shockTicks
       seat.magnetTicks = vehicle.magnetTicks
       seat.plowTicks = vehicle.plowTicks
+      seat.lightsOn = vehicle.lightsOn
+      seat.hornTicks = vehicle.hornTicks
+      // Whether the signal key was down, so that a replay tells a press from a hold as the server will.
+      seat.signalHeld = vehicle.signalHeld
     }
     // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
     for (const moved of this.bananas.takeProps()) {
@@ -492,7 +496,6 @@ export class LocalPrediction {
       position: { ...rocket.position },
       velocity: { ...rocket.velocity },
       bornTick: snapshot.tick - rocket.age,
-      power: rocket.power,
     }))
     // The bananas are the server's word alone: whatever the mirror took or
     // spilled since is put back as the server has it, to be taken again in

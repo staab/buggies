@@ -296,7 +296,7 @@ export interface Gunner {
   plowTicks: number
 }
 
-/** A rocket in the air: from whom, after whom, where it is going, and how much of a full blast it goes off with. */
+/** A rocket in the air: from whom, after whom, and where it is going. */
 export interface Rocket {
   readonly id: number
   readonly owner: number
@@ -305,7 +305,6 @@ export interface Rocket {
   readonly position: Vec3
   readonly velocity: Vec3
   readonly bornTick: number
-  readonly power: number
 }
 
 /** One shot of a machine gun, from the muzzle to where it stopped, and whom it hit if anyone. */
@@ -446,6 +445,25 @@ function fuelled(seat: Gunner, weapon: Weapon): boolean {
 /** Whether a car is using a lasting weapon this tick: its key held, with the fuel for it. A wreck uses nothing. */
 export function using(seat: Gunner, weapon: Weapon, keys: WeaponKeys = seat.vehicle.command): boolean {
   return weaponOfKey(keys.weapon) === weapon && !seat.vehicle.wrecked && fuelled(seat, weapon)
+}
+
+/** Whether a car has the bananas for a weapon: a press of one that goes at once, or a tick of one that lasts. */
+export function affordable(seat: Gunner, weapon: Weapon): boolean {
+  return lasting(weapon) ? fuelled(seat, weapon) : seat.score >= WEAPON_COSTS[weapon]
+}
+
+/** Whether a weapon is going on a car now: one that lasts held with the fuel for it, or what one that went at once set going. */
+export function going(seat: Gunner, weapon: Weapon): boolean {
+  switch (weapon) {
+    case 'magnet':
+      return seat.magnetTicks > 0
+    case 'plow':
+      return seat.plowTicks > 0
+    case 'shockwave':
+      return seat.shockTicks > 0
+    default:
+      return lasting(weapon) && using(seat, weapon)
+  }
 }
 
 /** Burn a tick's worth of a lasting weapon's fuel, breaking into another banana if need be; whether there was any. */
@@ -750,7 +768,6 @@ function launchRocket(arena: Battlefield, seat: Gunner): void {
     position: vcopy(v3(), muzzle),
     velocity: vscale(v3(), forward, ROCKET_SPEED),
     bornTick: arena.tick,
-    power: 1,
   })
   seat.rocketsFired = (seat.rocketsFired + 1) % ROCKETS_COUNTED
 }
@@ -882,9 +899,8 @@ export function fireWeapons(arena: Battlefield): void {
 
 /** Use a weapon that goes all at once, if there are the bananas for it, and pay for it. */
 function useAtOnce(arena: Battlefield, seat: Gunner, weapon: Weapon): void {
-  const cost = WEAPON_COSTS[weapon]
-  if (seat.score < cost) return
-  seat.score -= cost
+  if (!affordable(seat, weapon)) return
+  seat.score -= WEAPON_COSTS[weapon]
   switch (weapon) {
     case 'rocket':
       launchRocket(arena, seat)
@@ -947,7 +963,7 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
         if (other.id === rocket.owner || !other.occupied || other.vehicle.wrecked) continue
         vsub(toward, other.vehicle.frame.position, rocket.position)
         if (vlength(toward) > ROCKET_REACH) continue
-        harm(other, ROCKET_DAMAGE * rocket.power, seats[rocket.owner])
+        harm(other, ROCKET_DAMAGE, seats[rocket.owner])
         spent = true
         break
       }
@@ -957,7 +973,7 @@ export function flyRockets(arena: Battlefield, dt = FIXED_TIMESTEP): void {
           if (spent) return
           vsub(toward, point, rocket.position)
           if (vlength(toward) > (target >= SPIDER_TARGET ? SPIDER_HIT_REACH : MACHINE_REACH)) return
-          strike(arena, target, ROCKET_DAMAGE * rocket.power, seats[rocket.owner])
+          strike(arena, target, ROCKET_DAMAGE, seats[rocket.owner])
           spent = true
         })
       }

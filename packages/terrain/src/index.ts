@@ -39,7 +39,6 @@ export {
   gridDirection,
   gridPlace,
   groundIndex,
-  sidePoints,
   sphereHeight,
   type CubeFace,
   type GridPlace,

@@ -58,6 +58,7 @@ import {
   decodeSnapshot,
   encodeInput,
   type SnapshotMessage,
+  type WelcomeMessage,
 } from './wire.ts'
 
 /** Each seed's world, a planet or its moon, made once: making one takes seconds. */
@@ -164,6 +165,8 @@ class Session {
   readonly clock = { tick: 0 }
   readonly server: GameServer
   readonly players: Player[] = []
+  /** Connections that only listen, with no mirror of their own: for counting seats, not driving them. */
+  readonly listeners: { client: NetClient; wire: Loopback }[] = []
   readonly events: string[] = []
   /** Whether the server is busy with something else, neither stepping nor reading nor sending. */
   serverStalled = false
@@ -199,17 +202,7 @@ class Session {
   }
 
   async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL, pass = NO_PASS): Promise<Player> {
-    const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
-    const client = new NetClient(wire.client, () => this.nowMs)
-    const welcoming = client.connect(profile, seed, arrival, pass)
-    welcoming.catch(() => undefined)
-    // The hello goes out once connect() has had a turn; then it has to get
-    // there and the welcome has to come back. A refusal comes back the same way.
-    for (let i = 0; i < DELAY_TICKS * 2 + 8 && client.welcome === null && client.closed === null; i++) {
-      await Promise.resolve()
-      this.step([wire])
-    }
-    const welcome = await welcoming
+    const { client, wire, welcome } = await this.connect(profile, jitterTicks, seed, arrival, pass)
     const mirror = createArena(welcome.seed === map.seed ? map : planetOf(welcome.seed))
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
@@ -228,11 +221,46 @@ class Session {
     return player
   }
 
+  /**
+   * Take a seat and only listen from it: the connection kept up, but no
+   * mirror run, which is most of what each player costs every tick.
+   */
+  async listen(): Promise<NetClient> {
+    const { client, wire } = await this.connect('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS)
+    this.listeners.push({ client, wire })
+    return client
+  }
+
+  /** Say hello and wait for the welcome, stepping the session meanwhile; a refusal rejects. */
+  private async connect(
+    profile: VehicleProfileId,
+    jitterTicks: number,
+    seed: number,
+    arrival: number,
+    pass: number,
+  ): Promise<{ client: NetClient; wire: Loopback; welcome: WelcomeMessage }> {
+    const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
+    const client = new NetClient(wire.client, () => this.nowMs)
+    const welcoming = client.connect(profile, seed, arrival, pass)
+    welcoming.catch(() => undefined)
+    // The hello goes out once connect() has had a turn; then it has to get
+    // there and the welcome has to come back. A refusal comes back the same way.
+    for (let i = 0; i < DELAY_TICKS * 2 + 8 && client.welcome === null && client.closed === null; i++) {
+      await Promise.resolve()
+      this.step([wire])
+    }
+    return { client, wire, welcome: await welcoming }
+  }
+
   /** One server tick, with every connected client pumping once. */
   step(extraWires: Loopback[] = []): void {
     if (!this.serverStalled) this.server.advance()
     this.clock.tick += 1
     if (!this.serverStalled) for (const wire of extraWires) wire.deliver()
+    for (const listener of this.listeners) {
+      if (!this.serverStalled) listener.wire.deliver()
+      listener.client.pump(NEUTRAL_INPUT)
+    }
     for (const player of this.players) {
       if (!this.serverStalled) player.wire.deliver()
       if (player.paused) continue
@@ -937,12 +965,12 @@ describe('a session', () => {
 
   it('refuses a player past the last seat', async () => {
     const session = new Session()
-    for (let i = 0; i < MAX_PLAYERS; i++) await session.join()
+    for (let i = 0; i < MAX_PLAYERS; i++) await session.listen()
     expect(session.server.playerCount).toBe(MAX_PLAYERS)
-    await expect(session.join()).rejects.toBeInstanceOf(ConnectionFailure)
+    await expect(session.listen()).rejects.toBeInstanceOf(ConnectionFailure)
     expect(session.events).toContain('rejected: server is full')
     session.dispose()
-  }, 300_000)
+  })
 
   it('tells anyone peeking at an island where its cars are, and of an empty one, nothing', async () => {
     const session = new Session()
@@ -1199,7 +1227,7 @@ describe('a session', () => {
     session.run(0.5)
     const seat = a.client.welcome!.seat
     const seen = b.client.pump(b.input).newestSnapshot!.vehicles.find((vehicle) => vehicle.seat === seat)!
-    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, weapon: 0 })
+    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, weapon: 0, signal: false })
 
     // Inputs past what an honest client could send are dropped, not driven, and not held against them.
     const before = session.server.stats().inputsDropped

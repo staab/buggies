@@ -20,8 +20,11 @@ The game server also serves the built client (`pnpm build`) on its own port, ans
 | Drive | arrows |
 | Handbrake | `Space` |
 | Weapons | `1`–`9` |
+| Siren or horn | `D` |
 | Respawn on the road | `R` |
 | Menu | `Esc` |
+
+`D` is for show: on the police car, the ambulance and the fire truck it turns the siren on or off, flashing the roof lights and wailing, and on every other vehicle it blows the horn. Everyone nearby sees and hears it, and nothing else comes of it.
 
 ## The planet
 

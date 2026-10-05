@@ -1,6 +1,7 @@
 import {
   DEFAULT_VEHICLE_PROFILE,
   FIXED_TIMESTEP,
+  HORN_TICKS,
   NEUTRAL_INPUT,
   NOT_RACING,
   NO_KEY,
@@ -70,13 +71,17 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     shockTicks: 0,
     magnetTicks: 0,
     plowTicks: 0,
+    lightsOn: false,
+    hornTicks: 0,
+    signalHeld: false,
   }
   return { seat, free: () => world.free() }
 }
 
 /** A sound that only counts what it is asked to play. */
-function countingSound(): { sound: Sound; played: Record<string, number> } {
+function countingSound(): { sound: Sound; played: Record<string, number>; sirens: boolean[] } {
   const played: Record<string, number> = {}
+  const sirens: boolean[] = []
   const count = (name: string) => () => {
     played[name] = (played[name] ?? 0) + 1
   }
@@ -85,14 +90,16 @@ function countingSound(): { sound: Sound; played: Record<string, number> } {
     engine: () => voice,
     skid: () => voice,
     thrust: () => voice,
+    siren: () => ({ set: (on: boolean) => sirens.push(on), stop: () => undefined }),
     boom: count('boom'),
     chime: count('chime'),
     shot: count('shot'),
     whoosh: count('whoosh'),
     thud: count('thud'),
     shockwave: count('shockwave'),
+    horn: count('horn'),
   } as unknown as Sound
-  return { sound, played }
+  return { sound, played, sirens }
 }
 
 describe('a car on the screen', () => {
@@ -114,6 +121,30 @@ describe('a car on the screen', () => {
     seat.shockTicks = SHOCKWAVE_SHOWN_TICKS
     presence.render(0, FIXED_TIMESTEP)
     expect(played.shockwave).toBe(2)
+    presence.dispose()
+    free()
+  })
+
+  it('sounds its siren while it is on, and its horn once each time it is blown', () => {
+    const { seat, free } = seatOnFlat()
+    const { sound, played, sirens } = countingSound()
+    const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound })
+    presence.render(0, FIXED_TIMESTEP)
+    expect(sirens).toEqual([])
+    seat.lightsOn = true
+    presence.render(0, FIXED_TIMESTEP)
+    expect(sirens.at(-1)).toBe(true)
+    seat.lightsOn = false
+    presence.render(0, FIXED_TIMESTEP)
+    expect(sirens.at(-1)).toBe(false)
+    seat.hornTicks = HORN_TICKS
+    presence.render(0, FIXED_TIMESTEP)
+    seat.hornTicks = HORN_TICKS - 10
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.horn).toBe(1)
+    seat.hornTicks = HORN_TICKS
+    presence.render(0, FIXED_TIMESTEP)
+    expect(played.horn).toBe(2)
     presence.dispose()
     free()
   })

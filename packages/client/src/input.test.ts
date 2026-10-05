@@ -4,13 +4,14 @@ import { SOLO_BINDINGS, weaponKey } from './input.ts'
 import { SOLO_KEYS } from './keys.ts'
 
 describe('key bindings', () => {
-  it('give a player the arrows with the space bar, and everything a driver does', () => {
+  it('give a player the arrows with the space bar, and D for the siren or the horn', () => {
     expect(SOLO_BINDINGS).toEqual({
       ArrowUp: 'forward',
       ArrowDown: 'back',
       ArrowLeft: 'left',
       ArrowRight: 'right',
       Space: 'handbrake',
+      KeyD: 'signal',
     })
   })
 
@@ -23,9 +24,10 @@ describe('key bindings', () => {
   })
 
   it('tell the driver their keys, and take R for getting back on the road', () => {
-    const on = (does: string): readonly string[] | undefined => SOLO_KEYS.controls.find((hint) => hint.does === does)?.keys
+    const on = (does: string): readonly string[] | undefined => SOLO_KEYS.controls('horn').find((hint) => hint.does === does)?.keys
     expect(on('handbrake')).toEqual(['Space'])
     expect(on('weapons')).toEqual(['1–9'])
+    expect(on('horn')).toEqual(['D'])
     expect(on('respawn')).toEqual(['R'])
     const press = (code: string, key = code): KeyboardEvent => ({ code, key }) as KeyboardEvent
     expect(SOLO_KEYS.respawn(press('KeyR', 'r'))).toBe(true)

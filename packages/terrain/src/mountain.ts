@@ -49,10 +49,3 @@ export function triangleInradius(triangle: Triangle): number {
   )
   return perimeter > 0 ? doubleArea / perimeter : 0
 }
-
-export function triangleCentroid(triangle: Triangle): { x: number; z: number } {
-  return {
-    x: (triangle.ax + triangle.bx + triangle.cx) / 3,
-    z: (triangle.az + triangle.bz + triangle.cz) / 3,
-  }
-}

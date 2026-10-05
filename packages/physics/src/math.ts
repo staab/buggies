@@ -143,20 +143,6 @@ export function quatFromYaw(yaw: number): Quat {
   return { x: 0, y: sin(yaw / 2), z: 0, w: cos(yaw / 2) }
 }
 
-export function quatFromYawPitch(yaw: number, pitch: number): Quat {
-  const cosYaw = cos(yaw / 2)
-  const sinYaw = sin(yaw / 2)
-  const cosPitch = cos(pitch / 2)
-  const sinPitch = sin(pitch / 2)
-
-  return {
-    x: cosYaw * sinPitch,
-    y: sinYaw * cosPitch,
-    z: -sinYaw * sinPitch,
-    w: cosYaw * cosPitch,
-  }
-}
-
 export function qnlerp(out: Quat, a: Quat, b: Quat, t: number): Quat {
   const dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w
   const sign = dot < 0 ? -1 : 1

@@ -6,7 +6,9 @@ import {
   WEAPON_COSTS,
   WEAPON_LABELS,
   WEAPONS,
+  affordable,
   aimPoint,
+  going,
   hasBuiltInGun,
   keyOf,
   lasting,
@@ -17,7 +19,7 @@ import {
 import { v3, type Vec3 } from '@buggies/physics'
 import * as THREE from 'three'
 
-import { EARSHOT, engineRev, skidAmount, type EngineVoice, type SkidVoice, type Sound, type ThrustVoice } from './audio.ts'
+import { EARSHOT, engineRev, skidAmount, type EngineVoice, type SirenVoice, type SkidVoice, type Sound, type ThrustVoice } from './audio.ts'
 import { CarView } from './car-view.ts'
 import type { ChaseTarget } from './chase-camera.ts'
 import { smokeAmount } from './damage.ts'
@@ -36,6 +38,8 @@ const VOICES_KEPT = 1.25
 
 /** A knock that takes this much of a car's life is heard at full volume. */
 const LOUD_KNOCK = 0.25
+/** How many times a second a siren's roof lights flash from one side to the other. */
+const SIREN_FLASHES = 4
 /** How far in front of the chassis the ram plow's blade is set. */
 const PLOW_OUT = 0.35
 
@@ -86,6 +90,8 @@ export class CarPresence {
   private thrust: ThrustVoice | null = null
   private readonly mount: WeaponMount
   private readonly heard: Sound | null
+  /** The siren, made the first time it is turned on. */
+  private siren: SirenVoice | null = null
   private readonly headlights: Headlights
   private aimPoint: Vec3 | null = null
   /** What lasts of what the car has used, drawn on it: the plow's blade and the magnet's reach. */
@@ -95,6 +101,8 @@ export class CarPresence {
   private lastDamage: number
   private lastScore: number
   private lastShockTicks: number
+  private lastHornTicks: number
+  private lightTime = 0
 
   constructor(seat: Seat, color: number, effects: PresenceEffects, options: PresenceOptions = {}) {
     this.seat = seat
@@ -127,6 +135,7 @@ export class CarPresence {
     this.lastDamage = seat.vehicle.damage
     this.lastScore = seat.score
     this.lastShockTicks = seat.shockTicks
+    this.lastHornTicks = seat.hornTicks
   }
 
   get wrecked(): boolean {
@@ -142,8 +151,8 @@ export class CarPresence {
       cost: WEAPON_COSTS[weapon],
       lasting: lasting(weapon),
       picked: seat.weapon === weapon,
-      ready: lasting(weapon) ? seat.score > 0 || seat.burnLeft >= WEAPON_COSTS[weapon] : seat.score >= WEAPON_COSTS[weapon],
-      firing: lasting(weapon) ? using(seat, weapon) : (weapon === 'magnet' && seat.magnetTicks > 0) || (weapon === 'plow' && seat.plowTicks > 0),
+      ready: affordable(seat, weapon),
+      firing: going(seat, weapon),
     }))
   }
 
@@ -204,6 +213,14 @@ export class CarPresence {
       sound?.shockwave(off)
     }
     this.lastShockTicks = this.seat.shockTicks
+    // The roof lights flash in turn while the siren is on, and it wails; the horn is heard as it is blown.
+    this.lightTime += dt
+    const lightsOn = this.seat.lightsOn && !vehicle.wrecked
+    this.view.lightSirens(lightsOn ? Math.floor(this.lightTime * SIREN_FLASHES) % 2 : null)
+    if (lightsOn && this.siren === null) this.siren = this.heard?.siren() ?? null
+    this.siren?.set(lightsOn, off)
+    if (this.seat.hornTicks > this.lastHornTicks && !vehicle.wrecked) sound?.horn(off)
+    this.lastHornTicks = this.seat.hornTicks
     if (vehicle.wrecked && !this.wasWrecked) {
       explosions.burst(vehicle.frame.position)
       sound?.boom(off)
@@ -253,6 +270,7 @@ export class CarPresence {
     this.voice?.stop()
     this.skid?.stop()
     this.thrust?.stop()
+    this.siren?.stop()
     this.mount.dispose()
     disposeObject(this.blade)
     this.pull.geometry.dispose()

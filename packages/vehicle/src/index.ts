@@ -29,10 +29,6 @@ export {
   VEHICLE_PROFILE_IDS,
   VEHICLE_PROFILE_LABELS,
   createVehicleTuning,
-  createVehicleTuningByProfile,
-  nextVehicleProfile,
-  profileForSeed,
-  resetVehicleTuning,
   type VehicleProfileId,
   type VehicleTuning,
 } from './tuning.ts'
@@ -42,11 +38,9 @@ export {
   WHEEL_CORNERS,
   WHEEL_COUNT,
   WHEELS_PER_AXLE,
-  activateVehicle,
   adoptVehicle,
   applyChassisMassProperties,
   createVehicle,
-  deactivateVehicle,
   resetVehicle,
   restingRideHeight,
   wheelMountLocal,
@@ -65,8 +59,6 @@ export {
 export { applyWaterResponse, submersionFraction } from './water.ts'
 export {
   addDynamicBox,
-  addRamp,
-  addStaticBox,
   addStaticWall,
   applyWorldTuning,
   createPhysicsWorld,
@@ -75,9 +67,7 @@ export {
   FIXED_TIMESTEP,
   initPhysics,
   pullBody,
-  resetWorldTuning,
   type WorldTuning,
-  WORLD_UP,
   worldGravity,
 } from './world.ts'
 export { PROP_SHAPES, addMover, addProp, propPlacement, propRise, propRotation, type PropShape } from './props.ts'

@@ -30,7 +30,7 @@ export interface ShellMenu {
   notice(text: string, busy?: boolean): void
 }
 
-/** A HUD, as the shell fills it: one a viewport. */
+/** The HUD, as the shell fills it. */
 export interface ShellHud {
   render(state: HudState | null): void
   notice(text: string): void
@@ -81,7 +81,7 @@ export interface ShellDeps {
   scene: THREE.Scene
   /** What the canvas fills. */
   container: { readonly clientWidth: number; readonly clientHeight: number }
-  huds: readonly ShellHud[]
+  hud: ShellHud
   sound: Sound
   /** The light over the island, and its shadows, which follow the play. */
   sun: Sun
@@ -140,7 +140,7 @@ export class Shell implements MenuHost {
   private readonly renderer: THREE.WebGLRenderer
   private readonly scene: THREE.Scene
   private readonly container: ShellDeps['container']
-  private readonly huds: readonly ShellHud[]
+  private readonly hud: ShellHud
   private readonly sound: Sound
   private readonly sun: Sun
   private readonly islands: IslandSource
@@ -166,7 +166,7 @@ export class Shell implements MenuHost {
     this.renderer = deps.renderer
     this.scene = deps.scene
     this.container = deps.container
-    this.huds = deps.huds
+    this.hud = deps.hud
     this.sound = deps.sound
     this.sun = deps.sun
     this.islands = deps.islands
@@ -193,7 +193,7 @@ export class Shell implements MenuHost {
 
   /** A line on the HUD and nothing else: what is being waited for. */
   notice(text: string): void {
-    this.huds[0]?.notice(text)
+    this.hud.notice(text)
   }
 
   /** A panel over the game, such as the games panel: while it is open, no one is driving. */
@@ -433,8 +433,7 @@ export class Shell implements MenuHost {
       if (shown.render) shown.render(this.renderer)
       else this.renderer.render(shown.scene ?? this.scene, shown.camera)
     }
-    const states = menu.open || game === null ? [] : game.mode.hud()
-    if (menu.open || game !== null) this.huds.forEach((hud, viewport) => hud.render(states[viewport] ?? null))
+    if (menu.open || game !== null) this.hud.render(menu.open ? null : (game?.mode.hud?.() ?? null))
   }
 
   /**

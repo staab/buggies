@@ -20,8 +20,8 @@ export interface ModeView {
   readonly tick?: number
   /** Draw itself, if it is not simply its scene through its camera. */
   render?(renderer: THREE.WebGLRenderer): void
-  /** What the HUD should say of the mode, one entry a viewport; none, and it is not shown. */
-  hud(): readonly HudState[]
+  /** What the HUD should say of the mode; a mode with no one driving has nothing to say. */
+  hud?(): HudState
   /** Put the player into this vehicle, where they are; a mode with no one driving has none. */
   changeVehicle?(profile: VehicleProfileId): void
   /** The island being driven, for a race to be picked on; a mode with no one driving has none. */

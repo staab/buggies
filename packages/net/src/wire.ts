@@ -71,7 +71,7 @@ export const SNAPSHOT_HEADER_BYTES = 26
  * going on, only when it has any, which a car nobody drives mostly has not.
  */
 export const SNAPSHOT_VEHICLE_CORE_BYTES = 40
-export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 27
+export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 28
 /** The race on, if any, told after the header: who set it going and when, and each of its marks. */
 export const SNAPSHOT_RACE_BYTES = 5
 export const SNAPSHOT_MARK_BYTES = 6
@@ -79,7 +79,7 @@ export const SNAPSHOT_VEHICLE_BYTES = SNAPSHOT_VEHICLE_CORE_BYTES + SNAPSHOT_VEH
 export const SNAPSHOT_PICKUP_BYTES = 6
 export const SNAPSHOT_SPILLED_BYTES = 31
 export const SNAPSHOT_REMOVED_BYTES = 2
-export const SNAPSHOT_ROCKET_BYTES = 25
+export const SNAPSHOT_ROCKET_BYTES = 24
 export const SNAPSHOT_PROP_BYTES = 33
 export const SNAPSHOT_ROBOT_BYTES = 16
 export const SNAPSHOT_UFO_BYTES = 41
@@ -177,6 +177,10 @@ export interface VehicleSnapshot {
   /** How much longer its magnet and plow last. */
   magnetTicks: number
   plowTicks: number
+  /** Its siren on, its horn sounding for this much longer, and its signal key down on the tick: for show. */
+  lightsOn: boolean
+  hornTicks: number
+  signalHeld: boolean
   /** What the driver was asking for on the tick this was taken. */
   appliedInput: VehicleInput
 }
@@ -244,8 +248,6 @@ export interface RocketSnapshot {
   velocity: Vec3
   /** How many ticks before the snapshot's it went. */
   age: number
-  /** How much of a full blast it goes off with, in steps of a 255th. */
-  power: number
 }
 
 /** A prop, as the server has it: where it is and how it is moving. */
@@ -497,17 +499,21 @@ class Reader {
   }
 }
 
-/** The buttons of an input, in a byte: the handbrake in the lowest bit, and the weapon key held over it. */
+/** The buttons of an input, in a byte: the handbrake in the lowest bit, the weapon key held over it, and the signal key over that. */
 function buttons(value: VehicleInput): number {
   const key = Number.isInteger(value.weapon) && value.weapon > 0 && value.weapon <= WEAPONS.length ? value.weapon : 0
-  return (value.handbrake ? 1 : 0) | (key << 1)
+  return (value.handbrake ? 1 : 0) | (key << 1) | (value.signal ? SIGNAL_BIT : 0)
 }
+
+/** The signal key's bit, over the four the weapon key takes. */
+const SIGNAL_BIT = 1 << 5
 
 /** An input's buttons from their byte; a weapon key past the last is none. */
 function readButtons(byte: number, out: VehicleInput): void {
   out.handbrake = (byte & 1) === 1
-  const key = byte >> 1
+  const key = (byte >> 1) & 0xf
   out.weapon = key <= WEAPONS.length ? key : 0
+  out.signal = (byte & SIGNAL_BIT) !== 0
 }
 
 /** A share of something, 0 to 1, as the byte that says so. */
@@ -718,7 +724,8 @@ function hasExtras(vehicle: VehicleSnapshot): boolean {
     vehicle.shockTicks !== 0 ||
     vehicle.rocketsFired !== 0 ||
     vehicle.magnetTicks !== 0 ||
-    vehicle.plowTicks !== 0
+    vehicle.plowTicks !== 0 ||
+    vehicle.hornTicks !== 0
   )
 }
 
@@ -735,7 +742,7 @@ function vehicleBytes(vehicles: readonly VehicleSnapshot[]): number {
 /** What a vehicle told of without its extras has: nothing going on. */
 function quietVehicle(): Omit<
   VehicleSnapshot,
-  'seat' | 'epoch' | 'profile' | 'position' | 'rotation' | 'linearVelocity' | 'angularVelocity' | 'damage' | 'wrecked' | 'npc' | 'appliedInput'
+  'seat' | 'epoch' | 'profile' | 'position' | 'rotation' | 'linearVelocity' | 'angularVelocity' | 'damage' | 'wrecked' | 'lightsOn' | 'signalHeld' | 'npc' | 'appliedInput'
 > {
   return {
     score: 0,
@@ -753,6 +760,7 @@ function quietVehicle(): Omit<
     rocketsFired: 0,
     magnetTicks: 0,
     plowTicks: 0,
+    hornTicks: 0,
   }
 }
 
@@ -798,7 +806,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(vehicle.epoch)
     writer.u8(profileIndex(vehicle.profile))
     writer.u8(
-      (vehicle.npc ? 4 : 0) | (vehicle.wrecked ? 8 : 0) | (extras ? 16 : 0),
+      (vehicle.lightsOn ? 1 : 0) | (vehicle.signalHeld ? 2 : 0) | (vehicle.npc ? 4 : 0) | (vehicle.wrecked ? 8 : 0) | (extras ? 16 : 0),
     )
     writer.vec3(vehicle.position)
     writer.rotation(vehicle.rotation)
@@ -825,6 +833,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(Math.min(Math.max(vehicle.shockTicks, 0), 0xff))
     writer.u16(Math.min(Math.max(vehicle.magnetTicks, 0), 0xffff))
     writer.u16(Math.min(Math.max(vehicle.plowTicks, 0), 0xffff))
+    writer.u8(Math.min(Math.max(vehicle.hornTicks, 0), 0xff))
   }
   for (const pickup of message.pickups) {
     writer.u16(pickup.slot)
@@ -848,7 +857,6 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.vec3(rocket.position)
     writer.steps(rocket.velocity, VELOCITY_STEP)
     writer.u16(Math.min(Math.max(rocket.age, 0), 0xffff))
-    writer.u8(share(rocket.power))
   }
   for (const prop of message.props) {
     writer.u16(prop.id)
@@ -982,6 +990,8 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       angularVelocity,
       damage,
       wrecked: (flags & 8) === 8,
+      lightsOn: (flags & 1) === 1,
+      signalHeld: (flags & 2) === 2,
       npc: (flags & 4) === 4,
       appliedInput,
     }
@@ -1013,6 +1023,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     vehicle.shockTicks = reader.u8()
     vehicle.magnetTicks = reader.u16()
     vehicle.plowTicks = reader.u16()
+    vehicle.hornTicks = reader.u8()
   }
   // What is left is exactly the rest: a message longer than it says is refused, as a shorter one is.
   if (payload.length - reader.offset !== rest) return null
@@ -1050,7 +1061,6 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
       position: reader.vec3(),
       velocity: reader.steps(VELOCITY_STEP),
       age: reader.u16(),
-      power: reader.u8() / 255,
     })
   }
   const props: PropSnapshot[] = []

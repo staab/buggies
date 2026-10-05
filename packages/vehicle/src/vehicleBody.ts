@@ -389,15 +389,6 @@ export function applyChassisMassProperties(vehicle: Vehicle, tuning: VehicleTuni
   )
 }
 
-export function deactivateVehicle(vehicle: Vehicle): void {
-  vehicle.body.setEnabled(false)
-}
-
-export function activateVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
-  vehicle.body.setEnabled(true)
-  resetVehicle(vehicle, spawn)
-}
-
 export function resetVehicle(vehicle: Vehicle, spawn: VehicleSpawn): void {
   const { body } = vehicle
 

@@ -2,12 +2,9 @@
 
 import * as RAPIER from '@dimforge/rapier3d-compat'
 
-import { FIXED_TIMESTEP, quatFromYaw, quatFromYawPitch, type Vec3 } from '@buggies/physics'
-import { GROUND_GROUPS } from './groups.ts'
+import { FIXED_TIMESTEP, quatFromYaw, type Vec3 } from '@buggies/physics'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
-
-export const WORLD_UP: Vec3 = { x: 0, y: 1, z: 0 }
 
 const SOLVER_ITERATIONS = 8
 const CCD_SUBSTEPS = 8
@@ -28,10 +25,6 @@ export const DEFAULT_WORLD_TUNING: Readonly<WorldTuning> = Object.freeze({
 
 export function createWorldTuning(): WorldTuning {
   return { ...DEFAULT_WORLD_TUNING }
-}
-
-export function resetWorldTuning(tuning: WorldTuning): void {
-  Object.assign(tuning, DEFAULT_WORLD_TUNING)
 }
 
 /**
@@ -102,24 +95,6 @@ export interface BoxOptions {
   mass?: number
 }
 
-export function addStaticBox(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
-  const { halfExtents, position, yaw = 0, friction = 1.0, restitution = 0 } = options
-
-  const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z).setRotation(quatFromYaw(yaw)),
-  )
-
-  world.createCollider(
-    RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
-      .setCollisionGroups(GROUND_GROUPS)
-      .setFriction(friction)
-      .setRestitution(restitution),
-    body,
-  )
-
-  return body
-}
-
 /** A fixed box that is not ground: a wall, met by the chassis and counted as a crash. */
 export function addStaticWall(world: RAPIER.World, options: BoxOptions): RAPIER.RigidBody {
   const { halfExtents, position, yaw = 0, friction = 1.0, restitution = 0 } = options
@@ -155,32 +130,6 @@ export function addDynamicBox(world: RAPIER.World, options: BoxOptions): RAPIER.
       .setMass(mass)
       .setFriction(friction)
       .setRestitution(restitution),
-    body,
-  )
-
-  return body
-}
-
-export interface RampOptions {
-  halfExtents: Vec3
-  position: Vec3
-  pitch: number
-  yaw?: number
-}
-
-export function addRamp(world: RAPIER.World, options: RampOptions): RAPIER.RigidBody {
-  const { halfExtents, position, pitch, yaw = 0 } = options
-
-  const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed()
-      .setTranslation(position.x, position.y, position.z)
-      .setRotation(quatFromYawPitch(yaw, pitch)),
-  )
-
-  world.createCollider(
-    RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
-      .setCollisionGroups(GROUND_GROUPS)
-      .setFriction(1.0),
     body,
   )
 

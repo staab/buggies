@@ -6,18 +6,20 @@ interface Held {
   left: boolean
   right: boolean
   handbrake: boolean
+  signal: boolean
 }
 
 /** Which key (by its `code`) does what. */
 export type KeyBindings = Readonly<Record<string, keyof Held>>
 
-/** The arrows to drive, and the space bar under the other hand. */
+/** The arrows to drive, and the space bar and D under the other hand. */
 export const SOLO_BINDINGS: KeyBindings = {
   ArrowUp: 'forward',
   ArrowDown: 'back',
   ArrowLeft: 'left',
   ArrowRight: 'right',
   Space: 'handbrake',
+  KeyD: 'signal',
 }
 
 /** The weapon key a key press is, 1 to 9 along the top row or on the number pad, or none. */
@@ -33,6 +35,7 @@ const RELEASED: Held = {
   left: false,
   right: false,
   handbrake: false,
+  signal: false,
 }
 
 /**
@@ -71,11 +74,12 @@ export class Keyboard {
   }
 
   read(): VehicleInput {
-    const { forward, back, left, right, handbrake } = this.held
+    const { forward, back, left, right, handbrake, signal } = this.held
     this.command.throttle = forward ? 1 : 0
     this.command.brake = back ? 1 : 0
     this.command.steer = (right ? 1 : 0) - (left ? 1 : 0)
     this.command.handbrake = handbrake
+    this.command.signal = signal
     this.command.weapon = this.weapons.at(-1) ?? NO_KEY
     return this.command
   }

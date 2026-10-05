@@ -33,6 +33,7 @@ import type * as RAPIER from '@dimforge/rapier3d-compat'
 import { NOT_RACING, RACE_TICKS_MOST, runRace, type Game, type Race } from './games.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
+import { hasSiren, quiet, signal } from './signals.ts'
 import { METEOR_DAMAGE, METEOR_EVERY_TICKS, METEOR_THROW, aimMeteor, meteorLanded, meteorShare, type Meteor } from './meteors.ts'
 import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, UNSTUCK_AHEAD, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
@@ -97,35 +98,28 @@ export {
   writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
-export { findSpawns, startingGrid } from './spawns.ts'
+export { findSpawns } from './spawns.ts'
 export { portalCrossed, portalLink, portalSpawn } from './portals.ts'
 export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, sunDirection } from './sky.ts'
 export {
   UFOS,
-  UFO_BEAM_REACH,
   UFO_CARRY_SPEED,
   UFO_COOLDOWN_TICKS,
   UFO_CRUISE,
-  UFO_HOVER,
-  UFO_HUNT_RANGE,
-  UFO_LIFT_TICKS,
   UFO_STATES,
   type Ufo,
   type UfoState,
 } from './ufos.ts'
-export { moveBoat, type Boat } from './boats.ts'
+
 export { spawnHere } from './spawns.ts'
 export { SPIDER_TARGET } from './weapons.ts'
+export { HORN_TICKS, hasSiren, signal } from './signals.ts'
 export {
   METEOR_DAMAGE,
   METEOR_EVERY_TICKS,
   METEOR_FALL_TICKS,
   METEOR_RANGE,
-  aimMeteor,
   meteorAt,
-  meteorId,
-  meteorLanded,
-  meteorShare,
   type Meteor,
 } from './meteors.ts'
 export {
@@ -135,20 +129,16 @@ export {
   SPIDER_REACH,
   SPIDER_SPEED,
   SPIDERS,
-  createSpiders,
   seatSpiderBody,
-  spiderWaypoint,
   type Spider,
 } from './spiders.ts'
-export { NPC_CARS, NPC_FRAGILITY, NPC_PROFILES, NPC_SPEED, type Driver } from './npcs.ts'
-export { ROVER_SPEED, ROVERS, type Rover } from './rovers.ts'
+export { NPC_CARS, NPC_FRAGILITY } from './npcs.ts'
+export { ROVERS } from './rovers.ts'
 export {
   ROBOTS,
   ROBOT_BEAM_TICKS,
-  ROBOT_COOLDOWN_TICKS,
   ROBOT_DAMAGE,
   ROBOT_EYES,
-  ROBOT_RANGE,
   ROBOT_SIZE,
   ROBOT_SPEED,
   placeRobot,
@@ -164,13 +154,11 @@ export {
   GAME_REACH,
   GAME_TARGET_MOST,
   RACE_LEG_LEAST,
-  RACE_MARKS_LEAST,
   RACE_MARKS_MOST,
   RACE_TICKS_MOST,
   NOT_RACING,
   apartOnGround,
   awardGames,
-  courseFault,
   gameProgress,
   nextMark,
   runRace,
@@ -188,69 +176,45 @@ export {
   HEALTH_MEND,
   HEALTH_SLOTS,
   PICKUP_HEIGHT,
-  PICKUP_REACH_UP,
   PICKUP_HELD,
   PICKUP_RESPAWN_TICKS,
   PICKUP_SLOTS,
   SPILL_FAR,
   SPILL_FLIGHT_TICKS,
   SPILL_NEAR,
-  LOOSE_IDS,
   LOOSE_KINDS,
-  BOMB_REACH,
-  MINE_REACH,
   LOOSE_MOST,
   pickupKind,
   pickupOut,
-  pickupSeed,
   pickupSpot,
-  reachesPickup,
-  reachesLoose,
   setPickup,
-  spillFrom,
   looseOut,
   type Pickup,
-  type PickupKind,
   type Loose,
   type LooseKind,
 } from './pickups.ts'
 export {
+  affordable,
+  going,
   AMBULANCE_HEAL,
   AMBULANCE_HEAL_TICKS,
   BANANA_BURN,
   BOMB_DAMAGE,
   BUILT_IN_GUNS,
-  ENGINE_PUSH,
-  ENGINE_TOP_SPEED,
   MACHINE_GUN_DAMAGE,
   LASER_DAMAGE,
-  LASER_RANGE,
-  MACHINE_GUN_RANGE,
-  MACHINE_GUN_SHOT_TICKS,
-  MACHINE_GUN_SWEEP_COS,
   FIRETRUCK_BOMB_SHARE,
   MOUNT_HEIGHT,
   NATURE_NOTES,
   NO_KEY,
   NO_TARGET,
   MAGNET_REACH,
-  MAGNET_TICKS,
   PLOW_TICKS,
-  PLOW_AHEAD,
-  PLOW_ASIDE,
-  PLOW_SHOVE,
-  PLOW_LIFT,
   MINES,
-  MINES_BACK,
   MINE_POWER,
-  MINES_WIDE,
-  MINES_DEEP,
   POLICE_SHOT_SHARE,
-  ROCKETS_COUNTED,
   ROCKET_DAMAGE,
   ROCKET_LIFE_TICKS,
-  ROCKET_LOCK_RANGE,
-  ROCKET_REACH,
   ROCKET_SPEED,
   SHOCKWAVE_RANGE,
   SHOCKWAVE_SHOWN_TICKS,
@@ -258,30 +222,13 @@ export {
   WEAPON_COSTS,
   WEAPON_LABELS,
   WEAPONS,
-  WINGS_CLIMB_PUSH,
-  WINGS_CLIMB_SPEED,
-  WINGS_THRUST,
-  WINGS_HOVER_TURN,
-  WINGS_LEAN,
-  WINGS_TURN_MIN_SPEED,
-  WINGS_TURN_WIDEN,
-  bombShare,
   burning,
-  fireWeapons,
-  flyRockets,
   harm,
   hasBuiltInGun,
-  hinder,
   keyOf,
   lasting,
   lifting,
   mend,
-  mountPoint,
-  muzzlePoint,
-  pushWithWeapons,
-  restAction,
-  rocketId,
-  shotShare,
   stunned,
   using,
   weaponOfKey,
@@ -292,10 +239,6 @@ export {
   ROBOT_TARGET,
   UFO_TARGET,
   type Machine,
-  type Battlefield,
-  type Gunner,
-  type WeaponKeys,
-  type Muzzle,
   type Rocket,
   type Shot,
   type Weapon,
@@ -414,6 +357,10 @@ export interface Seat {
   /** How much longer its magnet pulls and its plow shoves, in ticks. */
   magnetTicks: number
   plowTicks: number
+  /** Its siren on, its horn sounding for this much longer, and its signal key down last tick: for show. */
+  lightsOn: boolean
+  hornTicks: number
+  signalHeld: boolean
 }
 
 /**
@@ -509,6 +456,9 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       shockTicks: 0,
       magnetTicks: 0,
       plowTicks: 0,
+      lightsOn: false,
+      hornTicks: 0,
+      signalHeld: false,
     }
   })
 
@@ -592,6 +542,8 @@ function reshape(arena: Arena, seat: Seat, profile: VehicleProfileId): void {
   seat.tuning = createVehicleTuning(profile)
   applyChassisMassProperties(seat.vehicle, seat.tuning)
   seat.vehicle.rideHeight = restingRideHeight(seat.tuning, worldGravity(arena.world))
+  // A vehicle with no siren has none on.
+  if (!hasSiren(profile)) seat.lightsOn = false
 }
 
 /** Put a vehicle back on its spawn, or another, at rest, and count the reset. */
@@ -657,6 +609,7 @@ export function takeSeat(arena: Arena, id: number, profile: VehicleProfileId): S
   coastFromBody(seat.vehicle)
   clearTally(seat)
   restAction(seat)
+  quiet(seat)
   seat.vehicle.body.setEnabled(true)
   respawn(seat)
   return seat
@@ -671,6 +624,7 @@ export function leaveSeat(arena: Arena, id: number): void {
   coastFromBody(seat.vehicle)
   clearTally(seat)
   restAction(seat)
+  quiet(seat)
   seat.vehicle.body.setEnabled(false)
 }
 
@@ -777,6 +731,7 @@ export function advance(
   collectPickups(arena)
   spillBananas(arena)
   fireWeapons(arena)
+  signal(arena.seats)
   fireRobots(arena)
   flyRockets(arena, dt)
   landMeteors(arena)
