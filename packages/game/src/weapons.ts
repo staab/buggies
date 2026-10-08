@@ -38,7 +38,7 @@ export type Weapon = 'none' | 'rocket' | 'machineGun' | 'mines' | 'engine' | 'wi
 /** The weapons, in the order of their keys: the first on 1, the last on 9. */
 export const WEAPONS: readonly Weapon[] = ['rocket', 'machineGun', 'mines', 'engine', 'wings', 'magnet', 'plow', 'laser', 'shockwave']
 
-/** No weapon key held. */
+/** No weapon selected, or none firing. */
 export const NO_KEY = 0
 
 export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
@@ -56,7 +56,7 @@ export const WEAPON_LABELS: Readonly<Record<Weapon, string>> = {
 
 /**
  * What a weapon costs in bananas, the car's fuel: one that goes all at
- * once costs this much a press, and one that lasts while its key is held
+ * once costs this much a press, and one that lasts while the fire key is held
  * this much a second of it.
  */
 export const WEAPON_COSTS: Readonly<Record<Weapon, number>> = {
@@ -72,10 +72,10 @@ export const WEAPON_COSTS: Readonly<Record<Weapon, number>> = {
   shockwave: 3,
 }
 
-/** The weapons that last while their key is held, burning bananas as they go; the rest go all at once. */
+/** The weapons that last while the fire key is held, burning bananas as they go; the rest go all at once. */
 const LASTING: readonly Weapon[] = ['machineGun', 'engine', 'wings', 'laser']
 
-/** Whether a weapon lasts while its key is held, rather than going all at once. */
+/** Whether a weapon lasts while the fire key is held, rather than going all at once. */
 export function lasting(weapon: Weapon): boolean {
   return LASTING.includes(weapon)
 }
@@ -119,7 +119,7 @@ export function hasBuiltInGun(profile: VehicleProfileId): boolean {
   return BUILT_IN_GUNS[profile] !== undefined
 }
 
-/** The machine gun fires a shot every so many ticks while its key is held. */
+/** The machine gun fires a shot every so many ticks while the fire key is held. */
 export const MACHINE_GUN_SHOT_TICKS = 6
 
 /** How hard the rocket engine pushes, in meters a second a second, fading out toward this many times the car's own top speed. */
@@ -261,8 +261,8 @@ export const NO_TARGET = -1
 const SIGHT_STEP = 4
 /** How high over the ground a line of fire has to stay. */
 const SIGHT_CLEARANCE = 0.3
-/** The key the weapons read: which weapon's is held, if any. */
-export type WeaponKeys = Pick<VehicleInput, 'weapon'>
+/** The keys the weapons read: which weapon is selected, if any, and whether the fire key is held. */
+export type WeaponKeys = Pick<VehicleInput, 'weapon' | 'fire'>
 
 /** What of a seat the weapons read and write. */
 export interface Gunner {
@@ -278,9 +278,9 @@ export interface Gunner {
   readonly profile: VehicleProfileId
   /** The bananas it has to spend on its weapons. */
   score: number
-  /** The weapon last picked by its key, which rides over the roof: none until one is. */
+  /** The weapon selected by its key, which rides over the roof: none until one is, or once 0 clears it. */
   weapon: Weapon
-  /** The weapon key held down last tick, or none, so that a press is told from a hold. */
+  /** The key of the weapon fired last tick, or none, so that a press of the fire key is told from a hold. */
   weaponHeld: number
   /** What is left of the banana last broken into by a lasting weapon, in `BANANA_BURN`ths. */
   burnLeft: number
@@ -442,9 +442,9 @@ function fuelled(seat: Gunner, weapon: Weapon): boolean {
   return seat.burnLeft >= WEAPON_COSTS[weapon] || seat.score > 0
 }
 
-/** Whether a car is using a lasting weapon this tick: its key held, with the fuel for it. A wreck uses nothing. */
+/** Whether a car is using a lasting weapon this tick: selected and the fire key held, with the fuel for it. A wreck uses nothing. */
 export function using(seat: Gunner, weapon: Weapon, keys: WeaponKeys = seat.vehicle.command): boolean {
-  return weaponOfKey(keys.weapon) === weapon && !seat.vehicle.wrecked && fuelled(seat, weapon)
+  return keys.fire && weaponOfKey(keys.weapon) === weapon && !seat.vehicle.wrecked && fuelled(seat, weapon)
 }
 
 /** Whether a car has the bananas for a weapon: a press of one that goes at once, or a tick of one that lasts. */
@@ -489,8 +489,8 @@ export function lifting(seat: Gunner, keys: WeaponKeys = seat.vehicle.command): 
 }
 
 /**
- * Whether the car has wings out: picked last, with the fuel to fly on,
- * whether or not the key is held. A wreck has none.
+ * Whether the car has wings out: selected, with the fuel to fly on,
+ * whether or not the fire key is held. A wreck has none.
  */
 export function winged(seat: Gunner): boolean {
   return seat.weapon === 'wings' && !seat.vehicle.wrecked && fuelled(seat, 'wings')
@@ -858,15 +858,15 @@ function wearOff(seat: Gunner): void {
 }
 
 /**
- * Fire whatever weapon's key is held, paid for in bananas. A press picks
- * the weapon, to ride over the roof. One that goes all at once goes on the
- * press, if there are the bananas for it: a rocket after the car ahead, a
+ * Fire the selected weapon while the fire key is held, paid for in
+ * bananas. The selected weapon rides over the roof. One that goes all at
+ * once goes on a press of the fire key, if there are the bananas for it: a rocket after the car ahead, a
  * mine field dropped behind, the shockwave stunning every car near, or the
  * magnet and the ram plow set going for a while. One that lasts goes as
- * long as its key is held and there is fuel for it, burning bananas as it
+ * long as the fire key is held and there is fuel for it, burning bananas as it
  * goes: the machine gun, trained on the nearest car ahead, firing a shot
  * every few ticks, the laser burning it, and the rocket engine and the
- * wings, which are read off the key as the car is stepped. Whatever lasts
+ * wings, which are read off the keys as the car is stepped. Whatever lasts
  * of what was used runs down meanwhile, the plow shoving all the while. A
  * wreck does nothing.
  */
@@ -874,16 +874,17 @@ export function fireWeapons(arena: Battlefield): void {
   arena.shots.length = 0
   for (const seat of arena.seats) {
     if (!seat.occupied) continue
-    const key = seat.vehicle.command.weapon
-    const pressed = key !== NO_KEY && key !== seat.weaponHeld
-    seat.weaponHeld = key
+    const { weapon: key, fire } = seat.vehicle.command
+    const fired = fire ? key : NO_KEY
+    const pressed = fired !== NO_KEY && fired !== seat.weaponHeld
+    seat.weaponHeld = fired
     wearOff(seat)
     if (seat.vehicle.wrecked) {
       seat.aimTarget = NO_TARGET
       continue
     }
-    const held = weaponOfKey(key)
-    if (pressed && held !== 'none') seat.weapon = held
+    seat.weapon = weaponOfKey(key)
+    const held = weaponOfKey(fired)
     if (seat.plowTicks > 0) plow(arena, seat)
     trainGun(arena, seat)
     if (held === 'none') continue

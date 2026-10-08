@@ -16,8 +16,6 @@ export interface HudState {
   controls?: readonly ControlHint[]
   /** Bananas taken. */
   score?: number
-  /** The weapons, one a number key, as the car has them now. */
-  weapons?: readonly WeaponSlot[]
   /** How the car is keeping up with the server, in a line, for anyone wondering about a jump. */
   sync?: string
   /** Where everyone else is, for the mini-map. */
@@ -26,21 +24,6 @@ export interface HudState {
   game?: string
   /** Whether the game lines are telling of one just won. */
   gameWon?: boolean
-}
-
-/** A weapon on its key: what it is, what it costs, and how it stands with the car. */
-export interface WeaponSlot {
-  key: number
-  label: string
-  /** Bananas a press, or a second held for one that lasts. */
-  cost: number
-  lasting: boolean
-  /** The one picked last, riding over the roof. */
-  picked: boolean
-  /** Whether there are the bananas for it. */
-  ready: boolean
-  /** Whether it is going now. */
-  firing: boolean
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -188,7 +171,7 @@ function caret(): SVGSVGElement {
 
 /**
  * The corner of the screen that says how it is going: the bananas held,
- * the weapons on their number keys with what each costs, a speedometer, a damage dial beside it
+ * a speedometer, a damage dial beside it
  * that fills and reddens as the car is knocked about, a word on the moment,
  * and the keys in a drawer under it all that a caret pulls open and shut.
  */
@@ -197,7 +180,6 @@ export class Hud {
   private readonly title = div('title')
   private readonly row = div('row')
   private readonly score = div('score')
-  private readonly weapons = div('weapons')
   private readonly game = div('game')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
@@ -210,7 +192,6 @@ export class Hud {
   private shownTitle = ''
   private shownControls = ''
   private shownScore = ''
-  private shownWeapons = ''
   private readonly scoreCount = document.createElement('span')
   private readonly radar: Radar | null
 
@@ -246,7 +227,7 @@ export class Hud {
     this.toggle.append(caret())
     this.toggle.addEventListener('click', () => this.expand(!this.expanded))
     this.expand(false)
-    root.append(this.title, this.row, this.weapons, this.game, this.gauges, this.drawer, this.toggle)
+    root.append(this.title, this.row, this.game, this.gauges, this.drawer, this.toggle)
     this.render(null)
   }
 
@@ -282,9 +263,7 @@ export class Hud {
 
     const { speed, maxSpeed, damage: wear } = state
     const driving = speed !== undefined && maxSpeed !== undefined && wear !== undefined
-    this.showWeapons(state.weapons ?? [])
     this.row.hidden = !driving && score === ''
-    this.weapons.hidden = !driving || state.weapons === undefined
     this.gauges.hidden = !driving
     const keyed = driving && state.controls !== undefined
     this.drawer.hidden = !keyed
@@ -304,31 +283,6 @@ export class Hud {
   notice(text: string): void {
     this.render({ title: text })
     this.root.classList.add('busy')
-  }
-
-  /** The weapons, a chip each: its key, its name and its price, lit as it stands with the car. */
-  private showWeapons(weapons: readonly WeaponSlot[]): void {
-    const key = JSON.stringify(weapons)
-    if (key === this.shownWeapons) return
-    this.shownWeapons = key
-    this.weapons.replaceChildren(
-      ...weapons.map((weapon) => {
-        const chip = div('slot')
-        chip.classList.toggle('picked', weapon.picked)
-        chip.classList.toggle('ready', weapon.ready)
-        chip.classList.toggle('firing', weapon.firing)
-        const kbd = document.createElement('kbd')
-        kbd.textContent = String(weapon.key)
-        const name = document.createElement('span')
-        name.className = 'name'
-        name.textContent = weapon.label
-        const cost = document.createElement('span')
-        cost.className = 'cost'
-        cost.textContent = weapon.lasting ? `${weapon.cost}/s` : String(weapon.cost)
-        chip.append(kbd, name, cost)
-        return chip
-      }),
-    )
   }
 
   private showControls(controls: readonly ControlHint[]): void {

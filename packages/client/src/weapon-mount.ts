@@ -15,6 +15,8 @@ const SWAY = 0.06
 const SWAY_RATE = 1.1
 /** How quickly the gun swings onto what it is trained on, per second. */
 const AIM_RATE = 10
+/** How much of itself a weapon shows while there are not the bananas for it. */
+const UNAFFORDABLE_OPACITY = 0.5
 
 const AHEAD = new THREE.Quaternion(0, 1, 0, 0)
 const sight = new THREE.Object3D()
@@ -22,8 +24,9 @@ const gunAt = new THREE.Vector3()
 const mountTurn = new THREE.Quaternion()
 
 /**
- * The weapon a car picked last, hovering over its roof for everyone to
- * see: the gun swung onto whatever it is trained on. It bobs a little.
+ * The weapon a car has selected, hovering over its roof for everyone to
+ * see, faded while there are not the bananas for it: the gun swung onto
+ * whatever it is trained on. It bobs a little.
  */
 export class WeaponMount {
   readonly object = new THREE.Group()
@@ -48,6 +51,7 @@ export class WeaponMount {
   private readonly builtInGun: boolean
   private readonly desired = AHEAD.clone()
   private shownWeapon: Weapon = 'none'
+  private shownReady = true
   private time = 0
 
   constructor(height: number, builtInGun = false) {
@@ -90,11 +94,16 @@ export class WeaponMount {
     return this.shownWeapon
   }
 
-  show(weapon: Weapon): void {
-    if (weapon === this.shownWeapon) return
-    this.shownWeapon = weapon
-    const hidden = this.builtInGun && FROM_THE_GUN.includes(weapon)
-    for (const [carried, model] of Object.entries(this.models)) model.visible = carried === weapon && !hidden
+  /** Show this weapon, or none, whole if there are the bananas for it and faded if not. */
+  show(weapon: Weapon, ready = true): void {
+    if (weapon !== this.shownWeapon) {
+      this.shownWeapon = weapon
+      const hidden = this.builtInGun && FROM_THE_GUN.includes(weapon)
+      for (const [carried, model] of Object.entries(this.models)) model.visible = carried === weapon && !hidden
+    }
+    if (ready === this.shownReady) return
+    this.shownReady = ready
+    for (const model of Object.values(this.models)) fade(model, ready ? 1 : UNAFFORDABLE_OPACITY)
   }
 
   update(dt: number): void {
@@ -117,4 +126,20 @@ export class WeaponMount {
     for (const model of Object.values(this.models)) disposeObject(model)
     this.object.clear()
   }
+}
+
+/** Show a model at this share of its own opacity, each material keeping what it had to begin with. */
+function fade(model: THREE.Object3D, share: number): void {
+  model.traverse((part) => {
+    if (!(part instanceof THREE.Mesh)) return
+    for (const material of [part.material].flat() as THREE.Material[]) {
+      const own = (material.userData.ownOpacity ??= { opacity: material.opacity, transparent: material.transparent }) as {
+        opacity: number
+        transparent: boolean
+      }
+      material.opacity = own.opacity * share
+      material.transparent = own.transparent || share < 1
+      material.needsUpdate = true
+    }
+  })
 }

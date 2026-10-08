@@ -7,8 +7,7 @@ import {
   NO_KEY,
   NO_TARGET,
   SHOCKWAVE_SHOWN_TICKS,
-  WEAPONS,
-  keyOf,
+  WEAPON_COSTS,
   addHeightfield,
   createPhysicsWorld,
   createVehicle,
@@ -27,7 +26,6 @@ import type { Sound } from './audio.ts'
 import { CarPresence } from './car-presence.ts'
 import { createChaseTarget } from './chase-camera.ts'
 import { Explosions } from './explosion.ts'
-import type { WeaponSlot } from './hud.ts'
 import { Smoke } from './smoke.ts'
 
 /** A seat on flat ground, with nothing but a vehicle in it. */
@@ -149,25 +147,29 @@ describe('a car on the screen', () => {
     free()
   })
 
-  it('tells the HUD every weapon on its key, what it costs, whether there are the bananas for it, and which is picked and going', () => {
+  it('carries the weapon selected over its roof, faded while there are not the bananas for it', () => {
     const { seat, free } = seatOnFlat()
     const presence = new CarPresence(seat, 0xff0000, { explosions: new Explosions(), smoke: new Smoke(), sound: null })
-    const slots = (): readonly WeaponSlot[] => presence.hudState('me', []).weapons!
-    expect(slots().map((slot) => slot.key)).toEqual(WEAPONS.map(keyOf))
-    expect(slots().every((slot) => !slot.ready && !slot.picked && !slot.firing)).toBe(true)
-    // Two bananas: the rocket and anything lasting, not the mines.
-    seat.score = 2
-    expect(slots().find((slot) => slot.label === 'Rocket')!).toMatchObject({ cost: 2, lasting: false, ready: true })
-    expect(slots().find((slot) => slot.label === 'Mine field')!.ready).toBe(false)
-    expect(slots().find((slot) => slot.label === 'Machine gun')!).toMatchObject({ cost: 1, lasting: true, ready: true })
-    // Picked, it rides on the roof; held, it is going.
-    seat.weapon = 'machineGun'
-    seat.vehicle.command.weapon = keyOf('machineGun')
-    const gun = slots().find((slot) => slot.label === 'Machine gun')!
-    expect(gun).toMatchObject({ picked: true, firing: true })
-    presence.render(0, FIXED_TIMESTEP)
     const mount = presence.object.children.find((child) => child.position.y > seat.tuning.chassisHalfHeight + 1)!
-    expect(mount.children.some((child) => child.visible)).toBe(true)
+    const shown = (): THREE.Object3D | undefined => mount.children.find((child) => child.visible)
+    const opacity = (): number => {
+      let least = 1
+      shown()!.traverse((part) => {
+        if (part instanceof THREE.Mesh) least = Math.min(least, (part.material as THREE.Material).opacity)
+      })
+      return least
+    }
+    presence.render(0, FIXED_TIMESTEP)
+    expect(shown()).toBeUndefined()
+    // Selected with too few bananas: on the roof, at half strength.
+    seat.weapon = 'mines'
+    seat.score = WEAPON_COSTS.mines - 1
+    presence.render(0, FIXED_TIMESTEP)
+    expect(opacity()).toBeCloseTo(0.5)
+    // With enough, whole.
+    seat.score = WEAPON_COSTS.mines
+    presence.render(0, FIXED_TIMESTEP)
+    expect(opacity()).toBe(1)
     presence.dispose()
     free()
   })

@@ -3,15 +3,9 @@ import {
   MOUNT_HEIGHT,
   NO_TARGET,
   SHOCKWAVE_RANGE,
-  WEAPON_COSTS,
-  WEAPON_LABELS,
-  WEAPONS,
   affordable,
   aimPoint,
-  going,
   hasBuiltInGun,
-  keyOf,
-  lasting,
   using,
   type Arena,
   type Seat,
@@ -27,7 +21,7 @@ import { disposeObject } from './dispose.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import { Headlights } from './headlights.ts'
 import type { Explosions } from './explosion.ts'
-import type { ControlHint, HudState, WeaponSlot } from './hud.ts'
+import type { ControlHint, HudState } from './hud.ts'
 import type { Smoke } from './smoke.ts'
 import { SmoothedBody } from './smoothed-body.ts'
 import { PLOW_BLADE_RADIUS, buildPlow } from './weapon-models.ts'
@@ -142,20 +136,6 @@ export class CarPresence {
     return this.seat.vehicle.wrecked
   }
 
-  /** The weapons on their keys, as they stand with the car: picked, affordable, going. */
-  get weaponSlots(): WeaponSlot[] {
-    const { seat } = this
-    return WEAPONS.map((weapon) => ({
-      key: keyOf(weapon),
-      label: WEAPON_LABELS[weapon],
-      cost: WEAPON_COSTS[weapon],
-      lasting: lasting(weapon),
-      picked: seat.weapon === weapon,
-      ready: affordable(seat, weapon),
-      firing: going(seat, weapon),
-    }))
-  }
-
   /** Train the gun on a point in the world, or on nothing, before the next render. */
   aimAt(point: Vec3 | null): void {
     this.aimPoint = point
@@ -196,8 +176,8 @@ export class CarPresence {
     const sound = this.heard
     this.body.render(fraction, dt)
     this.view.applySimulatedWheels(vehicle.wheels, tuning)
-    // The weapon picked last rides over the roof.
-    this.mount.show(vehicle.wrecked ? 'none' : this.seat.weapon)
+    // The weapon selected rides over the roof, faded while there are not the bananas for it.
+    this.mount.show(vehicle.wrecked ? 'none' : this.seat.weapon, affordable(this.seat, this.seat.weapon))
     this.mount.update(dt)
     this.mount.aim(this.aimPoint, dt)
     this.showEffects()
@@ -260,7 +240,6 @@ export class CarPresence {
       damage: vehicle.wrecked ? 1 : vehicle.damage,
       controls,
       score,
-      weapons: this.weaponSlots,
       ...(sync === undefined ? {} : { sync }),
     }
   }

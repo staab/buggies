@@ -96,7 +96,7 @@ const snapshot: SnapshotMessage = {
       lightsOn: true,
       hornTicks: 0,
       signalHeld: false,
-      appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, weapon: 2, signal: false },
+      appliedInput: { steer: -0.5, throttle: 1, brake: 0, handbrake: true, weapon: 2, fire: true, signal: false },
     },
     {
       seat: 5,
@@ -127,7 +127,7 @@ const snapshot: SnapshotMessage = {
       lightsOn: false,
       hornTicks: 45,
       signalHeld: true,
-      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, weapon: 9, signal: true },
+      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, weapon: 9, fire: false, signal: true },
     },
   ],
   pickups: [
@@ -195,16 +195,17 @@ describe('wire', () => {
   })
 
   it('round-trips an input with its tick', () => {
-    const input = { steer: -0.25, throttle: 0.5, brake: 0, handbrake: true, weapon: 9, signal: true }
+    const input = { steer: -0.25, throttle: 0.5, brake: 0, handbrake: true, weapon: 9, fire: true, signal: true }
     const payload = encodeInput(77, input)
     expect(payload.length).toBe(INPUT_BYTES)
-    const out = { steer: 9, throttle: 9, brake: 9, handbrake: false, weapon: 3, signal: false }
+    const out = { steer: 9, throttle: 9, brake: 9, handbrake: false, weapon: 3, fire: false, signal: false }
     expect(decodeInput(payload, out)).toBe(77)
     expect(out).toEqual(input)
     // A key past the last weapon's is none.
     decodeInput(encodeInput(78, { ...input, weapon: 12 }), out)
     expect(out.weapon).toBe(0)
     expect(out.signal).toBe(true)
+    expect(out.fire).toBe(true)
   })
 
   it('round-trips a game, a count or a race, and the clearing of one', () => {
@@ -294,7 +295,7 @@ describe('wire', () => {
       expect(steer).toBeCloseTo(vehicle.appliedInput.steer, 1)
       expect(throttle).toBeCloseTo(vehicle.appliedInput.throttle, 2)
       expect(brake).toBeCloseTo(vehicle.appliedInput.brake, 2)
-      expect(buttons).toEqual({ handbrake: vehicle.appliedInput.handbrake, weapon: vehicle.appliedInput.weapon, signal: vehicle.appliedInput.signal })
+      expect(buttons).toEqual({ handbrake: vehicle.appliedInput.handbrake, weapon: vehicle.appliedInput.weapon, fire: vehicle.appliedInput.fire, signal: vehicle.appliedInput.signal })
       expect(got.game).toEqual(vehicle.game)
       expect(got.gamesWon).toBe(vehicle.gamesWon)
       expect(got.racePassed).toBe(vehicle.racePassed)
@@ -328,7 +329,7 @@ describe('wire', () => {
       weaponHeld: 0,
       hornTicks: 0,
       signalHeld: false,
-      appliedInput: { steer: 0.25, throttle: 0.6, brake: 0, handbrake: false, weapon: 0, signal: false },
+      appliedInput: { steer: 0.25, throttle: 0.6, brake: 0, handbrake: false, weapon: 0, fire: false, signal: false },
     }
     const busy: VehicleSnapshot = { ...quiet, seat: 10, weapon: 'magnet', magnetTicks: 90 }
     const message = { ...snapshot, full: false, race: null, pickups: [], loose: [], removed: [], rockets: [], props: [], robots: [], ufos: [], spiders: [], meteors: [], vehicles: [quiet, busy, driven] }

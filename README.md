@@ -19,7 +19,9 @@ The game server also serves the built client (`pnpm build`) on its own port, ans
 | --- | --- |
 | Drive | arrows |
 | Handbrake | `Space` |
-| Weapons | `1`–`9` |
+| Select a weapon | `1`–`9` |
+| Clear the weapon | `0` |
+| Fire | `F` |
 | Siren or horn | `D` |
 | Respawn on the road | `R` |
 | Menu | `Esc` |
@@ -73,7 +75,7 @@ The HUD shows how each game is going. Winning one pays 100 bananas. A count then
 
 ## Weapons
 
-Every car has all nine weapons, each on its own number key, and pays for them in bananas. A weapon that goes all at once costs its price on each press, and only if the car has that many bananas. A weapon that lasts burns its price every second its key is held, a banana at a time, and stops when the bananas run out. What is left of a banana broken into keeps for the next lasting weapon. Pressing a key picks its weapon, which then rides over the roof for everyone to see. The HUD lists the nine with their prices, dims those the car can't pay for, and lights the one in use.
+Every car has all nine weapons, each selected with its own number key, and pays for them in bananas. The selected weapon rides over the roof for everyone to see, at half opacity while the car can't pay for it, and `0` clears it. `F` fires it. A weapon that goes all at once costs its price on each press, and only if the car has that many bananas. A weapon that lasts burns its price every second `F` is held, a banana at a time, and stops when the bananas run out. What is left of a banana broken into keeps for the next lasting weapon. The selection stays with the player through a portal.
 
 | Key | Weapon | Cost |
 | --- | --- | --- |
@@ -88,13 +90,13 @@ Every car has all nine weapons, each on its own number key, and pays for them in
 | `9` | Shockwave | 3 |
 
 - **Rocket** chases the nearest car ahead, turning no tighter than a 25 m circle, and takes a fifth of its health when it hits. A car that swerves late or close can make it miss.
-- **Machine gun** aims at the nearest car ahead and fires ten shots a second while the key is held. Five seconds of hits take a third of a car's health.
+- **Machine gun** aims at the nearest car ahead and fires ten shots a second while `F` is held. Five seconds of hits take a third of a car's health.
 - **Mine field** lays five mines on the ground in a spread behind the car. Each mine goes off with 30% of a bomb's blast on the first car to reach it, the one that laid it too once it has landed.
-- **Rocket engine** pushes the car forward while the key is held.
-- **Wings** lift the car into the air while the key is held. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. With wings picked and bananas to fly on, a car steers this way whenever it is airborne, whether or not the key is held.
+- **Rocket engine** pushes the car forward while `F` is held.
+- **Wings** lift the car into the air while `F` is held. In the air, the pedals drive the car and the steering banks it into a wide turn like a plane. With wings selected and bananas to fly on, a car steers this way whenever it is airborne, whether or not `F` is held.
 - **Magnet** collects every banana within 50 meters for 30 seconds.
 - **Ram plow** mounts a blade on the front of the car for ten seconds. Cars and props in front of it are thrown forward, faster than the car is closing on them.
-- **Laser** burns the nearest car ahead within 100 m for as long as the key is held. Its beam is steadier than the machine gun's, and four seconds of it take about half of a car's health.
+- **Laser** burns the nearest car ahead within 100 m for as long as `F` is held. Its beam is steadier than the machine gun's, and four seconds of it take about half of a car's health.
 - **Shockwave** stuns every other car within 30 meters for five seconds.
 
 ## Vehicles

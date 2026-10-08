@@ -194,53 +194,6 @@ body {
   width: 22px;
   height: 22px;
 }
-/* The weapons on their number keys: dim when there are not the bananas for one, outlined when picked, lit while going. */
-.weapons {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
-}
-.weapons .slot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 2px 4px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  font-size: 11px;
-  color: var(--dim);
-  opacity: 0.55;
-}
-.weapons .slot.ready {
-  color: inherit;
-  opacity: 1;
-}
-.weapons .slot.picked {
-  border-color: var(--edge);
-}
-.weapons .slot.firing {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.weapons .slot kbd {
-  flex: none;
-}
-.weapons .slot .name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.weapons .slot .cost {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-}
-.weapons .slot .cost::after {
-  content: '🍌';
-  font-size: 9px;
-}
 .gauges {
   display: flex;
   justify-content: space-evenly;

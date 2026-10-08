@@ -342,7 +342,7 @@ export interface Seat {
    * of the world, so nothing is spent simulating it. Never on the server.
    */
   coasting: boolean
-  /** The weapon last picked by its key, which rides over its roof, and the key held down last tick. */
+  /** The weapon selected by its key, which rides over its roof, and the key of the one fired last tick. */
   weapon: Weapon
   weaponHeld: number
   /** What is left of the banana last broken into by a lasting weapon, in `BANANA_BURN`ths. */
@@ -877,9 +877,11 @@ function clearTally(seat: Seat): void {
   seat.rover = null
 }
 
-/** What a car takes with it through a portal: the weapon it picked, its bananas, and what is left of the one it broke into. */
+/**
+ * What a car takes with it through a portal: its bananas, and what is left
+ * of the one it broke into. The weapon selected comes with the player's keys.
+ */
 export interface Carried {
-  readonly weapon: Weapon
   readonly burnLeft: number
   readonly score: number
   readonly collected: number
@@ -887,12 +889,11 @@ export interface Carried {
 
 /** What a seat would take with it through a portal. */
 export function carriedOf(seat: Seat): Carried {
-  return { weapon: seat.weapon, burnLeft: seat.burnLeft, score: seat.score, collected: seat.collected }
+  return { burnLeft: seat.burnLeft, score: seat.score, collected: seat.collected }
 }
 
 /** A seat just sat down in, come through a portal, holding what the car had on the other side. */
 export function carryOver(seat: Seat, carried: Carried): void {
-  seat.weapon = carried.weapon
   seat.burnLeft = carried.burnLeft
   seat.score = carried.score
   seat.collected = carried.collected

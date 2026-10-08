@@ -652,7 +652,6 @@ describe('a session', () => {
     const session = new Session()
     const a = await session.join()
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    seat.weapon = 'rocket'
     seat.score = 7
     seat.collected = 12
     const { pass } = a.client.welcome!
@@ -668,9 +667,9 @@ describe('a session', () => {
     const again = await session.join('sportsCar', 0, moon, 0, pass)
     const { arena } = session.server.roomFor(moon)!
     const seatOf = (player: Player): Seat => arena.seats[player.client.welcome!.seat]!
-    expect(seatOf(stranger)).toMatchObject({ weapon: 'none', score: 0 })
-    expect(seatOf(back)).toMatchObject({ weapon: 'rocket', score: 7, collected: 12 })
-    expect(seatOf(again)).toMatchObject({ weapon: 'none', score: 0 })
+    expect(seatOf(stranger)).toMatchObject({ score: 0 })
+    expect(seatOf(back)).toMatchObject({ score: 7, collected: 12 })
+    expect(seatOf(again)).toMatchObject({ score: 0 })
     a.prediction.dispose()
     session.dispose()
   })
@@ -681,7 +680,6 @@ describe('a session', () => {
     a.input.throttle = 1
     session.run(3)
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    seat.weapon = 'rocket'
     seat.score = 7
     const at = { ...session.serverPositionOf(a) }
     expect(distance(at, seat.spawn.position)).toBeGreaterThan(5)
@@ -691,7 +689,7 @@ describe('a session', () => {
     session.run(0.2)
 
     const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, pass)
-    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ weapon: 'rocket', score: 7 })
+    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ score: 7 })
     expect(distance(session.serverPositionOf(back), at)).toBeLessThan(3)
     a.prediction.dispose()
     session.dispose()
@@ -701,7 +699,7 @@ describe('a session', () => {
     const session = new Session()
     const a = await session.join()
     const seat = session.arena.seats[a.client.welcome!.seat]!
-    seat.weapon = 'rocket'
+    seat.score = 7
     const { pass } = a.client.welcome!
     // Cut off without the connection closing: the server still has them seated.
     a.paused = true
@@ -710,7 +708,7 @@ describe('a session', () => {
     const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, pass)
     expect(session.server.playerCount).toBe(1)
     expect(session.server.roomCount).toBe(1)
-    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ weapon: 'rocket' })
+    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ score: 7 })
     expect(a.client.closed).not.toBeNull()
     session.dispose()
   })
@@ -901,9 +899,9 @@ describe('a session', () => {
     }), () => 0)
     const welcome = await client.connect('semi', island.seed)
     const { arena } = server.roomFor(island.seed)!
-    // The player leans on a weapon's key, tick after tick.
+    // The player leans on the fire key with a weapon selected, tick after tick.
     for (let tick = 0; tick < 60; tick++) {
-      client.sendInput(tick, { ...NEUTRAL_INPUT, weapon: 9, throttle: 1 })
+      client.sendInput(tick, { ...NEUTRAL_INPUT, weapon: 9, fire: true, throttle: 1 })
       server.advance()
     }
     const npcs = arena.seats.filter((seat) => seat.npc).map((seat) => seat.id)
@@ -1069,10 +1067,11 @@ describe('a session', () => {
     session.run(0.5)
     expect(a.prediction.ownSeat.score).toBe(20)
 
-    // The rocket's key goes down: the rocket goes, after the tank, and the tank's mirror has it in the air too.
+    // The rocket is selected and the fire key goes down: the rocket goes, after the tank, and the tank's mirror has it in the air too.
     a.input.weapon = keyOf('rocket')
+    a.input.fire = true
     session.run(0.3)
-    a.input.weapon = 0
+    a.input.fire = false
     expect(aSeat.weapon).toBe('rocket')
     expect(aSeat.score).toBe(18)
     expect(arena.rockets).toHaveLength(1)
@@ -1090,8 +1089,9 @@ describe('a session', () => {
     // A mine field laid is numbered the same in the sports car's own prediction as on the server, so
     // it is the same mines on screen from the drop onward, not some gone and others come.
     a.input.weapon = keyOf('mines')
+    a.input.fire = true
     session.run(0.05)
-    a.input.weapon = 0
+    a.input.fire = false
     const mines = (loose: readonly Loose[]): number[] => loose.filter((thing) => thing.kind === 'mine').map((thing) => thing.id)
     const predicted = mines(a.prediction.loose)
     expect(predicted.length).toBeGreaterThan(0)
@@ -1104,8 +1104,9 @@ describe('a session', () => {
     // A machine gun, held for a second: shots the tank takes, and a banana the sports car burns.
     const left = aSeat.score
     a.input.weapon = keyOf('machineGun')
+    a.input.fire = true
     session.run(1)
-    a.input.weapon = 0
+    a.input.fire = false
     session.run(0.3)
     expect(bSeat.vehicle.damage).toBeGreaterThan(((ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE) * armorShare(bSeat.tuning)) / DURABILITY)
     expect(aSeat.score).toBeLessThan(left)
@@ -1133,6 +1134,7 @@ describe('a session', () => {
     // them soon after with the same numbers; in between, the snapshots that know nothing of them say
     // the key was up, so the replay from them lays them again rather than losing them for a moment.
     a.input.weapon = keyOf('mines')
+    a.input.fire = true
     session.run(0.05)
     const predicted = mines(a.prediction.loose)
     expect(predicted.length).toBeGreaterThan(0)
@@ -1145,10 +1147,11 @@ describe('a session', () => {
     }
     expect(told).toBe(true)
     expect(mines(arena.loose)).toEqual(predicted)
-    a.input.weapon = 0
+    a.input.fire = false
     // The tank's rocket is one rocket from the press onward, the same way: the mirror never loses
     // it before the server has had it, though the server's may go off on something before long.
     b.input.weapon = keyOf('rocket')
+    b.input.fire = true
     session.run(0.05)
     const fired = b.prediction.rockets.map((rocket) => rocket.id)
     expect(fired).toHaveLength(1)
@@ -1227,7 +1230,7 @@ describe('a session', () => {
     session.run(0.5)
     const seat = a.client.welcome!.seat
     const seen = b.client.pump(b.input).newestSnapshot!.vehicles.find((vehicle) => vehicle.seat === seat)!
-    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, weapon: 0, signal: false })
+    expect(seen.appliedInput).toEqual({ steer: 1, throttle: 0, brake: 0, handbrake: false, weapon: 0, fire: false, signal: false })
 
     // Inputs past what an honest client could send are dropped, not driven, and not held against them.
     const before = session.server.stats().inputsDropped

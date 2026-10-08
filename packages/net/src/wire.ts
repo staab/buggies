@@ -499,14 +499,15 @@ class Reader {
   }
 }
 
-/** The buttons of an input, in a byte: the handbrake in the lowest bit, the weapon key held over it, and the signal key over that. */
+/** The buttons of an input, in a byte: the handbrake in the lowest bit, the weapon selected over it, then the signal key and the fire key. */
 function buttons(value: VehicleInput): number {
   const key = Number.isInteger(value.weapon) && value.weapon > 0 && value.weapon <= WEAPONS.length ? value.weapon : 0
-  return (value.handbrake ? 1 : 0) | (key << 1) | (value.signal ? SIGNAL_BIT : 0)
+  return (value.handbrake ? 1 : 0) | (key << 1) | (value.signal ? SIGNAL_BIT : 0) | (value.fire ? FIRE_BIT : 0)
 }
 
-/** The signal key's bit, over the four the weapon key takes. */
+/** The signal key's bit, over the four the weapon selected takes, and the fire key's over that. */
 const SIGNAL_BIT = 1 << 5
+const FIRE_BIT = 1 << 6
 
 /** An input's buttons from their byte; a weapon key past the last is none. */
 function readButtons(byte: number, out: VehicleInput): void {
@@ -514,6 +515,7 @@ function readButtons(byte: number, out: VehicleInput): void {
   const key = (byte >> 1) & 0xf
   out.weapon = key <= WEAPONS.length ? key : 0
   out.signal = (byte & SIGNAL_BIT) !== 0
+  out.fire = (byte & FIRE_BIT) !== 0
 }
 
 /** A share of something, 0 to 1, as the byte that says so. */

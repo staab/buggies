@@ -51,9 +51,9 @@ import { ahead, angleBetween, apart } from './test-planet.ts'
 
 let map: World
 
-/** Holding a weapon's key down, and nothing else. */
+/** A weapon selected with the fire key held down, and nothing else. */
 function key(weapon: Weapon, input: Partial<VehicleInput> = {}): VehicleInput {
-  return { ...NEUTRAL_INPUT, ...input, weapon: keyOf(weapon) }
+  return { ...NEUTRAL_INPUT, fire: true, ...input, weapon: keyOf(weapon) }
 }
 
 /** How far past a road's edge a point may be from the nearest of its points, which are spaced out along it, and still be on it. */
@@ -87,7 +87,7 @@ function going(seat: Seat): Vec3 {
   return alongGround(seat.vehicle.frame.linearVelocity, seat.vehicle.up)
 }
 
-/** Run the arena with one seat holding a weapon's key and everyone else nothing; how many shots went. */
+/** Run the arena with one seat firing a weapon and everyone else nothing; how many shots went. */
 function hold(arena: Arena, shooter: Seat, weapon: Weapon, ticks: number, input: Partial<VehicleInput> = {}): number {
   let shots = 0
   for (let i = 0; i < ticks; i++) {
@@ -97,10 +97,10 @@ function hold(arena: Arena, shooter: Seat, weapon: Weapon, ticks: number, input:
   return shots
 }
 
-/** Press a weapon's key once: down for a tick, then up for a tick. */
+/** Press the fire key once with a weapon selected: down for a tick, then up for a tick with the weapon still selected. */
 function press(arena: Arena, shooter: Seat, weapon: Weapon): void {
   hold(arena, shooter, weapon, 1)
-  advance(arena)
+  hold(arena, shooter, weapon, 1, { fire: false })
 }
 
 /** Two cars of these kinds: one on its spawn, and another this far ahead of it and this far to its right, facing the same way, settled. */
@@ -131,10 +131,14 @@ describe('weapons', () => {
     expect(WEAPONS.filter(lasting)).toEqual(['machineGun', 'engine', 'wings', 'laser'])
   })
 
-  it('a press picks the weapon, and one that goes at once goes only on the press, and only with the bananas for it', () => {
+  it('a number key selects the weapon and 0 clears it, and one that goes at once goes only on a press of the fire key, and only with the bananas for it', () => {
     const arena = createArena(map)
     const [a] = pair(arena, 40, 0)
-    // Short of the price: picked, but nothing goes and nothing is spent.
+    // Selected without the fire key, it rides on the roof and nothing goes.
+    hold(arena, a, 'rocket', 1, { fire: false })
+    expect(a.weapon).toBe('rocket')
+    expect(arena.rockets).toHaveLength(0)
+    // Short of the price: fired, but nothing goes and nothing is spent.
     a.score = WEAPON_COSTS.rocket - 1
     press(arena, a, 'rocket')
     expect(a.weapon).toBe('rocket')
@@ -150,9 +154,11 @@ describe('weapons', () => {
     press(arena, a, 'rocket')
     expect(a.rocketsFired).toBe(2)
     expect(a.score).toBe(WEAPON_COSTS.rocket)
-    // Another key picks another weapon, and the last stays on the roof once let go.
+    // Another key selects another weapon, and 0 clears it.
     press(arena, a, 'magnet')
     expect(a.weapon).toBe('magnet')
+    advance(arena)
+    expect(a.weapon).toBe('none')
     arena.world.free()
   })
 
@@ -208,14 +214,13 @@ describe('weapons', () => {
     arena.world.free()
   })
 
-  it('the machine gun trains itself on the car ahead, fires while its key is held, and burns a banana a second', () => {
+  it('the machine gun trains itself on the car ahead, fires while the fire key is held, and burns a banana a second', () => {
     const arena = createArena(map)
     // Ahead and off to one side, on the road: in the gun's sweep, not on its line.
     const [a, b] = pair(arena, 25, 6)
     a.score = 3
-    // Picked and not held: nothing fired, nothing spent, but the gun is on the car already.
-    a.weapon = 'machineGun'
-    for (let i = 0; i < 10; i++) advance(arena)
+    // Selected and not fired: nothing fired, nothing spent, but the gun is on the car already.
+    hold(arena, a, 'machineGun', 10, { fire: false })
     expect(a.score).toBe(3)
     expect(b.vehicle.damage).toBe(0)
     expect(a.aimTarget).toBe(b.id)
@@ -405,9 +410,9 @@ describe('weapons', () => {
     arena.world.free()
   })
 
-  it('a car with wings picked steers by banking whenever it is in the air, key or no key, and with another picked it does not', () => {
-    // Up and along on the key, then the key let go while it is still well up, and the steering held.
-    const glide: VehicleInput = { ...NEUTRAL_INPUT, steer: 1 }
+  it('a car with wings selected steers by banking whenever it is in the air, fired or not, and with another selected it does not', () => {
+    // Up and along on the fire key, then the fire key let go while it is still well up, and the steering held.
+    const glide = (weapon: Weapon): VehicleInput => key(weapon, { steer: 1, fire: false })
     const aloft = (): [Arena, Seat] => {
       const arena = createArena(map)
       const a = takeSeat(arena, 0, 'sportsCar')
@@ -419,7 +424,7 @@ describe('weapons', () => {
     }
     const [arena, a] = aloft()
     const was = going(a)
-    for (let i = 0; i < 45; i++) advance(arena, () => glide)
+    for (let i = 0; i < 45; i++) advance(arena, () => glide('wings'))
     expect(a.vehicle.lifted).toBe(false)
     expect(a.vehicle.winged).toBe(true)
     expect(a.vehicle.groundedCount).toBe(0)
@@ -428,13 +433,13 @@ describe('weapons', () => {
     expect(vdot(a.vehicle.frame.up, a.vehicle.up)).toBeGreaterThan(0.8)
     expect(vdot(a.vehicle.frame.linearVelocity, a.vehicle.up)).toBeLessThan(0)
     arena.world.free()
-    // Another weapon picked, the same steering up there swings the way it is going not at all.
+    // Another weapon selected, the same steering up there swings the way it is going not at all.
     const [bare, b] = aloft()
     b.score = 0
     hold(bare, b, 'rocket', 1)
     expect(b.weapon).toBe('rocket')
     const before = going(b)
-    for (let i = 0; i < 45; i++) advance(bare, () => glide)
+    for (let i = 0; i < 45; i++) advance(bare, () => glide('rocket'))
     expect(b.vehicle.winged).toBe(false)
     expect(b.vehicle.groundedCount).toBe(0)
     expect(angleBetween(going(b), before)).toBeLessThan(0.05)
@@ -454,7 +459,7 @@ describe('weapons', () => {
         z: position.z + forward.z * gun.ahead + up.z * gun.up,
       }
     }
-    // Picked a tick before it is held, so the gun is trained when it fires.
+    // Fired a tick before it shoots, so the gun is trained when it does.
     hold(arena, a, 'machineGun', 1)
     while (arena.shots.length === 0) hold(arena, a, 'machineGun', 1)
     const shot = arena.shots[0]!

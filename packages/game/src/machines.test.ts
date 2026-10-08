@@ -117,7 +117,7 @@ describe('the robots and the saucers', () => {
       facing(arena, seat, 25)
       for (let i = 0; i < 20; i++) advance(arena)
       seat.score = 10
-      for (let i = 0; i < 60; i++) advance(arena, (one) => (one === seat ? { ...NEUTRAL_INPUT, weapon: keyOf(weapon) } : NEUTRAL_INPUT))
+      for (let i = 0; i < 60; i++) advance(arena, (one) => (one === seat ? { ...NEUTRAL_INPUT, weapon: keyOf(weapon), fire: true } : NEUTRAL_INPUT))
       expect(arena.robots[0]!.damage).toBeGreaterThan(0)
       arena.world.free()
     })

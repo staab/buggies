@@ -10,14 +10,16 @@ export interface DriverKeys {
   controls: (signal: string) => readonly ControlHint[]
 }
 
-/** The arrows, with the space bar, the number keys for the weapons, D and R. */
+/** The arrows, with the space bar, the number keys to select a weapon, F to fire it, D and R. */
 export const SOLO_KEYS: DriverKeys = {
   bindings: SOLO_BINDINGS,
   respawn: (event) => event.code === 'KeyR',
   controls: (signal) => [
     { keys: ['↑', '←', '↓', '→'], does: 'drive' },
     { keys: ['Space'], does: 'handbrake' },
-    { keys: ['1–9'], does: 'weapons' },
+    { keys: ['1–9'], does: 'select weapon' },
+    { keys: ['0'], does: 'clear weapon' },
+    { keys: ['F'], does: 'fire' },
     { keys: ['D'], does: signal },
     { keys: ['R'], does: 'respawn' },
     { keys: ['Esc'], does: 'menu' },
