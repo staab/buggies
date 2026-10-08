@@ -152,12 +152,24 @@ body {
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.28);
 }
-.games .course canvas {
+/* The planet as a globe: dragged to turn, clicked to place a mark. */
+.games .course .globe {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: radial-gradient(circle, #10263a 0%, #070f17 75%);
+  cursor: crosshair;
+  touch-action: none;
+}
+.games .course .globe.turning {
+  cursor: grabbing;
+}
+.games .course .globe canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: auto;
-  border-radius: 8px;
-  cursor: crosshair;
+  height: 100%;
 }
 .games .course .tools {
   display: flex;

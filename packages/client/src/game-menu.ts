@@ -16,9 +16,9 @@ import {
 import type { Vec3 } from '@buggies/physics'
 import { onLand, type World } from '@buggies/terrain'
 
-import { drawIsland, offPicture, onPicture } from './island-picture.ts'
+import { GlobeBoard } from './globe-board.ts'
 
-/** How many pixels across the planet is drawn at to pick a course on. */
+/** How many pixels across the globe is drawn at to pick a course on. */
 const MAP_PIXELS = 360
 
 /** What each game asks for, under its name. */
@@ -69,7 +69,7 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
 /**
  * The "games" panel, opened from the trophy in the corner: a game to play
  * on top of free play, a number of bananas, wrecks or robots, or a race
- * over a course of marks picked on a map of the island, start first,
+ * over a course of marks picked on a globe of the island, start first,
  * then the checkpoints, then the finish.
  */
 export class GameMenu {
@@ -80,7 +80,7 @@ export class GameMenu {
   private readonly amount: HTMLLabelElement
   private readonly amountInput: HTMLInputElement
   private readonly course: HTMLDivElement
-  private readonly board: HTMLCanvasElement
+  private readonly board: GlobeBoard
   private readonly undoButton: HTMLButtonElement
   private readonly resetButton: HTMLButtonElement
   private readonly note: HTMLParagraphElement
@@ -91,7 +91,6 @@ export class GameMenu {
   private marks: Vec3[] = []
   /** Why the last click on the map was not taken, if it was not. */
   private refused = ''
-  private island: { seed: number; picture: HTMLCanvasElement } | null = null
 
   constructor(root: HTMLElement, host: GameHost) {
     this.root = root
@@ -140,13 +139,10 @@ export class GameMenu {
     this.amountInput.addEventListener('input', () => this.render())
     this.amount.append(span('name', 'How many'), this.amountInput)
 
-    // The course, on a map of the island.
+    // The course, on a globe of the island.
     this.course = document.createElement('div')
     this.course.className = 'course'
-    this.board = document.createElement('canvas')
-    this.board.width = MAP_PIXELS
-    this.board.height = MAP_PIXELS
-    this.board.addEventListener('click', (event) => this.pickMark(event))
+    this.board = new GlobeBoard(MAP_PIXELS, (mark) => this.pickMark(mark))
     this.undoButton = button('Undo mark', () => {
       this.marks.pop()
       this.refused = ''
@@ -160,7 +156,7 @@ export class GameMenu {
     const tools = document.createElement('div')
     tools.className = 'tools'
     tools.append(this.undoButton, this.resetButton)
-    this.course.append(this.board, tools)
+    this.course.append(this.board.element, tools)
 
     this.note = document.createElement('p')
     this.note.className = 'status'
@@ -186,6 +182,9 @@ export class GameMenu {
   show(): void {
     if (this.host.map() === null) return
     this.root.hidden = false
+    // The globe turns to the race on, or else to the player.
+    const facing = this.host.race()?.race.course[0] ?? this.marks[0] ?? this.host.position()
+    if (facing !== null) this.board.face(facing)
     this.pick(this.host.game()?.kind ?? this.kind)
   }
 
@@ -226,11 +225,9 @@ export class GameMenu {
     return validGame({ kind: 'race', target: 0, course }, map.radius)
   }
 
-  private pickMark(event: MouseEvent): void {
+  private pickMark(mark: Vec3): void {
     const map = this.host.map()
     if (map === null || this.host.race() !== null) return
-    const bounds = this.board.getBoundingClientRect()
-    const mark = offPicture((event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height)
     const last = this.marks.at(-1)
     if (!onLand(map, mark)) this.refused = 'Pick a spot on land.'
     else if (this.marks.length >= RACE_MARKS_MOST) this.refused = `A race has at most ${RACE_MARKS_MOST} marks.`
@@ -285,7 +282,7 @@ export class GameMenu {
 
   /** What to pick next for the course. */
   private courseNote(): string {
-    if (this.marks.length === 0) return 'Click the map to place the start.'
+    if (this.marks.length === 0) return 'Click the globe to place the start. Drag to turn it, scroll to zoom.'
     if (this.marks.length === 1) return 'Now a checkpoint, at least one.'
     if (this.marks.length === 2) return 'Now the finish, or more checkpoints before it.'
     return 'The last mark is the finish. Everyone on the island is put on the start when the race begins.'
@@ -294,56 +291,19 @@ export class GameMenu {
   /** The island, the player on it, and the course: the one on, or the one being picked. */
   private drawBoard(): void {
     const map = this.host.map()
-    const context = this.board.getContext('2d')
-    if (map === null || context === null) return
-    if (this.island?.seed !== map.seed) {
-      this.island = { seed: map.seed, picture: drawIsland(map, MAP_PIXELS) }
-      this.board.width = this.island.picture.width
-      this.board.height = this.island.picture.height
-    }
-    context.drawImage(this.island.picture, 0, 0)
-    const { width, height } = this.board
-    const at = (point: Vec3): { x: number; y: number } => {
-      const { u, v } = onPicture(point)
-      return { x: u * width, y: v * height }
-    }
+    if (map === null) return
     const course = this.host.race()?.race.course ?? this.marks
-    context.strokeStyle = 'rgba(255, 255, 255, 0.7)'
-    context.lineWidth = 2
-    context.beginPath()
-    course.forEach((mark, k) => {
-      const { x, y } = at(mark)
-      if (k === 0) context.moveTo(x, y)
-      else context.lineTo(x, y)
+    this.board.draw(map, {
+      course: course.map((at, k) => {
+        const finish = k === course.length - 1 && course.length >= 3
+        return {
+          at,
+          color: k === 0 ? START_COLOR : finish ? FINISH_COLOR : CHECKPOINT_COLOR,
+          label: k === 0 ? 'S' : finish ? 'F' : String(k),
+        }
+      }),
+      here: this.host.position(),
     })
-    context.stroke()
-    course.forEach((mark, k) => {
-      const { x, y } = at(mark)
-      const finish = k === course.length - 1 && course.length >= 3
-      context.fillStyle = k === 0 ? START_COLOR : finish ? FINISH_COLOR : CHECKPOINT_COLOR
-      context.strokeStyle = '#0b1620'
-      context.lineWidth = 2
-      context.beginPath()
-      context.arc(x, y, 7, 0, Math.PI * 2)
-      context.fill()
-      context.stroke()
-      context.fillStyle = '#0b1620'
-      context.font = 'bold 9px sans-serif'
-      context.textAlign = 'center'
-      context.textBaseline = 'middle'
-      context.fillText(k === 0 ? 'S' : finish ? 'F' : String(k), x, y + 0.5)
-    })
-    const here = this.host.position()
-    if (here !== null) {
-      const { x, y } = at(here)
-      context.fillStyle = '#6fd3c7'
-      context.strokeStyle = '#0b1620'
-      context.lineWidth = 2
-      context.beginPath()
-      context.arc(x, y, 5, 0, Math.PI * 2)
-      context.fill()
-      context.stroke()
-    }
   }
 }
 
