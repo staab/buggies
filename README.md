@@ -38,7 +38,7 @@ Three to five portals stand in the open country of every planet: glowing rings w
 
 ## Meteors
 
-Every six seconds a meteor comes down on the moon near someone driving there. It glows as it falls for three seconds on a slanting line from high overhead, trailing smoke, and a red ring on the ground marks where it will land, darkening as it nears. It blows up where it lands: a car at the middle takes half again a bomb's damage and is thrown out and up, less the further out, and nothing past 18 m is touched. A spider standing in the blast is hurt too.
+Every six seconds while anyone is driving on the moon, a meteor comes down somewhere on it at random. It glows as it falls for three seconds on a slanting line from high overhead, trailing smoke. It blows up where it lands: a car at the middle takes half again a bomb's damage and is thrown out and up, less the further out, and nothing past 18 m is touched. A spider standing in the blast is hurt too.
 
 ## Bananas
 

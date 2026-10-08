@@ -34,7 +34,7 @@ import { NOT_RACING, RACE_TICKS_MOST, runRace, type Game, type Race } from './ga
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
 import { hasSiren, quiet, signal } from './signals.ts'
-import { METEOR_DAMAGE, METEOR_EVERY_TICKS, METEOR_THROW, aimMeteor, meteorLanded, meteorShare, type Meteor } from './meteors.ts'
+import { METEOR_DAMAGE, METEOR_EVERY_TICKS, METEOR_THROW, dropMeteor, meteorLanded, meteorShare, type Meteor } from './meteors.ts'
 import { createUfos, flyUfo, rebuildUfo, type Ufo } from './ufos.ts'
 import { NPC_FRAGILITY, NPC_PROFILES, UNSTUCK_AHEAD, createDriver, drive, driverSpawn, type Driver, type DriverCommand } from './npcs.ts'
 import { ROVERS, createRover, roverSpawn, wander, type Rover } from './rovers.ts'
@@ -714,11 +714,9 @@ export function advance(
   for (const spider of arena.spiders) {
     if (walkSpider(arena.planet, spider, dt) && !arena.mirror) dropFromSpider(arena, spider)
   }
-  // A meteor comes down every so often near someone driving on a moon: on the server's word, in a mirror.
+  // A meteor comes down every so often somewhere on a moon with anyone driving on it: on the server's word, in a mirror.
   if (!arena.mirror && arena.planet.kind === 'moon' && arena.tick % METEOR_EVERY_TICKS === 0) {
-    const aims = arena.seats.filter((seat) => seat.occupied && !seat.npc).map((seat) => seat.vehicle.frame.position)
-    const meteor = aimMeteor(arena.planet, aims, arena.tick)
-    if (meteor !== null) arena.meteors.push(meteor)
+    if (arena.seats.some((seat) => seat.occupied && !seat.npc)) arena.meteors.push(dropMeteor(arena.planet, arena.tick))
   }
   // The boats drift on to where the next tick has them.
   for (const boat of arena.boats) moveBoat(boat, arena.tick + 1, false)

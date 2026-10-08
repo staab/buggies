@@ -1,5 +1,5 @@
 import { createRng, v3, type Vec3 } from '@buggies/physics'
-import { alongGround, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
+import { alongGround, overSurface, randomDirection, type World } from '@buggies/terrain'
 
 /** How often a meteor comes down on a moon with anyone driving on it, in ticks. */
 export const METEOR_EVERY_TICKS = 60 * 6
@@ -8,8 +8,6 @@ export const METEOR_FALL_TICKS = 60 * 3
 /** How high over the ground it is first seen, and how far off to one side, so it comes in slanting. */
 export const METEOR_HEIGHT = 260
 export const METEOR_SLANT = 140
-/** How far from the car it is aimed at it can land. */
-export const METEOR_SCATTER = 25
 /** How far its blast reaches, and what it does to a car at its middle, half again a bomb's: less the further out, none at the edge. */
 export const METEOR_RANGE = 18
 export const METEOR_DAMAGE = 1.5
@@ -48,22 +46,14 @@ const up = v3()
 const aside = v3()
 
 /**
- * A meteor aimed at one of these places, picked by the tick: landing on
- * the ground somewhere near it, and coming in from high over it and off
- * to one side. None with nowhere to aim at.
+ * A meteor picked by the tick: landing on the ground anywhere on the
+ * moon, and coming in from high over it and off to one side.
  */
-export function aimMeteor(map: World, aims: readonly Vec3[], tick: number): Meteor | null {
-  if (aims.length === 0) return null
+export function dropMeteor(map: World, tick: number): Meteor {
   const rng = createRng((map.seed ^ METEOR_SALT) + meteorId(tick) * 6151)
-  const aim = aims[Math.floor(rng() * aims.length) % aims.length]!
-  // Somewhere round the car, within the scatter, along the ground.
-  upOf(aim, up)
-  alongGround(randomDirection(rng, aside), up, aside)
-  const spread = Math.sqrt(aside.x * aside.x + aside.y * aside.y + aside.z * aside.z) || 1
-  const off = rng() * METEOR_SCATTER
-  const near = { x: aim.x + (aside.x / spread) * off, y: aim.y + (aside.y / spread) * off, z: aim.z + (aside.z / spread) * off }
-  const to = overSurface(map, upOf(near, up), 0, v3())
-  // In from another way along the ground, high up.
+  randomDirection(rng, up)
+  const to = overSurface(map, up, 0, v3())
+  // In from some way along the ground, high up.
   alongGround(randomDirection(rng, aside), up, aside)
   const slant = Math.sqrt(aside.x * aside.x + aside.y * aside.y + aside.z * aside.z) || 1
   const from = {

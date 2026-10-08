@@ -1,5 +1,5 @@
 import { vdistance, vdot, type Vec3 } from '@buggies/physics'
-import { generateMoon, generatePlanet, tangentFrame, upOf, type World } from '@buggies/terrain'
+import { generateMoon, generatePlanet, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
@@ -14,8 +14,8 @@ import {
   meteorAt,
   takeSeat,
 } from './index.ts'
-import { METEOR_HEIGHT, METEOR_SCATTER } from './meteors.ts'
-import { ahead, apart, lifted } from './test-planet.ts'
+import { METEOR_HEIGHT } from './meteors.ts'
+import { ahead, lifted } from './test-planet.ts'
 
 describe('the meteors', () => {
   let moon: World
@@ -26,16 +26,16 @@ describe('the meteors', () => {
     planet = generatePlanet(3)
   }, 120_000)
 
-  it('come down near someone driving on the moon, every so often, and never on a planet or of a mirror', () => {
+  it('come down somewhere on the moon with someone driving on it, every so often, and never on a planet or of a mirror', () => {
     for (const [world, mirror, falling] of [[moon, false, 1], [moon, true, 0], [planet, false, 0]] as const) {
       const arena = createArena(world)
       arena.mirror = mirror
-      const seat = takeSeat(arena, 0, 'sportsCar')
+      takeSeat(arena, 0, 'sportsCar')
       advance(arena)
       expect(arena.meteors).toHaveLength(falling)
       const meteor = arena.meteors[0]
       if (meteor !== undefined) {
-        expect(apart(meteor.to, seat.vehicle.frame.position)).toBeLessThan(METEOR_SCATTER + 5)
+        expect(vdistance(meteor.to, overSurface(world, upOf(meteor.to), 0))).toBeCloseTo(0, 3)
         expect(vdistance(meteor.from, meteor.to)).toBeGreaterThan(METEOR_HEIGHT)
         // Halfway down, it is halfway along its line.
         const middle = meteorAt(meteor, meteor.bornTick + METEOR_FALL_TICKS / 2, { x: 0, y: 0, z: 0 })
