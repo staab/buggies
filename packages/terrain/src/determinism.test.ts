@@ -11,8 +11,8 @@ import { generatePlanet } from './globe/planet.ts'
  * client and that is the bug.
  */
 const GOLDEN: Record<number, string> = {
-  7: '22a6f805',
-  11: '845b4d0f',
+  7: '657206e3',
+  11: '805ab1f2',
 }
 
 describe('planet determinism', () => {

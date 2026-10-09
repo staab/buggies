@@ -5,6 +5,7 @@
  * there were no seams, and the only way out is the sea.
  */
 
+import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
 import { arcDistance, gridDirection, gridPlace, groundIndex, type GridPlace, type SphereGround } from './sphere.ts'
@@ -172,7 +173,7 @@ function findSphereSource(
   const { heights, radius } = ground
   const core = Math.max(triangleInradius(mountain.triangle), least)
   const reach = core + Math.max(mountain.skirt, least * (20 / 15))
-  const near = Math.cos(reach / radius)
+  const near = exact.cos(reach / radius)
   const within: number[] = []
   const direction = { x: 0, y: 0, z: 0 }
   let summit = -Infinity

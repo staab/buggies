@@ -207,7 +207,7 @@ function rampPlan(mouth: Vec2, along: Vec2, out: Vec2, merge: Vec2): Vec2[] | nu
   // length, s·sin = out − R(1 − cos) and s·cos = run − R·sin, so the angle
   // is where the two agree. It rises with the angle, so bisection finds it.
   const off = (angle: number): number =>
-    (reachOut - radius * (1 - Math.cos(angle))) * Math.cos(angle) - (run - radius * Math.sin(angle)) * Math.sin(angle)
+    (reachOut - radius * (1 - exact.cos(angle))) * exact.cos(angle) - (run - radius * exact.sin(angle)) * exact.sin(angle)
   let low = 0
   let high = Math.PI / 2
   if (off(low) <= 0 || off(high) >= 0) return null
@@ -218,7 +218,7 @@ function rampPlan(mouth: Vec2, along: Vec2, out: Vec2, merge: Vec2): Vec2[] | nu
   }
   const turn = (low + high) / 2
   const arc = radius * turn
-  const straight = (run - radius * Math.sin(turn)) / Math.cos(turn)
+  const straight = (run - radius * exact.sin(turn)) / exact.cos(turn)
   if (straight < 0) return null
   const total = arc + straight
   const points: Vec2[] = []
@@ -228,12 +228,12 @@ function rampPlan(mouth: Vec2, along: Vec2, out: Vec2, merge: Vec2): Vec2[] | nu
     let y: number
     if (s <= arc) {
       const swept = s / radius
-      x = radius * Math.sin(swept)
-      y = radius * (1 - Math.cos(swept))
+      x = radius * exact.sin(swept)
+      y = radius * (1 - exact.cos(swept))
     } else {
       const t = s - arc
-      x = radius * Math.sin(turn) + t * Math.cos(turn)
-      y = radius * (1 - Math.cos(turn)) + t * Math.sin(turn)
+      x = radius * exact.sin(turn) + t * exact.cos(turn)
+      y = radius * (1 - exact.cos(turn)) + t * exact.sin(turn)
     }
     points.push({ x: mouth.x + along.x * x + out.x * y, z: mouth.z + along.z * x + out.z * y })
   }

@@ -6,6 +6,7 @@
  * from the nearest city on its own land.
  */
 
+import * as exact from '@buggies/physics'
 import { createRng, randomRange, type Vec3 } from '@buggies/physics'
 
 import { arcDistance, createSphereGround, groundIndex, type SphereGround } from './sphere.ts'
@@ -287,7 +288,7 @@ export function generateSphereDistricts(
   const owner = new Int16Array(count).fill(-1)
   const areas = districts.map(() => 0)
   // Nearest by the way out lying closest to the city's, and within reach by the cosine of how far round that is.
-  const reachOf = districts.map((city) => ({ core: Math.cos(city.radius / radius), suburbs: Math.cos((city.radius + city.suburbWidth) / radius) }))
+  const reachOf = districts.map((city) => ({ core: exact.cos(city.radius / radius), suburbs: exact.cos((city.radius + city.suburbWidth) / radius) }))
   for (let at = 0; at < count; at++) {
     if (!cityGround[at]) continue
     let nearest = -Infinity

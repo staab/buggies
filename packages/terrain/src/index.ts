@@ -30,7 +30,7 @@ export {
 export { DISTRICT_CITY, DISTRICT_COUNTRY, DISTRICT_SUBURB } from './sphere-districts.ts'
 export { fbm3D, smoothstep } from './noise.ts'
 export { orientedTriangle, signedDistanceToTriangle, triangleInradius, type Triangle } from './mountain.ts'
-export { HOUSE_KINDS, RAISED_KINDS, ROUND_KINDS, WATER_KINDS } from './types.ts'
+export { HOUSE_KINDS, RAISED_KINDS, ROUND_KINDS, SIGN_PANEL, WATER_KINDS } from './types.ts'
 export type { BuildingKind, Heightfield, PropKind, RoadKind } from './types.ts'
 export {
   CUBE_FACES,

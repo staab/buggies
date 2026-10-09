@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { ROUND_KINDS, gridDirection, groundIndex, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
+import { ROUND_KINDS, SIGN_PANEL, gridDirection, groundIndex, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -95,10 +95,10 @@ function above(at: Vec3, turn: Quat, rise: number): Vec3 {
 
 /**
  * Everything standing beside the roads: every building as the box it is
- * drawn as, every tree as its trunk, every boulder as a box its size, and
- * nothing for a shrub or a scree stone, which a car drives through. Slick
- * like a wall, so a car that clips a corner scrapes past rather than
- * sticking to it.
+ * drawn as, a sign as its pole and its panel, every tree as its trunk,
+ * every boulder as a box its size, and nothing for a shrub or a scree
+ * stone, which a car drives through. Slick like a wall, so a car that
+ * clips a corner scrapes past rather than sticking to it.
  */
 function addBuildings(world: RAPIER.World, map: World): void {
   if (map.buildings.length === 0 && map.trees.length === 0 && map.rocks.length === 0) return
@@ -118,6 +118,17 @@ function addBuildings(world: RAPIER.World, map: World): void {
   for (const building of map.buildings) {
     // A boat drifts about where it lies, a body of its own that the game moves.
     if (building.kind === 'boat') continue
+    // A sign is a panel up on a pole, with room to drive under the panel beside the pole.
+    if (building.kind === 'sign') {
+      const pole = (building.height - SIGN_PANEL.height) / 2
+      stand(RAPIER.ColliderDesc.cylinder(pole, SIGN_PANEL.poleRadius).setCollisionGroups(WALL_GROUPS), above(building.at, building.turn, pole), building.turn)
+      stand(
+        RAPIER.ColliderDesc.cuboid(building.width / 2, SIGN_PANEL.height / 2, building.depth / 2),
+        above(building.at, building.turn, building.height - SIGN_PANEL.height / 2),
+        building.turn,
+      )
+      continue
+    }
     const half = building.height / 2
     // The round towers are cylinders; everything else is the box it is drawn as.
     stand(

@@ -6,6 +6,7 @@
  * Its interchanges are built each in a small frame of its own.
  */
 
+import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
 import {
@@ -146,14 +147,14 @@ function routeLoop(planet: Planet, cities: readonly WorldDistrict[]): Vec3[] {
     const points = Math.ceil((2 * Math.PI * reach) / SAMPLE_STEP)
     return Array.from({ length: points }, (_, k) => {
       const angle = (k / points) * 2 * Math.PI
-      return fromFrame(around, Math.cos(angle) * reach, Math.sin(angle) * reach)
+      return fromFrame(around, exact.cos(angle) * reach, exact.sin(angle) * reach)
     })
   }
   // Each city by its bearing and distance from the middle, round in order.
   const polar = cities
     .map((city) => {
       const { x, z } = toFrame(frame, city.center)
-      return { bearing: Math.atan2(-z, x), out: Math.max(Math.hypot(x, z), turn) }
+      return { bearing: exact.atan2(-z, x), out: Math.max(exact.hypot(x, z), turn) }
     })
     .sort((a, b) => a.bearing - b.bearing)
   // Two cities: a point either side between them, out as far as the turning radius takes it, so the loop goes round and not along.
@@ -173,7 +174,7 @@ function routeLoop(planet: Planet, cities: readonly WorldDistrict[]): Vec3[] {
     let out = (a.out + b.out) / 2
     // Drawn in toward the middle, a step at a time, off the sea onto the land.
     for (let k = 0; k < 20; k++) {
-      if (sphereHeight(ground, fromFrame(frame, Math.cos(bearing) * out, -Math.sin(bearing) * out)) > seaLevel) break
+      if (sphereHeight(ground, fromFrame(frame, exact.cos(bearing) * out, -exact.sin(bearing) * out)) > seaLevel) break
       out = Math.max(out * 0.9, turn)
     }
     controls.push({ bearing, out })
@@ -203,7 +204,7 @@ function routeLoop(planet: Planet, cities: readonly WorldDistrict[]): Vec3[] {
         0.5 * (2 * p1.out + (-p0.out + p2.out) * t + (2 * p0.out - 5 * p1.out + 4 * p2.out - p3.out) * t2 + (-p0.out + 3 * p1.out - 3 * p2.out + p3.out) * t3)
       const bearing = p1.bearing + span * t
       const reach = Math.max(out, turn)
-      course.push(fromFrame(frame, Math.cos(bearing) * reach, -Math.sin(bearing) * reach))
+      course.push(fromFrame(frame, exact.cos(bearing) * reach, -exact.sin(bearing) * reach))
     }
   }
   const fine = smooth(resample(course, SAMPLE_STEP, radius, true), FINE_PASSES, true)
@@ -429,7 +430,7 @@ function localRun(
     return { x: x + FRAME_REACH, z: z + FRAME_REACH }
   })
   const cum = cumulativeLengths(samples)
-  const total = cum[samples.length - 1]! + Math.hypot(samples[0]!.x - samples.at(-1)!.x, samples[0]!.z - samples.at(-1)!.z)
+  const total = cum[samples.length - 1]! + exact.hypot(samples[0]!.x - samples.at(-1)!.x, samples[0]!.z - samples.at(-1)!.z)
   return {
     frame,
     indices,

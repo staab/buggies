@@ -92,5 +92,8 @@ export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyram
 /** Kinds that stand in the water rather than on the land: the boats moored off the shore, and a dam across a river. */
 export const WATER_KINDS: readonly BuildingKind[] = ['boat']
 
+/** A filling station's sign: a panel this tall at the top of a pole this thick, and nothing round the pole below it. */
+export const SIGN_PANEL = { height: 2.2, poleRadius: 0.15 } as const
+
 /** The kinds of thing a car can knock about. */
 export type PropKind = 'crate' | 'barrel'

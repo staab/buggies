@@ -7,6 +7,7 @@ import {
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
+  SIGN_PANEL,
   TUNNEL_CLEARANCE,
   TUNNEL_WALL_HEIGHT,
   gridDirection,
@@ -1688,12 +1689,12 @@ function buildStanding(world: World): THREE.Object3D[] {
       }),
     ]),
     instanced(tower, plain, signs, (sign, matrix, color) => {
-      matrix.makeScale(0.15, sign.top - sign.bottom - 2.2, 0.15)
+      matrix.makeScale(SIGN_PANEL.poleRadius, sign.top - sign.bottom - SIGN_PANEL.height, SIGN_PANEL.poleRadius)
       matrix.setPosition(sign.x, sign.bottom, sign.z)
       color.copy(IRONWORK)
     }),
     instanced(box, plain, signs, (sign, matrix, color) => {
-      upright(sign, matrix, sign.width, 2.2, sign.depth, sign.top - 1.1)
+      upright(sign, matrix, sign.width, SIGN_PANEL.height, sign.depth, sign.top - SIGN_PANEL.height / 2)
       color.copy(FASCIA)
     }),
   )
