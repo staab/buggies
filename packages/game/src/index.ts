@@ -30,7 +30,7 @@ import {
 } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import { NOT_RACING, RACE_TICKS_MOST, runRace, type Game, type Race } from './games.ts'
+import { NOT_RACING, RACE_TICKS_MOST, countdownLeft, runRace, type Game, type Race } from './games.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
 import { hasSiren, quiet, signal } from './signals.ts'
@@ -147,20 +147,25 @@ export {
   type Robot,
 } from './robots.ts'
 export {
+  COUNTDOWN_TICKS,
   COUNT_KINDS,
   GAME_KINDS,
   GAME_LABELS,
   GAME_PRIZE,
   GAME_REACH,
   GAME_TARGET_MOST,
+  RACE_LAPS_MOST,
   RACE_LEG_LEAST,
   RACE_MARKS_MOST,
   RACE_TICKS_MOST,
   NOT_RACING,
   apartOnGround,
   awardGames,
+  countdownLeft,
   gameProgress,
+  lapOf,
   nextMark,
+  raceMarks,
   runRace,
   setGame,
   validGame,
@@ -222,6 +227,7 @@ export {
   WEAPON_COSTS,
   WEAPON_LABELS,
   WEAPONS,
+  WINGS_TOP_SPEED,
   burning,
   harm,
   hasBuiltInGun,
@@ -490,19 +496,19 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
 }
 
 /**
- * Set a race going over this course: everyone driving on the island is put
+ * Set a race going over this course, this many laps: everyone driving on the island is put
  * on a starting grid at its start, facing its first checkpoint, and is in
  * it from there, the start passed. The cars nobody drives are in no race.
  * Returns the racers.
  */
-export function startRace(arena: Arena, course: Vec3[], starter: Seat): Seat[] {
+export function startRace(arena: Arena, course: Vec3[], starter: Seat, laps = 1): Seat[] {
   const racers = arena.seats.filter((seat) => seat.occupied && !seat.npc)
   const grid = startingGrid(arena.planet, course[0]!, course[1]!, racers.length)
   racers.forEach((seat, place) => {
     respawn(seat, grid[place])
     seat.racePassed = 1
   })
-  arena.race = { course, starter: starter.id, startTick: arena.tick }
+  arena.race = { course, laps, starter: starter.id, startTick: arena.tick }
   return racers
 }
 
@@ -688,8 +694,8 @@ export function advance(
       coastVehicle(seat.vehicle, seat.tuning, inputFor(seat), dt)
       continue
     }
-    // A stunned car takes no driving.
-    const input = stunned(seat) ? NEUTRAL_INPUT : inputFor(seat)
+    // A stunned car takes no driving, and nor does one counting down to a game, though it may pick its weapon.
+    const input = stunned(seat) ? NEUTRAL_INPUT : countdownLeft(seat, arena.race, arena.tick) > 0 ? heldStill(inputFor(seat)) : inputFor(seat)
     // A car its engine or wings are driving along is not one the tires hold
     // still, and one its wings are lifting is not one the road holds down.
     seat.vehicle.boosted = burning(seat, input)
@@ -752,6 +758,11 @@ export function advance(
     }
   }
   trimLoose(arena)
+}
+
+/** What a car waiting on a countdown is driven with: nothing, but the weapon picked and the handbrake on. */
+function heldStill(input: VehicleInput): VehicleInput {
+  return { ...NEUTRAL_INPUT, handbrake: true, weapon: input.weapon }
 }
 
 /**

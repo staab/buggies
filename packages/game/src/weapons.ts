@@ -147,6 +147,16 @@ export const WINGS_LEAN = 0.55
 export const WINGS_TURN_MIN_SPEED = 3
 export const WINGS_HOVER_TURN = 0.35
 export const WINGS_THRUST = 9
+/**
+ * How fast a car on wings goes along the ground below, as a share of its
+ * own top speed: a little slower than it drives, so flying a race is no
+ * shortcut. The pedals push it fully up to this much short of that and
+ * less and less over the rest, and past it the air slows it, by this much
+ * a second of what it is over.
+ */
+export const WINGS_TOP_SPEED = 0.9
+export const WINGS_FADE = 0.25
+export const WINGS_DRAG = 0.6
 
 /** The shockwave stuns every car within this for this long, and is seen going for this long. */
 export const SHOCKWAVE_RANGE = 30
@@ -512,15 +522,33 @@ export function pushWithWeapons(seat: Gunner, gravity: number): void {
     addForceAlong(body, frame.forward, tuning.mass * ENGINE_PUSH * headroom)
   }
   const lifted = lifting(seat)
+  const flying = lifted || (vehicle.winged && vehicle.groundedCount === 0)
+  // How fast it goes along the ground below, and how much faster it may.
+  const level = flying ? levelSpeed(vehicle) : 0
+  const top = tuning.maxSpeed * WINGS_TOP_SPEED
   if (lifted) {
     const climb = clamp(1 - vdot(frame.linearVelocity, vehicle.up) / WINGS_CLIMB_SPEED, 0, 1)
     addForceAlong(body, vehicle.up, tuning.mass * (gravity + WINGS_CLIMB_PUSH * climb))
-    // The pedals drive it along, forward or back, wherever it is.
-    addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * (command.throttle - command.brake))
+    // The pedals drive it along, forward or back, wherever it is, fading out toward the wings' top speed.
+    const headroom = clamp((top - level) / (top * WINGS_FADE), 0, 1)
+    addForceAlong(body, frame.forward, tuning.mass * WINGS_THRUST * headroom * (command.throttle - command.brake))
   }
-  if (lifted || (vehicle.winged && vehicle.groundedCount === 0)) bank(seat)
+  // Faster than wings go, as off a ramp or on the engine, the air slows it down to them.
+  if (level > top) addForceAlong(body, levelWay, -tuning.mass * WINGS_DRAG * (level - top))
+  if (flying) bank(seat)
   // Off its wings, or on the ground with them, the car has no bank to hold.
   else vset(vehicle.lean, 0, 0, 0)
+}
+
+const levelWay = v3()
+
+/** How fast a car goes along the ground below it, leaving `levelWay` the way it goes. */
+function levelSpeed(vehicle: Vehicle): number {
+  const { linearVelocity } = vehicle.frame
+  vaddScaled(levelWay, linearVelocity, vehicle.up, -vdot(linearVelocity, vehicle.up))
+  const speed = vlength(levelWay)
+  if (speed > 1e-6) vscale(levelWay, levelWay, 1 / speed)
+  return speed
 }
 
 /** How wide the turn a car on wings makes at full steer: a few times its own tightest turn at speed. */

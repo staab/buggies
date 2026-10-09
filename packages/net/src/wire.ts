@@ -2,6 +2,7 @@ import {
   COUNT_KINDS,
   GAME_KINDS,
   NOT_RACING,
+  RACE_LAPS_MOST,
   RACE_MARKS_MOST,
   UFO_STATES,
   NO_TARGET,
@@ -71,9 +72,9 @@ export const SNAPSHOT_HEADER_BYTES = 26
  * going on, only when it has any, which a car nobody drives mostly has not.
  */
 export const SNAPSHOT_VEHICLE_CORE_BYTES = 40
-export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 28
-/** The race on, if any, told after the header: who set it going and when, and each of its marks. */
-export const SNAPSHOT_RACE_BYTES = 5
+export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 32
+/** The race on, if any, told after the header: who set it going and when, how many laps, and each of its marks. */
+export const SNAPSHOT_RACE_BYTES = 6
 export const SNAPSHOT_MARK_BYTES = 6
 export const SNAPSHOT_VEHICLE_BYTES = SNAPSHOT_VEHICLE_CORE_BYTES + SNAPSHOT_VEHICLE_EXTRAS_BYTES
 export const SNAPSHOT_PICKUP_BYTES = 6
@@ -800,6 +801,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
   if (message.race !== null) {
     writer.u8(message.race.starter)
     writer.u32(message.race.startTick >>> 0)
+    writer.u8(Math.min(Math.max(message.race.laps, 1), RACE_LAPS_MOST))
     for (const mark of message.race.course.slice(0, RACE_MARKS_MOST)) writer.steps(mark, MARK_STEP)
   }
   for (const vehicle of message.vehicles) {
@@ -825,8 +827,9 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.u8(vehicle.game === null ? 0 : COUNT_CODES.indexOf(vehicle.game.kind))
     writer.u16(Math.min(vehicle.game?.target ?? 0, 0xffff))
     writer.u16(Math.min(Math.max(vehicle.game?.from ?? 0, 0), 0xffff))
+    writer.u32((vehicle.game?.startTick ?? 0) >>> 0)
     writer.u8(vehicle.gamesWon & 0xff)
-    writer.u8(vehicle.racePassed === NOT_RACING ? NOT_RACING_BYTE : Math.min(vehicle.racePassed, RACE_MARKS_MOST))
+    writer.u8(vehicle.racePassed === NOT_RACING ? NOT_RACING_BYTE : Math.min(vehicle.racePassed, RACE_MARKS_MOST * RACE_LAPS_MOST))
     writer.u8(Math.max(WEAPON_CODES.indexOf(vehicle.weapon), 0))
     writer.u8(Math.min(Math.max(vehicle.weaponHeld, 0), WEAPONS.length))
     writer.u8(Math.min(Math.max(vehicle.burnLeft, 0), 0xff))
@@ -960,9 +963,11 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
   if (raceMarks > 0) {
     const starter = reader.u8()
     const startTick = reader.u32()
+    const laps = reader.u8()
+    if (laps < 1 || laps > RACE_LAPS_MOST) return null
     const course: Vec3[] = []
     for (let k = 0; k < raceMarks; k++) course.push(reader.steps(MARK_STEP))
-    race = { course, starter, startTick }
+    race = { course, laps, starter, startTick }
   }
 
   const vehicles: VehicleSnapshot[] = []
@@ -1007,11 +1012,12 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     const gameKind = COUNT_CODES[reader.u8()]
     const target = reader.u16()
     const from = reader.u16()
+    const startTick = reader.u32()
     if (gameKind === undefined) return null
-    vehicle.game = gameKind === 'none' ? null : { kind: gameKind, target, from }
+    vehicle.game = gameKind === 'none' ? null : { kind: gameKind, target, from, startTick }
     vehicle.gamesWon = reader.u8()
     const passed = reader.u8()
-    if (passed !== NOT_RACING_BYTE && passed > RACE_MARKS_MOST) return null
+    if (passed !== NOT_RACING_BYTE && passed > RACE_MARKS_MOST * RACE_LAPS_MOST) return null
     vehicle.racePassed = passed === NOT_RACING_BYTE ? NOT_RACING : passed
     const weapon = WEAPON_CODES[reader.u8()]
     if (weapon === undefined) return null

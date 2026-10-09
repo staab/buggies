@@ -1,13 +1,13 @@
 import {
   FIXED_TIMESTEP,
   GAME_LABELS,
-  GAME_PRIZE,
   NEUTRAL_INPUT,
   NOT_RACING,
   VEHICLE_PROFILE_LABELS,
   hasSiren,
   createArena,
   gameProgress,
+  lapOf,
   nextMark,
   portalCrossed,
   takeSeat,
@@ -31,6 +31,7 @@ import { aimPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
+import { GameBanners, playerTag } from './game-banners.ts'
 import { Keyboard } from './input.ts'
 import { SOLO_KEYS } from './keys.ts'
 import type { ModeView } from './mode.ts'
@@ -52,9 +53,6 @@ const MARK_COLOR = 0xffd24a
 /** How tall the beacon over a race's next mark stands, and how wide. */
 const BEACON_HEIGHT = 160
 const BEACON_RADIUS = 3
-/** How long a game won, or a race over, is told of, in seconds. */
-const GAME_WON_SECONDS = 5
-
 /** The colors the robots, the cars nobody drives, the saucers and the spiders are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
 const NPC_COLOR = 0x9aa0a6
@@ -105,9 +103,11 @@ function raceLine(seat: Seat, race: Race, tick: number, radius: number): string 
   if (mark === null) return 'A race is on.'
   const meters = Math.round(groundDistance(seat.vehicle.frame.position, { x: mark.x * radius, y: mark.y * radius, z: mark.z * radius }))
   const checkpoints = race.course.length - 2
-  const toward = seat.racePassed === race.course.length - 1 ? 'the finish' : `checkpoint ${seat.racePassed} of ${checkpoints}`
+  const along = seat.racePassed % race.course.length
+  const toward = along === 0 ? 'the start' : along === race.course.length - 1 ? 'the finish' : `checkpoint ${along} of ${checkpoints}`
+  const lap = race.laps === 1 ? '' : ` · lap ${lapOf(seat, race)} of ${race.laps}`
   const seconds = Math.max(Math.floor((tick - race.startTick) * FIXED_TIMESTEP), 0)
-  return `Race: ${meters} m to ${toward} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  return `Race: ${meters} m to ${toward}${lap} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 /** A column of light standing over a spot, to be seen from anywhere on the island. */
@@ -180,13 +180,10 @@ export async function createOnlineMode(
   const from = { x: 0, y: 0, z: 0 }
   let crossed = -1
   let chaseSnapped = false
-  // A game won: how many the server has counted, and how much longer that, or a race over, is told of.
-  let gamesWon = prediction.ownSeat.gamesWon
-  let wonFor = 0
-  let overFor = 0
-  // How far along the race the car was, for a mark passed to be heard, and whether one was on.
+  // The big words for a game starting or over.
+  const banners = new GameBanners(welcome.seed, sound)
+  // How far along the race the car was, for a mark passed to be heard.
   let racePassed = prediction.ownSeat.racePassed
-  let raced = prediction.race !== null
   const beacon = buildBeacon()
   root.add(beacon)
 
@@ -232,19 +229,10 @@ export async function createOnlineMode(
       car.presence.render(owed / FIXED_TIMESTEP, dt)
       arena.update(dt, owed / FIXED_TIMESTEP)
       const own = prediction.ownSeat
-      if (own.gamesWon !== gamesWon) {
-        gamesWon = own.gamesWon
-        wonFor = GAME_WON_SECONDS
-        sound.chime()
-      }
       const { race } = prediction
       if (own.racePassed > racePassed && racePassed !== NOT_RACING) sound.chime()
       racePassed = own.racePassed
-      // A race over that this car did not win: someone else did, or it was called off.
-      if (raced && race === null && wonFor === 0) overFor = GAME_WON_SECONDS
-      raced = race !== null
-      wonFor = Math.max(wonFor - dt, 0)
-      overFor = Math.max(overFor - dt, 0)
+      banners.update(dt, { own, seats: prediction.seats, race, tick: prediction.tick })
       const mark = race === null ? null : nextMark(own, race)
       beacon.visible = mark !== null
       if (mark !== null) standOn(beacon, overSurface(mirror.planet, mark, 0))
@@ -260,7 +248,7 @@ export async function createOnlineMode(
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
       const controls = SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn')
-      const title = `${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
+      const title = `${playerTag(welcome.seed, welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
@@ -269,15 +257,16 @@ export async function createOnlineMode(
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
       const own = prediction.ownSeat
       const { race } = prediction
+      const banner = banners.state()
       const lines = [
-        ...(wonFor > 0 ? [`Game won! +${GAME_PRIZE} bananas`] : overFor > 0 ? ['The race is over.'] : []),
         ...(race === null ? [] : [raceLine(own, race, prediction.tick, mirror.planet.radius)]),
         ...(own.game === null ? [] : [countLine(own, own.game)]),
       ]
       return {
         ...car.presence.hudState(title, controls, sync),
         radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, race, mirror.planet.radius),
-        ...(lines.length === 0 ? {} : { game: lines.join('\n'), gameWon: wonFor > 0 }),
+        ...(lines.length === 0 ? {} : { game: lines.join('\n') }),
+        ...(banner === undefined ? {} : { banner }),
       }
     },
     changeVehicle(profile) {

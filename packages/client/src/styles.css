@@ -88,10 +88,6 @@ body {
   color: var(--dim);
   white-space: pre-line;
 }
-.game.won {
-  color: #ffd24a;
-  font-weight: 600;
-}
 /* A speaker in the corner, crossed out when muted, and a trophy beside it for the games. */
 #mute,
 #trophy {
@@ -528,4 +524,182 @@ kbd {
   border: 1px solid var(--edge);
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.3);
+}
+/* The big words across the middle of the screen: a game starting, counting down, or over. */
+.banner {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  text-align: center;
+  pointer-events: none;
+  overflow: hidden;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.7);
+}
+.banner[hidden],
+.banner > [hidden] {
+  display: none;
+}
+.banner-title {
+  position: relative;
+  font-size: clamp(36px, 9vw, 88px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  animation: banner-in 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.banner-subtitle {
+  position: relative;
+  max-width: 640px;
+  font-size: clamp(15px, 2.6vw, 22px);
+  animation: banner-fade 0.5s 0.15s both;
+}
+.banner-detail {
+  position: relative;
+  font-size: clamp(13px, 2vw, 17px);
+  color: #ffd24a;
+  animation: banner-fade 0.5s 0.3s both;
+}
+.banner-countdown {
+  position: relative;
+  margin-top: 8px;
+  font-size: clamp(56px, 14vw, 140px);
+  font-weight: 800;
+  color: #ffd24a;
+}
+.banner-countdown.pop {
+  animation: countdown-pop 0.9s ease-out both;
+}
+.banner.won .banner-title {
+  color: #ffd24a;
+}
+.banner.lost .banner-title,
+.banner.over .banner-title {
+  color: #b9c6d2;
+}
+/* Lost, the screen goes gray and each letter of the title droops in turn. */
+.banner.lost {
+  animation: bummer-tint 1.2s 0.3s both;
+}
+.banner.lost .banner-title span {
+  display: inline-block;
+  white-space: pre;
+  animation: droop 1.4s cubic-bezier(0.5, 0, 0.75, 0.3) both;
+}
+.banner-weather {
+  position: absolute;
+  inset: 0;
+}
+.confetti {
+  position: absolute;
+  top: -20px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation-name: confetti-fall;
+  animation-timing-function: cubic-bezier(0.3, 0.6, 0.6, 1);
+  animation-fill-mode: both;
+}
+.cloud {
+  position: absolute;
+  top: calc(50% - 190px);
+  left: 50%;
+  width: 260px;
+  height: 70px;
+  margin-left: -130px;
+  border-radius: 40px;
+  background: #5d6873;
+  box-shadow:
+    50px -28px 0 6px #5d6873,
+    -40px -18px 0 0 #5d6873;
+  animation: banner-fade 0.6s 0.3s both;
+}
+.drop {
+  position: absolute;
+  top: 60px;
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  background: #8fb7e0;
+  opacity: 0;
+  animation-name: rain;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+@keyframes banner-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+@keyframes banner-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes countdown-pop {
+  from {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+  25% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+}
+@keyframes confetti-fall {
+  to {
+    transform: translate(var(--drift), 110vh) rotate(var(--spin));
+  }
+}
+@keyframes droop {
+  60% {
+    transform: translateY(14px) rotate(var(--tilt));
+  }
+  to {
+    transform: translateY(22px) rotate(var(--tilt));
+    opacity: 0.75;
+  }
+}
+@keyframes bummer-tint {
+  from {
+    background: rgba(40, 50, 60, 0);
+    backdrop-filter: grayscale(0);
+  }
+  to {
+    background: rgba(40, 50, 60, 0.35);
+    backdrop-filter: grayscale(0.8);
+  }
+}
+@keyframes rain {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(220px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner *,
+  .banner {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
+  }
+  .confetti,
+  .drop {
+    display: none;
+  }
 }

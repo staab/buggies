@@ -3,6 +3,7 @@ import {
   GAME_LABELS,
   GAME_PRIZE,
   GAME_TARGET_MOST,
+  RACE_LAPS_MOST,
   RACE_LEG_LEAST,
   RACE_MARKS_MOST,
   apartOnGround,
@@ -26,7 +27,7 @@ const GAME_NOTES: Readonly<Record<GameKind, string>> = {
   score: 'Collect this many bananas',
   kills: "Wreck this many other players' cars with your weapons",
   robots: 'Bring down this many robots with your weapons',
-  race: 'Race everyone on the island over a course you pick',
+  race: 'Race everyone on the island over a course you pick, once or for laps',
 }
 
 /** What each count starts at, when first picked. */
@@ -58,6 +59,28 @@ function span(className: string, text: string): HTMLSpanElement {
   return element
 }
 
+/** A field for a whole number, from 1 to `most`, that keeps the keys it is typed with from the game and plays on Enter. */
+function wholeNumber(most: number, onInput: () => void, onEnter: () => void): HTMLInputElement {
+  const input = document.createElement('input')
+  input.type = 'number'
+  input.min = '1'
+  input.max = String(most)
+  input.step = '1'
+  // The game is listening for keys too: these are the field's.
+  input.addEventListener('keydown', (event) => {
+    event.stopPropagation()
+    if (event.key === 'Enter') onEnter()
+  })
+  input.addEventListener('input', onInput)
+  return input
+}
+
+/** A field's number, if it is a whole one from 1 to `most`. */
+function wholeIn(input: HTMLInputElement, most: number): number | null {
+  const value = Number(input.value)
+  return Number.isInteger(value) && value >= 1 && value <= most ? value : null
+}
+
 function button(text: string, onClick: () => void): HTMLButtonElement {
   const made = document.createElement('button')
   made.type = 'button'
@@ -80,6 +103,7 @@ export class GameMenu {
   private readonly amount: HTMLLabelElement
   private readonly amountInput: HTMLInputElement
   private readonly course: HTMLDivElement
+  private readonly lapsInput: HTMLInputElement
   private readonly board: GlobeBoard
   private readonly undoButton: HTMLButtonElement
   private readonly resetButton: HTMLButtonElement
@@ -126,17 +150,7 @@ export class GameMenu {
     // How many, for a count.
     this.amount = document.createElement('label')
     this.amount.className = 'amount'
-    this.amountInput = document.createElement('input')
-    this.amountInput.type = 'number'
-    this.amountInput.min = '1'
-    this.amountInput.max = String(GAME_TARGET_MOST)
-    this.amountInput.step = '1'
-    // The game is listening for keys too: these are the field's.
-    this.amountInput.addEventListener('keydown', (event) => {
-      event.stopPropagation()
-      if (event.key === 'Enter') this.confirm()
-    })
-    this.amountInput.addEventListener('input', () => this.render())
+    this.amountInput = wholeNumber(GAME_TARGET_MOST, () => this.render(), () => this.confirm())
     this.amount.append(span('name', 'How many'), this.amountInput)
 
     // The course, on a globe of the island.
@@ -156,7 +170,13 @@ export class GameMenu {
     const tools = document.createElement('div')
     tools.className = 'tools'
     tools.append(this.undoButton, this.resetButton)
-    this.course.append(this.board.element, tools)
+    // How many times round: once is start to finish, more is a circuit, from the finish back round by the start.
+    const laps = document.createElement('label')
+    laps.className = 'amount'
+    this.lapsInput = wholeNumber(RACE_LAPS_MOST, () => this.render(), () => this.confirm())
+    this.lapsInput.value = '1'
+    laps.append(span('name', 'Laps'), this.lapsInput)
+    this.course.append(laps, this.board.element, tools)
 
     this.note = document.createElement('p')
     this.note.className = 'status'
@@ -209,8 +229,7 @@ export class GameMenu {
 
   /** The number asked for, if it is one that can be played for. */
   private target(): number | null {
-    const value = Number(this.amountInput.value)
-    return Number.isInteger(value) && value >= 1 && value <= GAME_TARGET_MOST ? value : null
+    return wholeIn(this.amountInput, GAME_TARGET_MOST)
   }
 
   /**
@@ -221,8 +240,10 @@ export class GameMenu {
   private raceRequest(): GameRequest | null {
     const map = this.host.map()
     if (map === null) return null
+    const laps = wholeIn(this.lapsInput, RACE_LAPS_MOST)
+    if (laps === null) return null
     const course = this.marks.map(({ x, y, z }) => ({ x: Math.fround(x), y: Math.fround(y), z: Math.fround(z) }))
-    return validGame({ kind: 'race', target: 0, course }, map.radius)
+    return validGame({ kind: 'race', target: laps, course }, map.radius)
   }
 
   private pickMark(mark: Vec3): void {
@@ -272,7 +293,14 @@ export class GameMenu {
       this.drawBoard()
       this.undoButton.disabled = this.marks.length === 0 || on !== null
       this.resetButton.disabled = this.marks.length === 0 || on !== null
-      this.note.textContent = on !== null ? 'One race at a time: wait for this one to be won or called off.' : this.refused || this.courseNote()
+      this.lapsInput.disabled = on !== null
+      if (on !== null) this.lapsInput.value = String(on.race.laps)
+      this.note.textContent =
+        on !== null
+          ? 'One race at a time: wait for this one to be won or called off.'
+          : wholeIn(this.lapsInput, RACE_LAPS_MOST) === null
+            ? `Laps: a whole number from 1 to ${RACE_LAPS_MOST}.`
+            : this.refused || this.courseNote()
       this.setButton.disabled = on !== null || this.raceRequest() === null
     } else {
       this.note.textContent = this.target() === null ? `A whole number from 1 to ${GAME_TARGET_MOST}.` : ''
@@ -285,15 +313,20 @@ export class GameMenu {
     if (this.marks.length === 0) return 'Click the globe to place the start. Drag to turn it, scroll to zoom.'
     if (this.marks.length === 1) return 'Now a checkpoint, at least one.'
     if (this.marks.length === 2) return 'Now the finish, or more checkpoints before it.'
-    return 'The last mark is the finish. Everyone on the island is put on the start when the race begins.'
+    const laps = wholeIn(this.lapsInput, RACE_LAPS_MOST) ?? 1
+    const round = laps === 1 ? '' : ` Each of the ${laps} laps runs from the finish back round by the start.`
+    return `The last mark is the finish.${round} Everyone on the island is put on the start when the race begins.`
   }
 
   /** The island, the player on it, and the course: the one on, or the one being picked. */
   private drawBoard(): void {
     const map = this.host.map()
     if (map === null) return
-    const course = this.host.race()?.race.course ?? this.marks
+    const on = this.host.race()?.race
+    const course = on?.course ?? this.marks
+    const laps = on?.laps ?? wholeIn(this.lapsInput, RACE_LAPS_MOST) ?? 1
     this.board.draw(map, {
+      closed: laps > 1,
       course: course.map((at, k) => {
         const finish = k === course.length - 1 && course.length >= 3
         return {

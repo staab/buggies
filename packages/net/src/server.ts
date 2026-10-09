@@ -344,15 +344,15 @@ export class GameServer implements TransportHandlers {
       }
       if (game === null) {
         // Clearing is of the player's own count, and of the race on if they set it going.
-        setGame(player.seat, null)
+        setGame(player.seat, null, arena.tick)
         if (arena.race?.starter === player.seat.id) {
           endRace(arena)
           this.events.onRaceEnded?.(arena.planet.seed, null)
         }
-      } else if (game.kind !== 'race') setGame(player.seat, { kind: game.kind, target: game.target })
+      } else if (game.kind !== 'race') setGame(player.seat, { kind: game.kind, target: game.target }, arena.tick)
       else if (arena.race === null) {
         // One race at a time: asked for while another is on, it is too late, and nothing comes of it.
-        this.events.onRaceStarted?.(player.seat, startRace(arena, game.course, player.seat))
+        this.events.onRaceStarted?.(player.seat, startRace(arena, game.course, player.seat, game.target))
         return
       } else return
       this.events.onGameSet?.(player.seat)

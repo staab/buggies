@@ -63,6 +63,7 @@ const snapshot: SnapshotMessage = {
       { x: 0, y: 1, z: 0 },
       { x: -0.48, y: 0.6, z: 0.64 },
     ],
+    laps: 3,
     starter: 5,
     startTick: 120000,
   },
@@ -81,7 +82,7 @@ const snapshot: SnapshotMessage = {
       collected: 1234,
       robotKills: 1,
     kills: 7,
-      game: { kind: 'robots', target: 4, from: 1 },
+      game: { kind: 'robots', target: 4, from: 1, startTick: 70000 },
       gamesWon: 3,
       racePassed: 2,
       weapon: 'machineGun',
@@ -112,7 +113,7 @@ const snapshot: SnapshotMessage = {
       collected: 3,
       robotKills: 1,
     kills: 0,
-      game: { kind: 'kills', target: 5, from: 2 },
+      game: { kind: 'kills', target: 5, from: 2, startTick: 12 },
       gamesWon: 0,
       racePassed: NOT_RACING,
       weapon: 'none',
@@ -215,14 +216,14 @@ describe('wire', () => {
       { x: 0, y: 1, z: 0 },
       { x: 0.5, y: 0.5, z: -0.25 },
     ]
-    expect(decodeGame(encodeGame({ kind: 'race', target: 0, course }))).toEqual({ kind: 'race', target: 0, course })
+    expect(decodeGame(encodeGame({ kind: 'race', target: 1, course }))).toEqual({ kind: 'race', target: 1, course })
     expect(decodeGame(encodeGame(null))).toBeNull()
     // Not a game at all: the wrong length, or a kind that is none of them.
     expect(decodeGame(encodeRespawn())).toBeUndefined()
     const bad = encodeGame(null)
     bad[1] = 99
     expect(decodeGame(bad)).toBeUndefined()
-    const short = encodeGame({ kind: 'race', target: 0, course })
+    const short = encodeGame({ kind: 'race', target: 1, course })
     expect(decodeGame(short.slice(0, short.length - 1))).toBeUndefined()
   })
 
@@ -248,7 +249,7 @@ describe('wire', () => {
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
     expect(decoded.full).toBe(true)
     expect(decoded.looseNext).toBe(4321)
-    expect(decoded.race).toMatchObject({ starter: 5, startTick: 120000 })
+    expect(decoded.race).toMatchObject({ laps: 3, starter: 5, startTick: 120000 })
     for (const [k, mark] of snapshot.race!.course.entries()) {
       for (const axis of ['x', 'y', 'z'] as const) expect(decoded.race!.course[k]![axis]).toBeCloseTo(mark[axis], 4)
     }

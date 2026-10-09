@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { Banner, type BannerState } from './banner.ts'
 import { Radar, type RadarState } from './radar.ts'
 
 /** What the HUD shows of a mode: a title always, and the driving gauges when someone is driving. */
@@ -22,8 +23,8 @@ export interface HudState {
   radar?: RadarState
   /** The games being played and how far along they are, a line each; nothing in free play. */
   game?: string
-  /** Whether the game lines are telling of one just won. */
-  gameWon?: boolean
+  /** The big words across the middle of the screen, for a game starting or over. */
+  banner?: BannerState
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -194,11 +195,13 @@ export class Hud {
   private shownScore = ''
   private readonly scoreCount = document.createElement('span')
   private readonly radar: Radar | null
+  private readonly banner: Banner | null
 
-  /** `radarRoot` is where the mini-map goes, in a corner of its own. */
-  constructor(root: HTMLElement, radarRoot?: HTMLElement) {
+  /** `radarRoot` is where the mini-map goes, in a corner of its own, and `bannerRoot` where the big words go, over the middle. */
+  constructor(root: HTMLElement, radarRoot?: HTMLElement, bannerRoot?: HTMLElement) {
     this.root = root
     this.radar = radarRoot === undefined ? null : new Radar(radarRoot)
+    this.banner = bannerRoot === undefined ? null : new Banner(bannerRoot)
     root.replaceChildren()
 
     this.gauges.append(this.speedo.element, this.damage.element)
@@ -244,6 +247,7 @@ export class Hud {
     this.root.hidden = state === null
     this.root.classList.remove('busy')
     this.radar?.render(state?.radar)
+    this.banner?.render(state?.banner)
     if (state === null) return
 
     if (state.title !== this.shownTitle) {
@@ -259,7 +263,6 @@ export class Hud {
     const game = state.game ?? ''
     if (game !== this.game.textContent) this.game.textContent = game
     this.game.hidden = game === ''
-    this.game.classList.toggle('won', state.gameWon === true)
 
     const { speed, maxSpeed, damage: wear } = state
     const driving = speed !== undefined && maxSpeed !== undefined && wear !== undefined

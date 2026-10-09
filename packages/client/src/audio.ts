@@ -306,6 +306,9 @@ function noiseBuffer(context: AudioContext): AudioBuffer {
 /** The three notes of a banana taken: a bright little rising chime. */
 const CHIME = [1318.5, 1661.2, 1975.5]
 
+/** The notes of a sad trombone, falling by half steps. */
+const BUMMER = [293.7, 277.2, 261.6, 246.9]
+
 /** A siren: a tone wailing up and down between these, this many times a second and this loud. */
 const SIREN = { low: 620, high: 960, wail: 0.9, level: 0.18 } as const
 
@@ -544,6 +547,60 @@ export class Sound {
       overtone.start(at)
       note.stop(at + 0.3)
       overtone.stop(at + 0.3)
+    })
+  }
+
+  /** A beat of a countdown to a game: a short beep, and a higher, longer one for the go. */
+  beep(go: boolean): void {
+    const { context } = this
+    const now = context.currentTime
+    const length = go ? 0.5 : 0.18
+    const note = context.createOscillator()
+    note.type = 'square'
+    note.frequency.value = go ? 1046.5 : 523.3
+    const gain = context.createGain()
+    gain.gain.setValueAtTime(0.0001, now)
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01)
+    gain.gain.setValueAtTime(0.12, now + length - 0.05)
+    gain.gain.exponentialRampToValueAtTime(0.001, now + length)
+    note.connect(gain).connect(this.master)
+    note.start(now)
+    note.stop(now + length)
+  }
+
+  /** A game lost: a sad trombone, four notes falling, the last one wobbling away. */
+  bummer(): void {
+    const { context } = this
+    const start = context.currentTime + 0.3
+    BUMMER.forEach((frequency, index) => {
+      const last = index === BUMMER.length - 1
+      const at = start + index * 0.42
+      const length = last ? 1.3 : 0.38
+      const note = context.createOscillator()
+      note.type = 'sawtooth'
+      note.frequency.setValueAtTime(frequency, at)
+      if (last) {
+        // The wah-wah: the last note bent down a little and wobbled.
+        note.frequency.linearRampToValueAtTime(frequency * 0.94, at + length)
+        const wobble = context.createOscillator()
+        wobble.frequency.value = 6
+        const depth = context.createGain()
+        depth.gain.value = frequency * 0.03
+        wobble.connect(depth).connect(note.frequency)
+        wobble.start(at)
+        wobble.stop(at + length)
+      }
+      const muffle = context.createBiquadFilter()
+      muffle.type = 'lowpass'
+      muffle.frequency.value = 900
+      const gain = context.createGain()
+      gain.gain.setValueAtTime(0.0001, at)
+      gain.gain.exponentialRampToValueAtTime(0.18, at + 0.05)
+      gain.gain.setValueAtTime(0.18, at + length - 0.15)
+      gain.gain.exponentialRampToValueAtTime(0.001, at + length)
+      note.connect(muffle).connect(gain).connect(this.master)
+      note.start(at)
+      note.stop(at + length)
     })
   }
 

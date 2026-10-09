@@ -752,7 +752,7 @@ describe('a session', () => {
     a.client.setGame({ kind: 'score', target: 2, course: [] })
     session.run(0.5)
     expect(session.events).toContain('game 0 score 2')
-    expect(seat.game).toEqual({ kind: 'score', target: 2, from: collected })
+    expect(seat.game).toMatchObject({ kind: 'score', target: 2, from: collected })
     expect(a.prediction.ownSeat.game).toEqual(seat.game)
 
     // Two bananas more, and the prize is paid: once, and the game is done with.
@@ -784,7 +784,7 @@ describe('a session', () => {
     for (const point of road.points) if (marks.length < 3 && groundDistance(point, marks.at(-1)!) > RACE_LEG_LEAST + 20) marks.push(point)
     const course = marks.map((mark) => upOf(mark))
 
-    a.client.setGame({ kind: 'race', target: 0, course })
+    a.client.setGame({ kind: 'race', target: 1, course })
     session.run(0.5)
     expect(session.events).toContain(`race ${seatA.id} started 2`)
     for (const player of [a, b]) {
@@ -795,7 +795,7 @@ describe('a session', () => {
     }
 
     // Another race asked for while one is on comes to nothing.
-    b.client.setGame({ kind: 'race', target: 0, course: [...course].reverse() })
+    b.client.setGame({ kind: 'race', target: 1, course: [...course].reverse() })
     session.run(0.5)
     expect(session.arena.race?.starter).toBe(seatA.id)
     expect(b.client.closed).toBeNull()
@@ -813,7 +813,7 @@ describe('a session', () => {
     expect(a.prediction.ownSeat.racePassed).toBe(NOT_RACING)
 
     // Whoever set a race going may call it off.
-    a.client.setGame({ kind: 'race', target: 0, course })
+    a.client.setGame({ kind: 'race', target: 1, course })
     session.run(0.5)
     b.client.setGame(null)
     session.run(0.25)

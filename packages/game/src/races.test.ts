@@ -3,13 +3,17 @@ import { generatePlanet, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  COUNTDOWN_TICKS,
   GAME_PRIZE,
+  NEUTRAL_INPUT,
   NOT_RACING,
   RACE_LEG_LEAST,
   RACE_TICKS_MOST,
   createArena,
+  advance,
   endRace,
   initPhysics,
+  setGame,
   playRace,
   respawn,
   seatNpc,
@@ -83,6 +87,35 @@ describe('races', () => {
     expect(b.score).toBe(score + GAME_PRIZE)
     expect(arena.race).toBeNull()
     expect([a.racePassed, b.racePassed]).toEqual([NOT_RACING, NOT_RACING])
+    arena.world.free()
+  })
+
+  it('hold everyone in them still, weapons picked but not fired, until the countdown is over', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    const b = takeSeat(arena, 1, 'sportsCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    startRace(arena, courseOn(map, 3), a)
+    a.score = 10
+    const grid = { ...a.vehicle.frame.position }
+    const floored = { ...NEUTRAL_INPUT, throttle: 1, steer: 1, weapon: 4, fire: true }
+    for (let i = 0; i < COUNTDOWN_TICKS - 1; i++) advance(arena, () => floored)
+    expect(apart(a.vehicle.frame.position, grid)).toBeLessThan(1)
+    expect(a.weapon).toBe('engine')
+    expect(a.score).toBe(10)
+    for (let i = 0; i < 90; i++) advance(arena, () => floored)
+    expect(apart(a.vehicle.frame.position, grid)).toBeGreaterThan(3)
+    expect(a.score).toBeLessThan(10)
+
+    // A count holds only the player who set it.
+    endRace(arena)
+    for (let i = 0; i < 240; i++) advance(arena)
+    const held = { ...b.vehicle.frame.position }
+    const free = { ...a.vehicle.frame.position }
+    setGame(b, { kind: 'score', target: 5 }, arena.tick)
+    for (let i = 0; i < COUNTDOWN_TICKS - 1; i++) advance(arena, () => floored)
+    expect(apart(b.vehicle.frame.position, held)).toBeLessThan(1)
+    expect(apart(a.vehicle.frame.position, free)).toBeGreaterThan(3)
     arena.world.free()
   })
 

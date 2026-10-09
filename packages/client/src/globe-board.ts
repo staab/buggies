@@ -25,9 +25,10 @@ export interface GlobeMark {
   label: string
 }
 
-/** What is drawn over the globe: a course through marks, and where the player is. */
+/** What is drawn over the globe: a course through marks, closed from its last back to its first for a circuit, and where the player is. */
 export interface GlobeScene {
   course: readonly GlobeMark[]
+  closed?: boolean
   here: Vec3 | null
 }
 
@@ -180,13 +181,14 @@ export class GlobeBoard {
     const context = this.overlay.getContext('2d')
     if (context === null) return
     context.setTransform(ratio, 0, 0, ratio, 0, 0)
-    const { course, here } = this.drawn
+    const { course, closed, here } = this.drawn
     context.strokeStyle = 'rgba(255, 255, 255, 0.75)'
     context.lineWidth = 2
     context.lineCap = 'round'
     context.beginPath()
-    for (let k = 1; k < course.length; k++) {
-      const arc = greatCircle(course[k - 1]!.at, course[k]!.at)
+    const legs = closed === true && course.length >= 3 ? course.length + 1 : course.length
+    for (let k = 1; k < legs; k++) {
+      const arc = greatCircle(course[k - 1]!.at, course[k % course.length]!.at)
       arc.forEach((point, i) => {
         const spot = this.onBoard(point)
         const before = i > 0 && this.onBoard(arc[i - 1]!).near

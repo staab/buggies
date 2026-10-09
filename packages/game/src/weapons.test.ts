@@ -1,4 +1,4 @@
-import { vdot, type Vec3 } from '@buggies/physics'
+import { v3, vdot, vlength, vnormalize, vscale, type Vec3 } from '@buggies/physics'
 import { alongGround, atHeight, generatePlanet, groundUnder, heightOver, tangentFrame, upOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -29,6 +29,7 @@ import {
   SPILL_FLIGHT_TICKS,
   WEAPON_COSTS,
   WEAPONS,
+  WINGS_TOP_SPEED,
   advance,
   createArena,
   initPhysics,
@@ -407,6 +408,29 @@ describe('weapons', () => {
     // Let go: down it comes.
     for (let i = 0; i < 60 * 6; i++) advance(arena)
     expect(a.vehicle.groundedCount).toBeGreaterThan(0)
+    arena.world.free()
+  })
+
+  it('the wings fly a car a little slower than it drives, and slow one flung up faster than that', () => {
+    const arena = createArena(map)
+    const a = takeSeat(arena, 0, 'sportsCar')
+    for (let i = 0; i < 30; i++) advance(arena)
+    a.score = 40
+    const top = a.tuning.maxSpeed * WINGS_TOP_SPEED
+    hold(arena, a, 'wings', 120)
+    let fastest = 0
+    for (let i = 0; i < 60 * 12; i++) {
+      hold(arena, a, 'wings', 1, { throttle: 1 })
+      fastest = Math.max(fastest, vlength(going(a)))
+    }
+    expect(a.vehicle.groundedCount).toBe(0)
+    expect(fastest).toBeGreaterThan(top * 0.7)
+    expect(fastest).toBeLessThan(top * 1.02)
+    // Flung along at half again its top speed, it is slowed back down to what wings go.
+    const fling = vscale(v3(), vnormalize(v3(), alongGround(a.vehicle.frame.forward, a.vehicle.up)), a.tuning.maxSpeed * 1.5)
+    a.vehicle.body.setLinvel(fling, true)
+    hold(arena, a, 'wings', 60 * 4, { throttle: 1 })
+    expect(vlength(going(a))).toBeLessThan(top * 1.1)
     arena.world.free()
   })
 

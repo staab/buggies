@@ -32,11 +32,17 @@ export const GAME_REACH = 20
 export const RACE_MARKS_LEAST = 3
 export const RACE_MARKS_MOST = 10
 
+/** The most laps a race may go round its course: once, from start to finish, or more, from the finish back round by the start. */
+export const RACE_LAPS_MOST = 9
+
 /** How far apart, across the ground, each mark of a race must be from the one before it. */
 export const RACE_LEG_LEAST = 200
 
 /** How long a race may go on with nobody finishing before it is called off, in ticks. */
 export const RACE_TICKS_MOST = Math.round((5 * 60) / FIXED_TIMESTEP)
+
+/** How long a game counts down before it starts, in ticks: its players are held still till then. */
+export const COUNTDOWN_TICKS = Math.round(3 / FIXED_TIMESTEP)
 
 /** A seat in no race. */
 export const NOT_RACING = -1
@@ -44,22 +50,24 @@ export const NOT_RACING = -1
 /** A game as asked for: how many, for a count, or the course, for a race. */
 export interface GameRequest {
   kind: GameKind
-  /** How many bananas or wrecks; nothing, for a race. */
+  /** How many bananas or wrecks, or for a race how many laps. */
   target: number
   /** A race's marks in the order they are driven, start first and finish last, each the way out from the planet's middle through it; none, for a count. */
   course: Vec3[]
 }
 
-/** A count being played for, and what it stood at when it was set, for it to be counted from. */
+/** A count being played for, what it stood at when it was set, for it to be counted from, and when it was set. */
 export interface Game {
   kind: CountKind
   target: number
   from: number
+  startTick: number
 }
 
-/** A race on, over the island: its course, who set it going, and when. */
+/** A race on, over the island: its course, how many times round it, who set it going, and when. */
 export interface Race {
   course: Vec3[]
+  laps: number
   starter: number
   startTick: number
 }
@@ -71,7 +79,7 @@ export interface GameSeat {
   robotKills: number
   game: Game | null
   gamesWon: number
-  /** How many of the race's marks it has passed, or `NOT_RACING`. */
+  /** How many of the race's marks it has passed, counting each again on every lap, or `NOT_RACING`. */
   racePassed: number
   score: number
   readonly occupied: boolean
@@ -113,16 +121,18 @@ export function validGame(request: GameRequest, radius: number): GameRequest | n
       if (length < 1e-6) return null
       course.push({ x: x / length, y: y / length, z: z / length })
     }
-    return courseFault(course, radius) === null ? { kind: 'race', target: 0, course } : null
+    const laps = request.target
+    if (!Number.isInteger(laps) || laps < 1 || laps > RACE_LAPS_MOST) return null
+    return courseFault(course, radius) === null ? { kind: 'race', target: laps, course } : null
   }
   const { target } = request
   if (!Number.isInteger(target) || target < 1 || target > GAME_TARGET_MOST) return null
   return { kind: request.kind, target, course: [] }
 }
 
-/** Play for this count from now, counted from where the seat stands, or for none. */
-export function setGame(seat: GameSeat, request: { kind: CountKind; target: number } | null): void {
-  seat.game = request === null ? null : { kind: request.kind, target: request.target, from: countOf(seat, request.kind) }
+/** Play for this count from this tick, counted from where the seat stands, or for none. */
+export function setGame(seat: GameSeat, request: { kind: CountKind; target: number } | null, tick: number): void {
+  seat.game = request === null ? null : { kind: request.kind, target: request.target, from: countOf(seat, request.kind), startTick: tick }
 }
 
 /** The count a game of this kind is played for by. */
@@ -135,9 +145,34 @@ export function gameProgress(seat: GameSeat, game: Game): number {
   return countOf(seat, game.kind) - game.from
 }
 
-/** The mark of a race a seat is to drive to next, or `null` if it is in no race. */
+/**
+ * How many ticks are left of the countdown to the game a seat has just
+ * started, its race or its count, or 0 once it is under way or in none.
+ */
+export function countdownLeft(seat: GameSeat, race: Race | null, tick: number): number {
+  const raceLeft = race === null || seat.racePassed === NOT_RACING ? 0 : race.startTick + COUNTDOWN_TICKS - tick
+  const gameLeft = seat.game === null ? 0 : seat.game.startTick + COUNTDOWN_TICKS - tick
+  return Math.max(raceLeft, gameLeft, 0)
+}
+
+/**
+ * How many marks a race has to be passed by, all told: its course once
+ * round, or for a circuit once round for each lap, the start passed again
+ * on the way from the finish into the next.
+ */
+export function raceMarks(race: Race): number {
+  return race.course.length * race.laps
+}
+
+/** The mark of a race a seat is to drive to next, or `null` if it is in no race or has finished it. */
 export function nextMark(seat: GameSeat, race: Race): Vec3 | null {
-  return seat.racePassed === NOT_RACING ? null : (race.course[seat.racePassed] ?? null)
+  if (seat.racePassed === NOT_RACING || seat.racePassed >= raceMarks(race)) return null
+  return race.course[seat.racePassed % race.course.length] ?? null
+}
+
+/** Which lap of a race a seat is on, counted from 1. */
+export function lapOf(seat: GameSeat, race: Race): number {
+  return Math.min(Math.floor(Math.max(seat.racePassed, 0) / race.course.length) + 1, race.laps)
 }
 
 /**
@@ -160,8 +195,8 @@ export function awardGames<S extends GameSeat>(seats: readonly S[]): S[] {
 /**
  * A step of a race: every racer past its next mark is on to the one after,
  * in order, so a mark is only passed once those before it are, and a wreck
- * passes nothing. The first over the finish is paid and returned; `null`
- * while nobody has finished.
+ * passes nothing. The first over the finish on the last lap is paid and
+ * returned; `null` while nobody has finished.
  */
 export function runRace<S extends GameSeat>(seats: readonly S[], race: Race, radius: number): S | null {
   for (const seat of seats) {
@@ -169,7 +204,7 @@ export function runRace<S extends GameSeat>(seats: readonly S[], race: Race, rad
     const mark = nextMark(seat, race)
     if (mark === null || apartOnGround(seat.vehicle.frame.position, mark, radius) > GAME_REACH) continue
     seat.racePassed += 1
-    if (seat.racePassed < race.course.length) continue
+    if (seat.racePassed < raceMarks(race)) continue
     pay(seat)
     return seat
   }

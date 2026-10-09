@@ -5,10 +5,14 @@ import {
   GAME_REACH,
   GAME_TARGET_MOST,
   NOT_RACING,
+  RACE_LAPS_MOST,
   RACE_LEG_LEAST,
   RACE_MARKS_MOST,
   awardGames,
   gameProgress,
+  lapOf,
+  nextMark,
+  raceMarks,
   runRace,
   setGame,
   validGame,
@@ -61,14 +65,14 @@ describe('games', () => {
     const player = seat()
     player.collected = 12
     player.kills = 4
-    setGame(player, { kind: 'score', target: 5 })
+    setGame(player, { kind: 'score', target: 5 }, 0)
     expect(gameProgress(player, player.game!)).toBe(0)
     player.collected += 4
     expect(reached(player)).toBe(false)
     player.collected += 1
     expect(reached(player)).toBe(true)
 
-    setGame(player, { kind: 'kills', target: 2 })
+    setGame(player, { kind: 'kills', target: 2 }, 0)
     player.kills += 1
     expect(gameProgress(player, player.game!)).toBe(1)
     expect(reached(player)).toBe(false)
@@ -79,7 +83,7 @@ describe('games', () => {
   it('counts robots brought down from when the game is set', () => {
     const player = seat()
     player.robotKills = 2
-    setGame(player, { kind: 'robots', target: 1 })
+    setGame(player, { kind: 'robots', target: 1 }, 0)
     expect(reached(player)).toBe(false)
     player.robotKills += 1
     expect(reached(player)).toBe(true)
@@ -89,7 +93,7 @@ describe('games', () => {
     const player = seat()
     const wreck = seat()
     ;(wreck.vehicle as { wrecked: boolean }).wrecked = true
-    for (const each of [player, wreck]) setGame(each, { kind: 'score', target: 1 })
+    for (const each of [player, wreck]) setGame(each, { kind: 'score', target: 1 }, 0)
     player.collected = 1
     wreck.collected = 1
     player.score = 3
@@ -105,7 +109,7 @@ describe('games', () => {
 
   it('races through every checkpoint in order to the finish, from the start', () => {
     const player = seat(300)
-    const race: Race = { course: [markAt(300), markAt(600), markAt(900), markAt(1200)], starter: 0, startTick: 0 }
+    const race: Race = { course: [markAt(300), markAt(600), markAt(900), markAt(1200)], laps: 1, starter: 0, startTick: 0 }
     // Not in the race, nothing is passed.
     expect(driveTo(player, race, 600)).toBeNull()
     expect(player.racePassed).toBe(NOT_RACING)
@@ -129,6 +133,27 @@ describe('games', () => {
     expect(player.gamesWon).toBe(1)
   })
 
+  it('runs a circuit from the finish back round by the start, and wins it only over the finish on the last lap', () => {
+    const player = seat(300)
+    const race: Race = { course: [markAt(300), markAt(600), markAt(900)], laps: 2, starter: 0, startTick: 0 }
+    expect(raceMarks(race)).toBe(6)
+    player.racePassed = 1
+    expect(lapOf(player, race)).toBe(1)
+    expect(driveTo(player, race, 600)).toBeNull()
+    // Over the finish on the first lap is not the end: the start is next.
+    expect(driveTo(player, race, 900)).toBeNull()
+    expect(nextMark(player, race)).toEqual(race.course[0])
+    expect(lapOf(player, race)).toBe(2)
+    // The checkpoint before the start again gets nowhere.
+    expect(driveTo(player, race, 600)).toBeNull()
+    expect(player.racePassed).toBe(3)
+    expect(driveTo(player, race, 300)).toBeNull()
+    expect(driveTo(player, race, 600)).toBeNull()
+    expect(lapOf(player, race)).toBe(2)
+    expect(driveTo(player, race, 900)).toBe(player)
+    expect(player.gamesWon).toBe(1)
+  })
+
   it('takes only counts that can be played for', () => {
     expect(validGame({ kind: 'score', target: 10, course: [markAt(0)] }, RADIUS)).toEqual({ kind: 'score', target: 10, course: [] })
     expect(validGame({ kind: 'kills', target: 0, course: [] }, RADIUS)).toBeNull()
@@ -139,19 +164,26 @@ describe('games', () => {
   it('takes only races with a start, a checkpoint or more and a finish, each leg long enough', () => {
     const scaled = [{ x: 0, y: 0, z: 2 }, markAt(300), { x: 3 * markAt(600).x, y: 0, z: 3 * markAt(600).z }]
     const taken = validGame({ kind: 'race', target: 7, course: scaled }, RADIUS)!
-    expect(taken.target).toBe(0)
+    expect(taken.target).toBe(7)
     expect(taken.course[0]).toEqual({ x: 0, y: 0, z: 1 })
     expect(Math.hypot(taken.course[2]!.x, taken.course[2]!.y, taken.course[2]!.z)).toBeCloseTo(1, 9)
 
+    // A race is run once round or more, up to a few laps.
+    const course = [markAt(0), markAt(300), markAt(600)]
+    expect(validGame({ kind: 'race', target: RACE_LAPS_MOST, course }, RADIUS)).not.toBeNull()
+    expect(validGame({ kind: 'race', target: 0, course }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: RACE_LAPS_MOST + 1, course }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: 1.5, course }, RADIUS)).toBeNull()
+
     // A start and a finish alone are no race.
-    expect(validGame({ kind: 'race', target: 0, course: [markAt(0), markAt(300)] }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: 1, course: [markAt(0), markAt(300)] }, RADIUS)).toBeNull()
     // Nor is one whose marks crowd each other.
-    expect(validGame({ kind: 'race', target: 0, course: [markAt(0), markAt(300), markAt(300 + RACE_LEG_LEAST - 1)] }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: 1, course: [markAt(0), markAt(300), markAt(300 + RACE_LEG_LEAST - 1)] }, RADIUS)).toBeNull()
     // A loop back to the start is a race.
-    expect(validGame({ kind: 'race', target: 0, course: [markAt(0), markAt(300), markAt(600), markAt(0)] }, RADIUS)).not.toBeNull()
+    expect(validGame({ kind: 'race', target: 1, course: [markAt(0), markAt(300), markAt(600), markAt(0)] }, RADIUS)).not.toBeNull()
     const long = Array.from({ length: RACE_MARKS_MOST + 1 }, (_, k) => markAt((k % 2) * 300))
-    expect(validGame({ kind: 'race', target: 0, course: long }, RADIUS)).toBeNull()
-    expect(validGame({ kind: 'race', target: 0, course: [markAt(0), { x: 0, y: 0, z: 0 }, markAt(600)] }, RADIUS)).toBeNull()
-    expect(validGame({ kind: 'race', target: 0, course: [markAt(0), { x: Number.NaN, y: 0, z: 1 }, markAt(600)] }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: 1, course: long }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: 1, course: [markAt(0), { x: 0, y: 0, z: 0 }, markAt(600)] }, RADIUS)).toBeNull()
+    expect(validGame({ kind: 'race', target: 1, course: [markAt(0), { x: Number.NaN, y: 0, z: 1 }, markAt(600)] }, RADIUS)).toBeNull()
   })
 })
