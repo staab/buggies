@@ -91,7 +91,7 @@ const shell = new Shell(
     renderer,
     scene,
     container,
-    hud: new Hud(element('hud'), element('radar'), element('banner')),
+    hud: new Hud(element('hud'), element('radar'), element('banner'), element('achievement')),
     sound,
     sun,
     islands: new TerrainSource(),

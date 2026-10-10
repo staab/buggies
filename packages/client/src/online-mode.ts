@@ -24,6 +24,7 @@ import type { Vec3 } from '@buggies/physics'
 import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
+import { AchievementWatch } from './achievement-toast.ts'
 import { ArenaView } from './arena-view.ts'
 import type { Sound } from './audio.ts'
 import { bendAround, bendMaterials } from './bend.ts'
@@ -182,6 +183,8 @@ export async function createOnlineMode(
   let chaseSnapped = false
   // The big words for a game starting or over.
   const banners = new GameBanners(welcome.seed, sound)
+  // A feat paid for, told of at the top of the screen.
+  const achievements = new AchievementWatch(sound)
   // How far along the race the car was, for a mark passed to be heard.
   let racePassed = prediction.ownSeat.racePassed
   const beacon = buildBeacon()
@@ -233,6 +236,7 @@ export async function createOnlineMode(
       if (own.racePassed > racePassed && racePassed !== NOT_RACING) sound.chime()
       racePassed = own.racePassed
       banners.update(dt, { own, seats: prediction.seats, race, tick: prediction.tick })
+      achievements.update(dt, own, client.playerCount > 0)
       const mark = race === null ? null : nextMark(own, race)
       beacon.visible = mark !== null
       if (mark !== null) standOn(beacon, overSurface(mirror.planet, mark, 0))
@@ -258,6 +262,7 @@ export async function createOnlineMode(
       const own = prediction.ownSeat
       const { race } = prediction
       const banner = banners.state()
+      const achievement = achievements.state()
       const lines = [
         ...(race === null ? [] : [raceLine(own, race, prediction.tick, mirror.planet.radius)]),
         ...(own.game === null ? [] : [countLine(own, own.game)]),
@@ -267,6 +272,7 @@ export async function createOnlineMode(
         radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, race, mirror.planet.radius),
         ...(lines.length === 0 ? {} : { game: lines.join('\n') }),
         ...(banner === undefined ? {} : { banner }),
+        ...(achievement === undefined ? {} : { achievement }),
       }
     },
     changeVehicle(profile) {

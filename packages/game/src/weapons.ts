@@ -283,6 +283,8 @@ export interface Gunner {
   /** How many other players' cars its weapons have wrecked since it sat down, and how many robots they have brought down. */
   kills: number
   robotKills: number
+  /** What its weapons have done toward its feats: cars of any kind wrecked, and the weapons used, a bit each by key. */
+  readonly progress: { carsWrecked: number; weaponsTried: number }
   readonly vehicle: Vehicle
   readonly tuning: VehicleTuning
   readonly profile: VehicleProfileId
@@ -630,13 +632,16 @@ export function restAction(seat: Gunner): void {
 /**
  * Take this much of a car's life with a weapon. A
  * hit that wrecks another player's car is a kill to whoever fired: a car
- * nobody drives is no kill to anyone.
+ * nobody drives is no kill to anyone, though it is a car wrecked toward
+ * its feats.
  */
 export function harm(seat: Gunner, damage: number, by?: Gunner): void {
   const whole = !seat.vehicle.wrecked
   // A car nobody drives has its toughness cut by its fragility, which its armor already takes the root of.
   hurtVehicle(seat.vehicle, seat.tuning, damage * (seat.npc ? Math.sqrt(NPC_FRAGILITY) : 1))
-  if (whole && seat.vehicle.wrecked && !seat.npc && by !== undefined && by.id !== seat.id && by.occupied) by.kills += 1
+  if (!whole || !seat.vehicle.wrecked || by === undefined || by.id === seat.id || !by.occupied) return
+  by.progress.carsWrecked += 1
+  if (!seat.npc) by.kills += 1
 }
 
 /** Whether a car is stunned: it takes no driving. */
@@ -921,15 +926,22 @@ export function fireWeapons(arena: Battlefield): void {
       continue
     }
     if (!burn(seat, held)) continue
+    tried(seat, held)
     if (held === 'machineGun' && arena.tick % MACHINE_GUN_SHOT_TICKS === 0) shoot(arena, seat)
     if (held === 'laser') shoot(arena, seat, 'laser')
   }
+}
+
+/** A weapon used, toward the feat of using every one. */
+function tried(seat: Gunner, weapon: Weapon): void {
+  seat.progress.weaponsTried |= 1 << (keyOf(weapon) - 1)
 }
 
 /** Use a weapon that goes all at once, if there are the bananas for it, and pay for it. */
 function useAtOnce(arena: Battlefield, seat: Gunner, weapon: Weapon): void {
   if (!affordable(seat, weapon)) return
   seat.score -= WEAPON_COSTS[weapon]
+  tried(seat, weapon)
   switch (weapon) {
     case 'rocket':
       launchRocket(arena, seat)

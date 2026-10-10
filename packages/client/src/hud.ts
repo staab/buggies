@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 
+import { AchievementToast, type AchievementState } from './achievement-toast.ts'
 import { Banner, type BannerState } from './banner.ts'
 import { Radar, type RadarState } from './radar.ts'
 
@@ -25,6 +26,8 @@ export interface HudState {
   game?: string
   /** The big words across the middle of the screen, for a game starting or over. */
   banner?: BannerState
+  /** A feat just paid for, told of at the top of the screen. */
+  achievement?: AchievementState
 }
 
 /** Keys and what they do: `W` `A` `S` `D` "to drive". */
@@ -196,12 +199,14 @@ export class Hud {
   private readonly scoreCount = document.createElement('span')
   private readonly radar: Radar | null
   private readonly banner: Banner | null
+  private readonly achievement: AchievementToast | null
 
-  /** `radarRoot` is where the mini-map goes, in a corner of its own, and `bannerRoot` where the big words go, over the middle. */
-  constructor(root: HTMLElement, radarRoot?: HTMLElement, bannerRoot?: HTMLElement) {
+  /** `radarRoot` is where the mini-map goes, in a corner of its own, `bannerRoot` where the big words go, over the middle, and `achievementRoot` where a feat is told of. */
+  constructor(root: HTMLElement, radarRoot?: HTMLElement, bannerRoot?: HTMLElement, achievementRoot?: HTMLElement) {
     this.root = root
     this.radar = radarRoot === undefined ? null : new Radar(radarRoot)
     this.banner = bannerRoot === undefined ? null : new Banner(bannerRoot)
+    this.achievement = achievementRoot === undefined ? null : new AchievementToast(achievementRoot)
     root.replaceChildren()
 
     this.gauges.append(this.speedo.element, this.damage.element)
@@ -248,6 +253,7 @@ export class Hud {
     this.root.classList.remove('busy')
     this.radar?.render(state?.radar)
     this.banner?.render(state?.banner)
+    this.achievement?.render(state?.achievement)
     if (state === null) return
 
     if (state.title !== this.shownTitle) {

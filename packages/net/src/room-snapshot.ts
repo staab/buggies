@@ -108,6 +108,8 @@ function gatherVehicles(
       robotKills: 0,
       game: null,
       gamesWon: 0,
+      achievements: 0,
+      lastAchievement: 0,
       racePassed: NOT_RACING,
       weapon: 'none',
       weaponHeld: 0,
@@ -139,6 +141,8 @@ function gatherVehicles(
     vehicle.robotKills = seat.robotKills
     vehicle.game = seat.game
     vehicle.gamesWon = seat.gamesWon
+    vehicle.achievements = seat.achievements
+    vehicle.lastAchievement = seat.lastAchievement
     vehicle.racePassed = seat.racePassed
     vehicle.weapon = seat.weapon
     vehicle.weaponHeld = seat.weaponHeld

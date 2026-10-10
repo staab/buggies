@@ -414,6 +414,8 @@ export class LocalPrediction {
       seat.robotKills = vehicle.robotKills
       seat.game = vehicle.game === null ? null : { ...vehicle.game }
       seat.gamesWon = vehicle.gamesWon
+      seat.achievements = vehicle.achievements
+      seat.lastAchievement = vehicle.lastAchievement
       seat.racePassed = vehicle.racePassed
       seat.weapon = vehicle.weapon
       // Which key was down, so that a replay from here tells a press from a hold as the server will.

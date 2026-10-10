@@ -1,4 +1,5 @@
 import {
+  ACHIEVEMENTS,
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
   GAME_PRIZE,
@@ -62,6 +63,11 @@ import {
 } from './wire.ts'
 
 /** Each seed's world, a planet or its moon, made once: making one takes seconds. */
+/** The bananas a seat has been paid for its feats, on top of whatever else it holds. */
+function paidForFeats(seat: Seat): number {
+  return ACHIEVEMENTS.reduce((sum, achievement) => sum + (seat.progress.earned[achievement.id] === 1 ? achievement.reward : 0), 0)
+}
+
 const planets = new Map<number, World>()
 function planetOf(seed: number): World {
   let known = planets.get(seed)
@@ -667,9 +673,9 @@ describe('a session', () => {
     const again = await session.join('sportsCar', 0, moon, 0, pass)
     const { arena } = session.server.roomFor(moon)!
     const seatOf = (player: Player): Seat => arena.seats[player.client.welcome!.seat]!
-    expect(seatOf(stranger)).toMatchObject({ score: 0 })
-    expect(seatOf(back)).toMatchObject({ score: 7, collected: 12 })
-    expect(seatOf(again)).toMatchObject({ score: 0 })
+    expect(seatOf(stranger)).toMatchObject({ score: paidForFeats(seatOf(stranger)) })
+    expect(seatOf(back)).toMatchObject({ score: 7 + paidForFeats(seatOf(back)), collected: 12 })
+    expect(seatOf(again)).toMatchObject({ score: paidForFeats(seatOf(again)) })
     a.prediction.dispose()
     session.dispose()
   })
@@ -689,7 +695,8 @@ describe('a session', () => {
     session.run(0.2)
 
     const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, pass)
-    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ score: 7 })
+    const backSeat = session.arena.seats[back.client.welcome!.seat]!
+    expect(backSeat.score - paidForFeats(backSeat)).toBe(7)
     expect(distance(session.serverPositionOf(back), at)).toBeLessThan(3)
     a.prediction.dispose()
     session.dispose()
@@ -708,7 +715,8 @@ describe('a session', () => {
     const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, pass)
     expect(session.server.playerCount).toBe(1)
     expect(session.server.roomCount).toBe(1)
-    expect(session.arena.seats[back.client.welcome!.seat]).toMatchObject({ score: 7 })
+    const backSeat = session.arena.seats[back.client.welcome!.seat]!
+    expect(backSeat.score - paidForFeats(backSeat)).toBe(7)
     expect(a.client.closed).not.toBeNull()
     session.dispose()
   })
@@ -756,11 +764,11 @@ describe('a session', () => {
     expect(a.prediction.ownSeat.game).toEqual(seat.game)
 
     // Two bananas more, and the prize is paid: once, and the game is done with.
-    const held = seat.score
+    const held = seat.score - paidForFeats(seat)
     seat.collected += 2
     session.run(0.5)
     expect(session.events).toContain('won 0')
-    expect(seat.score).toBe(held + GAME_PRIZE)
+    expect(seat.score - paidForFeats(seat)).toBe(held + GAME_PRIZE)
     expect(seat.game).toBeNull()
     expect(a.prediction.ownSeat.gamesWon).toBe(1)
     expect(a.prediction.ownSeat.game).toBeNull()
@@ -800,13 +808,13 @@ describe('a session', () => {
     expect(session.arena.race?.starter).toBe(seatA.id)
     expect(b.client.closed).toBeNull()
 
-    const held = seatB.score
+    const held = seatB.score - paidForFeats(seatB)
     for (const mark of marks.slice(1)) {
       respawn(seatB, spawnHere(mark, tangentFrame(upOf(mark)).east))
       session.run(0.25)
     }
     expect(session.events).toContain(`race ended ${seatB.id}`)
-    expect(seatB.score).toBe(held + GAME_PRIZE)
+    expect(seatB.score - paidForFeats(seatB)).toBe(held + GAME_PRIZE)
     expect(session.arena.race).toBeNull()
     expect(b.prediction.ownSeat.gamesWon).toBe(1)
     expect(a.prediction.race).toBeNull()
@@ -1073,7 +1081,7 @@ describe('a session', () => {
     session.run(0.3)
     a.input.fire = false
     expect(aSeat.weapon).toBe('rocket')
-    expect(aSeat.score).toBe(18)
+    expect(aSeat.score - paidForFeats(aSeat)).toBe(18)
     expect(arena.rockets).toHaveLength(1)
     expect(arena.rockets[0]!.target).toBe(bSeat.id)
     expect(b.prediction.rockets).toHaveLength(1)
@@ -1102,14 +1110,14 @@ describe('a session', () => {
     expect(mines(b.prediction.loose)).toEqual(predicted)
 
     // A machine gun, held for a second: shots the tank takes, and a banana the sports car burns.
-    const left = aSeat.score
+    const left = aSeat.score - paidForFeats(aSeat)
     a.input.weapon = keyOf('machineGun')
     a.input.fire = true
     session.run(1)
     a.input.fire = false
     session.run(0.3)
     expect(bSeat.vehicle.damage).toBeGreaterThan(((ROCKET_DAMAGE + 5 * MACHINE_GUN_DAMAGE) * armorShare(bSeat.tuning)) / DURABILITY)
-    expect(aSeat.score).toBeLessThan(left)
+    expect(aSeat.score - paidForFeats(aSeat)).toBeLessThan(left)
     expect(a.prediction.ownSeat.score).toBe(aSeat.score)
     expect(a.prediction.ownSeat.burnLeft).toBe(aSeat.burnLeft)
     session.dispose()

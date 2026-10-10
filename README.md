@@ -75,6 +75,10 @@ A new game puts its name across the middle of the screen, says what it asks for,
 
 The HUD shows how each game is going. Winning one pays 100 bananas. A count then returns to free play, and a race ends for everyone. Escape closes the panel.
 
+## Achievements
+
+A hundred achievements are there to be had each time a player sits down, for collecting and holding bananas, wrecking cars with weapons (other players' and traffic alike), bringing down robots, winning races and games, time in the air, top speed, using each weapon and all nine, driving up to landmarks such as the observatory, the lighthouse, a pyramid or the moon's flag, going through portals, driving into the sea and climbing over the clouds. Each pays its bananas once, and they come through a portal with the car. The server pays one at a time, three seconds apart, and the player's screen shows a card for it at the top with what it took and what it paid, over a show of its own: confetti, raining bananas, fireworks, balloons, a burst of stars, a rainbow, or its icon bouncing across the screen or spinning up big.
+
 ## Weapons
 
 Every car has all nine weapons, each selected with its own number key, and pays for them in bananas. The selected weapon rides over the roof for everyone to see, at half opacity while the car can't pay for it, and `0` clears it. `F` fires it. A weapon that goes all at once costs its price on each press, and only if the car has that many bananas. A weapon that lasts burns its price every second `F` is held, a banana at a time, and stops when the bananas run out. What is left of a banana broken into keeps for the next lasting weapon. The selection stays with the player through a portal.

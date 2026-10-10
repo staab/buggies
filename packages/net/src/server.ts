@@ -3,6 +3,7 @@ import {
   NPC_CARS,
   PLAYABLE_PROFILE_IDS,
   advance,
+  awardAchievements,
   awardGames,
   endRace,
   playRace,
@@ -23,6 +24,7 @@ import {
   setGame,
   spawnWhere,
   validGame,
+  type Achievement,
   type Arena,
   type Carried,
   type Seat,
@@ -103,6 +105,8 @@ export interface GameServerEvents {
   /** A player has set a count to play for, or cleared theirs, and has won one. */
   onGameSet?(seat: Seat): void
   onGameWon?(seat: Seat): void
+  /** A player has been paid for a feat. */
+  onAchieved?(seat: Seat, achievement: Achievement): void
   /** A player has set a race going on their island, and a race is over, won or called off. */
   onRaceStarted?(seat: Seat, racers: readonly Seat[]): void
   onRaceEnded?(seed: number, winner: Seat | null): void
@@ -284,6 +288,7 @@ export class GameServer implements TransportHandlers {
       for (const seat of awardGames(room.arena.seats)) this.events.onGameWon?.(seat)
       const raced = playRace(room.arena)
       if (raced !== null) this.events.onRaceEnded?.(room.arena.planet.seed, raced.winner)
+      for (const { seat, achievement } of awardAchievements(room.arena)) this.events.onAchieved?.(seat, achievement)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
     this.expireHandshakes()

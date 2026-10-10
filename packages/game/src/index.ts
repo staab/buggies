@@ -31,6 +31,7 @@ import {
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { NOT_RACING, RACE_TICKS_MOST, countdownLeft, runRace, type Game, type Race } from './games.ts'
+import { clearAchievementProgress, copyAchievementProgress, createAchievementProgress, type AchievementProgress } from './achievements.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
 import { hasSiren, quiet, signal } from './signals.ts'
@@ -54,6 +55,16 @@ import { CEILING } from './sky.ts'
 import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing, startingGrid } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
+export {
+  ACHIEVEMENTS,
+  ACHIEVEMENT_GAP_TICKS,
+  LANDMARKS,
+  awardAchievements,
+  createAchievementProgress,
+  type Achievement,
+  type AchievementProgress,
+  type AchievementShow,
+} from './achievements.ts'
 export {
   CHASSIS_FORWARD,
   copyVehicleInput,
@@ -335,6 +346,10 @@ export interface Seat {
   /** The count it is playing for, if any, and how many games it has won, counted around past 255. */
   game: Game | null
   gamesWon: number
+  /** How many feats it has been paid for since sitting down, counted around past 255, and the last of them; and what it has done toward them, which only the server keeps. */
+  achievements: number
+  lastAchievement: number
+  readonly progress: AchievementProgress
   /** How many of the race's marks it has passed, or `NOT_RACING`. */
   racePassed: number
   /** A car nobody drives, and what drives it: a round of the arterials. */
@@ -448,6 +463,9 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       robotKills: 0,
       game: null,
       gamesWon: 0,
+      achievements: 0,
+      lastAchievement: 0,
+      progress: createAchievementProgress(),
       racePassed: NOT_RACING,
       npc: false,
       coasting: false,
@@ -528,6 +546,7 @@ export function playRace(arena: Arena): { winner: Seat | null } | null {
   const { race } = arena
   if (race === null) return null
   const winner = runRace(arena.seats, race, arena.planet.radius)
+  if (winner !== null) winner.progress.racesWon += 1
   const racing = arena.seats.some((seat) => seat.occupied && seat.racePassed !== NOT_RACING)
   if (winner === null && racing && arena.tick - race.startTick < RACE_TICKS_MOST) return null
   endRace(arena)
@@ -880,6 +899,9 @@ function clearTally(seat: Seat): void {
   seat.robotKills = 0
   seat.game = null
   seat.gamesWon = 0
+  seat.achievements = 0
+  seat.lastAchievement = 0
+  clearAchievementProgress(seat.progress)
   seat.racePassed = NOT_RACING
   seat.npc = false
   seat.driver = null
@@ -887,25 +909,42 @@ function clearTally(seat: Seat): void {
 }
 
 /**
- * What a car takes with it through a portal: its bananas, and what is left
- * of the one it broke into. The weapon selected comes with the player's keys.
+ * What a car takes with it through a portal: its bananas, what is left of
+ * the one it broke into, and its feats and what it has done toward them.
+ * The weapon selected comes with the player's keys.
  */
 export interface Carried {
   readonly burnLeft: number
   readonly score: number
   readonly collected: number
+  readonly achievements: number
+  readonly lastAchievement: number
+  readonly progress: AchievementProgress
 }
 
 /** What a seat would take with it through a portal. */
 export function carriedOf(seat: Seat): Carried {
-  return { burnLeft: seat.burnLeft, score: seat.score, collected: seat.collected }
+  return {
+    burnLeft: seat.burnLeft,
+    score: seat.score,
+    collected: seat.collected,
+    achievements: seat.achievements,
+    lastAchievement: seat.lastAchievement,
+    progress: copyAchievementProgress(seat.progress),
+  }
 }
 
-/** A seat just sat down in, come through a portal, holding what the car had on the other side. */
+/** A seat just sat down in, come through a portal, holding what the car had on the other side: one more trip through a portal. */
 export function carryOver(seat: Seat, carried: Carried): void {
   seat.burnLeft = carried.burnLeft
   seat.score = carried.score
   seat.collected = carried.collected
+  seat.achievements = carried.achievements
+  seat.lastAchievement = carried.lastAchievement
+  Object.assign(seat.progress, copyAchievementProgress(carried.progress))
+  // Its games won start again from nothing here, and so are counted on from nothing.
+  seat.progress.gamesWonSeen = seat.gamesWon
+  seat.progress.portals += 1
 }
 
 /**

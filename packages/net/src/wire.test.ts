@@ -84,6 +84,8 @@ const snapshot: SnapshotMessage = {
     kills: 7,
       game: { kind: 'robots', target: 4, from: 1, startTick: 70000 },
       gamesWon: 3,
+      achievements: 7,
+      lastAchievement: 42,
       racePassed: 2,
       weapon: 'machineGun',
       weaponHeld: 2,
@@ -115,6 +117,8 @@ const snapshot: SnapshotMessage = {
     kills: 0,
       game: { kind: 'kills', target: 5, from: 2, startTick: 12 },
       gamesWon: 0,
+      achievements: 0,
+      lastAchievement: 0,
       racePassed: NOT_RACING,
       weapon: 'none',
       weaponHeld: 9,
@@ -299,6 +303,8 @@ describe('wire', () => {
       expect(buttons).toEqual({ handbrake: vehicle.appliedInput.handbrake, weapon: vehicle.appliedInput.weapon, fire: vehicle.appliedInput.fire, signal: vehicle.appliedInput.signal })
       expect(got.game).toEqual(vehicle.game)
       expect(got.gamesWon).toBe(vehicle.gamesWon)
+      expect(got.achievements).toBe(vehicle.achievements)
+      expect(got.lastAchievement).toBe(vehicle.lastAchievement)
       expect(got.racePassed).toBe(vehicle.racePassed)
       expect(got.npc).toBe(vehicle.npc)
       for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {

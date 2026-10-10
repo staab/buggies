@@ -49,6 +49,7 @@ const server = new GameServer(
     onChangedVehicle: (seat) => log(`changed vehicle seat=${seat.id} ${seat.profile}`),
     onGameSet: (seat) => log(`game seat=${seat.id} ${seat.game === null ? 'none' : `${seat.game.kind} ${seat.game.target}`}`),
     onGameWon: (seat) => log(`game won seat=${seat.id}`),
+    onAchieved: (seat, achievement) => log(`achievement seat=${seat.id} id=${achievement.id}`),
     onRaceStarted: (seat, racers) => log(`race started seat=${seat.id} racers=${racers.length}`),
     onRaceEnded: (seed, winner) => log(`race ended seed=${seed} winner=${winner === null ? 'none' : winner.id}`),
     onRoomOpened: (seed) => log(`room opened seed=${seed}`),
