@@ -97,11 +97,12 @@ export interface VehicleTuning {
    * A hull that floats, for a vehicle that goes on the water as well as the
    * land: how many times its weight the water holds up when the chassis is
    * under, so it floats that far down; how hard the water drags on it,
-   * along and up and down, so it settles rather than bobbing; and, afloat,
-   * how hard its throttle drives it on and its steering turns it, per
-   * kilogram, and how hard it rights itself.
+   * along and up and down, so it settles rather than bobbing, and sideways,
+   * so it goes the way it faces; and, afloat, how hard its throttle drives
+   * it on and its steering turns it, per kilogram, and how hard it rights
+   * itself.
    */
-  hull?: { buoyancy: number; drag: number; heave: number; thrust: number; turn: number; righting: number }
+  hull?: { buoyancy: number; drag: number; heave: number; keel: number; thrust: number; turn: number; righting: number }
   airLevelInputYield: number
   airLevelLandingCastDistance: number
   airLevelLandingLookahead: number
@@ -1112,7 +1113,7 @@ const AMPHIBIAN_TUNING: Readonly<VehicleTuning> = Object.freeze({
   damageAcceleration: 80,
   damageToWreck: 110,
 
-  hull: { buoyancy: 2.2, drag: 0.5, heave: 6, thrust: 7, turn: 11, righting: 6 },
+  hull: { buoyancy: 2.2, drag: 1, heave: 6, keel: 3, thrust: 18, turn: 18, righting: 6 },
 
   ...selfRightTuning(1500),
   ...SHARED_DAMPING_TUNING,

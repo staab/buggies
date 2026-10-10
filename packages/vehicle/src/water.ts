@@ -51,8 +51,9 @@ const righting: Vec3 = v3()
 
 /**
  * A hull afloat: held up by the water as far as it is under, dragged on
- * lightly, righted toward level, and driven along the water, the way it
- * faces, by its throttle and turned by its steering, as far as it is in.
+ * lightly, righted toward level, held by its keel from sliding sideways,
+ * and driven along the water, the way it faces, by its throttle and turned
+ * by its steering, as far as it is in.
  */
 function float(vehicle: Vehicle, tuning: VehicleTuning, hull: NonNullable<VehicleTuning['hull']>, worldTuning: WorldTuning, submersion: number): void {
   const { body, frame, command, up } = vehicle
@@ -72,6 +73,7 @@ function float(vehicle: Vehicle, tuning: VehicleTuning, hull: NonNullable<Vehicl
   vscale(ahead, ahead, 1 / level)
   const drive = command.throttle - command.brake * 0.6
   const wet = Math.min(submersion * 2, 1)
+  addForceAlong(body, frame.right, -mass * hull.keel * vdot(frame.linearVelocity, frame.right) * wet)
   if (drive !== 0) addForceAlong(body, ahead, mass * hull.thrust * drive * wet)
   if (command.steer !== 0) addTorqueAbout(body, up, -mass * hull.turn * command.steer * wet)
 }

@@ -1,7 +1,7 @@
 import type { VehicleTuning } from '@buggies/game'
 import * as THREE from 'three'
 
-import { hullGeometry } from './hull-geometry.ts'
+import { amphibianHullGeometry } from './hull-geometry.ts'
 
 /**
  * Vehicles with no model file, built here instead, the way a model file is:
@@ -171,9 +171,9 @@ export function buildMoonRover(tuning: VehicleTuning): THREE.Group {
 }
 
 /**
- * An amphibian: a boat's hull, its bow forward, a dark band along its
- * waterline and a pale deck, a wheelhouse amidships with its glass and
- * roof, and four wheels half tucked into the hull's sides.
+ * An amphibian: a boat's hull, its bow forward, dark below its waterline
+ * and with a pale deck, a wheelhouse amidships with its glass and roof,
+ * and four wheels tucked into the hull's sides.
  */
 export function buildAmphibian(tuning: VehicleTuning): THREE.Group {
   const group = new THREE.Group()
@@ -182,7 +182,7 @@ export function buildAmphibian(tuning: VehicleTuning): THREE.Group {
   const h = tuning.chassisHalfHeight
   const r = tuning.wheelRadius
   const paint = material('#2f8f6a', { metalness: 0.2, roughness: 0.5 })
-  const band = material('#1f2b28', { roughness: 0.8 })
+  const belly = material('#1f2b28', { roughness: 0.8 })
   const planking = material('#d8c9a3', { roughness: 0.8 })
   const cabin = material('#f0ece0', { roughness: 0.6 })
   const glass = material('#9fd8f0', { metalness: 0.2, roughness: 0.05, transparent: true, opacity: 0.7 })
@@ -190,23 +190,40 @@ export function buildAmphibian(tuning: VehicleTuning): THREE.Group {
   const hub = material('#c9ccd1', { metalness: 0.7, roughness: 0.3 })
 
   // The hull, a meter long along X with its bow at +X, turned to run nose to tail along +Z and stretched to the chassis.
-  const { skin, deck } = hullGeometry()
+  const { bottom, topsides, deck } = amphibianHullGeometry(0.45)
   const keel = r * 0.35
   const depth = h * 2 + r * 0.4
-  const fit = (geometry: THREE.BufferGeometry, height: number, grow = 1): THREE.BufferGeometry =>
-    geometry.clone().rotateY(-Math.PI / 2).scale(w * 2 * grow, height, l * 2).translate(0, keel, 0)
-  group.add(new THREE.Mesh(fit(skin, depth), paint))
-  group.add(new THREE.Mesh(fit(deck, depth), planking))
-  // The band along the waterline, just proud of the hull's sides.
-  group.add(new THREE.Mesh(fit(skin, depth * 0.45, 1.02), band))
-  // The wheelhouse, a little aft of amidships: posts, glass all round the front, and a roof.
+  for (const [geometry, color] of [
+    [bottom, belly],
+    [topsides, paint],
+    [deck, planking],
+  ] as const) {
+    group.add(new THREE.Mesh(geometry.rotateY(-Math.PI / 2).scale(w * 2, depth, l * 2).translate(0, keel, 0), color))
+  }
+  // The wheelhouse, a little aft of amidships, sunk into the deck: its lower walls, glass all round raked at the front, a post at each corner, and a roof on them.
   const top = keel + depth
-  group.add(box([w * 1.1, 0.5, l * 0.55], [0, top + 0.25, -l * 0.15], cabin))
-  const screen = box([w * 1.05, 0.55, 0.06], [0, top + 0.72, l * 0.12], glass)
-  screen.rotation.x = -0.3
-  group.add(screen)
-  for (const side of [-1, 1]) group.add(box([0.06, 0.55, l * 0.45], [side * w * 0.53, top + 0.72, -l * 0.2], glass))
-  group.add(box([w * 1.2, 0.08, l * 0.62], [0, top + 1.03, -l * 0.17], cabin))
+  const half = w * 0.55
+  const back = -l * 0.42
+  const front = l * 0.13
+  const sill = top + 0.5
+  const eaves = sill + 0.5
+  const rake = 0.18
+  group.add(box([half * 2, sill - top + 0.05, front - back], [0, (top - 0.05 + sill) / 2, (front + back) / 2], cabin))
+  const outline = new THREE.Shape([
+    new THREE.Vector2(back, sill),
+    new THREE.Vector2(front, sill),
+    new THREE.Vector2(front - rake, eaves),
+    new THREE.Vector2(back, eaves),
+  ])
+  const pane = half * 2 - 0.02
+  group.add(new THREE.Mesh(new THREE.ExtrudeGeometry(outline, { depth: pane, bevelEnabled: false }).rotateY(-Math.PI / 2).translate(pane / 2, 0, 0), glass))
+  const post = 0.035
+  for (const side of [-1, 1]) {
+    const x = side * (half - post)
+    group.add(tube(new THREE.Vector3(x, sill, back + post), new THREE.Vector3(x, eaves, back + post), post, cabin))
+    group.add(tube(new THREE.Vector3(x, sill, front - post), new THREE.Vector3(x, eaves, front - post - rake), post, cabin))
+  }
+  group.add(box([half * 2 + 0.1, 0.08, front - rake - back + 0.12], [0, eaves + 0.04, (front - rake + back) / 2], cabin))
 
   // Four wheels, on the axles, half in the hull's sides.
   const tire = new THREE.CylinderGeometry(r, r, 0.36, 20).rotateZ(Math.PI / 2)
