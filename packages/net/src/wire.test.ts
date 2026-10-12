@@ -42,6 +42,12 @@ import {
   encodeWelcome,
   decodeGame,
   encodeGame,
+  cleanName,
+  decodeJoinGame,
+  decodeLobby,
+  encodeJoinGame,
+  encodeLobby,
+  NO_LOBBY,
   isRespawn,
   isRoomsRequest,
   NO_ARRIVAL,
@@ -184,6 +190,38 @@ const snapshot: SnapshotMessage = {
 }
 
 describe('wire', () => {
+  it('cleans a name of what cannot be shown, and keeps it short', () => {
+    expect(cleanName('  Ada \n  Lovelace\u0000 ')).toBe('Ada Lovelace')
+    expect(cleanName('a'.repeat(40))).toBe('a'.repeat(16))
+    expect(cleanName('🍌'.repeat(20))).toBe('🍌'.repeat(16))
+    expect(cleanName('\u200b')).toBe('')
+  })
+
+  it('round-trips who is on an island and the games waiting there, and a join', () => {
+    const lobby = {
+      players: [
+        { seat: 0, name: 'Ada' },
+        { seat: 3, name: 'Zoë ✨' },
+        { seat: 4, name: '' },
+      ],
+      games: [
+        { id: 7, request: { kind: 'score' as const, target: 20, course: [] }, host: 3, startTick: 123_456, joined: [3, 0] },
+        { id: 8, request: { kind: 'race' as const, target: 3, course: [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }] }, host: 0, startTick: 9, joined: [0] },
+      ],
+    }
+    expect(decodeLobby(encodeLobby(lobby))).toEqual(lobby)
+    expect(decodeLobby(encodeLobby({ players: [], games: [] }))).toEqual({ players: [], games: [] })
+    // Cut short, or with a name that is not UTF-8, it is refused.
+    const encoded = encodeLobby(lobby)
+    expect(decodeLobby(encoded.subarray(0, encoded.length - 1))).toBeNull()
+    const broken = encodeLobby({ players: [{ seat: 0, name: 'ab' }], games: [] })
+    broken[5] = 0xff
+    expect(decodeLobby(broken)).toBeNull()
+    expect(decodeJoinGame(encodeJoinGame(7))).toBe(7)
+    expect(decodeJoinGame(encodeJoinGame(NO_LOBBY))).toBe(NO_LOBBY)
+    expect(decodeJoinGame(encodeRespawn())).toBeNull()
+  })
+
   it('round-trips the handshake', () => {
     expect(decodeHello(encodeHello('raceCar', 4_000_000_000))).toEqual({
       protocolVersion: PROTOCOL_VERSION,
@@ -191,8 +229,9 @@ describe('wire', () => {
       seed: 4_000_000_000,
       arrival: NO_ARRIVAL,
       pass: NO_PASS,
+      name: '',
     })
-    expect(decodeHello(encodeHello('tank', 7, 2, 4_000_000_001))).toMatchObject({ seed: 7, arrival: 2, pass: 4_000_000_001 })
+    expect(decodeHello(encodeHello('tank', 7, 2, 4_000_000_001, 'Zoë ✨'))).toMatchObject({ seed: 7, arrival: 2, pass: 4_000_000_001, name: 'Zoë ✨' })
     const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const, pass: 3_000_000_000 }
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })

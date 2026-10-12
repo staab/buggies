@@ -1,4 +1,5 @@
 import { DEFAULT_VEHICLE_PROFILE, initPhysics } from '@buggies/game'
+import { cleanName } from '@buggies/net'
 import { planetSeedOf } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -8,6 +9,7 @@ import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
 import { GameMenu } from './game-menu.ts'
 import { Hud } from './hud.ts'
+import { GamesList, PlayersList } from './lobby-panels.ts'
 import { Menu, type Choice } from './menu.ts'
 import { Shell } from './shell.ts'
 import { Sun } from './sun.ts'
@@ -69,21 +71,39 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 100000)
 }
 
-/** What the address bar asks for: the island, as `/{seed}`, or a fresh one; a moon's names its planet. What to drive is the menu's to ask. */
+/** Where the player's name is kept between visits. */
+const NAME_KEY = 'buggies.name'
+
+/** The name the player last went by here, if the browser kept it. */
+function savedName(): string {
+  try {
+    return cleanName(localStorage.getItem(NAME_KEY) ?? '')
+  } catch {
+    return ''
+  }
+}
+
+/** What the address bar asks for: the island, as `/{seed}`, or a fresh one; a moon's names its planet. Who the player is was kept from last time; what to drive is the menu's to ask. */
 function readChoice(): Choice {
   // Links from before the seed moved into the path still name it as `?seed=`.
   const given = location.pathname.split('/').find((part) => part !== '') ?? new URLSearchParams(location.search).get('seed')
   const seed = Number(given)
   const planet = Number.isInteger(seed) && seed > 0 ? planetSeedOf(seed) : 0
   return {
+    name: savedName(),
     seed: planet > 0 ? planet : randomSeed(),
     vehicle: DEFAULT_VEHICLE_PROFILE,
   }
 }
 
-/** Reflect the island being played in the address bar. */
+/** Reflect the island being played in the address bar, and keep the name gone by for next time. */
 function settle(choice: Choice): void {
   history.replaceState(null, '', `/${choice.seed}`)
+  try {
+    if (choice.name !== '') localStorage.setItem(NAME_KEY, choice.name)
+  } catch {
+    // Kept or not, it is asked for again on the first page.
+  }
 }
 
 const shell = new Shell(
@@ -102,20 +122,64 @@ const shell = new Shell(
   readChoice(),
 )
 
-// A trophy beside the speaker, while an island is being played, opens a panel of games to play.
+// While an island is being played, a trophy beside the speaker opens the games on it, to join one or start another
+// in the picker, and a button beside that, who is on it. One panel down the right at a time.
+const lobbyHost = {
+  lobby: () => shell.played?.lobby?.() ?? null,
+  joinGame: (id: number | null) => shell.played?.joinGame?.(id),
+  pickGame: () => {
+    closePanels()
+    games.show()
+  },
+}
+const gamesList = new GamesList(element('games-list'), lobbyHost)
+const playersList = new PlayersList(element('players-list'), lobbyHost)
 const games = new GameMenu(element('games'), {
   map: () => shell.played?.map ?? null,
   position: () => shell.played?.position?.() ?? null,
   game: () => shell.played?.game?.() ?? null,
   race: () => shell.played?.race?.() ?? null,
-  setGame: (game) => shell.played?.setGame?.(game),
+  waitingRace: () => shell.played?.lobby?.().waiting.some((game) => game.request.kind === 'race') ?? false,
+  setGame: (game) => {
+    shell.played?.setGame?.(game)
+    // Asked for, the game waits in the list for players to join it.
+    if (game !== null) {
+      games.hide()
+      gamesList.show()
+    }
+  },
 })
 shell.overlay = games
-const gamesButton = element('trophy') as HTMLButtonElement
-gamesButton.addEventListener('click', () => {
-  games.toggle()
-  // The keys drive the game, not the button, once it has been clicked.
-  gamesButton.blur()
+
+function closePanels(): void {
+  games.hide()
+  gamesList.hide()
+  playersList.hide()
+}
+
+function anyPanelOpen(): boolean {
+  return games.open || gamesList.isOpen() || playersList.isOpen()
+}
+
+/** A corner button that opens its panel, or shuts it, and shuts any other. */
+function cornerButton(id: string, toggle: () => void): HTMLButtonElement {
+  const made = element(id) as HTMLButtonElement
+  made.addEventListener('click', () => {
+    toggle()
+    // The keys drive the game, not the button, once it has been clicked.
+    made.blur()
+  })
+  return made
+}
+const gamesButton = cornerButton('trophy', () => {
+  const opening = !gamesList.isOpen() && !games.open
+  closePanels()
+  if (opening) gamesList.show()
+})
+const playersButton = cornerButton('players', () => {
+  const opening = !playersList.isOpen()
+  closePanels()
+  if (opening) playersList.show()
 })
 
 // The physics engine is a wasm module, so it has to be ready before anything
@@ -129,8 +193,8 @@ shell.welcome()
 
 window.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return
-  // Escape shuts the games panel first, if it is open, and only then opens the menu.
-  if (games.open) games.hide()
+  // Escape shuts the panel open by the corner first, if any is, and only then opens the menu.
+  if (anyPanelOpen()) closePanels()
   else shell.toggleMenu()
 })
 
@@ -143,10 +207,16 @@ function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.1)
   last = now
   shell.frame(dt)
-  // The trophy is there while a game is being played and the menu is down.
+  // The trophy and the players are there while a game is being played and the menu is down.
   const playable = shell.played?.setGame !== undefined && !shell.menu.open
   gamesButton.hidden = !playable
-  if (!playable && games.open) games.hide()
+  playersButton.hidden = !playable
+  if (!playable && anyPanelOpen()) closePanels()
+  // A game someone else has asked for, waiting for players, is flagged on the trophy until joined.
+  const lobby = playable ? (shell.played?.lobby?.() ?? null) : null
+  gamesButton.classList.toggle('waiting', lobby?.waiting.some((game) => !game.joined.includes(lobby.seat)) ?? false)
+  gamesList.update(dt)
+  playersList.update(dt)
   requestAnimationFrame(frame)
 }
 requestAnimationFrame(frame)

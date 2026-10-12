@@ -32,14 +32,20 @@ export type {
   TransportConnection,
   TransportHandlers,
 } from './transport.ts'
+export { NAME_MOST } from './protocol.ts'
 export {
   NO_ARRIVAL,
+  NO_LOBBY,
   NO_PASS,
+  cleanName,
   decodeSnapshot,
   decodeWelcome,
   encodeSnapshot,
   type IslandMark,
   type IslandMarkKind,
+  type LobbyMessage,
+  type LobbyPlayer,
+  type PendingGame,
   type RocketSnapshot,
   type RoomSummary,
   type SnapshotMessage,

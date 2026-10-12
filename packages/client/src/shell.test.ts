@@ -72,7 +72,7 @@ class StubMenu implements ShellMenu {
   }
 }
 
-const CHOICE: Choice = { seed: 5, vehicle: 'sportsCar' }
+const CHOICE: Choice = { name: 'Ada', seed: 5, vehicle: 'sportsCar' }
 const SERVER = 'ws://island:8787'
 
 /** An island being looked over, that only remembers what was done to it. */
@@ -91,6 +91,7 @@ function build(refuse: string | null = null) {
   const joined: string[] = []
   const arrivals: (number | undefined)[] = []
   const passed: (number | undefined)[] = []
+  const names: string[] = []
   const hudStates: (HudState | null)[] = []
   const rendered: string[] = []
   const menu = new StubMenu()
@@ -128,8 +129,9 @@ function build(refuse: string | null = null) {
       if (refuse !== null) throw new Error(refuse)
       return [{ seed: url.length, players: 3 }]
     },
-    play: async (_scene, url, seed, profile, mapFor, _sound, _sun, arrival, pass) => {
+    play: async (_scene, url, seed, profile, mapFor, _sound, _sun, arrival, pass, name) => {
       joined.push(`${url}#${seed}`)
+      names.push(name)
       arrivals.push(arrival)
       passed.push(pass)
       if (refuse !== null) throw new Error(refuse)
@@ -201,7 +203,7 @@ function build(refuse: string | null = null) {
     },
     CHOICE,
   )
-  return { shell, menu, games, showrooms, islands, generated, settled, joined, arrivals, passed, hudStates, rendered }
+  return { shell, menu, games, showrooms, islands, generated, settled, joined, arrivals, passed, names, hudStates, rendered }
 }
 
 /** Let every promise the shell is waiting on settle. */
@@ -244,7 +246,7 @@ describe('the shell', () => {
   })
 
   it('joins the room for the island, made once, and keeps the game behind the menu', async () => {
-    const { shell, menu, games, showrooms, generated, settled, joined } = build()
+    const { shell, menu, games, showrooms, generated, settled, joined, names } = build()
     shell.welcome()
     await settle()
     await shell.start(CHOICE)
@@ -253,7 +255,8 @@ describe('the shell', () => {
     expect(games[0]!.kind).toBe('sportsCar on 5')
     expect(generated).toEqual([5])
     expect(shell.playing).toBe(true)
-    expect(settled).toEqual([CHOICE])
+    expect(settled.at(-1)).toEqual(CHOICE)
+    expect(names).toEqual(['Ada'])
 
     // Escape: the menu opens on the vehicle page, the showroom in front, the game still running.
     shell.toggleMenu()
@@ -378,5 +381,7 @@ describe('the shell', () => {
     expect(continues(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(false)
     expect(sameSeats(CHOICE, { ...CHOICE, vehicle: 'tank' })).toBe(true)
     expect(sameSeats(CHOICE, { ...CHOICE, seed: 6 })).toBe(false)
+    // Another name is joining again, for everyone to know the player by it.
+    expect(sameSeats(CHOICE, { ...CHOICE, name: 'Bo' })).toBe(false)
   })
 })

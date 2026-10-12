@@ -1,5 +1,5 @@
 import { portalLink, type VehicleProfileId } from '@buggies/game'
-import { ConnectionFailure, NO_ARRIVAL, REJECT_PROTOCOL_MISMATCH, fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
+import { ConnectionFailure, NO_ARRIVAL, NO_PASS, REJECT_PROTOCOL_MISMATCH, fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
 import { isMoon, planetSeedOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
@@ -61,8 +61,9 @@ export interface ShellModes {
     mapFor: (seed: number) => Promise<World>,
     sound: Sound,
     sun: Sun,
-    arrival?: number,
-    pass?: number,
+    arrival: number,
+    pass: number,
+    name: string,
   ): Promise<ModeView>
 }
 
@@ -116,11 +117,11 @@ export function continues(running: Choice, next: Choice): boolean {
 
 /**
  * Whether a choice keeps the player in the seat they have: the same
- * island. The vehicle is swapped where the car is; another island means
- * joining again.
+ * island, by the same name. The vehicle is swapped where the car is;
+ * another island, or another name, means joining again.
  */
 export function sameSeats(running: Choice, next: Choice): boolean {
-  return running.seed === next.seed
+  return running.seed === next.seed && running.name === next.name
 }
 
 function disposeView(scene: THREE.Scene, group: THREE.Group): void {
@@ -269,6 +270,7 @@ export class Shell implements MenuHost {
   async start(next: Choice): Promise<void> {
     const stamp = ++this.generation
     this.choiceNow = next
+    this.settle(next)
     this.menu.hide()
 
     if (this.game !== null && continues(this.game.choice, next)) {
@@ -295,6 +297,9 @@ export class Shell implements MenuHost {
         (seed) => this.mapFor(seed),
         this.sound,
         this.sun,
+        NO_ARRIVAL,
+        NO_PASS,
+        next.name,
       )
       if (stamp !== this.generation) {
         mode.dispose()
@@ -326,7 +331,7 @@ export class Shell implements MenuHost {
     this.setGame(null)
     this.notice(isMoon(link.to) ? 'through the portal to the moon...' : 'back through the portal...')
     try {
-      const mode = await this.modes.play(this.scene, this.server, link.to, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, pass)
+      const mode = await this.modes.play(this.scene, this.server, link.to, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, pass ?? NO_PASS, game.choice.name)
       if (stamp !== this.generation) {
         mode.dispose()
         return
@@ -356,7 +361,7 @@ export class Shell implements MenuHost {
     for (let attempt = 0; ; attempt++) {
       this.notice(`lost the server (${why}), reconnecting...`)
       try {
-        const mode = await this.modes.play(this.scene, this.server, game.world, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, NO_ARRIVAL, pass)
+        const mode = await this.modes.play(this.scene, this.server, game.world, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, NO_ARRIVAL, pass ?? NO_PASS, game.choice.name)
         if (stamp !== this.generation) {
           mode.dispose()
           return

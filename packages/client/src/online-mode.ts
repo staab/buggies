@@ -19,7 +19,7 @@ import {
   type Ufo,
   type VehicleProfileId,
 } from '@buggies/game'
-import { LocalPrediction, NO_ARRIVAL, NO_PASS, NetClient } from '@buggies/net'
+import { LocalPrediction, NO_ARRIVAL, NO_PASS, NetClient, type PendingGame } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
 import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
@@ -108,7 +108,23 @@ function raceLine(seat: Seat, race: Race, tick: number, radius: number): string 
   const toward = along === 0 ? 'the start' : along === race.course.length - 1 ? 'the finish' : `checkpoint ${along} of ${checkpoints}`
   const lap = race.laps === 1 ? '' : ` · lap ${lapOf(seat, race)} of ${race.laps}`
   const seconds = Math.max(Math.floor((tick - race.startTick) * FIXED_TIMESTEP), 0)
-  return `Race: ${meters} m to ${toward}${lap} · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  return `Race: ${meters} m to ${toward}${lap} · ${clockOf(seconds)}`
+}
+
+/** A game waiting for players, in a line: how long it has left, and whether to join it. */
+function waitingLine(game: PendingGame, own: number, tick: number, nameOf: (seat: number) => string): string {
+  const left = clockOf(Math.max(Math.ceil((game.startTick - tick) * FIXED_TIMESTEP), 0))
+  const what = GAME_LABELS[game.request.kind]
+  if (game.joined.includes(own)) {
+    const others = game.joined.length - 1
+    return `${what} starts in ${left} · ${others === 0 ? 'waiting for players' : `with ${others} more`}`
+  }
+  return `${nameOf(game.host)} wants a game of ${what.toLowerCase()}: join from the trophy · ${left}`
+}
+
+/** Seconds as minutes and seconds: "1:05". */
+function clockOf(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 /** A column of light standing over a spot, to be seen from anywhere on the island. */
@@ -138,6 +154,7 @@ export async function createOnlineMode(
   sun: Sun,
   arrival = NO_ARRIVAL,
   pass = NO_PASS,
+  name = '',
 ): Promise<ModeView> {
   let lost: string | null = null
   const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
@@ -145,7 +162,7 @@ export async function createOnlineMode(
       lost = reason
     },
   })
-  const welcome = await client.connect(profile, seed, arrival, pass)
+  const welcome = await client.connect(profile, seed, arrival, pass, name)
   const map = await mapFor(welcome.seed)
   // A mirror of the server's arena: same map, same seats, so the local car
   // can be driven here the instant a key goes down.
@@ -181,8 +198,12 @@ export async function createOnlineMode(
   const from = { x: 0, y: 0, z: 0 }
   let crossed = -1
   let chaseSnapped = false
+  /** What a seat goes by: the name its player gave, or else its tag. */
+  const nameOf = (seat: number): string => client.lobby.players.find((player) => player.seat === seat)?.name || playerTag(welcome.seed, seat)
   // The big words for a game starting or over.
-  const banners = new GameBanners(welcome.seed, sound)
+  const banners = new GameBanners(welcome.seed, sound, nameOf)
+  // The games waiting for players already heard of, for a new one asked for by someone else to be heard.
+  const heardOf = new Set<number>()
   // A feat paid for, told of at the top of the screen.
   const achievements = new AchievementWatch(sound)
   // How far along the race the car was, for a mark passed to be heard.
@@ -237,6 +258,11 @@ export async function createOnlineMode(
       racePassed = own.racePassed
       banners.update(dt, { own, seats: prediction.seats, race, tick: prediction.tick })
       achievements.update(dt, own, client.playerCount > 0)
+      for (const game of client.lobby.games) {
+        if (heardOf.has(game.id)) continue
+        heardOf.add(game.id)
+        if (game.host !== welcome.seat) sound.chime()
+      }
       const mark = race === null ? null : nextMark(own, race)
       beacon.visible = mark !== null
       if (mark !== null) standOn(beacon, overSurface(mirror.planet, mark, 0))
@@ -252,7 +278,7 @@ export async function createOnlineMode(
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
       const controls = SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn')
-      const title = `${playerTag(welcome.seed, welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
+      const title = `${nameOf(welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
@@ -266,6 +292,7 @@ export async function createOnlineMode(
       const lines = [
         ...(race === null ? [] : [raceLine(own, race, prediction.tick, mirror.planet.radius)]),
         ...(own.game === null ? [] : [countLine(own, own.game)]),
+        ...client.lobby.games.map((game) => waitingLine(game, welcome.seat, prediction.tick, nameOf)),
       ]
       return {
         ...car.presence.hudState(title, controls, sync),
@@ -288,6 +315,30 @@ export async function createOnlineMode(
     },
     setGame(game) {
       client.setGame(game)
+    },
+    lobby() {
+      const seats = prediction.seats
+      return {
+        seed: welcome.seed,
+        seat: welcome.seat,
+        tick: prediction.tick,
+        players: client.lobby.players.map(({ seat }) => {
+          const at = seats[seat]
+          return {
+            seat,
+            name: nameOf(seat),
+            profile: at?.profile ?? 'sportsCar',
+            score: at?.score ?? 0,
+            game: at?.game ?? null,
+            racing: at !== undefined && prediction.race !== null && at.racePassed !== NOT_RACING,
+          }
+        }),
+        waiting: client.lobby.games,
+        race: prediction.race,
+      }
+    },
+    joinGame(id) {
+      client.joinGame(id)
     },
     portal() {
       const through = crossed

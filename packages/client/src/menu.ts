@@ -1,5 +1,5 @@
 import { NATURE_NOTES, PLAYABLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, type VehicleProfileId } from '@buggies/game'
-import type { RoomSummary } from '@buggies/net'
+import { NAME_MOST, cleanName, type RoomSummary } from '@buggies/net'
 import { planetSeedOf } from '@buggies/terrain'
 
 import { modelCredits } from './car-model.ts'
@@ -12,6 +12,8 @@ export const STEPS: readonly Step[] = ['map', 'car']
 
 /** What the player has chosen. Everything the app needs to join the server. */
 export interface Choice {
+  /** What the player goes by, for everyone else on the island to know them by. */
+  name: string
   /** Which island: the server has a room for each. */
   seed: number
   vehicle: VehicleProfileId
@@ -130,8 +132,8 @@ function drivingHere(players: number): string {
 }
 
 /**
- * The one place a player picks anything, a page at a time: which island
- * (looked over from above while it is chosen), then which vehicle to
+ * The one place a player picks anything, a page at a time: what to call
+ * them and which island (looked over from above while it is chosen), then which vehicle to
  * drive, turning on the spot beside the panel. It
  * is reachable from the game, so any of it can be changed without going
  * back to the start.
@@ -143,6 +145,7 @@ export class Menu {
   private readonly status = line('status')
   private readonly back = document.createElement('button')
   private readonly next = document.createElement('button')
+  private readonly nameField = field('Your name')
   private readonly seedField = field('Island seed')
   private readonly popular: HTMLFieldSetElement
   private readonly popularCards: HTMLDivElement
@@ -179,7 +182,16 @@ export class Menu {
     blurb.textContent = 'Drive around a low-poly, procedurally generated island.'
     this.steps.className = 'steps'
 
-    // Page one: the island, made afresh whenever the seed changes, and
+    // Page one: who the player is, for everyone else to know them by.
+    const [nameGroup, nameRow] = group('Your name')
+    nameRow.className = 'map'
+    this.nameField.maxLength = NAME_MOST
+    this.nameField.placeholder = 'What should others call you?'
+    this.nameField.autocomplete = 'off'
+    this.nameField.addEventListener('input', () => this.pick({ name: cleanName(this.nameField.value) }))
+    nameRow.append(this.nameField)
+
+    // And the island, made afresh whenever the seed changes, and
     // looked over from above meanwhile. Everyone on the same seed shares it.
     const [mapGroup, mapRow] = group('Island seed')
     mapRow.className = 'map'
@@ -198,7 +210,7 @@ export class Menu {
     ;[this.popular, this.popularCards] = group('Popular islands')
     this.popular.hidden = true
     const mapPage = document.createElement('div')
-    mapPage.append(mapGroup, this.popular)
+    mapPage.append(nameGroup, mapGroup, this.popular)
 
     // Page two: the vehicle, turning on the spot beside the panel.
     const [vehicleGroup, vehicleCards] = group('Vehicle')
@@ -306,6 +318,8 @@ export class Menu {
     if (step === 'map') {
       void this.generate()
       void this.listPopular()
+      // Nobody can set off without a name, so the field asks for one first.
+      if (this.choice.name === '') this.nameField.focus()
     }
     this.watchRooms(step === 'map')
     if (step === 'car') this.host.showVehicle(this.choice.vehicle)
@@ -387,6 +401,7 @@ export class Menu {
     )
     for (const page of new Set(Object.values(this.pages))) page.hidden = page !== this.pages[this.step]
     if (document.activeElement !== this.seedField) this.seedField.value = String(this.choice.seed)
+    if (document.activeElement !== this.nameField) this.nameField.value = this.choice.name
     this.here.textContent = drivingHere(this.rooms.find((room) => room.seed === this.choice.seed)?.players ?? 0)
     const picking = this.choice.vehicle
     for (const [vehicle, button] of this.vehicleButtons) {
@@ -397,7 +412,8 @@ export class Menu {
       button.setAttribute('aria-pressed', String(seed === this.choice.seed))
     }
     this.back.hidden = this.step === STEPS[0]
-    this.next.disabled = this.step === 'map' && this.generating
+    this.next.disabled = this.step === 'map' && (this.generating || this.choice.name === '')
+    this.next.title = this.step === 'map' && this.choice.name === '' ? 'Say what to call you first.' : ''
     this.next.textContent = this.step === STEPS[STEPS.length - 1] ? 'Play' : 'Next'
   }
 }

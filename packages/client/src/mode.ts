@@ -1,9 +1,34 @@
-import type { IslandMark } from '@buggies/net'
+import type { IslandMark, PendingGame } from '@buggies/net'
 import type { Game, GameRequest, Race, VehicleProfileId } from '@buggies/game'
 import type { World } from '@buggies/terrain'
 import type * as THREE from 'three'
 
 import type { HudState } from './hud.ts'
+
+/** Someone on the island, by name, and what they drive and play. */
+export interface LobbyPlayer {
+  seat: number
+  name: string
+  profile: VehicleProfileId
+  score: number
+  /** The count they play for, if any. */
+  game: Game | null
+  /** Whether they are in the race on. */
+  racing: boolean
+}
+
+/** Who is on the island, and the games they play or wait to. */
+export interface Lobby {
+  seed: number
+  /** The player's own seat. */
+  seat: number
+  /** The island's tick now, for how long each game waiting has left. */
+  tick: number
+  players: LobbyPlayer[]
+  /** The games asked for, waiting for players to join them, soonest to start first. */
+  waiting: PendingGame[]
+  race: Race | null
+}
 
 /**
  * One way of being on a map. Modes own their camera and whatever they add to
@@ -32,8 +57,12 @@ export interface ModeView {
   game?(): Game | null
   /** The race on over the island, if any, and whether the player set it going. */
   race?(): { race: Race; mine: boolean } | null
-  /** Put the player to playing for this count, set a race going for the whole island, or stop. */
+  /** Ask everyone on the island to play this game, or stop the player's own. */
   setGame?(game: GameRequest | null): void
+  /** Who is on the island, and the games they play or wait to. */
+  lobby?(): Lobby
+  /** Into the game waiting with this id, or out of whichever one the player is in. */
+  joinGame?(id: number | null): void
   /** The portal the player has driven through since last asked, or -1. */
   portal?(): number
   /** Why the connection to the server was lost, if it has been, for the game to be joined again. */

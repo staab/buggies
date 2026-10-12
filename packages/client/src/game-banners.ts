@@ -6,6 +6,7 @@ import {
   NOT_RACING,
   VEHICLE_PROFILE_LABELS,
   countdownLeft,
+  sameGame,
   type Game,
   type Race,
   type Seat,
@@ -39,10 +40,10 @@ export function playerTag(seed: number, seat: number): string {
   return (hash >>> 0).toString(36).padStart(7, '0')
 }
 
-/** Who a seat is and what it drives: "238s9d7 in an ambulance". */
-export function driverOf(seed: number, seat: Pick<Seat, 'id' | 'profile'>): string {
+/** Who a seat is and what it drives: "Ada in an ambulance", or by its tag, "238s9d7 in an ambulance", if it gave no name. */
+export function driverOf(seed: number, seat: Pick<Seat, 'id' | 'profile'>, name = ''): string {
   const vehicle = VEHICLE_PROFILE_LABELS[seat.profile].toLowerCase()
-  return `${playerTag(seed, seat.id)} in ${/^[aeiou]/.test(vehicle) ? 'an' : 'a'} ${vehicle}`
+  return `${name || playerTag(seed, seat.id)} in ${/^[aeiou]/.test(vehicle) ? 'an' : 'a'} ${vehicle}`
 }
 
 /** What a count asks for, in a line. */
@@ -70,6 +71,8 @@ function raceAsk(race: Race): string {
 export class GameBanners {
   /** How many games each seat had won when last seen, to tell a win by. */
   private readonly gamesWon = new Map<number, number>()
+  /** The count each seat played for when last seen, to tell a game lost to whoever won it by. */
+  private readonly games = new Map<number, Game | null>()
   /** The seats in the race on when last seen, and that race. */
   private racers = new Set<number>()
   private raceOn: Race | null = null
@@ -83,6 +86,8 @@ export class GameBanners {
   constructor(
     private readonly seed: number,
     private readonly sound: BannerSound,
+    /** The name a seat goes by, if it gave one. */
+    private readonly nameOf: (seat: number) => string = () => '',
   ) {}
 
   update(dt: number, view: GameView): void {
@@ -94,6 +99,13 @@ export class GameBanners {
       const mood = winner?.id === own.id ? 'won' : this.racers.has(own.id) ? 'lost' : 'over'
       this.endWith(winner === null ? 'Race called off' : 'Race over!', winner, mood, winner === null ? 'Nobody crossed the finish in time.' : undefined)
     } else if (winners.some((seat) => seat.id === own.id)) this.endWith('Game over!', own, 'won')
+    else {
+      // A count played together, won by someone else in it.
+      const playing = this.games.get(own.id) ?? null
+      const rival = playing === null || own.game !== null ? undefined : winners.find((seat) => this.playedFor(seat.id, playing))
+      if (rival !== undefined) this.endWith('Game over!', rival, 'lost')
+    }
+    for (const seat of view.seats) this.games.set(seat.id, seat.occupied ? seat.game : null)
     this.racers = new Set(race === null ? [] : view.seats.filter((seat) => seat.occupied && seat.racePassed !== NOT_RACING).map((seat) => seat.id))
     this.raceOn = race
 
@@ -132,6 +144,12 @@ export class GameBanners {
     return undefined
   }
 
+  /** Whether a seat was last seen playing for this count. */
+  private playedFor(seat: number, game: Game): boolean {
+    const played = this.games.get(seat) ?? null
+    return played !== null && sameGame(played, game)
+  }
+
   /** The seats that have won a game since last seen. */
   private winners(seats: readonly Seat[]): Seat[] {
     const winners: Seat[] = []
@@ -148,7 +166,7 @@ export class GameBanners {
     this.over = {
       key: `over:${this.ended}`,
       title,
-      subtitle: subtitle ?? `${driverOf(this.seed, winner!)} wins!`,
+      subtitle: subtitle ?? `${driverOf(this.seed, winner!, this.nameOf(winner!.id))} wins!`,
       ...(winner === null ? {} : { detail: `+${GAME_PRIZE} bananas · ${winner.score} in all` }),
       mood,
     }

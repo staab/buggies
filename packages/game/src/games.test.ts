@@ -93,7 +93,9 @@ describe('games', () => {
     const player = seat()
     const wreck = seat()
     ;(wreck.vehicle as { wrecked: boolean }).wrecked = true
-    for (const each of [player, wreck]) setGame(each, { kind: 'score', target: 1 }, 0)
+    // Each its own game, set at its own tick.
+    setGame(player, { kind: 'score', target: 1 }, 0)
+    setGame(wreck, { kind: 'score', target: 1 }, 1)
     player.collected = 1
     wreck.collected = 1
     player.score = 3
@@ -105,6 +107,19 @@ describe('games', () => {
     expect(wreck.game).not.toBeNull()
     expect(awardGames([player])).toEqual([])
     expect(player.score).toBe(3 + GAME_PRIZE)
+  })
+
+  it('ends a count played together for everyone in it once one of them reaches it, and pays only them', () => {
+    const [first, second, apart] = [seat(), seat(), seat()]
+    for (const each of [first, second]) setGame(each, { kind: 'score', target: 2 }, 5)
+    setGame(apart, { kind: 'score', target: 2 }, 6)
+    second.collected = 2
+    expect(awardGames([first, second, apart])).toEqual([second])
+    expect(first.game).toBeNull()
+    expect(first.gamesWon).toBe(0)
+    expect(second.gamesWon).toBe(1)
+    // Another game of the same, set at another time, goes on.
+    expect(apart.game).not.toBeNull()
   })
 
   it('races through every checkpoint in order to the finish, from the start', () => {

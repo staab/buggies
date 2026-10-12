@@ -33,6 +33,7 @@ describe('the game banners', () => {
     expect(playerTag(42, 3)).not.toBe(playerTag(42, 4))
     expect(driverOf(42, { id: 3, profile: 'ambulance' })).toBe(`${playerTag(42, 3)} in an ambulance`)
     expect(driverOf(42, { id: 3, profile: 'tank' })).toBe(`${playerTag(42, 3)} in a tank`)
+    expect(driverOf(42, { id: 3, profile: 'tank' }, 'Ada')).toBe('Ada in a tank')
   })
 
   it('count a new race down from three to the go, then go away', () => {
@@ -105,5 +106,24 @@ describe('the game banners', () => {
     own.racePassed = NOT_RACING
     later.update(0, { own, seats: [own], race: null, tick: 1001 })
     expect(later.state()).toMatchObject({ title: 'Race called off', mood: 'lost' })
+  })
+
+  it('rain on everyone in a count played together once another of them wins it, by name', () => {
+    const { sounds, sound } = heard()
+    const a = seat(0)
+    const b = seat(1, 'tank')
+    const game = { kind: 'score' as const, target: 5, from: 0, startTick: 0 }
+    a.game = { ...game }
+    b.game = { ...game, from: 3 }
+    const banners = new GameBanners(7, sound, (id) => (id === 1 ? 'Bo' : ''))
+    banners.update(0, { own: a, seats: [a, b], race: null, tick: 1000 })
+    // Bo wins: both games are over in the one snapshot.
+    a.game = null
+    b.game = null
+    b.gamesWon = 1
+    b.score = 120
+    banners.update(0, { own: a, seats: [a, b], race: null, tick: 1001 })
+    expect(banners.state()).toMatchObject({ title: 'Game over!', subtitle: 'Bo in a tank wins!', mood: 'lost' })
+    expect(sounds).toContain('bummer')
   })
 })

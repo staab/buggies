@@ -88,9 +88,10 @@ body {
   color: var(--dim);
   white-space: pre-line;
 }
-/* A speaker in the corner, crossed out when muted, and a trophy beside it for the games. */
+/* A speaker in the corner, crossed out when muted, a trophy beside it for the games, and beside that the players. */
 #mute,
-#trophy {
+#trophy,
+#players {
   position: fixed;
   top: 12px;
   right: 12px;
@@ -107,22 +108,120 @@ body {
 #trophy {
   right: 58px;
 }
-#trophy[hidden] {
+#players {
+  right: 104px;
+}
+#trophy[hidden],
+#players[hidden] {
   display: none;
 }
+/* A game someone has asked for, waiting for this player to join it. */
+#trophy.waiting::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ffd24a;
+  animation: waiting-pulse 1.2s ease-in-out infinite;
+}
+@keyframes waiting-pulse {
+  50% {
+    transform: scale(1.4);
+    opacity: 0.6;
+  }
+}
 #mute svg,
-#trophy svg {
+#trophy svg,
+#players svg {
   width: 20px;
   height: 20px;
 }
-#games {
+#games,
+.side-root {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 15;
 }
-#games[hidden] {
+#games[hidden],
+.side-root[hidden] {
   display: none;
+}
+/* The games and the players, down the right under the buttons in the corner. */
+.panel.side {
+  left: auto;
+  right: 16px;
+  top: 60px;
+  bottom: 16px;
+  width: min(360px, calc(100vw - 32px));
+}
+.side .list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+.side .list-heading {
+  margin: 8px 0 0;
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.side .list-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.side .entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.side .entry.joined {
+  border-color: var(--accent);
+  background: rgba(111, 211, 199, 0.1);
+}
+.side .entry-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.side .entry .name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.side .entry .note {
+  font-size: 11px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+.side .entry .clock {
+  font-size: 12px;
+  color: #ffd24a;
+  font-variant-numeric: tabular-nums;
+}
+.side .entry.player .clock {
+  color: var(--ink);
+}
+.side .entry button {
+  padding: 8px 12px;
+}
+.side .swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: none;
 }
 /* The games panel, under the trophy in the corner. */
 .panel.games {

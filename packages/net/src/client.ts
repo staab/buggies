@@ -4,6 +4,7 @@ import { BananaLedger } from './ledger.ts'
 import type { PredictionUpdate } from './prediction.ts'
 import {
   INPUT_TIMELINE_TICKS,
+  SERVER_LOBBY,
   SERVER_REJECT,
   SERVER_SNAPSHOT,
   SERVER_WELCOME,
@@ -13,6 +14,7 @@ import {
 import { SnapshotTimeline, type VehicleRenderState } from './snapshot-timeline.ts'
 import type { ClientTransport } from './transport.ts'
 import {
+  decodeLobby,
   decodeReject,
   decodeSnapshot,
   decodeWelcome,
@@ -22,7 +24,10 @@ import {
   encodeInput,
   encodeChangeVehicle,
   encodeGame,
+  encodeJoinGame,
   encodeRespawn,
+  NO_LOBBY,
+  type LobbyMessage,
   messageTypeOf,
   type SnapshotMessage,
   type WelcomeMessage,
@@ -110,6 +115,7 @@ export class NetClient {
   /** When anything was last heard from the server. */
   private heardAtMs = 0
   private ackTick = UNACKNOWLEDGED_INPUT_TICK
+  private lobbyMessage: LobbyMessage = { players: [], games: [] }
 
   constructor(transport: ClientTransport, clock: () => number, events: Partial<NetClientEvents> = {}) {
     this.transport = transport
@@ -123,6 +129,11 @@ export class NetClient {
 
   get closed(): string | null {
     return this.closedReason
+  }
+
+  /** Who is on the island by name, and the games waiting for players, as the server last said. */
+  get lobby(): LobbyMessage {
+    return this.lobbyMessage
   }
 
   get acknowledgedInputTick(): number {
@@ -139,8 +150,8 @@ export class NetClient {
     return this.newestSnapshot?.vehicles.length ?? 0
   }
 
-  /** Join the room for a seed, in a vehicle: out of one of its portals, if come through one to it, with what the seat left behind held, if it shows that seat's pass. */
-  async connect(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS): Promise<WelcomeMessage> {
+  /** Join the room for a seed, in a vehicle, by a name: out of one of its portals, if come through one to it, with what the seat left behind held, if it shows that seat's pass. */
+  async connect(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS, name = ''): Promise<WelcomeMessage> {
     try {
       this.heardAtMs = this.clock()
       await this.transport.connect({
@@ -150,7 +161,7 @@ export class NetClient {
       const welcome = new Promise<WelcomeMessage>((resolve, reject) => {
         this.settleWelcome = { resolve, reject }
       })
-      this.transport.send(encodeHello(profile, seed, arrival, pass))
+      this.transport.send(encodeHello(profile, seed, arrival, pass, name))
       return await welcome
     } catch (error) {
       throw new ConnectionFailure(error instanceof Error ? error.message : String(error), this.rejectReason)
@@ -226,6 +237,12 @@ export class NetClient {
     this.transport.send(encodeGame(game))
   }
 
+  /** Into the game waiting with this id, or out of whichever one this player is in. */
+  joinGame(id: number | null): void {
+    if (this.welcomeMessage === null || this.closedReason !== null) return
+    this.transport.send(encodeJoinGame(id ?? NO_LOBBY))
+  }
+
   /** Everyone else, where they were a moment ago. */
   sample(): readonly VehicleRenderState[] {
     return this.timeline.sample(this.clock())
@@ -255,6 +272,12 @@ export class NetClient {
       const message = decodeReject(payload)
       this.rejectReason = message?.reason ?? null
       this.handleClose(message === null ? 'malformed reject' : rejectLabel(message.reason))
+      return
+    }
+
+    if (type === SERVER_LOBBY) {
+      const lobby = decodeLobby(payload)
+      if (lobby !== null) this.lobbyMessage = lobby
       return
     }
 

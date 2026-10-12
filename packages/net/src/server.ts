@@ -21,12 +21,14 @@ import {
   respawn,
   respawnNearby,
   seatNpc,
+  LOBBY_TICKS,
   setGame,
   spawnWhere,
   validGame,
   type Achievement,
   type Arena,
   type Carried,
+  type GameRequest,
   type Seat,
   type VehicleInput,
   type VehicleSpawn,
@@ -55,6 +57,10 @@ import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
   decodeChangeVehicle,
   decodeGame,
+  decodeJoinGame,
+  encodeLobby,
+  NO_LOBBY,
+  type PendingGame,
   NO_ARRIVAL,
   NO_PASS,
   decodeHello,
@@ -107,6 +113,8 @@ export interface GameServerEvents {
   onGameWon?(seat: Seat): void
   /** A player has been paid for a feat. */
   onAchieved?(seat: Seat, achievement: Achievement): void
+  /** A player has asked for a game for everyone on the island to join, which starts once its minute is up. */
+  onGameOpened?(seat: Seat, game: PendingGame): void
   /** A player has set a race going on their island, and a race is over, won or called off. */
   onRaceStarted?(seat: Seat, racers: readonly Seat[]): void
   onRaceEnded?(seed: number, winner: Seat | null): void
@@ -143,6 +151,8 @@ interface Player {
   heardTick: number
   /** What they show on coming through a portal, for what they held here to be carried over. */
   pass: number
+  /** What they go by, as they gave it. */
+  name: string
 }
 
 /**
@@ -175,6 +185,10 @@ export interface Room {
   /** What its snapshots are gathered into, and what the last told. */
   readonly snapshots: RoomSnapshots
   lastSnapshotBytes: number
+  /** The games asked for here, waiting for players to join them, soonest to start first. */
+  readonly games: PendingGame[]
+  /** The id the next game asked for is known by while it waits. */
+  nextGameId: number
 }
 
 /**
@@ -289,6 +303,7 @@ export class GameServer implements TransportHandlers {
       const raced = playRace(room.arena)
       if (raced !== null) this.events.onRaceEnded?.(room.arena.planet.seed, raced.winner)
       for (const { seat, achievement } of awardAchievements(room.arena)) this.events.onAchieved?.(seat, achievement)
+      this.startDueGames(room)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
     this.expireHandshakes()
@@ -348,19 +363,28 @@ export class GameServer implements TransportHandlers {
         return
       }
       if (game === null) {
-        // Clearing is of the player's own count, and of the race on if they set it going.
+        // Clearing is of the player's own count, of the race on if they set it going, and of their place in any game waiting.
         setGame(player.seat, null, arena.tick)
         if (arena.race?.starter === player.seat.id) {
           endRace(arena)
           this.events.onRaceEnded?.(arena.planet.seed, null)
         }
-      } else if (game.kind !== 'race') setGame(player.seat, { kind: game.kind, target: game.target }, arena.tick)
-      else if (arena.race === null) {
-        // One race at a time: asked for while another is on, it is too late, and nothing comes of it.
-        this.events.onRaceStarted?.(player.seat, startRace(arena, game.course, player.seat, game.target))
+        this.leaveGames(player.room, player.seat.id)
+        this.events.onGameSet?.(player.seat)
         return
-      } else return
-      this.events.onGameSet?.(player.seat)
+      }
+      // One race at a time: asked for while another is on, or waiting to be, it is too late, and nothing comes of it.
+      if (game.kind === 'race' && (arena.race !== null || player.room.games.some((waiting) => waiting.request.kind === 'race'))) return
+      // With nobody else on the island, there is nobody to wait for.
+      if (player.room.players.size === 1) this.startGame(player.room, game, player.seat.id, [player.seat])
+      else this.openGame(player.room, game, player)
+      return
+    }
+
+    const joining = decodeJoinGame(payload)
+    if (joining !== null) {
+      if (joining === NO_LOBBY) this.leaveGames(player.room, player.seat.id)
+      else this.joinGame(player.room, joining, player.seat.id)
       return
     }
 
@@ -394,9 +418,11 @@ export class GameServer implements TransportHandlers {
     room.players.delete(connection.id)
     // Gone through a portal, or cut off, as far as anyone here knows: what they held waits for them.
     this.left.set(player.pass, { carried: carriedOf(player.seat), tick: this.clock, seed: room.seed, where: spawnWhere(player.seat) })
+    this.leaveGames(room, player.seat.id, false)
     leaveSeat(room.arena, player.seat.id)
     this.topUpNpcs(room.arena)
     this.events.onLeft?.(player.seat, connection.id, room.seed)
+    this.broadcastLobby(room)
     // An empty island is not worth stepping.
     if (room.players.size === 0 && !keepRoom) this.closeRoom(room)
   }
@@ -429,6 +455,8 @@ export class GameServer implements TransportHandlers {
       players: new Map(),
       snapshots: createRoomSnapshots(),
       lastSnapshotBytes: 0,
+      games: [],
+      nextGameId: 0,
     }
     this.rooms.set(seed, room)
     this.topUpNpcs(room.arena)
@@ -567,6 +595,7 @@ export class GameServer implements TransportHandlers {
       dropped: 0,
       heardTick: this.clock,
       pass: this.newPass(),
+      name: hello.name,
     }
     this.players.set(connection.id, player)
     room.players.set(connection.id, player)
@@ -583,6 +612,76 @@ export class GameServer implements TransportHandlers {
       }),
     )
     this.events.onJoined?.(seat, connection.id, room.seed)
+    this.broadcastLobby(room)
+  }
+
+  /** A game asked for, put up for everyone on the island to join for a minute, with whoever asked for it in it already. */
+  private openGame(room: Room, request: GameRequest, host: Player): void {
+    this.leaveGames(room, host.seat.id, false)
+    const game: PendingGame = { id: room.nextGameId, request, host: host.seat.id, startTick: room.arena.tick + LOBBY_TICKS, joined: [host.seat.id] }
+    // The id is a byte on the wire, and the one past the last means none.
+    room.nextGameId = (room.nextGameId + 1) % NO_LOBBY
+    room.games.push(game)
+    this.events.onGameOpened?.(host.seat, game)
+    this.broadcastLobby(room)
+  }
+
+  /** Into the game waiting with this id, and out of any other; a game gone already comes to nothing. */
+  private joinGame(room: Room, id: number, seat: number): void {
+    const game = room.games.find((waiting) => waiting.id === id)
+    if (game === undefined || game.joined.includes(seat)) return
+    this.leaveGames(room, seat, false)
+    game.joined.push(seat)
+    this.broadcastLobby(room)
+  }
+
+  /** Out of whichever game waiting a seat has joined: one nobody is left in is let go. Everyone is told, unless asked not to be yet. */
+  private leaveGames(room: Room, seat: number, tell = true): void {
+    let changed = false
+    for (const game of room.games) {
+      const at = game.joined.indexOf(seat)
+      if (at < 0) continue
+      game.joined.splice(at, 1)
+      changed = true
+    }
+    const before = room.games.length
+    room.games.splice(0, room.games.length, ...room.games.filter((game) => game.joined.length > 0))
+    if (tell && (changed || room.games.length !== before)) this.broadcastLobby(room)
+  }
+
+  /** Every game whose minute is up starts, for whoever joined it and is still here. */
+  private startDueGames(room: Room): void {
+    const due = room.games.filter((game) => game.startTick <= room.arena.tick)
+    if (due.length === 0) return
+    room.games.splice(0, room.games.length, ...room.games.filter((game) => !due.includes(game)))
+    for (const game of due) {
+      const seats = game.joined.map((id) => room.arena.seats[id]!).filter((seat) => seat.occupied && this.playerIn(room, seat) !== undefined)
+      if (seats.length > 0) this.startGame(room, game.request, game.host, seats)
+    }
+    this.broadcastLobby(room)
+  }
+
+  /** Start a game for these seats together: a race over its course, or the same count for each, the first to reach it the winner. */
+  private startGame(room: Room, request: GameRequest, host: number, seats: Seat[]): void {
+    const { arena } = room
+    if (request.kind === 'race') {
+      if (arena.race !== null) return
+      const starter = seats.find((seat) => seat.id === host) ?? seats[0]!
+      this.events.onRaceStarted?.(starter, startRace(arena, request.course, starter, request.target, seats))
+      return
+    }
+    for (const seat of seats) {
+      setGame(seat, { kind: request.kind, target: request.target }, arena.tick)
+      this.events.onGameSet?.(seat)
+    }
+  }
+
+  /** Who is on the island and what games wait for players, to everyone on it. */
+  private broadcastLobby(room: Room): void {
+    if (room.players.size === 0) return
+    const players = [...room.players.values()].map((player) => ({ seat: player.seat.id, name: player.name }))
+    const encoded = encodeLobby({ players, games: room.games })
+    for (const player of room.players.values()) player.connection.send(encoded)
   }
 
   /** A pass nobody holds or has left behind: random, so nobody takes another's by guessing. */

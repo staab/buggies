@@ -44,6 +44,9 @@ export const RACE_TICKS_MOST = Math.round((5 * 60) / FIXED_TIMESTEP)
 /** How long a game counts down before it starts, in ticks: its players are held still till then. */
 export const COUNTDOWN_TICKS = Math.round(3 / FIXED_TIMESTEP)
 
+/** How long a game asked for waits for players to join it before it starts, in ticks. */
+export const LOBBY_TICKS = Math.round(60 / FIXED_TIMESTEP)
+
 /** A seat in no race. */
 export const NOT_RACING = -1
 
@@ -175,17 +178,23 @@ export function lapOf(seat: GameSeat, race: Race): number {
   return Math.min(Math.floor(Math.max(seat.racePassed, 0) / race.course.length) + 1, race.laps)
 }
 
+/** Whether two seats play the one game, started together for everyone who joined it: the same count, set at the same tick. */
+export function sameGame(a: Game, b: Game): boolean {
+  return a.kind === b.kind && a.target === b.target && a.startTick === b.startTick
+}
+
 /**
- * Pay out every count reached: its prize in bananas, and back to free play.
- * A wreck wins nothing. Done by whoever has the last word on the arena, so
- * a game is paid once; the seats paid are returned.
+ * Pay out every count reached: its prize in bananas, and back to free play,
+ * for the winner and for everyone else playing the same game, who has lost
+ * it. A wreck wins nothing. Done by whoever has the last word on the arena,
+ * so a game is paid once; the seats paid are returned.
  */
 export function awardGames<S extends GameSeat>(seats: readonly S[]): S[] {
   const paid: S[] = []
   for (const seat of seats) {
     const { game } = seat
     if (!seat.occupied || seat.vehicle.wrecked || game === null || gameProgress(seat, game) < game.target) continue
-    seat.game = null
+    for (const rival of seats) if (rival.game !== null && sameGame(rival.game, game)) rival.game = null
     pay(seat)
     paid.push(seat)
   }

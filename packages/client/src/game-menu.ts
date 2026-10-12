@@ -27,7 +27,7 @@ const GAME_NOTES: Readonly<Record<GameKind, string>> = {
   score: 'Collect this many bananas',
   kills: "Wreck this many other players' cars with your weapons",
   robots: 'Bring down this many robots with your weapons',
-  race: 'Race everyone on the island over a course you pick, once or for laps',
+  race: 'Race whoever joins over a course you pick, once or for laps',
 }
 
 /** What each count starts at, when first picked. */
@@ -48,7 +48,9 @@ export interface GameHost {
   game(): Game | null
   /** The race on over the island, if any, and whether this player set it going. */
   race(): { race: Race; mine: boolean } | null
-  /** Play this game, or none: a count is the player's own, a race everyone's. */
+  /** Whether a race asked for is waiting for players to join it: one race at a time. */
+  waitingRace(): boolean
+  /** Ask everyone on the island to play this game, or stop the player's own. */
   setGame(game: GameRequest | null): void
 }
 
@@ -90,10 +92,10 @@ function button(text: string, onClick: () => void): HTMLButtonElement {
 }
 
 /**
- * The "games" panel, opened from the trophy in the corner: a game to play
- * on top of free play, a number of bananas, wrecks or robots, or a race
- * over a course of marks picked on a globe of the island, start first,
- * then the checkpoints, then the finish.
+ * The game picker, opened from the games list by the trophy: a game to
+ * ask everyone on the island to play on top of free play, a number of
+ * bananas, wrecks or robots, or a race over a course of marks picked on a
+ * globe of the island, start first, then the checkpoints, then the finish.
  */
 export class GameMenu {
   private readonly root: HTMLElement
@@ -123,10 +125,10 @@ export class GameMenu {
     const panel = document.createElement('div')
     panel.className = 'panel games'
     const title = document.createElement('h1')
-    title.textContent = 'Games'
+    title.textContent = 'Start a game'
     const blurb = document.createElement('p')
     blurb.className = 'blurb'
-    blurb.textContent = `Play for something. Win and you get ${GAME_PRIZE} bananas.`
+    blurb.textContent = `Everyone on the island gets a minute to join, then it starts for all who did. Win and you get ${GAME_PRIZE} bananas.`
     this.current = document.createElement('p')
     this.current.className = 'status current'
 
@@ -248,7 +250,7 @@ export class GameMenu {
 
   private pickMark(mark: Vec3): void {
     const map = this.host.map()
-    if (map === null || this.host.race() !== null) return
+    if (map === null || this.raceBlocked()) return
     const last = this.marks.at(-1)
     if (!onLand(map, mark)) this.refused = 'Pick a spot on land.'
     else if (this.marks.length >= RACE_MARKS_MOST) this.refused = `A race has at most ${RACE_MARKS_MOST} marks.`
@@ -264,7 +266,7 @@ export class GameMenu {
   private confirm(): void {
     if (this.kind === 'race') {
       const request = this.raceRequest()
-      if (request === null || this.host.race() !== null) return
+      if (request === null || this.raceBlocked()) return
       this.host.setGame(request)
       this.marks = []
     } else {
@@ -273,6 +275,11 @@ export class GameMenu {
       this.host.setGame({ kind: this.kind, target, course: [] })
     }
     this.hide()
+  }
+
+  /** Whether a race cannot be asked for now: one is on, or waiting for players. */
+  private raceBlocked(): boolean {
+    return this.host.race() !== null || this.host.waitingRace()
   }
 
   private render(): void {
@@ -288,20 +295,23 @@ export class GameMenu {
     const race = this.kind === 'race'
     this.amount.hidden = race
     this.course.hidden = !race
-    this.setButton.textContent = race ? 'Start race' : 'Play'
+    this.setButton.textContent = race ? 'Start race' : 'Start game'
     if (race) {
+      const blocked = this.raceBlocked()
       this.drawBoard()
-      this.undoButton.disabled = this.marks.length === 0 || on !== null
-      this.resetButton.disabled = this.marks.length === 0 || on !== null
+      this.undoButton.disabled = this.marks.length === 0 || blocked
+      this.resetButton.disabled = this.marks.length === 0 || blocked
       this.lapsInput.disabled = on !== null
       if (on !== null) this.lapsInput.value = String(on.race.laps)
       this.note.textContent =
         on !== null
           ? 'One race at a time: wait for this one to be won or called off.'
-          : wholeIn(this.lapsInput, RACE_LAPS_MOST) === null
-            ? `Laps: a whole number from 1 to ${RACE_LAPS_MOST}.`
-            : this.refused || this.courseNote()
-      this.setButton.disabled = on !== null || this.raceRequest() === null
+          : blocked
+            ? 'A race is waiting for players: join it from the games list.'
+            : wholeIn(this.lapsInput, RACE_LAPS_MOST) === null
+              ? `Laps: a whole number from 1 to ${RACE_LAPS_MOST}.`
+              : this.refused || this.courseNote()
+      this.setButton.disabled = blocked || this.raceRequest() === null
     } else {
       this.note.textContent = this.target() === null ? `A whole number from 1 to ${GAME_TARGET_MOST}.` : ''
       this.setButton.disabled = this.target() === null
@@ -315,7 +325,7 @@ export class GameMenu {
     if (this.marks.length === 2) return 'Now the finish, or more checkpoints before it.'
     const laps = wholeIn(this.lapsInput, RACE_LAPS_MOST) ?? 1
     const round = laps === 1 ? '' : ` Each of the ${laps} laps runs from the finish back round by the start.`
-    return `The last mark is the finish.${round} Everyone on the island is put on the start when the race begins.`
+    return `The last mark is the finish.${round} Everyone who joins is put on the start when the race begins.`
   }
 
   /** The island, the player on it, and the course: the one on, or the one being picked. */

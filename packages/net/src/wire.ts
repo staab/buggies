@@ -29,11 +29,14 @@ import {
   CLIENT_GAME,
   CLIENT_HELLO,
   CLIENT_INPUT,
+  CLIENT_JOIN_GAME,
   CLIENT_RESPAWN,
   CLIENT_ROOMS,
   CLIENT_PEEK,
+  NAME_MOST,
   NO_TICK,
   PROTOCOL_VERSION,
+  SERVER_LOBBY,
   SERVER_REJECT,
   SERVER_ROOMS,
   SERVER_PEEK,
@@ -51,7 +54,8 @@ import {
  * alone: anything the wrong length is refused rather than read past.
  */
 
-export const HELLO_BYTES = 13
+/** A hello, up to its name's length; the name follows, in UTF-8. */
+export const HELLO_BYTES = 14
 export const WELCOME_BYTES = 19
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
@@ -66,6 +70,13 @@ export const ROOM_BYTES = 5
 export const PEEK_REQUEST_BYTES = 5
 export const PEEK_HEADER_BYTES = 3
 export const PEEK_MARK_BYTES = 14
+export const JOIN_GAME_BYTES = 2
+/** A lobby: how many players and how many games waiting, each told after it. */
+export const LOBBY_HEADER_BYTES = 3
+/** A player in a lobby: their seat and their name's length, then the name. */
+export const LOBBY_PLAYER_BYTES = 2
+/** A game waiting: its id, kind, how many, who asked for it, when it starts, how many have joined and how many marks it has, then each. */
+export const LOBBY_GAME_BYTES = 11
 export const SNAPSHOT_HEADER_BYTES = 26
 /**
  * A vehicle in a snapshot: where it is and how it moves, how hurt it is and
@@ -114,6 +125,8 @@ export interface HelloMessage {
   arrival: number
   /** The pass the server gave the seat left for the portal, which carries over what it held; or `NO_PASS`. */
   pass: number
+  /** What the player goes by, as cleaned by `cleanName`; empty if they gave none. */
+  name: string
 }
 
 /** No portal to come out of: the car starts where the world's spawns are. */
@@ -135,6 +148,39 @@ export interface WelcomeMessage {
 
 export interface RejectMessage {
   reason: number
+}
+
+/** A player on the island, by the name they gave. */
+export interface LobbyPlayer {
+  seat: number
+  name: string
+}
+
+/** A game asked for on the island, waiting for players to join it before it starts for all of them. */
+export interface PendingGame {
+  /** What it is known by on its island while it waits. */
+  id: number
+  request: GameRequest
+  /** The seat of whoever asked for it. */
+  host: number
+  /** The island's tick it starts on. */
+  startTick: number
+  /** The seats that have joined it, the host first. */
+  joined: number[]
+}
+
+export interface LobbyMessage {
+  players: LobbyPlayer[]
+  games: PendingGame[]
+}
+
+/** No game waiting, on the wire: out of whichever one the player is in. */
+export const NO_LOBBY = 0xff
+
+/** A name as it may be gone by: printable, its spaces single, trimmed, and no longer than `NAME_MOST` characters. */
+export function cleanName(raw: string): string {
+  const printable = raw.replace(/[\p{C}]/gu, '').replace(/\s+/g, ' ').trim()
+  return [...printable].slice(0, NAME_MOST).join('').trim()
 }
 
 /** An island with people on it. */
@@ -365,6 +411,12 @@ class Writer {
     this.f32(value.z)
   }
 
+  /** Bytes as they are, such as a name already measured. */
+  raw(value: Uint8Array): void {
+    this.bytes.set(value, this.at)
+    this.at += value.length
+  }
+
 
   input(value: VehicleInput): void {
     this.f32(value.steer)
@@ -451,6 +503,18 @@ class Reader {
 
   vec3(): Vec3 {
     return { x: this.f32(), y: this.f32(), z: this.f32() }
+  }
+
+  /** So many bytes of UTF-8 as text, or `null` if they are not UTF-8. */
+  text(length: number): string | null {
+    const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + this.at, length)
+    this.at += length
+    return fromUtf8(bytes)
+  }
+
+  /** How many bytes are left to read. */
+  left(): number {
+    return this.view.byteLength - this.at
   }
 
 
@@ -544,19 +608,49 @@ function profileIndex(profile: VehicleProfileId): number {
   return VEHICLE_PROFILE_IDS.indexOf(profile)
 }
 
-export function encodeHello(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS): Uint8Array {
-  const writer = new Writer(HELLO_BYTES)
+/** Text as UTF-8, by way of the escapes a URI makes of it: this package runs where there may be no `TextEncoder`. */
+function utf8(text: string): Uint8Array {
+  const escaped = encodeURIComponent(text)
+  const bytes: number[] = []
+  for (let k = 0; k < escaped.length; k++) {
+    if (escaped[k] === '%') {
+      bytes.push(parseInt(escaped.slice(k + 1, k + 3), 16))
+      k += 2
+    } else bytes.push(escaped.charCodeAt(k))
+  }
+  return Uint8Array.from(bytes)
+}
+
+/** UTF-8 as text, or `null` if it is not UTF-8. */
+function fromUtf8(bytes: Uint8Array): string | null {
+  try {
+    return decodeURIComponent(Array.from(bytes, (byte) => `%${byte.toString(16).padStart(2, '0')}`).join(''))
+  } catch {
+    return null
+  }
+}
+
+/** A name cleaned and in UTF-8, as it goes on the wire. */
+function nameBytes(name: string): Uint8Array {
+  return utf8(cleanName(name))
+}
+
+export function encodeHello(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS, name = ''): Uint8Array {
+  const named = nameBytes(name)
+  const writer = new Writer(HELLO_BYTES + named.length)
   writer.u8(CLIENT_HELLO)
   writer.u16(PROTOCOL_VERSION)
   writer.u8(profileIndex(profile))
   writer.u32(seed)
   writer.u8(arrival)
   writer.u32(pass)
+  writer.u8(named.length)
+  writer.raw(named)
   return writer.bytes
 }
 
 export function decodeHello(payload: Uint8Array): HelloMessage | null {
-  if (payload.length !== HELLO_BYTES || messageTypeOf(payload) !== CLIENT_HELLO) return null
+  if (payload.length < HELLO_BYTES || messageTypeOf(payload) !== CLIENT_HELLO) return null
   const reader = new Reader(payload)
   reader.u8()
   const protocolVersion = reader.u16()
@@ -564,7 +658,10 @@ export function decodeHello(payload: Uint8Array): HelloMessage | null {
   const seed = reader.u32()
   const arrival = reader.u8()
   const pass = reader.u32()
-  return profile === undefined ? null : { protocolVersion, profile, seed, arrival, pass }
+  const length = reader.u8()
+  if (payload.length !== HELLO_BYTES + length) return null
+  const name = reader.text(length)
+  return profile === undefined || name === null ? null : { protocolVersion, profile, seed, arrival, pass, name: cleanName(name) }
 }
 
 export function encodeWelcome(message: WelcomeMessage): Uint8Array {
@@ -668,6 +765,82 @@ export function decodeGame(payload: Uint8Array): GameRequest | null | undefined 
   const course: Vec3[] = []
   for (let k = 0; k < marks; k++) course.push(reader.vec3())
   return kind === 'none' ? null : { kind, target, course }
+}
+
+/** Into the game waiting with this id, or with `NO_LOBBY`, out of whichever the player is in. */
+export function encodeJoinGame(id: number): Uint8Array {
+  return Uint8Array.of(CLIENT_JOIN_GAME, id)
+}
+
+/** The game waiting a join asks for, `NO_LOBBY` for none, or `null` if it is not a join. */
+export function decodeJoinGame(payload: Uint8Array): number | null {
+  if (payload.length !== JOIN_GAME_BYTES || messageTypeOf(payload) !== CLIENT_JOIN_GAME) return null
+  return payload[1]!
+}
+
+export function encodeLobby(message: LobbyMessage): Uint8Array {
+  const players = message.players.slice(0, 0xff).map((player) => ({ seat: player.seat, name: nameBytes(player.name) }))
+  const games = message.games.slice(0, 0xff)
+  let length = LOBBY_HEADER_BYTES
+  for (const player of players) length += LOBBY_PLAYER_BYTES + player.name.length
+  for (const game of games) length += LOBBY_GAME_BYTES + game.joined.length + game.request.course.length * GAME_MARK_BYTES
+  const writer = new Writer(length)
+  writer.u8(SERVER_LOBBY)
+  writer.u8(players.length)
+  writer.u8(games.length)
+  for (const player of players) {
+    writer.u8(player.seat)
+    writer.u8(player.name.length)
+    writer.raw(player.name)
+  }
+  for (const game of games) {
+    writer.u8(game.id)
+    writer.u8(GAME_CODES.indexOf(game.request.kind))
+    writer.u16(game.request.target)
+    writer.u8(game.host)
+    writer.u32(game.startTick)
+    writer.u8(game.joined.length)
+    writer.u8(game.request.course.length)
+    for (const seat of game.joined) writer.u8(seat)
+    for (const mark of game.request.course) writer.vec3(mark)
+  }
+  return writer.bytes
+}
+
+export function decodeLobby(payload: Uint8Array): LobbyMessage | null {
+  if (payload.length < LOBBY_HEADER_BYTES || messageTypeOf(payload) !== SERVER_LOBBY) return null
+  const reader = new Reader(payload)
+  reader.u8()
+  const playerCount = reader.u8()
+  const gameCount = reader.u8()
+  const players: LobbyPlayer[] = []
+  for (let k = 0; k < playerCount; k++) {
+    if (reader.left() < LOBBY_PLAYER_BYTES) return null
+    const seat = reader.u8()
+    const length = reader.u8()
+    if (reader.left() < length) return null
+    const name = reader.text(length)
+    if (name === null) return null
+    players.push({ seat, name })
+  }
+  const games: PendingGame[] = []
+  for (let k = 0; k < gameCount; k++) {
+    if (reader.left() < LOBBY_GAME_BYTES) return null
+    const id = reader.u8()
+    const kind = GAME_CODES[reader.u8()]
+    const target = reader.u16()
+    const host = reader.u8()
+    const startTick = reader.u32()
+    const joinedCount = reader.u8()
+    const marks = reader.u8()
+    if (kind === undefined || kind === 'none' || marks > RACE_MARKS_MOST || reader.left() < joinedCount + marks * GAME_MARK_BYTES) return null
+    const joined: number[] = []
+    for (let j = 0; j < joinedCount; j++) joined.push(reader.u8())
+    const course: Vec3[] = []
+    for (let j = 0; j < marks; j++) course.push(reader.vec3())
+    games.push({ id, request: { kind, target, course }, host, startTick, joined })
+  }
+  return reader.left() === 0 ? { players, games } : null
 }
 
 export function encodeRoomsRequest(): Uint8Array {

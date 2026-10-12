@@ -165,6 +165,7 @@ export {
   GAME_PRIZE,
   GAME_REACH,
   GAME_TARGET_MOST,
+  LOBBY_TICKS,
   RACE_LAPS_MOST,
   RACE_LEG_LEAST,
   RACE_MARKS_MOST,
@@ -178,6 +179,7 @@ export {
   nextMark,
   raceMarks,
   runRace,
+  sameGame,
   setGame,
   validGame,
   type CountKind,
@@ -514,13 +516,12 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
 }
 
 /**
- * Set a race going over this course, this many laps: everyone driving on the island is put
- * on a starting grid at its start, facing its first checkpoint, and is in
- * it from there, the start passed. The cars nobody drives are in no race.
- * Returns the racers.
+ * Set a race going over this course, this many laps: its racers, everyone
+ * driving on the island unless told otherwise, are put on a starting grid
+ * at its start, facing its first checkpoint, and are in it from there, the
+ * start passed. The cars nobody drives are in no race. Returns the racers.
  */
-export function startRace(arena: Arena, course: Vec3[], starter: Seat, laps = 1): Seat[] {
-  const racers = arena.seats.filter((seat) => seat.occupied && !seat.npc)
+export function startRace(arena: Arena, course: Vec3[], starter: Seat, laps = 1, racers: Seat[] = arena.seats.filter((seat) => seat.occupied && !seat.npc)): Seat[] {
   const grid = startingGrid(arena.planet, course[0]!, course[1]!, racers.length)
   racers.forEach((seat, place) => {
     respawn(seat, grid[place])

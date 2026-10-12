@@ -3,6 +3,7 @@ import {
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
   GAME_PRIZE,
+  LOBBY_TICKS,
   NOT_RACING,
   RACE_LEG_LEAST,
   MAX_PLAYERS,
@@ -188,6 +189,7 @@ class Session {
         onChangedVehicle: (seat) => this.events.push(`changed ${seat.id} ${seat.profile}`),
         onGameSet: (seat) => this.events.push(`game ${seat.id} ${seat.game === null ? 'none' : `${seat.game.kind} ${seat.game.target}`}`),
         onGameWon: (seat) => this.events.push(`won ${seat.id}`),
+        onGameOpened: (seat, game) => this.events.push(`opened game ${game.id} ${game.request.kind} by ${seat.id}`),
         onRaceStarted: (seat, racers) => this.events.push(`race ${seat.id} started ${racers.length}`),
         onRaceEnded: (_, winner) => this.events.push(`race ended ${winner === null ? 'none' : winner.id}`),
         onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
@@ -207,8 +209,8 @@ class Session {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL, pass = NO_PASS): Promise<Player> {
-    const { client, wire, welcome } = await this.connect(profile, jitterTicks, seed, arrival, pass)
+  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL, pass = NO_PASS, name = ''): Promise<Player> {
+    const { client, wire, welcome } = await this.connect(profile, jitterTicks, seed, arrival, pass, name)
     const mirror = createArena(welcome.seed === map.seed ? map : planetOf(welcome.seed))
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
@@ -232,7 +234,7 @@ class Session {
    * mirror run, which is most of what each player costs every tick.
    */
   async listen(): Promise<NetClient> {
-    const { client, wire } = await this.connect('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS)
+    const { client, wire } = await this.connect('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, '')
     this.listeners.push({ client, wire })
     return client
   }
@@ -244,10 +246,11 @@ class Session {
     seed: number,
     arrival: number,
     pass: number,
+    name: string,
   ): Promise<{ client: NetClient; wire: Loopback; welcome: WelcomeMessage }> {
     const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
     const client = new NetClient(wire.client, () => this.nowMs)
-    const welcoming = client.connect(profile, seed, arrival, pass)
+    const welcoming = client.connect(profile, seed, arrival, pass, name)
     welcoming.catch(() => undefined)
     // The hello goes out once connect() has had a turn; then it has to get
     // there and the welcome has to come back. A refusal comes back the same way.
@@ -780,33 +783,77 @@ describe('a session', () => {
     session.dispose()
   })
 
-  it('puts everyone on the island on the start of a race one of them sets going, and pays the first over the finish', async () => {
+  /** Let the minute every game waiting on the map's island has to be joined run out. */
+  function timeUp(session: Session): void {
+    for (const game of session.server.roomFor(map.seed)!.games) game.startTick = session.arena.tick
+    session.run(0.5)
+  }
+
+  it('tells everyone on the island who else is on it, by the name they gave', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, '  Ada\u0007 ')
+    const b = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, 'Bo')
+    session.run(0.5)
+    const seatA = a.client.welcome!.seat
+    const seatB = b.client.welcome!.seat
+    for (const player of [a, b]) {
+      expect(player.client.lobby.players).toEqual([
+        { seat: seatA, name: 'Ada' },
+        { seat: seatB, name: 'Bo' },
+      ])
+    }
+    // Gone, they are gone from the list.
+    b.client.close('left')
+    session.run(0.5)
+    expect(a.client.lobby.players).toEqual([{ seat: seatA, name: 'Ada' }])
+    session.dispose()
+  })
+
+  it('puts a race one player asks for up for the island to join, then everyone who did on its start, and pays the first over the finish', async () => {
     const session = new Session()
     const a = await session.join('sportsCar')
     const b = await session.join('sportsCar')
+    const c = await session.join('sportsCar')
     session.run(0.5)
     const seatA = session.arena.seats[a.client.welcome!.seat]!
     const seatB = session.arena.seats[b.client.welcome!.seat]!
+    const seatC = session.arena.seats[c.client.welcome!.seat]!
     const road = map.roads.filter((each) => each.kind === 'highway').sort((x, y) => y.points.length - x.points.length)[0]!
     const marks: Vec3[] = [road.points[0]!]
     for (const point of road.points) if (marks.length < 3 && groundDistance(point, marks.at(-1)!) > RACE_LEG_LEAST + 20) marks.push(point)
     const course = marks.map((mark) => upOf(mark))
 
+    // Asked for, the race waits a minute for players, with whoever asked for it in it already, and everyone is told.
     a.client.setGame({ kind: 'race', target: 1, course })
     session.run(0.5)
+    expect(session.arena.race).toBeNull()
+    expect(session.events).toContain(`opened game 0 race by ${seatA.id}`)
+    const [waiting] = b.client.lobby.games
+    expect(waiting).toMatchObject({ host: seatA.id, joined: [seatA.id], request: { kind: 'race', target: 1 } })
+    expect(waiting!.startTick - session.arena.tick).toBeGreaterThan(LOBBY_TICKS - TICKS_PER_SECOND)
+
+    // Another race asked for while one waits comes to nothing.
+    b.client.setGame({ kind: 'race', target: 1, course: [...course].reverse() })
+    session.run(0.5)
+    expect(a.client.lobby.games).toHaveLength(1)
+    expect(b.client.closed).toBeNull()
+
+    b.client.joinGame(waiting!.id)
+    session.run(0.5)
+    expect(c.client.lobby.games[0]!.joined).toEqual([seatA.id, seatB.id])
+
+    // The minute up, the race is on for those who joined it, and nobody else.
+    timeUp(session)
     expect(session.events).toContain(`race ${seatA.id} started 2`)
+    expect(a.client.lobby.games).toEqual([])
     for (const player of [a, b]) {
       expect(groundDistance(session.serverPositionOf(player), marks[0]!)).toBeLessThan(40)
       // Everyone's mirror knows of the race, and of how far along it they are.
       expect(player.prediction.race?.starter).toBe(seatA.id)
       expect(player.prediction.ownSeat.racePassed).toBe(1)
     }
-
-    // Another race asked for while one is on comes to nothing.
-    b.client.setGame({ kind: 'race', target: 1, course: [...course].reverse() })
-    session.run(0.5)
-    expect(session.arena.race?.starter).toBe(seatA.id)
-    expect(b.client.closed).toBeNull()
+    expect(seatC.racePassed).toBe(NOT_RACING)
+    expect(c.prediction.race).not.toBeNull()
 
     const held = seatB.score - paidForFeats(seatB)
     for (const mark of marks.slice(1)) {
@@ -823,6 +870,7 @@ describe('a session', () => {
     // Whoever set a race going may call it off.
     a.client.setGame({ kind: 'race', target: 1, course })
     session.run(0.5)
+    timeUp(session)
     b.client.setGame(null)
     session.run(0.25)
     expect(session.arena.race).not.toBeNull()
@@ -830,6 +878,46 @@ describe('a session', () => {
     session.run(0.25)
     expect(session.arena.race).toBeNull()
     expect(session.events.at(-2)).toBe('race ended none')
+    session.dispose()
+  })
+
+  it('starts a count for everyone who joined it together, and ends it for all of them once one reaches it', async () => {
+    const session = new Session()
+    const a = await session.join('sportsCar')
+    const b = await session.join('sportsCar')
+    session.run(0.5)
+    const seatA = session.arena.seats[a.client.welcome!.seat]!
+    const seatB = session.arena.seats[b.client.welcome!.seat]!
+
+    // Left by the last in it, a game waiting is let go.
+    a.client.setGame({ kind: 'kills', target: 4, course: [] })
+    session.run(0.5)
+    expect(b.client.lobby.games).toHaveLength(1)
+    a.client.joinGame(null)
+    session.run(0.5)
+    expect(b.client.lobby.games).toEqual([])
+
+    a.client.setGame({ kind: 'score', target: 2, course: [] })
+    session.run(0.5)
+    expect(seatA.game).toBeNull()
+    b.client.joinGame(b.client.lobby.games[0]!.id)
+    session.run(0.5)
+    timeUp(session)
+    expect(session.events).toContain(`game ${seatA.id} score 2`)
+    expect(session.events).toContain(`game ${seatB.id} score 2`)
+    expect(seatA.game).toMatchObject({ kind: 'score', target: 2 })
+    expect(seatB.game?.startTick).toBe(seatA.game!.startTick)
+
+    // The first to two bananas wins, and the game is over for the other too.
+    const held = seatB.score - paidForFeats(seatB)
+    seatB.collected += 2
+    session.run(0.5)
+    expect(session.events).toContain(`won ${seatB.id}`)
+    expect(seatB.score - paidForFeats(seatB)).toBe(held + GAME_PRIZE)
+    expect(seatA.game).toBeNull()
+    expect(seatB.game).toBeNull()
+    expect(a.prediction.ownSeat.game).toBeNull()
+    expect(a.prediction.ownSeat.gamesWon).toBe(0)
     session.dispose()
   })
 
