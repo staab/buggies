@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
+import { MUSHROOM_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -92,9 +92,10 @@ function above(at: Vec3, turn: Quat, rise: number): Vec3 {
 
 /**
  * Everything standing beside the roads: every building as the box it is
- * drawn as, a sign as its pole and its panel, every tree as its trunk,
- * every boulder as a box its size, and nothing for a shrub or a scree
- * stone, which a car drives through. Slick like a wall, so a car that
+ * drawn as, a sign as its pole and its panel, a giant mushroom as its
+ * stem, every tree as its trunk, every boulder as a box its size, and
+ * nothing for a shrub, a strand of kelp, a scree stone or a coral head,
+ * which a car drives through. Slick like a wall, so a car that
  * clips a corner scrapes past rather than sticking to it.
  */
 function addBuildings(world: RAPIER.World, map: World): void {
@@ -126,6 +127,12 @@ function addBuildings(world: RAPIER.World, map: World): void {
       )
       continue
     }
+    // A giant mushroom is its stem: there is room to drive under its cap.
+    if (building.kind === 'mushroom') {
+      const half = (building.height * MUSHROOM_STEM.height) / 2
+      stand(RAPIER.ColliderDesc.cylinder(half, building.width * MUSHROOM_STEM.radius).setCollisionGroups(WALL_GROUPS), above(building.at, building.turn, half), building.turn)
+      continue
+    }
     const half = building.height / 2
     // The round towers are cylinders; everything else is the box it is drawn as.
     stand(
@@ -140,7 +147,7 @@ function addBuildings(world: RAPIER.World, map: World): void {
   // that comes to overlap one would otherwise land its ray inside it, and the
   // suspension would jack the car up onto the tree and hold it there.
   for (const tree of map.trees) {
-    if (tree.kind === 'shrub') continue
+    if (tree.kind === 'shrub' || tree.kind === 'kelp') continue
     const turn = uprightRotation(upOf(tree.at), { x: 0, y: 0, z: -1 })
     stand(RAPIER.ColliderDesc.cylinder(tree.height / 2, trunkRadius(tree)).setCollisionGroups(WALL_GROUPS), above(tree.at, turn, tree.height / 2), turn)
   }

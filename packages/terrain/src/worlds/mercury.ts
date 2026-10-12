@@ -10,11 +10,11 @@ import { randomInt, randomRange } from '@buggies/physics'
 import { DISTRICT_CITY } from '../sphere-districts.ts'
 import type { World, WorldPortal } from '../world.ts'
 import { resample } from '../globe/lines.ts'
-import { eachPointNear } from '../globe/placing.ts'
+import { eachPointNear, nearestPoint } from '../globe/placing.ts'
 import { bareWorld } from './bare.ts'
 import { hollowOut, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
-import { Stands, diceFor, districtOfPlace, groundOfSize, landOf, linkPlaces, pointWithin, portalIn, scatterPlaces } from './kit.ts'
+import { Stands, diceFor, districtOfPlace, furnish, groundOfSize, landOf, linkPlaces, pointWithin, portalIn, scatterPlaces, type FurnitureStyle } from './kit.ts'
 
 const MERCURY_SALT = 0x6e3c
 /** How big Mercury is, as a share of its planet; its grid kept as fine as the planet's is across the planet, for the tunnels' round walls. */
@@ -37,6 +37,10 @@ const TUNNEL = { reach: 13, above: 11, below: 11 } as const
 const TUNNEL_SWELL = 9
 /** The stalagmites, how many a cavern has, how big. */
 const STALAGMITES = 14
+
+/** Glowing crystals, how many a cavern has and how big; and its crates and barrels. */
+const CRYSTALS = { kind: 'crystal', count: 18, width: [1.4, 3], depth: [1.4, 3], height: [3, 8], relief: 2.5, gap: 1 } as const satisfies FurnitureStyle & { count: number }
+const STORES = 5
 
 /** Make a planet's Mercury, from the planet's seed. */
 export function generateMercury(seed: number): World {
@@ -81,10 +85,14 @@ export function generateMercury(seed: number): World {
   for (const cavern of caverns) eachPointNear(land, cavern.center, cavern.reach, (at) => (districtOf[at] = DISTRICT_CITY))
 
   const stands = new Stands(land, [])
+  const roofOver = (p: { x: number; y: number; z: number }): number => roof[nearestPoint(ground, p)]!
   const portals: WorldPortal[] = caverns.map((cavern) => portalIn(stands, rng, cavern.center, cavern.reach * 0.25))
   for (const cavern of caverns) {
     for (let k = 0; k < STALAGMITES; k++) stands.rock(pointWithin(rng, cavern.center, cavern.reach * 0.75, radius), 'boulder', randomRange(rng, 1.5, 4.5), rng)
     for (let k = 0; k < STALAGMITES * 3; k++) stands.rock(pointWithin(rng, cavern.center, cavern.reach * 0.85, radius), 'scree', randomRange(rng, 0.5, 1.4), rng)
+    // Crystals glowing in clusters across its floor, and the miners' crates and barrels left about it.
+    furnish(stands, rng, CRYSTALS.count, () => pointWithin(rng, cavern.center, cavern.reach * 0.8, radius), CRYSTALS, roofOver)
+    for (let k = 0; k < STORES; k++) stands.prop(pointWithin(rng, cavern.center, cavern.reach * 0.5, radius), rng() < 0.6 ? 'crate' : 'barrel', rng)
   }
 
   return bareWorld({
@@ -97,6 +105,8 @@ export function generateMercury(seed: number): World {
     districtOf,
     districts: caverns.map((cavern, id) => districtOfPlace(id, cavern.center, cavern.reach)),
     rocks: stands.rocks,
+    buildings: stands.buildings,
+    props: stands.props,
     portals,
   })
 }

@@ -5,14 +5,16 @@
  * and flat, the ground stamped level under them however it rolls.
  */
 
-import { randomInt, randomRange } from '@buggies/physics'
+import { randomInt, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 
 import { limitSweepGradeAlong } from '../roads/grades.ts'
 import { DISTRICT_SUBURB } from '../sphere-districts.ts'
 import { sphereHeight } from '../sphere.ts'
 import type { World, WorldPortal, WorldRoad } from '../world.ts'
-import { angleBetween, resample, runs } from '../globe/lines.ts'
-import { eachPointNear } from '../globe/placing.ts'
+import { angleBetween, lift, resample, runs } from '../globe/lines.ts'
+import { axisAt, eachPointNear, turnOf, type Spot } from '../globe/placing.ts'
+import { randomDirection } from '../world-queries.ts'
+import { BURY } from '../globe/sizes.ts'
 import { bareWorld } from './bare.ts'
 import { worldId } from './kinds.ts'
 import {
@@ -25,8 +27,11 @@ import {
   levelGround,
   linkPlaces,
   meanHeight,
+  furnish,
   plantAll,
+  pointAround,
   portalIn,
+  type FurnitureStyle,
   rollGround,
   scatterPlaces,
   type SettlementStyle,
@@ -53,6 +58,17 @@ const PORTALS = 3
 /** The giant trees, their canopies closing overhead over the roads and each other, and the undergrowth about their feet. */
 const GIANTS = { count: 3200, height: [28, 55] as [number, number], crown: [9, 16] as [number, number], spacing: 1.1 }
 const UNDERGROWTH = { count: 2600, height: [1, 3] as [number, number], crown: [1, 2.5] as [number, number] }
+
+/** Idols, standing stones carved and set up by each village; and giant mushrooms, their caps this wide, scattered through the jungle. */
+const IDOLS = { kind: 'stone', count: 3, width: [1.6, 2.4], depth: [1, 1.4], height: [3.5, 6] } as const satisfies FurnitureStyle & { count: number }
+const MUSHROOMS = { kind: 'mushroom', count: 260, width: [5, 10], depth: [5, 10], height: [4, 10], relief: 2.5, gap: 2 } as const satisfies FurnitureStyle & { count: number }
+/**
+ * The temples deep in the jungle, stepped pyramids of stone: how many, how
+ * wide at the foot, how many tiers, how far each steps in from the one
+ * under it and how high each is, and how far round the ground is eased
+ * back from their level.
+ */
+const TEMPLES = { count: 2, base: 26, tiers: 4, step: 3, rise: 3.5, blend: 18, tries: 300 } as const
 
 const VILLAGE: SettlementStyle = {
   kinds: [
@@ -102,9 +118,16 @@ export function generateVenus(seed: number): World {
   for (const village of villages) eachPointNear(land, village.center, village.reach, (at) => (districtOf[at] = DISTRICT_SUBURB))
 
   const stands = new Stands(land, roads)
+  const clearOfVillages = (p: { x: number; y: number; z: number }): boolean => villages.every((village) => angleBetween(p, village.center) * radius > village.reach + 8)
+  raiseTemples(stands, rng, clearOfVillages)
   const portals: WorldPortal[] = villages.slice(0, PORTALS).map((village) => portalIn(stands, rng, village.center, village.reach * 0.6))
   for (const village of villages) buildSettlement(stands, rng, village.center, village.reach, VILLAGE)
-  const clearOfVillages = (p: { x: number; y: number; z: number }): boolean => villages.every((village) => angleBetween(p, village.center) * radius > village.reach + 8)
+  // The old gods' idols standing about each village's edge, and giant mushrooms out in the jungle.
+  for (const village of villages) furnish(stands, rng, IDOLS.count, () => pointAround(rng, village.center, village.reach + 2, village.reach + 14, radius), IDOLS)
+  furnish(stands, rng, MUSHROOMS.count, () => {
+    const p = randomDirection(rng)
+    return clearOfVillages(p) ? p : null
+  }, MUSHROOMS)
   plantAll(stands, rng, GIANTS.count, 'tree', GIANTS.height, GIANTS.crown, clearOfVillages, GIANTS.spacing)
   plantAll(stands, rng, UNDERGROWTH.count, 'shrub', UNDERGROWTH.height, UNDERGROWTH.crown, clearOfVillages)
 
@@ -143,4 +166,28 @@ function flatLevels(land: ReturnType<typeof landOf>, line: readonly { x: number;
   levels[line.length - 1] = end
   limitSweepGradeAlong(levels, runs(line, land.radius, false), ROAD_GRADE)
   return levels
+}
+
+/** The temples: each a stepped pyramid on ground levelled for it, off the roads and out of the villages. */
+function raiseTemples(stands: Stands, rng: Rng, clear: (p: Vec3) => boolean): void {
+  const { land } = stands
+  let raised = 0
+  for (let attempt = 0; attempt < TEMPLES.tries && raised < TEMPLES.count; attempt++) {
+    const at = randomDirection(rng)
+    if (!clear(at)) continue
+    const u = axisAt(at, randomRange(rng, 0, Math.PI / 2))
+    const site: Spot = { at, u, width: TEMPLES.base + 2 * TEMPLES.blend, depth: TEMPLES.base + 2 * TEMPLES.blend }
+    if (stands.fits(site, 4, 4, 12) === null) continue
+    const level = meanHeight(land, at, TEMPLES.base / 2)
+    levelGround(land, at, TEMPLES.base * 0.75, TEMPLES.blend, level)
+    stands.placed.add(site)
+    let floor = level - BURY
+    for (let tier = 0; tier < TEMPLES.tiers; tier++) {
+      const side = TEMPLES.base - 2 * TEMPLES.step * tier
+      const top = level + TEMPLES.rise * (tier + 1)
+      stands.buildings.push({ kind: 'pyramid', at: lift(at, land.radius, floor), turn: turnOf(at, u), width: side, depth: side, height: top - floor, tone: tier / TEMPLES.tiers })
+      floor = top
+    }
+    raised++
+  }
 }

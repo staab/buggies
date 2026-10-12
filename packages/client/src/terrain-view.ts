@@ -26,11 +26,14 @@ import {
   type WorldMesh,
   type WorldRiver,
   type WorldRoad,
+  type WorldRock,
+  type WorldTree,
 } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { buildClouds } from './clouds-view.ts'
 import { buildGlow, buildPlatforms, buildRoof } from './enclosure-view.ts'
+import { buildFurniture } from './furniture-view.ts'
 import { buildMoonCraft, buildPortals } from './portals-view.ts'
 
 /** A building laid out flat about its own foot: turned by `yaw`, `width` along its x and `depth` along its z, from `bottom` up to `top`. */
@@ -59,7 +62,7 @@ interface Field {
 
 /** A tree or a shrub laid out about its own foot. */
 interface Tree {
-  kind: 'tree' | 'shrub' | 'fruit'
+  kind: WorldTree['kind']
   x: number
   z: number
   bottom: number
@@ -70,7 +73,7 @@ interface Tree {
 
 /** A rock laid out about its own foot. */
 interface Rock {
-  kind: 'boulder' | 'scree'
+  kind: WorldRock['kind']
   x: number
   z: number
   bottom: number
@@ -2425,7 +2428,9 @@ export function createTerrainView(world: World): THREE.Group {
 
   group.add(buildGround(world))
   group.add(buildPortals(world))
-  if (world.kind === 'moon') group.add(buildMoonCraft(world))
+  // A flag or a lander, wherever one stands: the moon's, and those planted on Jupiter's loose platforms.
+  if (world.buildings.some((building) => building.kind === 'flag' || building.kind === 'lander')) group.add(buildMoonCraft(world))
+  for (const furniture of buildFurniture(world)) group.add(furniture)
   // Each world has clouds and a sea as its look has them: an airless moon neither, a planet both.
   if (look.clouds !== null) group.add(buildClouds(world, look.clouds))
   if (look.sea !== null) {

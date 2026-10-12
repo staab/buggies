@@ -43,6 +43,14 @@ Three to five portals stand in the open country of every planet: glowing rings w
 - **Venus** is jungle under yellow cloud, with giant trees to drive among. It has no cities, only small villages, joined by roads that run straight, wide and flat, the ground stamped level under them.
 - **Mercury** is all underground: huge caverns in solid rock, joined by round tunnels that rise and fall. Its pull is weak, but a car holds on to whatever its wheels are on, so it can drive up a tunnel's wall and along its roof upside down. Let go, and it falls toward the floor.
 
+Each world has furniture of its own:
+
+- **Mars:** solar arrays and radio dishes outside each bubble, tanks of air inside it, and crates and barrels by each tunnel's mouth.
+- **Neptune:** barrels and crates in the stations, and kelp and coral out on the sea floor.
+- **Jupiter:** red beacons round every platform's edge, wind turbines and gas tanks on the cities, and a flag on each loose platform.
+- **Venus:** stepped temple pyramids deep in the jungle, stone idols round the villages, and giant mushrooms with room to drive under their caps.
+- **Mercury:** clusters of glowing crystals across the cavern floors, and the miners' crates and barrels.
+
 Saucers fly only where there is a sky, so not on Neptune or Mercury.
 
 ## Meteors

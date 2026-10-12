@@ -13,13 +13,18 @@ import { DISTRICT_CITY } from '../sphere-districts.ts'
 import { DRY, type World, type WorldPlatform, type WorldPortal, type WorldRoad } from '../world.ts'
 import { globeDecks } from '../globe/decks.ts'
 import { angleBetween, lift, resample } from '../globe/lines.ts'
-import { eachPointNear } from '../globe/placing.ts'
+import { axisAt, eachPointNear } from '../globe/placing.ts'
+import { platformEdge } from './platforms.ts'
 import { bareWorld } from './bare.ts'
 import { worldId } from './kinds.ts'
 import {
   Stands,
   buildSettlement,
   diceFor,
+  furnish,
+  pointAround,
+  pointWithin,
+  type FurnitureStyle,
   districtOfPlace,
   groundOfSize,
   landOf,
@@ -49,6 +54,13 @@ const LOOSE_APART = 40
 const EXTRA_HIGHWAYS = 2
 const HIGHWAY_GRADE = 0.09
 const ONTO = 18
+
+/** Beacons round a platform's edge: how far in from it, how far apart, how thick and how tall. */
+const BEACON = { inset: 2, apart: 24, width: 0.6, height: 4.5 } as const
+/** Wind turbines, as a planet's are; gas tanks, raised on their columns as a water tower is; and a flag, as on a moon. */
+const TURBINES = { kind: 'turbine', count: 3, width: [2.6, 2.6], depth: [2.6, 2.6], height: [38, 44], roadMargin: 6, gap: 20, relief: 2 } as const satisfies FurnitureStyle & { count: number }
+const GAS = { kind: 'watertower', count: 2, width: [2.4, 2.4], depth: [2.4, 2.4], height: [18, 24], roadMargin: 4, gap: 8 } as const satisfies FurnitureStyle & { count: number }
+const FLAG = { kind: 'flag', width: [0.12, 0.12], depth: [0.12, 0.12], height: [4, 4] } as const satisfies FurnitureStyle
 
 const CITY: SettlementStyle = {
   kinds: [
@@ -122,6 +134,24 @@ export function generateJupiter(seed: number): World {
 
   const stands = new Stands({ ...land, water }, roads)
   const portals: WorldPortal[] = cities.map((city) => portalIn(stands, rng, city.center, city.reach * 0.5))
+  // Every platform's edge ringed with beacons, to be seen from across the drop.
+  for (const platform of platforms) {
+    const edge = platformEdge(platform, radius, BEACON.inset)
+    const every = Math.max(1, Math.round((edge.length * BEACON.apart) / (2 * Math.PI * platform.radius)))
+    for (let k = 0; k < edge.length; k += every) {
+      const spot = { at: edge[k]!, u: axisAt(edge[k]!, 0), width: BEACON.width, depth: BEACON.width }
+      const ground = stands.fits(spot, 1, 0.5, 1)
+      if (ground !== null) stands.raise('beacon', spot, ground, BEACON.height, rng())
+    }
+  }
+  // The cities' power, turning in the wind at their edges, and their gas, held in tanks.
+  for (const city of cities) {
+    const rim = (): Vec3 => pointAround(rng, city.center, city.reach * 0.72, city.reach * 0.88, radius)
+    furnish(stands, rng, TURBINES.count, rim, TURBINES)
+    furnish(stands, rng, GAS.count, () => pointWithin(rng, city.center, city.reach * 0.8, radius), GAS)
+  }
+  // A flag planted on each platform joined to nothing, by whoever got there first.
+  for (const place of loose) furnish(stands, rng, 1, () => pointWithin(rng, place.center, place.reach * 0.4, radius), FLAG)
   for (const city of cities) {
     buildSettlement(stands, rng, city.center, city.reach * 0.85, CITY)
     plantWithin(stands, rng, city.center, city.reach * 0.9, 25, 'tree', [5, 9], [1.6, 2.8])

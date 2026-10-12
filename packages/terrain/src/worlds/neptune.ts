@@ -10,6 +10,7 @@ import { randomInt, randomRange, type Vec3 } from '@buggies/physics'
 import { MAX_ARTERIAL_GRADE, ROAD_WIDTH as HIGHWAY_WIDTH } from '../roads/constants.ts'
 import { DISTRICT_CITY } from '../sphere-districts.ts'
 import { sphereHeight } from '../sphere.ts'
+import { randomDirection } from '../world-queries.ts'
 import { DRY, type World, type WorldPortal } from '../world.ts'
 import { resample } from '../globe/lines.ts'
 import { eachPointNear, nearestPoint } from '../globe/placing.ts'
@@ -17,7 +18,7 @@ import { TUNNEL_CLEARANCE } from '../globe/tunnels.ts'
 import { bareWorld } from './bare.ts'
 import { hollowOut, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
-import { Stands, buildSettlement, diceFor, districtOfPlace, groundOfSize, landOf, linkPlaces, meanHeight, portalIn, rollGround, scatterPlaces, toward, type SettlementStyle } from './kit.ts'
+import { Stands, buildSettlement, diceFor, districtOfPlace, groundOfSize, landOf, linkPlaces, meanHeight, plantAll, pointWithin, portalIn, rollGround, scatterPlaces, toward, type SettlementStyle } from './kit.ts'
 import { roadAlong } from './roads.ts'
 
 const NEPTUNE_SALT = 0x4e97
@@ -42,6 +43,11 @@ const STATION_RISE = 4
 /** The roads along the tunnels, how wide, and how far off a station's middle they start. */
 const ROAD_WIDTH = 12
 const SQUARE = 12
+
+/** Barrels and crates in each station; kelp, tall and slender; and coral heads, out on the sea floor. */
+const STORES = 6
+const KELP = { count: 1400, height: [8, 24] as [number, number], crown: [1, 2] as [number, number] }
+const CORAL = { count: 900, size: [1.5, 4.5] as [number, number] }
 
 const PODS: SettlementStyle = {
   kinds: [
@@ -100,6 +106,16 @@ export function generateNeptune(seed: number): World {
   const portals: WorldPortal[] = stations.map((station) => portalIn(stands, rng, station.center, station.reach * 0.3))
   const roofOver = (p: Vec3): number => roof[nearestPoint(ground, p)]!
   for (const station of stations) buildSettlement(stands, rng, station.center, station.reach * 0.75, PODS, (p) => roofOver(p) - 3)
+  // The stations' stores, about their floors; and out on the sea floor, open to the water, kelp swaying up and coral heads.
+  for (const station of stations) {
+    for (let k = 0; k < STORES; k++) stands.prop(pointWithin(rng, station.center, station.reach * 0.7, radius), rng() < 0.5 ? 'barrel' : 'crate', rng)
+  }
+  const open = (p: Vec3): boolean => Number.isNaN(roofOver(p))
+  plantAll(stands, rng, KELP.count, 'kelp', KELP.height, KELP.crown, open, 0.6)
+  for (let k = 0; k < CORAL.count; k++) {
+    const p = randomDirection(rng)
+    if (open(p)) stands.rock(p, 'coral', randomRange(rng, CORAL.size[0], CORAL.size[1]), rng)
+  }
 
   return bareWorld({
     seed: worldId(seed, 'neptune'),
@@ -113,6 +129,9 @@ export function generateNeptune(seed: number): World {
     districts: stations.map((station, id) => districtOfPlace(id, station.center, station.reach)),
     roads,
     buildings: stands.buildings,
+    trees: stands.trees,
+    rocks: stands.rocks,
+    props: stands.props,
     portals,
   })
 }

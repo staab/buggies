@@ -12,13 +12,14 @@ import { createRng, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 import { fbm3D } from '../noise.ts'
 import { createSphereGround, sphereHeight, type SphereGround } from '../sphere.ts'
 import { groundDirections, groundNeighbors } from '../sphere-water.ts'
-import type { BuildingKind } from '../types.ts'
+import type { BuildingKind, PropKind } from '../types.ts'
 import { randomDirection } from '../world-queries.ts'
-import { DRY, type WorldBuilding, type WorldDistrict, type WorldPortal, type WorldRoad, type WorldRock, type WorldTree } from '../world.ts'
+import { DRY, type WorldBuilding, type WorldDistrict, type WorldPortal, type WorldProp, type WorldRoad, type WorldRock, type WorldTree } from '../world.ts'
 import { fromFrame } from '../globe/frame.ts'
 import { angleBetween, lift, unit } from '../globe/lines.ts'
 import { axisAt, eachPointNear, Placed, roadClearance, spotFrame, spotSamples, turnOf, type Clearance, type Land, type Spot } from '../globe/placing.ts'
 import { PLANET_RADIUS, SPHERE_CELLS } from '../globe/planet.ts'
+import { PROPS_MOST } from '../globe/sizes.ts'
 import { PORTAL_RADIUS, portalRun } from '../globe/portals.ts'
 
 const { cos, sin } = exact
@@ -159,6 +160,7 @@ export class Stands {
   readonly buildings: WorldBuilding[] = []
   readonly trees: WorldTree[] = []
   readonly rocks: WorldRock[] = []
+  readonly props: WorldProp[] = []
 
   constructor(
     readonly land: Land,
@@ -208,10 +210,20 @@ export class Stands {
     return true
   }
 
+  /** A crate or a barrel standing on the ground at a way out, to be knocked about, while the world has room for more and nothing is in the way. */
+  prop(p: Vec3, kind: PropKind, rng: Rng): boolean {
+    if (this.props.length >= PROPS_MOST) return false
+    const spot: Spot = { at: p, u: axisAt(p, randomRange(rng, 0, Math.PI)), width: 1.2, depth: 1.2 }
+    if (!this.clear(spot, 1) || this.placed.meets(spot, 0.3)) return false
+    this.placed.add(spot)
+    this.props.push({ kind, at: lift(p, this.land.radius, sphereHeight(this.land.ground, p)), turn: turnOf(p, spot.u) })
+    return true
+  }
+
   /** A rock at a way out, sunk a little into the ground, if there is room. */
   rock(p: Vec3, kind: WorldRock['kind'], size: number, rng: Rng): boolean {
     const spot: Spot = { at: p, u: axisAt(p, randomRange(rng, 0, Math.PI)), width: size, depth: size }
-    if (!this.clear(spot, 1) || this.placed.meets(spot, 0.5)) return false
+    if (!this.clear(spot, 1) || (kind === 'boulder' && this.placed.meets(spot, 0.5))) return false
     if (kind === 'boulder') this.placed.add(spot)
     this.rocks.push({ kind, at: lift(p, this.land.radius, sphereHeight(this.land.ground, p) - size * 0.2), turn: turnOf(p, spot.u), size, tone: rng() })
     return true
@@ -262,6 +274,49 @@ export function buildSettlement(stands: Stands, rng: Rng, center: Vec3, reach: n
     stands.raise(choice.kind, spot, ground, height, rng())
     built++
   }
+}
+
+/** What furniture of one kind is: how big it is across, along and up, and where it may stand. */
+export interface FurnitureStyle {
+  readonly kind: BuildingKind
+  readonly width: readonly [number, number]
+  readonly depth: readonly [number, number]
+  readonly height: readonly [number, number]
+  /** How far it keeps off the roads and off everything placed, and how uneven the ground under it may be. */
+  readonly roadMargin?: number
+  readonly gap?: number
+  readonly relief?: number
+}
+
+/**
+ * Furniture of a kind, a piece at each way out `pick` gives that it fits
+ * at, turned any way, until there are as many as are wanted or the picks
+ * run out; none so tall that it passes what `highest` allows over its
+ * foot. Answers how many stand.
+ */
+export function furnish(stands: Stands, rng: Rng, wanted: number, pick: () => Vec3 | null, style: FurnitureStyle, highest: (p: Vec3) => number = () => Infinity): number {
+  let built = 0
+  for (let attempt = 0; attempt < wanted * 12 && built < wanted; attempt++) {
+    const at = pick()
+    if (at === null) continue
+    const spot: Spot = { at, u: axisAt(at, randomRange(rng, 0, Math.PI * 2)), width: randomRange(rng, ...style.width), depth: randomRange(rng, ...style.depth) }
+    const ground = stands.fits(spot, style.roadMargin ?? 2, style.gap ?? 2, style.relief ?? 1.5)
+    if (ground === null) continue
+    const room = Math.min(...spotSamples(spot, stands.land.radius).map(highest)) - ground.high
+    const height = Math.min(randomRange(rng, ...style.height), room - 1)
+    if (height < style.height[0] * 0.7) continue
+    stands.raise(style.kind, spot, ground, height, rng())
+    built++
+  }
+  return built
+}
+
+/** A way out in the ring between two reaches of a middle, picked evenly over it. */
+export function pointAround(rng: Rng, center: Vec3, inner: number, outer: number, radius: number): Vec3 {
+  const frame = spotFrame(center, axisAt(center, 0), radius)
+  const r = Math.sqrt(randomRange(rng, inner * inner, outer * outer))
+  const angle = randomRange(rng, 0, Math.PI * 2)
+  return fromFrame(frame, cos(angle) * r, sin(angle) * r)
 }
 
 /** Trees of a size scattered over a reach where `grows` says they may, as many as fit of those wanted. */

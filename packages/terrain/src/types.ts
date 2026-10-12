@@ -44,7 +44,8 @@ export interface Road {
  * What a building is: a city block, one of three styles of house, an
  * observatory on a mountain top, a farm's barn or silo, a wind turbine, a
  * standing stone or the lintel laid across two of them, or a lighthouse on
- * a headland.
+ * a headland; and on the other worlds, a solar array, a radio dish, a
+ * beacon at a platform's edge, a giant mushroom or a glowing crystal.
  */
 export type BuildingKind =
   | 'block'
@@ -79,6 +80,11 @@ export type BuildingKind =
   | 'pyramid'
   | 'flag'
   | 'lander'
+  | 'solar'
+  | 'dish'
+  | 'beacon'
+  | 'mushroom'
+  | 'crystal'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
@@ -91,6 +97,9 @@ export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyram
 
 /** Kinds that stand in the water rather than on the land: the boats moored off the shore, and a dam across a river. */
 export const WATER_KINDS: readonly BuildingKind[] = ['boat']
+
+/** A giant mushroom's stem: how much of its height, up to the underside of its cap, and how thick, as a share of its cap's width. */
+export const MUSHROOM_STEM = { height: 0.72, radius: 0.09 } as const
 
 /** A filling station's sign: a panel this tall at the top of a pole this thick, and nothing round the pole below it. */
 export const SIGN_PANEL = { height: 2.2, poleRadius: 0.15 } as const

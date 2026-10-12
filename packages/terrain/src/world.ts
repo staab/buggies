@@ -75,8 +75,9 @@ export interface WorldBuilding extends Stand {
   readonly tone: number
 }
 
+/** A tree, a shrub, a fruit tree, or a strand of kelp swaying up from a sea floor. Only a tree's or a fruit tree's trunk is anything to hit. */
 export interface WorldTree {
-  readonly kind: 'tree' | 'shrub' | 'fruit'
+  readonly kind: 'tree' | 'shrub' | 'fruit' | 'kelp'
   readonly at: Vec3
   readonly height: number
   readonly radius: number
@@ -88,8 +89,9 @@ export function trunkRadius(tree: Pick<WorldTree, 'height'>): number {
   return Math.max(0.35, tree.height * 0.025)
 }
 
+/** A rock: a boulder to hit, scree to drive over, or a coral head on a sea floor. */
 export interface WorldRock extends Stand {
-  readonly kind: 'boulder' | 'scree'
+  readonly kind: 'boulder' | 'scree' | 'coral'
   readonly size: number
   readonly tone: number
 }

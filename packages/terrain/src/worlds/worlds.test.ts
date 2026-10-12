@@ -199,6 +199,34 @@ describe('the worlds a planet has', () => {
     portalsReachable(mercury)
   }, 120_000)
 
+  it('furnish each world as fits it', () => {
+    const kinds = (map: World): Set<string> => new Set([...map.buildings, ...map.trees, ...map.rocks, ...map.props].map((thing) => thing.kind))
+    const furnished: Partial<Record<(typeof WORLD_KINDS)[number], string[]>> = {
+      mars: ['solar', 'dish', 'silo', 'crate'],
+      neptune: ['kelp', 'coral', 'barrel'],
+      jupiter: ['beacon', 'turbine', 'watertower', 'flag'],
+      venus: ['mushroom', 'pyramid', 'stone'],
+      mercury: ['crystal', 'crate', 'barrel'],
+    }
+    for (const [kind, things] of Object.entries(furnished)) {
+      const has = kinds(world(kind as (typeof WORLD_KINDS)[number]))
+      for (const thing of things) expect(has, `${kind} has ${thing}`).toContain(thing)
+    }
+    // Kelp and coral grow out in the open sea, never inside where the cars are.
+    const neptune = world('neptune')
+    for (const thing of [...neptune.trees, ...neptune.rocks]) expect(roofOver(neptune, thing.at)).toBe(Infinity)
+    // A crystal stands under its cavern's roof, a flag on a platform joined to nothing.
+    const mercury = world('mercury')
+    for (const crystal of mercury.buildings.filter((building) => building.kind === 'crystal')) {
+      expect(Math.hypot(crystal.at.x, crystal.at.y, crystal.at.z) - mercury.radius + crystal.height).toBeLessThan(roofOver(mercury, crystal.at))
+    }
+    const jupiter = world('jupiter')
+    const loose = jupiter.platforms.slice(jupiter.districts.length)
+    for (const flag of jupiter.buildings.filter((building) => building.kind === 'flag')) {
+      expect(loose.some((platform) => angleBetween(unit(flag.at), platform.center) * jupiter.radius < platform.radius)).toBe(true)
+    }
+  })
+
   it('make every world the same, bit for bit, from the same id', () => {
     for (const kind of ['neptune', 'mercury', 'jupiter'] as const) expect(fingerprint(generateWorld(worldId(SEED, kind)))).toBe(fingerprint(world(kind)))
   }, 120_000)
