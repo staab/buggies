@@ -10,7 +10,7 @@ import { nearestPoint } from '../globe/placing.ts'
 import { TUNNEL_CLEARANCE } from '../globe/tunnels.ts'
 import { fingerprint } from '../fingerprint.ts'
 import { generateWorld } from './index.ts'
-import { ROOM_LEAST, roofedAt, roomAt, sealedAt } from './hollows.ts'
+import { ROOM_LEAST, buriedCell, roofedAt, roomAt, sealedAt } from './hollows.ts'
 import { WORLD_KINDS, WORLD_TRAITS, isMoon, moonOf, planetSeedOf, worldId, worldKindOf } from './kinds.ts'
 
 const SEED = 7
@@ -91,6 +91,10 @@ describe('the worlds a planet has', () => {
       const beyond = road.points.find((p) => angleBetween(unit(p), city.center) * mars.radius > city.radius + 60)!
       expect(roofOver(mars, beyond)).toBe(Infinity)
     }
+    // Where a bubble's glass comes down on the ground, the ground round it is still drawn and driven on: not buried in rock.
+    const seam = mars.roof.findIndex((_, at) => sealedAt(mars.roof, mars.ground.heights, at))
+    expect(seam).toBeGreaterThanOrEqual(0)
+    expect(buriedCell(mars.roof, mars.ground.heights, [seam, seam, seam, seam])).toBe(false)
     // No sea, and nothing roofed but the bubbles and their tunnels.
     expect(mars.water.every((level) => level === DRY)).toBe(true)
     portalsReachable(mars)
@@ -192,6 +196,8 @@ describe('the worlds a planet has', () => {
     }
     expect(open).toBeGreaterThan(mercury.roof.length * 0.05)
     expect(sealed).toBeGreaterThan(mercury.roof.length * 0.5)
+    const rock = mercury.roof.findIndex((_, at) => sealedAt(mercury.roof, mercury.ground.heights, at))
+    expect(buriedCell(mercury.roof, mercury.ground.heights, [rock, rock, rock, rock])).toBe(true)
     for (const cavern of mercury.districts) {
       const at = nearestPoint(mercury.ground, cavern.center)
       expect(mercury.roof[at]! - mercury.ground.heights[at]!).toBeGreaterThan(30)

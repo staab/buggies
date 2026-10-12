@@ -1,9 +1,9 @@
 /**
  * What the server keeps of each player for good, by their nostr key: the
  * achievements it has been paid, each once ever, whichever island,
- * session or connection it does it again on; and the gems its games and
- * races have won it, which it keeps from one session to the next. The
- * server asks this before it pays and tells it after.
+ * session or connection it does it again on; the gems its games and races
+ * have won it; and the bananas it last held, all kept from one session to
+ * the next. The server asks this before it pays and tells it after.
  */
 export interface PlayerStore {
   /** The feats a key has been paid for, by id. */
@@ -14,12 +14,17 @@ export interface PlayerStore {
   gems(pubkey: string): number
   /** Gems won by a key, added to what it has; and what it has now. */
   addGems(pubkey: string, gems: number): number
+  /** How many bananas a key held when last it was told of, to start its next session with. */
+  bananas(pubkey: string): number
+  /** How many bananas a key holds now. */
+  keepBananas(pubkey: string, bananas: number): void
 }
 
 /** What is kept of one key. */
 export interface PlayerRecord {
   readonly earned: Set<number>
   gems: number
+  bananas: number
 }
 
 /** A store kept in memory alone: forgotten when the server stops. What the server keeps when it is given nowhere to keep it, and what tests keep. */
@@ -46,13 +51,24 @@ export class MemoryPlayerStore implements PlayerStore {
     return record.gems
   }
 
+  bananas(pubkey: string): number {
+    return this.byKey.get(pubkey)?.bananas ?? 0
+  }
+
+  keepBananas(pubkey: string, bananas: number): void {
+    const record = this.recordOf(pubkey)
+    if (record.bananas === bananas) return
+    record.bananas = bananas
+    this.changed()
+  }
+
   /** Something kept has changed: nothing to do, kept in memory. */
   protected changed(): void {}
 
   private recordOf(pubkey: string): PlayerRecord {
     const known = this.byKey.get(pubkey)
     if (known !== undefined) return known
-    const fresh: PlayerRecord = { earned: new Set(), gems: 0 }
+    const fresh: PlayerRecord = { earned: new Set(), gems: 0, bananas: 0 }
     this.byKey.set(pubkey, fresh)
     return fresh
   }

@@ -832,7 +832,7 @@ describe('a session', () => {
     session.dispose()
   })
 
-  it("pays a player's nostr key each achievement once, ever, keeps its gems from one session to the next, and pays nothing to a player who proves no key", async () => {
+  it("pays a player's nostr key each achievement once, ever, keeps its gems and bananas from one session to the next, and pays nothing to a player who proves no key", async () => {
     const session = new Session()
     const first = ACHIEVEMENTS.find((feat) => feat.title === 'First Banana')!
     const key = newSecretKey()
@@ -847,8 +847,11 @@ describe('a session', () => {
     expect(session.achieved).toContain(`${seatA.id} ${first.id}`)
     expect(session.store.earned(pubkey).has(first.id)).toBe(true)
     session.store.addGems(pubkey, 3)
+    // Leaving with bananas in hand, they are kept for next time.
+    seatA.score = 42
     a.client.close('done for the day')
     session.run(0.5)
+    expect(session.store.bananas(pubkey)).toBe(42)
 
     // Back another day with the same key: what it has been paid is marked off, and its gems are there.
     const paidBefore = session.achieved.length
@@ -858,6 +861,7 @@ describe('a session', () => {
     expect(seatBack.progress.earned[first.id]).toBe(1)
     expect(seatBack.gems).toBe(3)
     expect(back.prediction.ownSeat.gems).toBe(3)
+    expect(seatBack.score).toBeGreaterThanOrEqual(42)
     seatBack.collected = Math.max(seatBack.collected, 1)
     session.run(1)
     expect(session.achieved.slice(paidBefore).filter((paid) => paid.endsWith(` ${first.id}`))).toEqual([])

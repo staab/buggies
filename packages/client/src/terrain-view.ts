@@ -13,7 +13,7 @@ import {
   groundIndex,
   heightOver,
   roomAt,
-  sealedAt,
+  buriedCell,
   tangentFrame,
   trunkRadius,
   worldBoatAt,
@@ -1007,8 +1007,8 @@ function buildGround(world: World): THREE.Group {
             const c = a + side
             const d = c + 1
             if (holes[points[a]!] || holes[points[b]!] || holes[points[c]!] || holes[points[d]!]) continue
-            // A cell shut in the rock all round, its roof on it, is nowhere to be seen from.
-            if ([a, b, c, d].every((k) => sealedAt(world.roof, heights, points[k]!))) continue
+            // A cell buried in rock is nowhere to be seen from.
+            if (buriedCell(world.roof, heights, [a, b, c, d].map((k) => points[k]!))) continue
             // Wound to face out, away from the planet's middle.
             indices.push(base + a, base + b, base + c, base + b, base + d, base + c)
           }

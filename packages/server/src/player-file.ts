@@ -10,11 +10,13 @@ const WRITE_AFTER_MS = 2000
 interface Kept {
   readonly achievements: readonly number[]
   readonly gems: number
+  /** Kept only since bananas were remembered: none, in a file from before. */
+  readonly bananas?: number
 }
 
 /**
- * What the server keeps of each player's nostr key, their achievements and
- * their gems, kept in a file so it outlasts the server: read when the
+ * What the server keeps of each player's nostr key, their achievements,
+ * their gems and their bananas, kept in a file so it outlasts the server: read when the
  * server starts, and written a moment after anything changes, to a file
  * beside it first and then put in its place, so a crash part way through
  * never leaves half a file.
@@ -32,7 +34,7 @@ export class PlayerFile extends MemoryPlayerStore {
     }
     if (text === null) return
     const kept = JSON.parse(text) as Record<string, Kept>
-    for (const [pubkey, { achievements, gems }] of Object.entries(kept)) this.byKey.set(pubkey, { earned: new Set(achievements), gems })
+    for (const [pubkey, { achievements, gems, bananas = 0 }] of Object.entries(kept)) this.byKey.set(pubkey, { earned: new Set(achievements), gems, bananas })
   }
 
   protected override changed(): void {
@@ -53,7 +55,7 @@ export class PlayerFile extends MemoryPlayerStore {
 
   private write(): void {
     const kept: Record<string, Kept> = {}
-    for (const [pubkey, record] of this.byKey) kept[pubkey] = { achievements: [...record.earned].sort((a, b) => a - b), gems: record.gems }
+    for (const [pubkey, record] of this.byKey) kept[pubkey] = { achievements: [...record.earned].sort((a, b) => a - b), gems: record.gems, bananas: record.bananas }
     mkdirSync(dirname(this.path), { recursive: true })
     const fresh = `${this.path}.writing`
     writeFileSync(fresh, JSON.stringify(kept))

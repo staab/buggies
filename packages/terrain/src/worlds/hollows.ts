@@ -168,6 +168,28 @@ export function sealedAt(roof: Float32Array, heights: Float32Array, at: number):
   return !Number.isNaN(over) && over - heights[at]! < 1e-3
 }
 
+const solids = new WeakMap<Float32Array, boolean>()
+
+/** Whether a world is solid rock outside its rooms: its roof is down on its ground wherever it is not over a room, and open nowhere. */
+function solidRock(roof: Float32Array): boolean {
+  const known = solids.get(roof)
+  if (known !== undefined) return known
+  const solid = roof.length > 0 && !roof.some(Number.isNaN)
+  solids.set(roof, solid)
+  return solid
+}
+
+/**
+ * Whether a cell of the ground's grid is buried in rock, with nothing to
+ * see or drive on: its roof down on its ground at every corner, in a world
+ * of solid rock. Round the edge of a dome or a tube under open sky the
+ * roof comes down on the ground just the same, but the ground there is
+ * the open ground outside it.
+ */
+export function buriedCell(roof: Float32Array, heights: Float32Array, corners: readonly number[]): boolean {
+  return solidRock(roof) && corners.every((at) => sealedAt(roof, heights, at))
+}
+
 /** Whether a grid point is under a roof at all. */
 export function roofedAt(roof: Float32Array, at: number): boolean {
   return roof.length > 0 && !Number.isNaN(roof[at]!)

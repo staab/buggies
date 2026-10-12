@@ -102,6 +102,9 @@ const RESPAWN_COOLDOWN_TICKS = TICKS_PER_SECOND
 const INPUT_ALLOWANCE = INPUT_TIMELINE_TICKS * 2
 const INPUTS_PER_TICK = 2
 
+/** How often the bananas everyone holds are kept against their keys, besides when they leave: a server that stops loses no more than this. */
+const BANANAS_KEPT_TICKS = TICKS_PER_SECOND * 10
+
 /** A player heard nothing from for this long is let go: a tab left behind is not a driver. */
 const IDLE_TIMEOUT_TICKS = TICKS_PER_SECOND * 15
 
@@ -331,6 +334,7 @@ export class GameServer implements TransportHandlers {
       this.startDueGames(room)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
+    if (this.clock % BANANAS_KEPT_TICKS === 0) for (const player of this.players.values()) this.keepBananas(player)
     this.expireHandshakes()
     this.tendPlayers()
     for (const [pass, { tick }] of this.left) if (this.clock - tick > CARRY_TICKS) this.left.delete(pass)
@@ -446,6 +450,7 @@ export class GameServer implements TransportHandlers {
     const { connection, room } = player
     this.players.delete(connection.id)
     room.players.delete(connection.id)
+    this.keepBananas(player)
     // Gone through a portal, or cut off, as far as anyone here knows: what they held waits for them.
     this.left.set(player.pass, { carried: carriedOf(player.seat), pubkey: player.pubkey, tick: this.clock, seed: room.seed, where: spawnWhere(player.seat) })
     this.leaveGames(room, player.seat.id, false)
@@ -655,8 +660,9 @@ export class GameServer implements TransportHandlers {
    * A player proving which nostr key is theirs: an event signed by it
    * naming the challenge they were welcomed with. Believed, the key is
    * theirs for their achievements, each of which it is paid once, ever;
-   * what it has been paid already is marked off for them, and they are
-   * told. Not believed, nothing changes.
+   * what it has been paid already is marked off for them, they have its
+   * gems and the bananas it last held, and they are told. Not believed,
+   * nothing changes.
    */
   private signIn(player: Player, event: unknown): void {
     if (player.pubkey !== null) return
@@ -664,6 +670,8 @@ export class GameServer implements TransportHandlers {
     if (pubkey === null) return
     player.pubkey = pubkey
     this.giveKept(player.seat, pubkey)
+    // Back for a new session: with the bananas held at the end of the last, besides any taken since sitting down.
+    player.seat.score += this.store.bananas(pubkey)
     player.connection.send(encodeSignedIn({ pubkey, earned: this.store.earned(pubkey).size }))
     this.events.onSignedIn?.(player.seat, pubkey)
   }
@@ -672,6 +680,11 @@ export class GameServer implements TransportHandlers {
   private giveKept(seat: Seat, pubkey: string): void {
     for (const id of this.store.earned(pubkey)) if (id < seat.progress.earned.length) seat.progress.earned[id] = 1
     seat.gems = this.store.gems(pubkey)
+  }
+
+  /** The bananas a player holds, kept against their key, if they have proved one, for their next session. */
+  private keepBananas(player: Player): void {
+    if (player.pubkey !== null) this.store.keepBananas(player.pubkey, player.seat.score)
   }
 
   /** The nostr key a seat's player has proved theirs, if they have. */

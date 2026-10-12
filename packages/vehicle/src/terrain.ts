@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { MUSHROOM_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
+import { MUSHROOM_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, buriedCell, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -256,7 +256,7 @@ function addSheet(
  * The planet's ground, as a mesh of the cells that matter: every cell of
  * its grid with a corner on land or in the shallows, or closed in under a
  * roof, cut in two, at the height it is bored to under a tunnel. The deep
- * sea floor is left out, and so is a cell shut in the rock all round, and a
+ * sea floor is left out, and so is a cell buried in rock, and a
  * sphere under it all catches anything that sinks that far. A world of
  * floating platforms has only their tops.
  */
@@ -270,7 +270,7 @@ function addGround(world: RAPIER.World, map: World): void {
     map,
     (at) => bored[at]!,
     (corners) => {
-      if (corners.every((at) => sealedAt(roof, ground.heights, at))) return false
+      if (buriedCell(roof, ground.heights, corners)) return false
       return corners.some((at) => bored[at]! >= floor || roofedAt(roof, at))
     },
     false,
