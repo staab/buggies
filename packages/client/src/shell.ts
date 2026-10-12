@@ -13,7 +13,7 @@ import { createOnlineMode } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 import { createTerrainView, moveBoats, moveClouds } from './terrain-view.ts'
-import { lookOf } from './world-looks.ts'
+import { WORLD_LOOKS } from './world-looks.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /** How long to wait before trying to rejoin again, after each try that fails: longer each time, up to the last. */
@@ -433,7 +433,7 @@ export class Shell implements MenuHost {
       moveClouds(this.view, seconds)
       // The planet turns under the sun by the game's time, and the sky is as the day is over the whole of it, until a view says where the play is.
       this.sun.turn(seconds)
-      this.sun.shade(this.scene, lookOf(this.map?.kind ?? 'planet').skies)
+      this.sun.shade(this.scene, WORLD_LOOKS[this.map?.kind ?? 'planet'].skies)
     }
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
@@ -463,7 +463,7 @@ export class Shell implements MenuHost {
       this.scene.add(this.view)
       // View distances ride the planet's size so the framing stays the same.
       const across = 2 * Math.PI * made.radius
-      const { fog, skies } = lookOf(made.kind)
+      const { fog, skies } = WORLD_LOOKS[made.kind]
       this.scene.fog = new THREE.Fog(skies.day, across * fog.near, across * fog.far)
       // Over the middle of the planet.
       this.sun.centerOn({ x: 0, y: 0, z: 0 })

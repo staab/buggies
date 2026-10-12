@@ -23,7 +23,6 @@ import {
   type World,
   type WorldDecks,
   type WorldField,
-  type WorldMesh,
   type WorldRiver,
   type WorldRoad,
   type WorldRock,
@@ -85,7 +84,8 @@ interface Rock {
 import { hullGeometry } from './hull-geometry.ts'
 import { litByNight } from './night.ts'
 import { uprightAt } from './stand.ts'
-import { groundTone, lookOf, sampleRamp, type Stops } from './world-looks.ts'
+import { WORLD_LOOKS, groundTone, sampleRamp, type Stops } from './world-looks.ts'
+import { meshGeometry } from './world-mesh.ts'
 
 const ROAD_GRADE_COLOR = new THREE.Color('#43464b')
 /** A curb's lighter edge along a road, the white of its center line, and the gravel of a park path. */
@@ -530,7 +530,7 @@ interface GroundColors {
 
 function groundColors(world: World): GroundColors {
   const { heights } = world.ground
-  const look = lookOf(world.kind)
+  const look = WORLD_LOOKS[world.kind]
   let min = Infinity
   let max = -Infinity
   // The ramp runs over the ground there is room on: a world of rock is read from its rooms alone.
@@ -1038,15 +1038,6 @@ function buildGround(world: World): THREE.Group {
   }
   textured.dispose()
   return group
-}
-
-/** A mesh of the world's, with its normals worked out, for drawing. */
-function meshGeometry(mesh: WorldMesh): THREE.BufferGeometry {
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3))
-  geometry.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1))
-  geometry.computeVertexNormals()
-  return geometry
 }
 
 /** Every lake as its surface over each cell of the grid it covers, at its level. */
@@ -2416,7 +2407,7 @@ export function moveBoats(view: THREE.Object3D, seconds: number): void {
  */
 export function createTerrainView(world: World): THREE.Group {
   const group = new THREE.Group()
-  const look = lookOf(world.kind)
+  const look = WORLD_LOOKS[world.kind]
   const waterMaterial = new THREE.MeshStandardMaterial({
     color: look.sea?.color ?? new THREE.Color('#2f6f9f'),
     transparent: true,

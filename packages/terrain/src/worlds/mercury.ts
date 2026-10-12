@@ -7,17 +7,19 @@
  * a tunnel's wall and over its roof.
  */
 
-import { randomInt, randomRange, type Vec3 } from '@buggies/physics'
+import { createRng, randomInt, randomRange, type Vec3 } from '@buggies/physics'
 
+import { smoothstep } from '../noise.ts'
 import { DISTRICT_CITY } from '../sphere-districts.ts'
 import type { World, WorldPortal } from '../world.ts'
 import { angleBetween, resample } from '../globe/lines.ts'
 import { nearestOn, piecesGap } from '../globe/segments.ts'
-import { eachPointNear, nearestPoint } from '../globe/placing.ts'
 import { bareWorld } from './bare.ts'
-import { hollowOut, profile, type Hollow } from './hollows.ts'
+import { groundOfSize, landOf } from './ground.ts'
+import { hollowOut, profile, roofNear, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
-import { Stands, diceFor, districtOfPlace, furnish, groundOfSize, landOf, linkPlaces, pointWithin, portalIn, scatterPlaces, toward, type FurnitureStyle } from './kit.ts'
+import { districtOfPlace, linkPlaces, markDistricts, pointIn, scatterPlaces, toward, type Link } from './places.ts'
+import { Stands, furnish, portalIn, type FurnitureStyle } from './stands.ts'
 import { tubeMesh, type Tube } from './tubes.ts'
 
 const MERCURY_SALT = 0x6e3c
@@ -64,11 +66,11 @@ function hermite(from: number, to: number, leaving: number, arriving: number, t:
 const STALAGMITES = 14
 
 /** Glowing crystals, how many a cavern has and how big. */
-const CRYSTALS = { kind: 'crystal', count: 18, width: [1.4, 3], depth: [1.4, 3], height: [3, 8], relief: 2.5, gap: 1 } as const satisfies FurnitureStyle & { count: number }
+const CRYSTALS: FurnitureStyle = { kind: 'crystal', count: 18, width: [1.4, 3], depth: [1.4, 3], height: [3, 8], relief: 2.5, gap: 1 }
 
 /** Make a planet's Mercury, from the planet's seed. */
 export function generateMercury(seed: number): World {
-  const rng = diceFor(seed, MERCURY_SALT)
+  const rng = createRng((seed ^ MERCURY_SALT) >>> 0)
   const ground = groundOfSize(MERCURY_SIZE, MERCURY_CELLS)
   const { radius } = ground
   const land = landOf(ground, NO_SEA)
@@ -98,7 +100,7 @@ export function generateMercury(seed: number): World {
   const mouthOf = (a: number, b: number): Vec3 => toward(caverns[a]!.center, caverns[b]!.center, caverns[a]!.reach * MOUTH, radius)
   // No tunnel crosses another, runs through a third cavern, or leaves a cavern beside another: each is a tube on its own.
   const apart = (TUNNEL.reach + TUNNEL_MARGIN) * 2 + TUNNEL_GAP
-  const fits = (a: number, b: number, chosen: readonly [number, number][]): boolean => {
+  const fits = ([a, b]: Link, chosen: readonly Link[]): boolean => {
     const from = mouthOf(a, b)
     const to = mouthOf(b, a)
     for (const [k, cavern] of caverns.entries()) {
@@ -135,11 +137,7 @@ export function generateMercury(seed: number): World {
       const floor = hermite(mouthFloor(a), mouthFloor(b), mouthSlope(a) * length, -mouthSlope(b) * length, t)
       return floor + swell * 16 * t * t * (1 - t) * (1 - t) + TUNNEL.below
     })
-    const round = line.map((_, i) => {
-      const inside = Math.min(i, last - i) * (length / last)
-      const share = Math.min(inside / FLARE, 1)
-      return share * share * (3 - 2 * share)
-    })
+    const round = line.map((_, i) => smoothstep(0, FLARE, Math.min(i, last - i) * (length / last)))
     return { line, middle, round, ...TUNNEL }
   })
   const tunnels: Hollow[] = tubes.map((tube) => ({
@@ -154,17 +152,16 @@ export function generateMercury(seed: number): World {
     open: [true, true],
   }))
   const roof = hollowOut(land, [...halls, ...tunnels], true)
-  const districtOf = new Uint8Array(ground.heights.length)
-  for (const cavern of caverns) eachPointNear(land, cavern.center, cavern.reach, (at) => (districtOf[at] = DISTRICT_CITY))
+  const districtOf = markDistricts(land, caverns, DISTRICT_CITY)
 
   const stands = new Stands(land, [])
-  const roofOver = (p: { x: number; y: number; z: number }): number => roof[nearestPoint(ground, p)]!
+  const roofOver = (p: Vec3): number => roofNear(ground, roof, p)
   const portals: WorldPortal[] = caverns.map((cavern) => portalIn(stands, rng, cavern.center, cavern.reach * 0.25))
   for (const cavern of caverns) {
-    for (let k = 0; k < STALAGMITES; k++) stands.rock(pointWithin(rng, cavern.center, cavern.reach * 0.75, radius), 'boulder', randomRange(rng, 1.5, 4.5), rng)
-    for (let k = 0; k < STALAGMITES * 3; k++) stands.rock(pointWithin(rng, cavern.center, cavern.reach * 0.85, radius), 'scree', randomRange(rng, 0.5, 1.4), rng)
+    for (let k = 0; k < STALAGMITES; k++) stands.rock(pointIn(rng, cavern.center, cavern.reach * 0.75, radius), 'boulder', randomRange(rng, 1.5, 4.5), rng)
+    for (let k = 0; k < STALAGMITES * 3; k++) stands.rock(pointIn(rng, cavern.center, cavern.reach * 0.85, radius), 'scree', randomRange(rng, 0.5, 1.4), rng)
     // Crystals glowing in clusters across its floor.
-    furnish(stands, rng, CRYSTALS.count, () => pointWithin(rng, cavern.center, cavern.reach * 0.8, radius), CRYSTALS, roofOver)
+    furnish(stands, rng, () => pointIn(rng, cavern.center, cavern.reach * 0.8, radius), CRYSTALS, roofOver)
   }
 
   return bareWorld({
@@ -175,7 +172,7 @@ export function generateMercury(seed: number): World {
     ground,
     roof,
     districtOf,
-    districts: caverns.map((cavern, id) => districtOfPlace(id, cavern.center, cavern.reach)),
+    districts: caverns.map((cavern, id) => districtOfPlace(id, cavern)),
     rocks: stands.rocks,
     buildings: stands.buildings,
     tubes: tubes.map((tube) => tubeMesh(tube, radius)),

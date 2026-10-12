@@ -42,7 +42,7 @@ import { PredictedCar } from './predicted-car.ts'
 import type { RadarBlip, RadarState } from './radar.ts'
 import { standOn } from './stand.ts'
 import { SUN_DISTANCE, type Sun } from './sun.ts'
-import { lookOf } from './world-looks.ts'
+import { WORLD_LOOKS } from './world-looks.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -235,7 +235,7 @@ export async function createOnlineMode(
     render(renderer) {
       const { frame, up } = prediction.vehicle
       sun.follow(frame.position, up)
-      sun.shade(scene, lookOf(map.kind).skies)
+      sun.shade(scene, WORLD_LOOKS[map.kind].skies)
       bendMaterials(scene)
       bendAround(frame.position, map.radius)
       renderer.render(scene, chase.camera)

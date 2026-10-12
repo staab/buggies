@@ -7,7 +7,7 @@
  * other, and those are all the roads there are.
  */
 
-import { randomInt, randomRange, type Vec3 } from '@buggies/physics'
+import { createRng, randomInt, randomRange, type Vec3 } from '@buggies/physics'
 
 import { MAX_ARTERIAL_GRADE } from '../roads/constants.ts'
 import { DISTRICT_CITY } from '../sphere-districts.ts'
@@ -16,32 +16,14 @@ import { sphereHeight } from '../sphere.ts'
 import { randomDirection } from '../world-queries.ts'
 import type { World, WorldPortal, WorldRoad } from '../world.ts'
 import { angleBetween, resample } from '../globe/lines.ts'
-import { axisAt, eachPointNear, nearestPoint } from '../globe/placing.ts'
+import { axisAt } from '../globe/placing.ts'
 import { createRanges } from '../globe/planet.ts'
 import { bareWorld } from './bare.ts'
-import { hollowOut, type Hollow } from './hollows.ts'
+import { groundOfSize, landOf, levelGround, meanHeight, reliefOver } from './ground.ts'
+import { hollowOut, roofNear, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
-import {
-  Stands,
-  buildSettlement,
-  furnish,
-  pointAround,
-  pointWithin,
-  type FurnitureStyle,
-  diceFor,
-  districtOfPlace,
-  groundOfSize,
-  landOf,
-  levelGround,
-  linkAll,
-  meanHeight,
-  plantWithin,
-  portalIn,
-  reliefOver,
-  scatterPlaces,
-  toward,
-  type SettlementStyle,
-} from './kit.ts'
+import { districtOfPlace, linkAll, markDistricts, pointIn, scatterPlaces, toward } from './places.ts'
+import { Stands, buildSettlement, furnish, plantTrees, portalIn, type FurnitureStyle, type SettlementStyle, type TreeStyle } from './stands.ts'
 import { navOf, roadAlong, routeLine, settleRoads } from './roads.ts'
 
 const MARS_SALT = 0x3a75
@@ -70,9 +52,14 @@ const SQUARE = 16
 const BUBBLE_BERTH = 18
 
 /** Solar arrays, low and long; radio dishes on their masts; tanks of air, round; a few to each bubble. */
-const SOLAR = { kind: 'solar', count: 10, width: [10, 14], depth: [4.5, 6], height: [2, 2.6], gap: 3 } as const satisfies FurnitureStyle & { count: number }
-const DISH = { kind: 'dish', count: 2, width: [7, 9], depth: [7, 9], height: [8, 11], gap: 6 } as const satisfies FurnitureStyle & { count: number }
-const TANKS = { kind: 'silo', count: 3, width: [4, 5.5], depth: [4, 5.5], height: [7, 11] } as const satisfies FurnitureStyle & { count: number }
+const SOLAR: FurnitureStyle = { kind: 'solar', count: 10, width: [10, 14], depth: [4.5, 6], height: [2, 2.6], gap: 3 }
+const DISH: FurnitureStyle = { kind: 'dish', count: 2, width: [7, 9], depth: [7, 9], height: [8, 11], gap: 6 }
+const TANKS: FurnitureStyle = { kind: 'silo', count: 3, width: [4, 5.5], depth: [4, 5.5], height: [7, 11] }
+/** The trees under each bubble, where there is room over them, and the shrubs about their feet. */
+const TREES: TreeStyle = { kind: 'tree', count: 60, height: [6, 11], crown: [1.8, 3.2] }
+const SHRUBS: TreeStyle = { kind: 'shrub', count: 80, height: [0.9, 2], crown: [0.7, 1.6] }
+/** How much room a tree needs over it, under a bubble. */
+const TREE_ROOM = 14
 
 const CITY: SettlementStyle = {
   kinds: [
@@ -88,7 +75,7 @@ const CITY: SettlementStyle = {
 
 /** Make a planet's Mars, from the planet's seed. */
 export function generateMars(seed: number): World {
-  const rng = diceFor(seed, MARS_SALT)
+  const rng = createRng((seed ^ MARS_SALT) >>> 0)
   const ground = groundOfSize(MARS_SIZE)
   const { radius } = ground
   const land = landOf(ground, NO_SEA)
@@ -103,7 +90,7 @@ export function generateMars(seed: number): World {
     randomInt(rng, BUBBLES.min, BUBBLES.max),
     (a, b) => a + b + BUBBLES_APART,
     () => randomRange(rng, BUBBLE_REACH.min, BUBBLE_REACH.max),
-    (center, reach) => reliefOver(land, center, reach + BUBBLE_BLEND) < BUBBLE_RELIEF,
+    (bubble) => reliefOver(land, bubble.center, bubble.reach + BUBBLE_BLEND) < BUBBLE_RELIEF,
     2000,
   )
   for (const bubble of bubbles) levelGround(land, bubble.center, bubble.reach + 4, BUBBLE_BLEND, meanHeight(land, bubble.center, bubble.reach))
@@ -136,28 +123,30 @@ export function generateMars(seed: number): World {
   // The bubbles closed over their cities, and their tunnels over the roads out.
   const domes: Hollow[] = bubbles.map((bubble) => ({ kind: 'shell', line: [bubble.center], middle: [0], reach: bubble.reach, above: bubble.reach * BUBBLE_RISE, below: 0, squareness: 2 }))
   const roof = hollowOut(land, [...domes, ...tunnels], false)
-  const districtOf = new Uint8Array(ground.heights.length)
-  for (const bubble of bubbles) eachPointNear(land, bubble.center, bubble.reach, (at) => (districtOf[at] = DISTRICT_CITY))
+  const districtOf = markDistricts(land, bubbles, DISTRICT_CITY)
 
   // Each city, under its bubble: its portal, its fountain in the square, its buildings and its trees.
   const stands = new Stands(land, roads)
   const portals: WorldPortal[] = []
-  const roofOver = (p: Vec3): number => roof[nearestPoint(ground, p)]!
+  const roofOver = (p: Vec3): number => roofNear(ground, roof, p)
   for (const bubble of bubbles) portals.push(portalIn(stands, rng, bubble.center, bubble.reach * 0.55))
   for (const bubble of bubbles) {
     const square = { at: bubble.center, u: axisAt(bubble.center, 0), width: 8, depth: 8 }
-    const footing = stands.fits(square, 0, 1, 2)
+    const footing = stands.fits(square, { roadMargin: 0, gap: 1, relief: 2 })
     if (footing !== null) stands.raise('fountain', square, footing, 1, rng())
-    buildSettlement(stands, rng, bubble.center, bubble.reach * 0.82, CITY, (p) => roofOver(p) - 4)
-    plantWithin(stands, rng, bubble.center, bubble.reach * 0.9, 60, 'tree', [6, 11], [1.8, 3.2], (p) => roofOver(p) - sphereHeight(ground, p) > 14)
-    plantWithin(stands, rng, bubble.center, bubble.reach * 0.92, 80, 'shrub', [0.9, 2], [0.7, 1.6])
+    buildSettlement(stands, rng, { center: bubble.center, reach: bubble.reach * 0.82 }, CITY, (p) => roofOver(p) - 4)
+    plantTrees(stands, rng, () => {
+      const p = pointIn(rng, bubble.center, bubble.reach * 0.9, radius)
+      return roofOver(p) - sphereHeight(ground, p) > TREE_ROOM ? p : null
+    }, TREES)
+    plantTrees(stands, rng, () => pointIn(rng, bubble.center, bubble.reach * 0.92, radius), SHRUBS)
   }
   // Outside each bubble, the arrays that power it and the dishes that talk to home; inside, its air in tanks.
-  const outside = (bubble: (typeof bubbles)[number]) => (): Vec3 => pointAround(rng, bubble.center, bubble.reach + 14, bubble.reach + 90, radius)
   for (const bubble of bubbles) {
-    furnish(stands, rng, SOLAR.count, outside(bubble), SOLAR)
-    furnish(stands, rng, DISH.count, outside(bubble), DISH)
-    furnish(stands, rng, TANKS.count, () => pointWithin(rng, bubble.center, bubble.reach * 0.75, radius), TANKS, (p) => roofOver(p) - 3)
+    const outside = (): Vec3 => pointIn(rng, bubble.center, bubble.reach + 90, radius, bubble.reach + 14)
+    furnish(stands, rng, outside, SOLAR)
+    furnish(stands, rng, outside, DISH)
+    furnish(stands, rng, () => pointIn(rng, bubble.center, bubble.reach * 0.75, radius), TANKS, (p) => roofOver(p) - 3)
   }
   // Red boulders strewn over the open ground.
   for (let k = 0; k < 400; k++) {
@@ -175,7 +164,7 @@ export function generateMars(seed: number): World {
     roof,
     districtOf,
     mountains,
-    districts: bubbles.map((bubble, id) => districtOfPlace(id, bubble.center, bubble.reach)),
+    districts: bubbles.map((bubble, id) => districtOfPlace(id, bubble)),
     roads,
     buildings: stands.buildings,
     trees: stands.trees,

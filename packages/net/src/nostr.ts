@@ -2,9 +2,7 @@
  * Who a player is, by their nostr key: the server asks each player to sign
  * a challenge of its own making, as a relay asks a client to (NIP-42), and
  * believes a key only once a fresh event naming that challenge is signed
- * by it. Events are made, hashed and signed as NIP-01 has them, so a
- * browser's nostr extension (NIP-07) signs them as readily as a key kept
- * here does.
+ * by it. Events are made, hashed and signed as NIP-01 has them.
  */
 
 import { schnorr } from '@noble/curves/secp256k1'
@@ -52,9 +50,19 @@ export function authTemplate(challenge: string, pubkey: string, nowSeconds: numb
   return { pubkey, created_at: Math.floor(nowSeconds), kind: AUTH_KIND, tags: [['challenge', challenge]], content: '' }
 }
 
-/** A new secret key, for a player with no nostr extension to sign with. */
+/** A new secret key, for a player to prove which seat is theirs with. */
 export function newSecretKey(): Uint8Array {
   return schnorr.utils.randomPrivateKey()
+}
+
+/** A secret key as hex, to be kept. */
+export function secretKeyHex(secret: Uint8Array): string {
+  return bytesToHex(secret)
+}
+
+/** A secret key kept as hex, or `null` if it is not one. */
+export function secretKeyFromHex(hex: string): Uint8Array | null {
+  return /^[0-9a-f]{64}$/.test(hex) ? hexToBytes(hex) : null
 }
 
 /** The public key, as hex, of a secret key. */

@@ -9,11 +9,12 @@ import type { Vec3 } from '@buggies/physics'
 
 import { ARTERIAL_MIN_RADIUS, ROAD_GRADE, SAMPLE_STEP } from '../roads/constants.ts'
 import { limitSweepGradeAlong } from '../roads/grades.ts'
+import { smoothstep } from '../noise.ts'
 import { sphereHeight } from '../sphere.ts'
 import type { RoadKind } from '../types.ts'
 import type { WorldRoad } from '../world.ts'
 import { bedOf, groundOf, roadOfBed, settleSurfaceRoads } from '../globe/beds.ts'
-import { angleBetween, easeTurns, lift, resample, runs, smooth } from '../globe/lines.ts'
+import { angleBetween, easeTurns, lift, resample, runs, smooth, unit } from '../globe/lines.ts'
 import { buildNav, navDirection, navPoint, route, type Nav } from '../globe/nav.ts'
 import { eachPointNear, type Land } from '../globe/placing.ts'
 import { nearestOn } from '../globe/segments.ts'
@@ -96,11 +97,11 @@ export function stampRoad(land: Land, road: WorldRoad, shoulder: number): void {
   for (let i = 0; i + 1 < road.points.length; i++) {
     const a = road.points[i]!
     const b = road.points[i + 1]!
-    const ua = unitOf(a)
-    const ub = unitOf(b)
+    const ua = unit(a)
+    const ub = unit(b)
     const ha = heightOf(a, radius)
     const hb = heightOf(b, radius)
-    const middle = unitOf({ x: ua.x + ub.x, y: ua.y + ub.y, z: ua.z + ub.z })
+    const middle = unit({ x: ua.x + ub.x, y: ua.y + ub.y, z: ua.z + ub.z })
     const reach = (angleBetween(ua, ub) * radius) / 2 + half + shoulder
     eachPointNear(land, middle, reach, (at, p) => {
       const { t, distance } = nearestOn(p, ua, ub, radius)
@@ -111,19 +112,9 @@ export function stampRoad(land: Land, road: WorldRoad, shoulder: number): void {
   }
   for (const [at, distance] of best) {
     const level = levelOf.get(at)!
-    const share = distance <= half + 1 ? 1 : 1 - ease((distance - half - 1) / Math.max(shoulder - 1, 1))
+    const share = 1 - smoothstep(half + 1, half + Math.max(shoulder, 2), distance)
     original[at] = original[at]! + (level - original[at]!) * share
   }
-}
-
-function ease(t: number): number {
-  const x = Math.min(Math.max(t, 0), 1)
-  return x * x * (3 - 2 * x)
-}
-
-function unitOf(p: Vec3): Vec3 {
-  const length = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) || 1
-  return { x: p.x / length, y: p.y / length, z: p.z / length }
 }
 
 function heightOf(p: Vec3, radius: number): number {

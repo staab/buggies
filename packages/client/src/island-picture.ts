@@ -2,7 +2,7 @@ import type { Vec3 } from '@buggies/physics'
 import { nearestGridPoint, roomAt, sphereHeight, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
-import { groundTone, lookOf } from './world-looks.ts'
+import { WORLD_LOOKS, groundTone } from './world-looks.ts'
 
 /** Rock with no room in it, drawn dark. */
 const SOLID = new THREE.Color('#141110')
@@ -42,7 +42,7 @@ export function drawIsland(world: World, pixels: number): HTMLCanvasElement {
   const context = canvas.getContext('2d')
   if (context === null) return canvas
   const { heights } = world.ground
-  const look = lookOf(world.kind)
+  const look = WORLD_LOOKS[world.kind]
   let lowest = Infinity
   let highest = -Infinity
   for (let at = 0; at < heights.length; at++) {

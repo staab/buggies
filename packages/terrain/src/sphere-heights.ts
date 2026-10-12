@@ -148,6 +148,8 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
   }))
   const direction = { x: 0, y: 0, z: 0 }
   const warped = { x: 0, y: 0, z: 0 }
+  // With no islands there are no coasts to warp.
+  const coasts = islands.length > 0
   for (let face = 0; face < 6; face++) {
     for (let j = 0; j <= n; j++) {
       for (let i = 0; i <= n; i++) {
@@ -156,9 +158,9 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
         const py = direction.y * radius
         const pz = direction.z * radius
         // The coasts are warped: the point moved a little by noise before its distance from each island is taken.
-        const wx = fbm3D(px * warpFrequency + 11.3, py * warpFrequency + 7.1, pz * warpFrequency + 3.3, seed + 101, 4) - 0.5
-        const wy = fbm3D(px * warpFrequency + 3.7, py * warpFrequency + 19.2, pz * warpFrequency + 5.9, seed + 211, 4) - 0.5
-        const wz = fbm3D(px * warpFrequency + 8.1, py * warpFrequency + 2.6, pz * warpFrequency + 17.4, seed + 307, 4) - 0.5
+        const wx = coasts ? fbm3D(px * warpFrequency + 11.3, py * warpFrequency + 7.1, pz * warpFrequency + 3.3, seed + 101, 4) - 0.5 : 0
+        const wy = coasts ? fbm3D(px * warpFrequency + 3.7, py * warpFrequency + 19.2, pz * warpFrequency + 5.9, seed + 211, 4) - 0.5 : 0
+        const wz = coasts ? fbm3D(px * warpFrequency + 8.1, py * warpFrequency + 2.6, pz * warpFrequency + 17.4, seed + 307, 4) - 0.5 : 0
         let sea = 1
         let dome = 0
         for (const [k, island] of islands.entries()) {

@@ -148,11 +148,6 @@ export const WORLD_LOOKS: Readonly<Record<WorldKind, WorldLook>> = {
   },
 }
 
-/** How a world of this kind looks. */
-export function lookOf(kind: WorldKind): WorldLook {
-  return WORLD_LOOKS[kind]
-}
-
 /**
  * The ground's color at a height, in a world of this look: its sea floor
  * under its sea, its land's ramp from the sea up, or from its lowest where

@@ -2,6 +2,7 @@ import { gridDirection, groundIndex, nearestGridPoint, platformEdge, platformTop
 import * as THREE from 'three'
 
 import { groundTone, type WorldLook } from './world-looks.ts'
+import { meshGeometry } from './world-mesh.ts'
 
 /**
  * The roof over what a world closes in, a mesh a face of its grid, facing
@@ -76,11 +77,7 @@ export function buildTubes(world: World, look: WorldLook): THREE.Object3D | null
     polygonOffsetUnits: -2,
   })
   for (const tube of world.tubes) {
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(tube.positions, 3))
-    geometry.setIndex(new THREE.Uint32BufferAttribute(tube.indices, 1))
-    geometry.computeVertexNormals()
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new THREE.Mesh(meshGeometry(tube), material)
     // A roof, as far as the shadows go: it throws none, or the tunnel would be dark all through.
     mesh.name = 'roof'
     group.add(mesh)
@@ -113,11 +110,8 @@ export function buildPlatforms(world: World, look: WorldLook): THREE.Object3D | 
     groundTone(look, platform.height, platform.height - 1, platform.height + 1, world.seaLevel, district, color)
     const colors = new Float32Array(mesh.positions.length)
     for (let k = 0; k < colors.length; k += 3) color.toArray(colors, k)
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(mesh.positions, 3))
+    const geometry = meshGeometry(mesh)
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-    geometry.setIndex(new THREE.Uint32BufferAttribute(mesh.indices, 1))
-    geometry.computeVertexNormals()
     const surface = new THREE.Mesh(geometry, top)
     surface.name = 'ground'
     group.add(surface)

@@ -21,7 +21,7 @@ import { rampRise } from '../globe/solids.ts'
 import { fromFrame } from '../globe/frame.ts'
 import { bareWorld } from './bare.ts'
 import { moonOf } from './kinds.ts'
-import { groundOfSize } from './kit.ts'
+import { groundOfSize } from './ground.ts'
 
 const { cos, sin } = exact
 

@@ -19,7 +19,8 @@ import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
 import { angleBetween, unit } from '../globe/lines.ts'
-import { eachPointNear, type Land } from '../globe/placing.ts'
+import { eachPointNear, nearestPoint, type Land } from '../globe/placing.ts'
+import type { SphereGround } from '../sphere.ts'
 
 /** What a hollow is: a room standing on the ground with a roof over it, or one cut into the rock round its middle. */
 export type HollowKind = 'shell' | 'bore'
@@ -146,6 +147,11 @@ export function hollowOut(land: Land, hollows: readonly Hollow[], solid: boolean
     } else if (solid) roof[at] = heights[at]!
   }
   return roof
+}
+
+/** The roof's height over the radius at the grid point nearest a way out: `NaN` where it is open. */
+export function roofNear(ground: SphereGround, roof: Float32Array, p: Vec3): number {
+  return roof[nearestPoint(ground, p)]!
 }
 
 /** Whether a grid point has room under its roof: open to the sky, or closed in with space between floor and roof. */

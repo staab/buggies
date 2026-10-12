@@ -630,7 +630,7 @@ export class GameServer implements TransportHandlers {
       // A key proved on the other side of a portal, or before the connection dropped, is still theirs.
       pubkey: left !== undefined && (through || left.seed === room.seed) ? left.pubkey : null,
     }
-    if (player.pubkey !== null) this.markEarned(seat, player.pubkey)
+    if (player.pubkey !== null) this.giveKept(seat, player.pubkey)
     this.players.set(connection.id, player)
     room.players.set(connection.id, player)
     connection.send(
@@ -663,41 +663,52 @@ export class GameServer implements TransportHandlers {
     const pubkey = verifyAuth(event, player.challenge, Date.now() / 1000)
     if (pubkey === null) return
     player.pubkey = pubkey
-    this.markEarned(player.seat, pubkey)
+    this.giveKept(player.seat, pubkey)
     player.connection.send(encodeSignedIn({ pubkey, earned: this.store.earned(pubkey).size }))
     this.events.onSignedIn?.(player.seat, pubkey)
   }
 
-  /** Mark off on a seat every feat its key has been paid already, for none of them to be paid again; and give it the key's gems. */
-  private markEarned(seat: Seat, pubkey: string): void {
+  /** Give a seat what is kept for its key: every feat the key has been paid marked off, for none to be paid again, and its gems. */
+  private giveKept(seat: Seat, pubkey: string): void {
     for (const id of this.store.earned(pubkey)) if (id < seat.progress.earned.length) seat.progress.earned[id] = 1
     seat.gems = this.store.gems(pubkey)
   }
 
+  /** The nostr key a seat's player has proved theirs, if they have. */
+  private keyOf(room: Room, seat: Seat): string | null {
+    return this.playerIn(room, seat)?.pubkey ?? null
+  }
+
+  /** The seats of everyone playing with a key, on whichever island: the same player, at once, in more than one tab. */
+  private seatsWith(pubkey: string): Seat[] {
+    return [...this.players.values()].filter((player) => player.pubkey === pubkey).map((player) => player.seat)
+  }
+
   /**
    * Gems just won with a game or a race, kept for good against the
-   * winner's key, if they have proved one: the seat then holds what the
-   * key has all told. Without a key they are the seat's until it is left.
+   * winner's key, if they have proved one: every seat with that key then
+   * holds what it has all told. Without a key they are the seat's until it
+   * is left.
    */
   private keepGems(room: Room, seat: Seat): void {
-    const pubkey = this.playerIn(room, seat)?.pubkey ?? null
+    const pubkey = this.keyOf(room, seat)
     if (pubkey === null) return
     const gems = this.store.addGems(pubkey, GAME_GEMS)
-    for (const other of this.players.values()) if (other.pubkey === pubkey) other.seat.gems = gems
+    for (const each of this.seatsWith(pubkey)) each.gems = gems
   }
 
   /** Whether a seat may be paid for a feat: only one whose player has proved their key, and only if that key never has been. */
   private unpaid(room: Room, seat: Seat, id: number): boolean {
-    const pubkey = this.playerIn(room, seat)?.pubkey ?? null
+    const pubkey = this.keyOf(room, seat)
     return pubkey !== null && !this.store.earned(pubkey).has(id)
   }
 
   /** A feat paid: never again to the key, here or on any island it is playing on at once. */
   private paid(room: Room, seat: Seat, achievement: Achievement): void {
-    const pubkey = this.playerIn(room, seat)?.pubkey
-    if (pubkey !== null && pubkey !== undefined) {
+    const pubkey = this.keyOf(room, seat)
+    if (pubkey !== null) {
       this.store.record(pubkey, achievement.id)
-      for (const other of this.players.values()) if (other.pubkey === pubkey) other.seat.progress.earned[achievement.id] = 1
+      for (const each of this.seatsWith(pubkey)) each.progress.earned[achievement.id] = 1
     }
     this.events.onAchieved?.(seat, achievement)
   }

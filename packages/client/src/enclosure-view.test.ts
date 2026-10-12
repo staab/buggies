@@ -3,14 +3,14 @@ import * as THREE from 'three'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { buildPlatforms } from './enclosure-view.ts'
-import { lookOf } from './world-looks.ts'
+import { WORLD_LOOKS } from './world-looks.ts'
 
 describe("Jupiter's platforms drawn", () => {
   let world: ReturnType<typeof generateWorld>
   let meshes: THREE.Mesh[]
   beforeAll(() => {
     world = generateWorld(worldId(7, 'jupiter'))
-    meshes = buildPlatforms(world, lookOf('jupiter'))!.children as THREE.Mesh[]
+    meshes = buildPlatforms(world, WORLD_LOOKS['jupiter'])!.children as THREE.Mesh[]
   }, 120_000)
 
   it('lay each top on the sphere at its platform’s height all the way out, to an edge as round as a circle', () => {

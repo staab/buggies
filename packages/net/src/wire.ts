@@ -23,6 +23,7 @@ import {
   type Weapon,
 } from '@buggies/game'
 import type { Quat, Vec3 } from '@buggies/physics'
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 
 import {
   CLIENT_AUTH,
@@ -711,20 +712,14 @@ export function decodeWelcome(payload: Uint8Array): WelcomeMessage | null {
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
   const pass = reader.u32()
   if (profile === undefined) return null
-  const challenge = bytesHex(payload.subarray(WELCOME_BYTES - CHALLENGE_BYTES - PUBKEY_HEX / 2, WELCOME_BYTES - PUBKEY_HEX / 2))
-  const signedIn = bytesHex(payload.subarray(WELCOME_BYTES - PUBKEY_HEX / 2))
+  const challenge = bytesToHex(payload.subarray(WELCOME_BYTES - CHALLENGE_BYTES - PUBKEY_HEX / 2, WELCOME_BYTES - PUBKEY_HEX / 2))
+  const signedIn = bytesToHex(payload.subarray(WELCOME_BYTES - PUBKEY_HEX / 2))
   return { protocolVersion, seed, seat, epoch, tick, maxPlayers, profile, pass, challenge, signedIn: /^0+$/.test(signedIn) ? '' : signedIn }
 }
 
 /** Hex as so many bytes, all naughts where it is empty. */
 function hexBytes(hex: string, length: number): Uint8Array {
-  const bytes = new Uint8Array(length)
-  for (let k = 0; k < length && k * 2 + 2 <= hex.length; k++) bytes[k] = parseInt(hex.slice(k * 2, k * 2 + 2), 16)
-  return bytes
-}
-
-function bytesHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return hex === '' ? new Uint8Array(length) : hexToBytes(hex)
 }
 
 /** A signed answer to the welcome's challenge. */
@@ -758,7 +753,7 @@ export function encodeSignedIn(message: SignedInMessage): Uint8Array {
 
 export function decodeSignedIn(payload: Uint8Array): SignedInMessage | null {
   if (payload.length !== SIGNED_IN_BYTES || messageTypeOf(payload) !== SERVER_SIGNED_IN) return null
-  return { pubkey: bytesHex(payload.subarray(1, SIGNED_IN_BYTES - 1)), earned: payload[SIGNED_IN_BYTES - 1]! }
+  return { pubkey: bytesToHex(payload.subarray(1, SIGNED_IN_BYTES - 1)), earned: payload[SIGNED_IN_BYTES - 1]! }
 }
 
 export function encodeReject(message: RejectMessage): Uint8Array {
