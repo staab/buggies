@@ -232,7 +232,7 @@ export class CarPresence {
 
   /** What the HUD says of it, with a line on how it is keeping up with the server if there is one. */
   hudState(title: string, controls: readonly ControlHint[], sync?: string): HudState {
-    const { vehicle, tuning, score } = this.seat
+    const { vehicle, tuning, score, gems } = this.seat
     return {
       title,
       speed: vehicle.speed,
@@ -240,6 +240,7 @@ export class CarPresence {
       damage: vehicle.wrecked ? 1 : vehicle.damage,
       controls,
       score,
+      gems,
       ...(sync === undefined ? {} : { sync }),
     }
   }

@@ -1,6 +1,6 @@
 import { portalLink, type VehicleProfileId } from '@buggies/game'
 import { ConnectionFailure, NO_ARRIVAL, NO_PASS, REJECT_PROTOCOL_MISMATCH, fetchPeek, fetchRooms, type IslandMark, type RoomSummary } from '@buggies/net'
-import { isMoon, planetSeedOf, type World } from '@buggies/terrain'
+import { WORLD_TRAITS, planetSeedOf, worldKindOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import type { Sound } from './audio.ts'
@@ -13,6 +13,7 @@ import { createOnlineMode } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 import { createTerrainView, moveBoats, moveClouds } from './terrain-view.ts'
+import { lookOf } from './world-looks.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /** How long to wait before trying to rejoin again, after each try that fails: longer each time, up to the last. */
@@ -315,21 +316,22 @@ export class Shell implements MenuHost {
   }
 
   /**
-   * Take the player through a portal: from a planet to its
-   * moon, or from the moon back to the planet, out of the portal they left
-   * it by. They join the room for the world on the other side, in the
+   * Take the player through a portal to another of the planet's worlds,
+   * picked at random; back to the planet itself, out of the portal they
+   * left it by. They join the room for the world on the other side, in the
    * vehicles they are in.
    */
   private async travel(through: number): Promise<void> {
     const { game, map } = this
     if (game === null || map === null || map.seed !== game.world) return
     const link = portalLink(map, this.cameFrom)
-    if (!isMoon(map.seed)) this.cameFrom = through
+    if (map.kind === 'planet') this.cameFrom = through
     const stamp = ++this.generation
     // Taken before the game is let go, so that what the car holds goes through with it.
     const pass = game.mode.pass?.()
     this.setGame(null)
-    this.notice(isMoon(link.to) ? 'through the portal to the moon...' : 'back through the portal...')
+    const kind = worldKindOf(link.to)
+    this.notice(kind === 'planet' ? 'back through the portal...' : `through the portal to ${WORLD_TRAITS[kind].name}...`)
     try {
       const mode = await this.modes.play(this.scene, this.server, link.to, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, pass ?? NO_PASS, game.choice.name)
       if (stamp !== this.generation) {
@@ -431,7 +433,7 @@ export class Shell implements MenuHost {
       moveClouds(this.view, seconds)
       // The planet turns under the sun by the game's time, and the sky is as the day is over the whole of it, until a view says where the play is.
       this.sun.turn(seconds)
-      this.sun.shade(this.scene, this.map?.kind === 'moon')
+      this.sun.shade(this.scene, lookOf(this.map?.kind ?? 'planet').skies)
     }
     const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
     if (shown !== null) {
@@ -451,7 +453,8 @@ export class Shell implements MenuHost {
   private mapFor(seed: number): Promise<World> {
     if (this.map !== null && this.map.seed === seed) return Promise.resolve(this.map)
     if (this.making !== null && this.making.seed === seed) return this.making.island
-    this.notice(isMoon(seed) ? `generating the moon of island ${planetSeedOf(seed)}...` : `generating island ${seed}...`)
+    const kind = worldKindOf(seed)
+    this.notice(kind === 'planet' ? `generating island ${seed}...` : `generating ${WORLD_TRAITS[kind].name} of island ${planetSeedOf(seed)}...`)
     const island = this.islands.generate(seed).then((made) => {
       if (this.making?.island === island) this.making = null
       if (this.view) disposeView(this.scene, this.view)
@@ -460,7 +463,8 @@ export class Shell implements MenuHost {
       this.scene.add(this.view)
       // View distances ride the planet's size so the framing stays the same.
       const across = 2 * Math.PI * made.radius
-      this.scene.fog = new THREE.Fog('#a9cbe6', across * 0.65, across * 2.34)
+      const { fog, skies } = lookOf(made.kind)
+      this.scene.fog = new THREE.Fog(skies.day, across * fog.near, across * fog.far)
       // Over the middle of the planet.
       this.sun.centerOn({ x: 0, y: 0, z: 0 })
       return made

@@ -18,6 +18,8 @@ export interface HudState {
   controls?: readonly ControlHint[]
   /** Bananas taken. */
   score?: number
+  /** Gems won with games and races, all told. */
+  gems?: number
   /** How the car is keeping up with the server, in a line, for anyone wondering about a jump. */
   sync?: string
   /** Where everyone else is, for the mini-map. */
@@ -175,6 +177,7 @@ function caret(): SVGSVGElement {
 
 /**
  * The corner of the screen that says how it is going: the bananas held,
+ * the gems won,
  * a speedometer, a damage dial beside it
  * that fills and reddens as the car is knocked about, a word on the moment,
  * and the keys in a drawer under it all that a caret pulls open and shut.
@@ -184,6 +187,7 @@ export class Hud {
   private readonly title = div('title')
   private readonly row = div('row')
   private readonly score = div('score')
+  private readonly gems = div('score gems')
   private readonly game = div('game')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
@@ -197,6 +201,8 @@ export class Hud {
   private shownControls = ''
   private shownScore = ''
   private readonly scoreCount = document.createElement('span')
+  private shownGems = ''
+  private readonly gemCount = document.createElement('span')
   private readonly radar: Radar | null
   private readonly banner: Banner | null
   private readonly achievement: AchievementToast | null
@@ -228,7 +234,13 @@ export class Hud {
     )
     banana.append(tilted)
     this.score.append(banana, this.scoreCount)
-    this.row.append(this.score)
+    // A gem: a cut stone, its table and its crown's facets catching the light.
+    const gem = svg('svg', { class: 'gem', viewBox: '0 0 24 24' })
+    gem.append(svg('path', { d: 'M6 4 L18 4 L22 9 L12 21 L2 9 Z', fill: '#3fb6e8' }))
+    gem.append(svg('path', { d: 'M2 9 L22 9 L12 21 Z', fill: '#2a8fc4' }))
+    gem.append(svg('path', { d: 'M6 4 L9 9 L12 4 L15 9 L18 4', fill: 'none', stroke: '#bfeaff', 'stroke-width': 0.8, 'stroke-linejoin': 'round' }))
+    this.gems.append(gem, this.gemCount)
+    this.row.append(this.score, this.gems)
     this.drawer.append(this.controls, this.sync)
     this.toggle.type = 'button'
     this.toggle.className = 'toggle'
@@ -266,6 +278,12 @@ export class Hud {
       this.scoreCount.textContent = score
     }
     this.score.hidden = score === ''
+    const gems = state.gems === undefined ? '' : String(state.gems)
+    if (gems !== this.shownGems) {
+      this.shownGems = gems
+      this.gemCount.textContent = gems
+    }
+    this.gems.hidden = gems === ''
     const game = state.game ?? ''
     if (game !== this.game.textContent) this.game.textContent = game
     this.game.hidden = game === ''

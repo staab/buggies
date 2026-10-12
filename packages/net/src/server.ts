@@ -4,6 +4,7 @@ import {
   PLAYABLE_PROFILE_IDS,
   advance,
   awardAchievements,
+  GAME_GEMS,
   awardGames,
   endRace,
   playRace,
@@ -34,10 +35,13 @@ import {
   type VehicleSpawn,
 } from '@buggies/game'
 import { vdistance } from '@buggies/physics'
+import { MemoryPlayerStore, type PlayerStore } from './player-store.ts'
 import { InputTimeline } from './input-timeline.ts'
+import { newChallenge, verifyAuth } from './nostr.ts'
 import {
   CLIENT_CHANGE_VEHICLE,
   CLIENT_GAME,
+  CLIENT_AUTH,
   CLIENT_HELLO,
   CLIENT_INPUT,
   INPUT_TIMELINE_TICKS,
@@ -55,6 +59,7 @@ import {
 import { createRoomSnapshots, gatherSnapshot, rememberTold, type RoomSnapshots } from './room-snapshot.ts'
 import type { TransportConnection, TransportHandlers } from './transport.ts'
 import {
+  decodeAuth,
   decodeChangeVehicle,
   decodeGame,
   decodeJoinGame,
@@ -67,6 +72,7 @@ import {
   decodeInput,
   encodeReject,
   encodeRooms,
+  encodeSignedIn,
   encodeSnapshot,
   type RoomSummary,
   encodeWelcome,
@@ -113,6 +119,8 @@ export interface GameServerEvents {
   onGameWon?(seat: Seat): void
   /** A player has been paid for a feat. */
   onAchieved?(seat: Seat, achievement: Achievement): void
+  /** A player has proved which nostr key is theirs. */
+  onSignedIn?(seat: Seat, pubkey: string): void
   /** A player has asked for a game for everyone on the island to join, which starts once its minute is up. */
   onGameOpened?(seat: Seat, game: PendingGame): void
   /** A player has set a race going on their island, and a race is over, won or called off. */
@@ -153,6 +161,9 @@ interface Player {
   pass: number
   /** What they go by, as they gave it. */
   name: string
+  /** What they were given to sign with their nostr key, and the key, once they have. */
+  challenge: string
+  pubkey: string | null
 }
 
 /**
@@ -162,6 +173,8 @@ interface Player {
  */
 interface Left {
   readonly carried: Carried
+  /** The nostr key they had proved theirs, which comes through with them. */
+  readonly pubkey: string | null
   readonly tick: number
   readonly seed: number
   readonly where: VehicleSpawn
@@ -217,16 +230,24 @@ export class GameServer implements TransportHandlers {
 
   /** How many cars nobody drives each island has, while seats are free for them. */
   private readonly npcs: number
+  /** What is kept of each nostr key for good: the achievements it has been paid, and its gems. */
+  private readonly store: PlayerStore
 
   /**
    * `arenaFor` makes the arena for a seed nobody is on: at once, or
    * eventually, as when its island is generated off the thread that steps
    * the rooms, which then go on while it is made.
    */
-  constructor(arenaFor: (seed: number) => Arena | Promise<Arena>, events: Partial<GameServerEvents> = {}, npcs = NPC_CARS) {
+  constructor(
+    arenaFor: (seed: number) => Arena | Promise<Arena>,
+    events: Partial<GameServerEvents> = {},
+    npcs = NPC_CARS,
+    store: PlayerStore = new MemoryPlayerStore(),
+  ) {
     this.arenaFor = arenaFor
     this.events = events
     this.npcs = npcs
+    this.store = store
   }
 
   get tick(): number {
@@ -299,10 +320,14 @@ export class GameServer implements TransportHandlers {
         seat.npc ? npcInput(room.arena, seat, this.npcCommand) : (this.playerIn(room, seat)?.timeline.consume(tick) ?? NEUTRAL_INPUT),
       )
       for (const seat of respawnLost(room.arena)) this.events.onRespawned?.(seat, 'lost')
-      for (const seat of awardGames(room.arena.seats)) this.events.onGameWon?.(seat)
+      for (const seat of awardGames(room.arena.seats)) {
+        this.keepGems(room, seat)
+        this.events.onGameWon?.(seat)
+      }
       const raced = playRace(room.arena)
+      if (raced?.winner) this.keepGems(room, raced.winner)
       if (raced !== null) this.events.onRaceEnded?.(room.arena.planet.seed, raced.winner)
-      for (const { seat, achievement } of awardAchievements(room.arena)) this.events.onAchieved?.(seat, achievement)
+      for (const { seat, achievement } of awardAchievements(room.arena, (seat, feat) => this.unpaid(room, seat, feat.id))) this.paid(room, seat, achievement)
       this.startDueGames(room)
       if (room.arena.tick % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot(room)
     }
@@ -332,6 +357,11 @@ export class GameServer implements TransportHandlers {
     if (player === undefined) return
     const { arena } = player.room
     player.heardTick = this.clock
+
+    if (messageTypeOf(payload) === CLIENT_AUTH) {
+      this.signIn(player, decodeAuth(payload))
+      return
+    }
 
     if (isRespawn(payload)) {
       if (arena.tick - player.respawnedTick < RESPAWN_COOLDOWN_TICKS) return
@@ -417,7 +447,7 @@ export class GameServer implements TransportHandlers {
     this.players.delete(connection.id)
     room.players.delete(connection.id)
     // Gone through a portal, or cut off, as far as anyone here knows: what they held waits for them.
-    this.left.set(player.pass, { carried: carriedOf(player.seat), tick: this.clock, seed: room.seed, where: spawnWhere(player.seat) })
+    this.left.set(player.pass, { carried: carriedOf(player.seat), pubkey: player.pubkey, tick: this.clock, seed: room.seed, where: spawnWhere(player.seat) })
     this.leaveGames(room, player.seat.id, false)
     leaveSeat(room.arena, player.seat.id)
     this.topUpNpcs(room.arena)
@@ -596,7 +626,11 @@ export class GameServer implements TransportHandlers {
       heardTick: this.clock,
       pass: this.newPass(),
       name: hello.name,
+      challenge: newChallenge(),
+      // A key proved on the other side of a portal, or before the connection dropped, is still theirs.
+      pubkey: left !== undefined && (through || left.seed === room.seed) ? left.pubkey : null,
     }
+    if (player.pubkey !== null) this.markEarned(seat, player.pubkey)
     this.players.set(connection.id, player)
     room.players.set(connection.id, player)
     connection.send(
@@ -609,10 +643,63 @@ export class GameServer implements TransportHandlers {
         maxPlayers: arena.seats.length,
         profile: seat.profile,
         pass: player.pass,
+        challenge: player.challenge,
+        signedIn: player.pubkey ?? '',
       }),
     )
     this.events.onJoined?.(seat, connection.id, room.seed)
     this.broadcastLobby(room)
+  }
+
+  /**
+   * A player proving which nostr key is theirs: an event signed by it
+   * naming the challenge they were welcomed with. Believed, the key is
+   * theirs for their achievements, each of which it is paid once, ever;
+   * what it has been paid already is marked off for them, and they are
+   * told. Not believed, nothing changes.
+   */
+  private signIn(player: Player, event: unknown): void {
+    if (player.pubkey !== null) return
+    const pubkey = verifyAuth(event, player.challenge, Date.now() / 1000)
+    if (pubkey === null) return
+    player.pubkey = pubkey
+    this.markEarned(player.seat, pubkey)
+    player.connection.send(encodeSignedIn({ pubkey, earned: this.store.earned(pubkey).size }))
+    this.events.onSignedIn?.(player.seat, pubkey)
+  }
+
+  /** Mark off on a seat every feat its key has been paid already, for none of them to be paid again; and give it the key's gems. */
+  private markEarned(seat: Seat, pubkey: string): void {
+    for (const id of this.store.earned(pubkey)) if (id < seat.progress.earned.length) seat.progress.earned[id] = 1
+    seat.gems = this.store.gems(pubkey)
+  }
+
+  /**
+   * Gems just won with a game or a race, kept for good against the
+   * winner's key, if they have proved one: the seat then holds what the
+   * key has all told. Without a key they are the seat's until it is left.
+   */
+  private keepGems(room: Room, seat: Seat): void {
+    const pubkey = this.playerIn(room, seat)?.pubkey ?? null
+    if (pubkey === null) return
+    const gems = this.store.addGems(pubkey, GAME_GEMS)
+    for (const other of this.players.values()) if (other.pubkey === pubkey) other.seat.gems = gems
+  }
+
+  /** Whether a seat may be paid for a feat: only one whose player has proved their key, and only if that key never has been. */
+  private unpaid(room: Room, seat: Seat, id: number): boolean {
+    const pubkey = this.playerIn(room, seat)?.pubkey ?? null
+    return pubkey !== null && !this.store.earned(pubkey).has(id)
+  }
+
+  /** A feat paid: never again to the key, here or on any island it is playing on at once. */
+  private paid(room: Room, seat: Seat, achievement: Achievement): void {
+    const pubkey = this.playerIn(room, seat)?.pubkey
+    if (pubkey !== null && pubkey !== undefined) {
+      this.store.record(pubkey, achievement.id)
+      for (const other of this.players.values()) if (other.pubkey === pubkey) other.seat.progress.earned[achievement.id] = 1
+    }
+    this.events.onAchieved?.(seat, achievement)
   }
 
   /** A game asked for, put up for everyone on the island to join for a minute, with whoever asked for it in it already. */

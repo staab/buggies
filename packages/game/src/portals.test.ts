@@ -1,5 +1,5 @@
 import { qrotate, v3 } from '@buggies/physics'
-import { generateMoon, generatePlanet, heightOver, isMoon, moonOf, sphereHeight, upOf, type World } from '@buggies/terrain'
+import { WORLD_KINDS, generateMoon, generatePlanet, heightOver, isMoon, moonOf, sphereHeight, upOf, worldId, worldKindOf, type World } from '@buggies/terrain'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT, advance, createArena, initPhysics, portalCrossed, portalLink, portalSpawn, takeSeat } from './index.ts'
@@ -15,18 +15,27 @@ describe('the portals', () => {
     moon = generateMoon(5)
   }, 120_000)
 
-  it('stand three to five on a planet and one on its moon, and lead from each to the other', () => {
+  it('stand three to five on a planet and one on its moon', () => {
     expect(planet.portals.length).toBeGreaterThanOrEqual(3)
     expect(planet.portals.length).toBeLessThanOrEqual(5)
     expect(moon.portals).toHaveLength(1)
     expect(moon.radius).toBeCloseTo(planet.radius / 2, 6)
     expect(moon.kind).toBe('moon')
     expect(isMoon(moon.seed)).toBe(true)
-    expect(portalLink(planet)).toEqual({ to: moonOf(5), arrival: 0 })
-    // Back from the moon by the portal the car came through.
-    expect(portalLink(moon, 2)).toEqual({ to: 5, arrival: 2 })
+    expect(moon.seed).toBe(moonOf(5))
     // And on the moon, the lander and its flag.
     expect(moon.buildings.map((building) => building.kind).sort()).toEqual(['flag', 'lander'])
+  })
+
+  it('lead from any world to any other of its planet, picked at random, and back to the planet by the portal left by', () => {
+    const others = WORLD_KINDS.filter((kind) => kind !== 'planet')
+    // Each draw of the dice picks its own world, every other one of them in turn, never the one driven from.
+    const picked = others.map((_, k) => worldKindOf(portalLink(planet, 0, () => (k + 0.5) / others.length).to))
+    expect(picked).toEqual(others)
+    expect(portalLink(planet, 3, () => 0)).toEqual({ to: moonOf(5), arrival: 0 })
+    // From the moon, the lowest draw goes back to the planet, out of the portal the car came through.
+    expect(portalLink(moon, 2, () => 0)).toEqual({ to: worldId(5, 'planet'), arrival: 2 })
+    expect(portalLink(moon, 2, () => 0.99).to).toBe(worldId(5, 'mercury'))
   })
 
   it('know a car driving through a ring, and not one going round it', () => {

@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP } from '@buggies/physics'
 
 /** Bumped whenever a message changes shape. A mismatch is refused, not guessed at. */
-export const PROTOCOL_VERSION = 42
+export const PROTOCOL_VERSION = 44
 
 export const TICKS_PER_SECOND = Math.round(1 / FIXED_TIMESTEP)
 export const MS_PER_TICK = 1000 / TICKS_PER_SECOND
@@ -33,6 +33,8 @@ export const CLIENT_GAME = 0x06
 export const CLIENT_PEEK = 0x07
 /** Into a game waiting for players, or out of whichever one the player is in. */
 export const CLIENT_JOIN_GAME = 0x08
+/** The challenge the welcome gave, signed by the player's nostr key: who they are, for their achievements. */
+export const CLIENT_AUTH = 0x09
 
 export const SERVER_WELCOME = 0x81
 export const SERVER_REJECT = 0x82
@@ -41,6 +43,8 @@ export const SERVER_ROOMS = 0x84
 export const SERVER_PEEK = 0x85
 /** Who is on the island, by name, and the games waiting for players to join them: told again whenever either changes. */
 export const SERVER_LOBBY = 0x86
+/** The key a player has proved is theirs, and how many achievements it has already been paid. */
+export const SERVER_SIGNED_IN = 0x87
 
 /** The most characters a player's name may have. */
 export const NAME_MOST = 16

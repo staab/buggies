@@ -1,10 +1,10 @@
 /**
- * The portals between a planet and its moon: which one a car has just
- * driven through, where each leads, and where a car comes out of one.
+ * The portals between a planet's worlds: which one a car has just driven
+ * through, where each leads, and where a car comes out of one.
  */
 
 import { qrotate, uprightRotation, v3, type Vec3 } from '@buggies/physics'
-import { isMoon, moonOf, planetSeedOf, sphereHeight, upOf, type World, type WorldPortal } from '@buggies/terrain'
+import { WORLD_KINDS, planetSeedOf, sphereHeight, upOf, worldId, type World, type WorldPortal } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
 
 /** How far out of a portal a car comes, past its ring, and how far apart two cars coming out together stand. */
@@ -34,12 +34,15 @@ export function portalCrossed(world: World, from: Vec3, to: Vec3): number {
 }
 
 /**
- * Where a portal leads: every portal of a planet to the one on its moon,
- * and the moon's back to the planet, through the portal `back` names, the
- * one the car came by, or the first.
+ * Where a portal leads: to any of the planet's other worlds, picked at
+ * random each time it is driven through. A car comes out of the first
+ * portal of the world it goes to; back on the planet itself, out of the
+ * one `back` names, the one it left by.
  */
-export function portalLink(world: World, back = 0): { to: number; arrival: number } {
-  return isMoon(world.seed) ? { to: planetSeedOf(world.seed), arrival: back } : { to: moonOf(world.seed), arrival: 0 }
+export function portalLink(world: World, back = 0, random: () => number = Math.random): { to: number; arrival: number } {
+  const others = WORLD_KINDS.filter((kind) => kind !== world.kind)
+  const kind = others[Math.min(Math.floor(random() * others.length), others.length - 1)]!
+  return { to: worldId(planetSeedOf(world.seed), kind), arrival: kind === 'planet' ? back : 0 }
 }
 
 /**

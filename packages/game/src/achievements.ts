@@ -1,7 +1,7 @@
 import { FIXED_TIMESTEP, type Vec3 } from '@buggies/physics'
 import type { BuildingKind, World } from '@buggies/terrain'
 
-import { CEILING } from './sky.ts'
+import { ceilingOf } from './sky.ts'
 import { WEAPONS, WEAPON_LABELS, type Weapon } from './weapons.ts'
 
 /**
@@ -11,8 +11,8 @@ import { WEAPONS, WEAPON_LABELS, type Weapon } from './weapons.ts'
  * a few more. Each pays its bananas once and puts on a show of its own.
  */
 
-/** What goes across the screen for a feat: confetti, bananas raining down, fireworks, balloons going up, a burst of stars, a rainbow, its icon bouncing across, or spinning up big. */
-export type AchievementShow = 'confetti' | 'bananas' | 'fireworks' | 'balloons' | 'stars' | 'rainbow' | 'bounce' | 'spin'
+/** What goes across the screen for a feat: confetti, bananas raining down, fireworks, balloons going up, a burst of stars, its icon bouncing across, or spinning up big. */
+export type AchievementShow = 'confetti' | 'bananas' | 'fireworks' | 'balloons' | 'stars' | 'bounce' | 'spin'
 
 export interface Achievement {
   readonly id: number
@@ -176,7 +176,7 @@ const WEAPON_TITLES: Readonly<Record<Weapon, string>> = {
   shockwave: 'Good Vibrations',
 }
 
-const LANDMARK_SHOWS: readonly AchievementShow[] = ['stars', 'rainbow', 'balloons', 'bounce', 'spin', 'fireworks']
+const LANDMARK_SHOWS: readonly AchievementShow[] = ['stars', 'confetti', 'balloons', 'bounce', 'spin', 'fireworks']
 
 const DEFINITIONS: readonly Definition[] = [
   ...tiers(
@@ -274,8 +274,8 @@ const DEFINITIONS: readonly Definition[] = [
       [3, 'Hang Time', 5, '🪂', 'balloons'],
       [10, 'Frequent Flyer', 10, '✈️', 'balloons'],
       [30, 'Up, Up and Away', 15, '🎈', 'balloons'],
-      [60, 'Mile High', 25, '☁️', 'rainbow'],
-      [120, 'Cloud Surfer', 35, '🏄', 'rainbow'],
+      [60, 'Mile High', 25, '☁️', 'confetti'],
+      [120, 'Cloud Surfer', 35, '🏄', 'confetti'],
       [240, 'Air Ace', 50, '🛩️', 'fireworks'],
       [900, 'Never Touched Down', 100, '🦅', 'fireworks'],
     ],
@@ -286,8 +286,8 @@ const DEFINITIONS: readonly Definition[] = [
     [
       [2, 'Big Air', 5, '🦘', 'bounce'],
       [4, 'Lift Off', 10, '🛫', 'balloons'],
-      [8, 'Soaring', 20, '🦅', 'rainbow'],
-      [15, 'Gliding Along', 30, '🪁', 'rainbow'],
+      [8, 'Soaring', 20, '🦅', 'confetti'],
+      [15, 'Gliding Along', 30, '🪁', 'confetti'],
       [30, 'Long Haul Flight', 60, '🌍', 'fireworks'],
     ],
     (count) => `Stay in the air for ${count} seconds in one go.`,
@@ -324,7 +324,7 @@ const DEFINITIONS: readonly Definition[] = [
   ...tiers(
     [
       [5, 'Tourist', 20, '📸', 'confetti'],
-      [10, 'Explorer', 40, '🧭', 'rainbow'],
+      [10, 'Explorer', 40, '🧭', 'confetti'],
       [15, 'Globetrotter', 75, '🗺️', 'fireworks'],
     ],
     (count) => `Drive up to ${count} different kinds of landmark.`,
@@ -333,7 +333,7 @@ const DEFINITIONS: readonly Definition[] = [
   ...tiers(
     [
       [30, 'Speeding Ticket', 5, '🚓', 'stars'],
-      [45, 'Ludicrous Speed', 15, '💨', 'rainbow'],
+      [45, 'Ludicrous Speed', 15, '💨', 'confetti'],
       [60, 'Sound of Speed', 30, '🔊', 'fireworks'],
     ],
     (count) => `Go faster than ${Math.round(count * 3.6)} km/h.`,
@@ -342,7 +342,7 @@ const DEFINITIONS: readonly Definition[] = [
   ...tiers(
     [
       [1, 'Portal Hopper', 10, '🌀', 'spin'],
-      [5, 'Interplanetary Commuter', 30, '🪐', 'rainbow'],
+      [5, 'Interplanetary Commuter', 30, '🪐', 'confetti'],
     ],
     (count) => `Go through ${plural(count, 'portal', 'portals')}.`,
     (progress) => progress.portals,
@@ -360,7 +360,7 @@ const DEFINITIONS: readonly Definition[] = [
     description: 'Climb all the way up over the clouds.',
     reward: 25,
     icon: '🌤️',
-    show: 'rainbow',
+    show: 'confetti',
     met: (progress) => progress.ceiling,
   },
 ]
@@ -405,18 +405,21 @@ function landmarks(planet: World): { at: Vec3; reach: number; index: number }[] 
 
 /**
  * A step of every driven seat's feats: what it has done this tick counted,
- * and the first feat it has done and not been paid for paid, its bananas
- * added, unless it was paid for one too lately. Done by whoever has the
- * last word on the arena, so a feat is paid once; the feats paid, and to
- * whom, are returned.
+ * and the first feat it has done, not been paid for, and that `payable`
+ * allows paid, its bananas added, unless it was paid for one too lately.
+ * Done by whoever has the last word on the arena, so a feat is paid once;
+ * the feats paid, and to whom, are returned.
  */
-export function awardAchievements<S extends AchievingSeat>(arena: { readonly planet: World; readonly seats: readonly S[]; readonly tick: number }): { seat: S; achievement: Achievement }[] {
+export function awardAchievements<S extends AchievingSeat>(
+  arena: { readonly planet: World; readonly seats: readonly S[]; readonly tick: number },
+  payable: (seat: S, achievement: Achievement) => boolean = () => true,
+): { seat: S; achievement: Achievement }[] {
   const paid: { seat: S; achievement: Achievement }[] = []
   for (const seat of arena.seats) {
     if (!seat.occupied || seat.npc) continue
     track(arena.planet, seat, arena.tick)
     if (arena.tick < seat.progress.readyTick) continue
-    const achievement = ACHIEVEMENTS.find((feat) => seat.progress.earned[feat.id] === 0 && feat.met(seat.progress, seat))
+    const achievement = ACHIEVEMENTS.find((feat) => seat.progress.earned[feat.id] === 0 && feat.met(seat.progress, seat) && payable(seat, feat))
     if (achievement === undefined) continue
     seat.progress.earned[achievement.id] = 1
     seat.progress.readyTick = arena.tick + ACHIEVEMENT_GAP_TICKS
@@ -443,7 +446,7 @@ function track(planet: World, seat: AchievingSeat, tick: number): void {
     progress.longestAirTicks = Math.max(progress.longestAirTicks, Math.round((vehicle.airborneTime - FLIGHT_AFTER) / FIXED_TIMESTEP))
   }
   const { x, y, z } = vehicle.frame.position
-  if (Math.sqrt(x * x + y * y + z * z) > planet.radius + CEILING - 2) progress.ceiling = true
+  if (Math.sqrt(x * x + y * y + z * z) > planet.radius + ceilingOf(planet) - 2) progress.ceiling = true
   if (tick % LANDMARK_EVERY_TICKS !== 0) return
   for (const landmark of landmarks(planet)) {
     if ((progress.landmarks & (1 << landmark.index)) !== 0) continue

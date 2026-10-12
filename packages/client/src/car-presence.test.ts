@@ -51,6 +51,7 @@ function seatOnFlat(): { seat: Seat; free: () => void } {
     submersion: 0,
     lostTicks: 0,
     score: 0,
+    gems: 0,
     collected: 0,
     kills: 0,
     robotKills: 0,
@@ -223,7 +224,7 @@ describe('a car on the screen', () => {
 
     seat.score = 2
     const hud = presence.hudState('me', [])
-    expect(hud).toMatchObject({ title: 'me', score: 2, damage: 0, maxSpeed: seat.tuning.maxSpeed })
+    expect(hud).toMatchObject({ title: 'me', score: 2, gems: 0, damage: 0, maxSpeed: seat.tuning.maxSpeed })
 
     // Blown up: one burst, the car hidden, and the HUD says so.
     expect(explosions.object.children).toHaveLength(0)

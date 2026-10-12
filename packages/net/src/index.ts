@@ -18,6 +18,8 @@ export {
   rejectLabel,
 } from './protocol.ts'
 export { BananaLedger, type KnownPickup } from './ledger.ts'
+export { AUTH_KIND, newSecretKey, publicKeyOf, verifyAuth } from './nostr.ts'
+export { MemoryPlayerStore, type PlayerRecord, type PlayerStore } from './player-store.ts'
 export { fetchPeek, fetchRooms } from './rooms.ts'
 export { GameServer, type GameServerEvents, type GameServerStats } from './server.ts'
 export {

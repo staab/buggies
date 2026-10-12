@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { ROUND_KINDS, SIGN_PANEL, gridDirection, groundIndex, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
+import { ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -82,9 +82,6 @@ export function addWall(world: RAPIER.World, mesh: WorldMesh): void {
   )
 }
 
-/** A trunk is this wide, whatever the crown; only the trunk is anything to hit. */
-const TRUNK_RADIUS = 0.35
-
 const up = v3()
 
 /** The point this far up from a foot, along the way a turn stands things up. */
@@ -139,13 +136,13 @@ function addBuildings(world: RAPIER.World, map: World): void {
       building.turn,
     )
   }
-  // A trunk is a wall to the wheels as well: a wheel hanging past the chassis
+  // Only the trunk is anything to hit, whatever the crown. A trunk is a wall to the wheels as well: a wheel hanging past the chassis
   // that comes to overlap one would otherwise land its ray inside it, and the
   // suspension would jack the car up onto the tree and hold it there.
   for (const tree of map.trees) {
     if (tree.kind === 'shrub') continue
     const turn = uprightRotation(upOf(tree.at), { x: 0, y: 0, z: -1 })
-    stand(RAPIER.ColliderDesc.cylinder(tree.height / 2, TRUNK_RADIUS).setCollisionGroups(WALL_GROUPS), above(tree.at, turn, tree.height / 2), turn)
+    stand(RAPIER.ColliderDesc.cylinder(tree.height / 2, trunkRadius(tree)).setCollisionGroups(WALL_GROUPS), above(tree.at, turn, tree.height / 2), turn)
   }
   // A boulder is a wall to the wheels for the same reason a trunk is.
   for (const rock of map.rocks) {
@@ -167,6 +164,7 @@ function upOf(point: Vec3): Vec3 {
  */
 export function addTerrain(world: RAPIER.World, map: World): void {
   addGround(world, map)
+  addRoof(world, map)
   addGroundMesh(world, map.decks, ROAD_FRICTION)
   for (const shell of map.shells) addWall(world, shell)
   addWall(world, map.rails)
@@ -182,15 +180,21 @@ const GROUND_TILE_CELLS = 32
 const FLOOR_DEPTH = 6
 
 /**
- * The planet's ground, as a mesh of the cells that matter: every cell of
- * its grid with a corner on land or in the shallows, cut in two, at the
- * height it is bored to under a tunnel. The deep sea floor is left out,
- * and a sphere under it all catches anything that sinks that far.
+ * A sheet over the ground's grid, a mesh a tile of it, of the cells
+ * `used` takes, each corner at the height `heightOf` gives it, wound to
+ * face out from the planet's middle or in toward it.
  */
-function addGround(world: RAPIER.World, map: World): void {
-  const { ground, bored } = map
+function addSheet(
+  world: RAPIER.World,
+  map: World,
+  heightOf: (at: number) => number,
+  used: (corners: readonly number[]) => boolean,
+  inward: boolean,
+  groups: number,
+  friction: number,
+): void {
+  const { ground } = map
   const { n, radius } = ground
-  const floor = map.seaLevel - FLOOR_DEPTH
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   const direction = v3()
   // In tiles, a mesh each: what rests on the ground is tested against the few cells round it, not
@@ -200,27 +204,27 @@ function addGround(world: RAPIER.World, map: World): void {
       for (let tileI = 0; tileI < n; tileI += GROUND_TILE_CELLS) {
         const positions: number[] = []
         const indices: number[] = []
-        const used = new Map<number, number>()
+        const known = new Map<number, number>()
         const corner = (i: number, j: number): number => {
           const at = groundIndex(ground, face, i, j)
-          const known = used.get(at)
-          if (known !== undefined) return known
+          const index = known.get(at)
+          if (index !== undefined) return index
           gridDirection(n, face, i, j, direction)
-          const r = radius + bored[at]!
+          const r = radius + heightOf(at)
           positions.push(direction.x * r, direction.y * r, direction.z * r)
-          used.set(at, positions.length / 3 - 1)
+          known.set(at, positions.length / 3 - 1)
           return positions.length / 3 - 1
         }
         for (let j = tileJ; j < Math.min(tileJ + GROUND_TILE_CELLS, n); j++) {
           for (let i = tileI; i < Math.min(tileI + GROUND_TILE_CELLS, n); i++) {
-            const heights = [bored[groundIndex(ground, face, i, j)]!, bored[groundIndex(ground, face, i + 1, j)]!, bored[groundIndex(ground, face, i, j + 1)]!, bored[groundIndex(ground, face, i + 1, j + 1)]!]
-            if (Math.max(...heights) < floor) continue
+            const corners = [groundIndex(ground, face, i, j), groundIndex(ground, face, i + 1, j), groundIndex(ground, face, i, j + 1), groundIndex(ground, face, i + 1, j + 1)]
+            if (!used(corners)) continue
             const a = corner(i, j)
             const b = corner(i + 1, j)
             const c = corner(i, j + 1)
             const d = corner(i + 1, j + 1)
-            // Wound to face out, away from the planet's middle.
-            indices.push(a, b, c, b, d, c)
+            if (inward) indices.push(a, c, b, b, c, d)
+            else indices.push(a, b, c, b, d, c)
           }
         }
         if (indices.length === 0) continue
@@ -228,23 +232,71 @@ function addGround(world: RAPIER.World, map: World): void {
         // open sheet of ground is not, and props resting on it then sink through it.
         world.createCollider(
           RAPIER.ColliderDesc.trimesh(new Float32Array(positions), new Uint32Array(indices))
-            .setCollisionGroups(GROUND_GROUPS)
-            .setFriction(GROUND_FRICTION)
+            .setCollisionGroups(groups)
+            .setFriction(friction)
             .setRestitution(GROUND_RESTITUTION),
           body,
         )
       }
     }
   }
+}
+
+/**
+ * The planet's ground, as a mesh of the cells that matter: every cell of
+ * its grid with a corner on land or in the shallows, or closed in under a
+ * roof, cut in two, at the height it is bored to under a tunnel. The deep
+ * sea floor is left out, and so is a cell shut in the rock all round, and a
+ * sphere under it all catches anything that sinks that far. A world of
+ * floating platforms has only their tops.
+ */
+function addGround(world: RAPIER.World, map: World): void {
+  const { ground, bored, roof } = map
+  const floor = map.seaLevel - FLOOR_DEPTH
+  // A world of floating platforms stands on their round tops alone, and drops away sheer at their edges.
+  for (const platform of map.platforms) addGroundMesh(world, platformTop(platform, map.radius), GROUND_FRICTION)
+  if (map.platforms.length === 0) addSheet(
+    world,
+    map,
+    (at) => bored[at]!,
+    (corners) => {
+      if (corners.every((at) => sealedAt(roof, ground.heights, at))) return false
+      return corners.some((at) => bored[at]! >= floor || roofedAt(roof, at))
+    },
+    false,
+    GROUND_GROUPS,
+    GROUND_FRICTION,
+  )
   // Just under the lowest ground, whatever the sea: a moon has none, and its level is far under everything.
   let deepest = Infinity
   for (const height of bored) deepest = Math.min(deepest, height)
+  const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed())
   world.createCollider(
-    RAPIER.ColliderDesc.ball(radius + deepest - 1)
+    RAPIER.ColliderDesc.ball(ground.radius + deepest - 1)
       .setCollisionGroups(GROUND_GROUPS)
       .setFriction(GROUND_FRICTION)
       .setRestitution(GROUND_RESTITUTION),
     body,
+  )
+}
+
+/**
+ * The roof over whatever the world closes in, facing down into the rooms
+ * under it: a wall to slide along, or, on a world whose cars hold to what
+ * they drive on, more ground, to drive along upside down.
+ */
+function addRoof(world: RAPIER.World, map: World): void {
+  const { ground, roof } = map
+  if (roof.length === 0) return
+  const clings = WORLD_TRAITS[map.kind].cling > 0
+  addSheet(
+    world,
+    map,
+    (at) => roof[at]!,
+    (corners) => corners.every((at) => roofedAt(roof, at)) && !corners.every((at) => sealedAt(roof, ground.heights, at)),
+    true,
+    clings ? GROUND_GROUPS : WALL_GROUPS,
+    clings ? GROUND_FRICTION : WALL_FRICTION,
   )
 }
 

@@ -6,6 +6,7 @@
 
 import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
+import type { World } from '@buggies/terrain'
 
 const { cos, sin } = exact
 
@@ -13,6 +14,22 @@ const { cos, sin } = exact
 export const CLOUD_HEIGHT = 130
 /** How high over the planet's radius anything driven or flown may go: a little over the clouds. */
 export const CEILING = CLOUD_HEIGHT + 10
+/** How far over a world's highest ground its ceiling is kept at the least, where its mountains rise past the clouds. */
+const OVER_PEAKS = 30
+
+const ceilings = new WeakMap<World, number>()
+
+/** How high over a world's radius anything driven or flown may go: over the clouds, and well over its highest peak. */
+export function ceilingOf(world: World): number {
+  const known = ceilings.get(world)
+  if (known !== undefined) return known
+  let highest = -Infinity
+  for (const height of world.ground.heights) highest = Math.max(highest, height)
+  const ceiling = Math.max(CEILING, highest + OVER_PEAKS)
+  ceilings.set(world, ceiling)
+  return ceiling
+}
+
 /** How long a day takes, in seconds of the game's time. */
 export const DAY_SECONDS = 240
 /** How far north of the equator the sun stands, as the planet's axis is tilted from it. */

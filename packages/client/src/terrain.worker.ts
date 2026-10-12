@@ -1,6 +1,4 @@
-import { generateWorld } from '@buggies/terrain'
-
-import { terrainTransferables } from './terrain-transfer.ts'
+import { generateWorld, worldTransferables } from '@buggies/terrain'
 
 /**
  * Terrain generation takes seconds, and it is pure work on plain data, so it
@@ -13,8 +11,8 @@ interface WorkerScope {
 }
 
 const scope = self as unknown as WorkerScope
-// Every island is one wrapped round a planet, as the server makes them.
+// Every world is made as the server makes it, from its id.
 scope.onmessage = (event) => {
   const map = generateWorld(event.data)
-  scope.postMessage(map, terrainTransferables(map))
+  scope.postMessage(map, worldTransferables(map))
 }

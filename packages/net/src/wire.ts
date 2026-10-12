@@ -25,6 +25,7 @@ import {
 import type { Quat, Vec3 } from '@buggies/physics'
 
 import {
+  CLIENT_AUTH,
   CLIENT_CHANGE_VEHICLE,
   CLIENT_GAME,
   CLIENT_HELLO,
@@ -40,10 +41,12 @@ import {
   SERVER_REJECT,
   SERVER_ROOMS,
   SERVER_PEEK,
+  SERVER_SIGNED_IN,
   SERVER_SNAPSHOT,
   SERVER_WELCOME,
   UNACKNOWLEDGED_INPUT_TICK,
 } from './protocol.ts'
+import { CHALLENGE_BYTES, PUBKEY_HEX, type NostrEvent } from './nostr.ts'
 
 /**
  * Every message is a flat run of fixed-width fields, read and written in the
@@ -56,7 +59,10 @@ import {
 
 /** A hello, up to its name's length; the name follows, in UTF-8. */
 export const HELLO_BYTES = 14
-export const WELCOME_BYTES = 19
+export const WELCOME_BYTES = 19 + CHALLENGE_BYTES + PUBKEY_HEX / 2
+/** The most an answer to a challenge may run to, in bytes. */
+export const AUTH_MOST = 4096
+export const SIGNED_IN_BYTES = 2 + PUBKEY_HEX / 2
 export const REJECT_BYTES = 2
 export const INPUT_BYTES = 18
 export const RESPAWN_BYTES = 1
@@ -84,7 +90,7 @@ export const SNAPSHOT_HEADER_BYTES = 26
  * going on, only when it has any, which a car nobody drives mostly has not.
  */
 export const SNAPSHOT_VEHICLE_CORE_BYTES = 40
-export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 34
+export const SNAPSHOT_VEHICLE_EXTRAS_BYTES = 38
 /** The race on, if any, told after the header: who set it going and when, how many laps, and each of its marks. */
 export const SNAPSHOT_RACE_BYTES = 6
 export const SNAPSHOT_MARK_BYTES = 6
@@ -144,6 +150,16 @@ export interface WelcomeMessage {
   profile: VehicleProfileId
   /** What to show the server on coming through a portal, for what this seat held to be carried over. */
   pass: number
+  /** What to sign, to prove which nostr key is the player's: hex. */
+  challenge: string
+  /** The key the player has already proved theirs, come through a portal or back after a dropped connection: hex, or empty. */
+  signedIn: string
+}
+
+/** The key a player has proved theirs, and how many achievements it has been paid all told. */
+export interface SignedInMessage {
+  pubkey: string
+  earned: number
 }
 
 export interface RejectMessage {
@@ -203,6 +219,8 @@ export interface VehicleSnapshot {
   wrecked: boolean
   /** Bananas held. */
   score: number
+  /** Gems won with games and races, all told. */
+  gems: number
   /** Bananas taken since sitting down, all told, other players' cars its weapons have wrecked, and robots they have brought down. */
   collected: number
   kills: number
@@ -675,6 +693,8 @@ export function encodeWelcome(message: WelcomeMessage): Uint8Array {
   writer.u8(message.maxPlayers)
   writer.u8(profileIndex(message.profile))
   writer.u32(message.pass)
+  writer.bytes.set(hexBytes(message.challenge, CHALLENGE_BYTES), WELCOME_BYTES - CHALLENGE_BYTES - PUBKEY_HEX / 2)
+  writer.bytes.set(hexBytes(message.signedIn, PUBKEY_HEX / 2), WELCOME_BYTES - PUBKEY_HEX / 2)
   return writer.bytes
 }
 
@@ -691,7 +711,54 @@ export function decodeWelcome(payload: Uint8Array): WelcomeMessage | null {
   const profile = VEHICLE_PROFILE_IDS[reader.u8()]
   const pass = reader.u32()
   if (profile === undefined) return null
-  return { protocolVersion, seed, seat, epoch, tick, maxPlayers, profile, pass }
+  const challenge = bytesHex(payload.subarray(WELCOME_BYTES - CHALLENGE_BYTES - PUBKEY_HEX / 2, WELCOME_BYTES - PUBKEY_HEX / 2))
+  const signedIn = bytesHex(payload.subarray(WELCOME_BYTES - PUBKEY_HEX / 2))
+  return { protocolVersion, seed, seat, epoch, tick, maxPlayers, profile, pass, challenge, signedIn: /^0+$/.test(signedIn) ? '' : signedIn }
+}
+
+/** Hex as so many bytes, all naughts where it is empty. */
+function hexBytes(hex: string, length: number): Uint8Array {
+  const bytes = new Uint8Array(length)
+  for (let k = 0; k < length && k * 2 + 2 <= hex.length; k++) bytes[k] = parseInt(hex.slice(k * 2, k * 2 + 2), 16)
+  return bytes
+}
+
+function bytesHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** A signed answer to the welcome's challenge. */
+export function encodeAuth(event: NostrEvent): Uint8Array {
+  const text = utf8(JSON.stringify(event))
+  const bytes = new Uint8Array(1 + text.length)
+  bytes[0] = CLIENT_AUTH
+  bytes.set(text, 1)
+  return bytes
+}
+
+/** The event an answer carries, unchecked; or `null` if it is not one. */
+export function decodeAuth(payload: Uint8Array): unknown {
+  if (messageTypeOf(payload) !== CLIENT_AUTH || payload.length > AUTH_MOST) return null
+  const text = fromUtf8(payload.subarray(1))
+  if (text === null) return null
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return null
+  }
+}
+
+export function encodeSignedIn(message: SignedInMessage): Uint8Array {
+  const bytes = new Uint8Array(SIGNED_IN_BYTES)
+  bytes[0] = SERVER_SIGNED_IN
+  bytes.set(hexBytes(message.pubkey, PUBKEY_HEX / 2), 1)
+  bytes[SIGNED_IN_BYTES - 1] = Math.min(message.earned, 0xff)
+  return bytes
+}
+
+export function decodeSignedIn(payload: Uint8Array): SignedInMessage | null {
+  if (payload.length !== SIGNED_IN_BYTES || messageTypeOf(payload) !== SERVER_SIGNED_IN) return null
+  return { pubkey: bytesHex(payload.subarray(1, SIGNED_IN_BYTES - 1)), earned: payload[SIGNED_IN_BYTES - 1]! }
 }
 
 export function encodeReject(message: RejectMessage): Uint8Array {
@@ -891,6 +958,7 @@ function hasExtras(vehicle: VehicleSnapshot): boolean {
   if (!vehicle.npc) return true
   return (
     vehicle.score !== 0 ||
+    vehicle.gems !== 0 ||
     vehicle.collected !== 0 ||
     vehicle.kills !== 0 ||
     vehicle.robotKills !== 0 ||
@@ -927,6 +995,7 @@ function quietVehicle(): Omit<
 > {
   return {
     score: 0,
+    gems: 0,
     collected: 0,
     kills: 0,
     robotKills: 0,
@@ -1001,6 +1070,7 @@ export function encodeSnapshot(message: SnapshotMessage): Uint8Array {
     writer.looseInput(vehicle.appliedInput)
     if (!extras) continue
     writer.u16(Math.min(vehicle.score, 0xffff))
+    writer.u32(Math.min(Math.max(vehicle.gems, 0), 0xffffffff) >>> 0)
     writer.u16(Math.min(vehicle.collected, 0xffff))
     writer.u16(Math.min(vehicle.kills, 0xffff))
     writer.u16(Math.min(vehicle.robotKills, 0xffff))
@@ -1188,6 +1258,7 @@ export function decodeSnapshot(payload: Uint8Array): SnapshotMessage | null {
     if ((flags & 16) === 0) continue
     if (payload.length - reader.offset - rest < SNAPSHOT_VEHICLE_EXTRAS_BYTES) return null
     vehicle.score = reader.u16()
+    vehicle.gems = reader.u32()
     vehicle.collected = reader.u16()
     vehicle.kills = reader.u16()
     vehicle.robotKills = reader.u16()

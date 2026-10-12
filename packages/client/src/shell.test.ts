@@ -1,8 +1,8 @@
 import type { VehicleProfileId } from '@buggies/game'
 import { NO_ARRIVAL } from '@buggies/net'
-import { isMoon, moonOf, type World } from '@buggies/terrain'
+import { moonOf, worldId, worldKindOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { Sound } from './audio.ts'
 import type { HudState } from './hud.ts'
@@ -52,7 +52,7 @@ function stubShowroom(): StubShowroom {
 }
 
 function fakeMap(seed: number): World {
-  return { seed, kind: isMoon(seed) ? 'moon' : 'planet', radius: 600, districts: [], roads: [], rivers: [], lakes: [], portals: [] } as unknown as World
+  return { seed, kind: worldKindOf(seed), radius: 600, districts: [], roads: [], rivers: [], lakes: [], portals: [] } as unknown as World
 }
 
 class StubMenu implements ShellMenu {
@@ -341,8 +341,10 @@ describe('the shell', () => {
     expect(await build('down').shell.listRooms()).toEqual([])
   })
 
-  it('takes everyone through a portal to the moon, and back out of the portal they left the planet by', async () => {
+  it('takes everyone through a portal to a world picked at random, and back out of the portal they left the planet by', async () => {
     const { shell, games, joined, arrivals } = build()
+    // The first of the other worlds each time: the moon from the planet, and the planet from the moon.
+    const dice = vi.spyOn(Math, 'random').mockReturnValue(0)
     await shell.start(CHOICE)
     await settle()
     games[0]!.through = 2
@@ -358,6 +360,14 @@ describe('the shell', () => {
     expect(arrivals.at(-1)).toBe(2)
     expect(games[1]!.disposed).toBe(true)
     expect(shell.onShow).toBe('game')
+    // And from the planet, wherever the dice say.
+    dice.mockReturnValue(0.99)
+    games[2]!.through = 1
+    shell.frame(1 / 60)
+    await settle()
+    expect(joined.at(-1)).toBe(`${SERVER}#${worldId(5, 'mercury')}`)
+    expect(arrivals.at(-1)).toBe(0)
+    dice.mockRestore()
   })
 
   it('joins the same world again when the connection is lost, showing the passes it was given', async () => {

@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
   COUNTDOWN_TICKS,
-  GAME_PRIZE,
+  GAME_GEMS,
   NEUTRAL_INPUT,
   NOT_RACING,
   RACE_LEG_LEAST,
@@ -82,9 +82,12 @@ describe('races', () => {
     expect(playRace(arena)).toBeNull()
     expect(b.racePassed).toBe(2)
     put(b, onMark(map, course[2]!))
+    const gems = b.gems
     const score = b.score
     expect(playRace(arena)).toEqual({ winner: b })
-    expect(b.score).toBe(score + GAME_PRIZE)
+    // A race won pays gems, not bananas.
+    expect(b.gems).toBe(gems + GAME_GEMS)
+    expect(b.score).toBe(score)
     expect(arena.race).toBeNull()
     expect([a.racePassed, b.racePassed]).toEqual([NOT_RACING, NOT_RACING])
     arena.world.free()

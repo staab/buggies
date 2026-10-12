@@ -1,7 +1,17 @@
 export { PLANET_RADIUS, SPHERE_CELLS, generatePlanet } from './globe/planet.ts'
-export { MOON_BIT, generateMoon, generateWorld, isMoon, moonOf, planetSeedOf } from './globe/moon.ts'
+export { generateMoon } from './worlds/moon.ts'
+export { generateMars } from './worlds/mars.ts'
+export { generateNeptune } from './worlds/neptune.ts'
+export { generateJupiter } from './worlds/jupiter.ts'
+export { generateVenus } from './worlds/venus.ts'
+export { generateMercury } from './worlds/mercury.ts'
+export { generateWorld } from './worlds/index.ts'
+export { WORLD_KINDS, WORLD_TRAITS, isMoon, moonOf, planetSeedOf, worldId, worldKindOf, type WorldTraits } from './worlds/kinds.ts'
+export { ROOM_LEAST, roofedAt, roomAt, sealedAt } from './worlds/hollows.ts'
+export { PLATFORM_SIDES, platformEdge, platformTop } from './worlds/platforms.ts'
 export { PORTAL_RADIUS } from './globe/portals.ts'
 export { fingerprint } from './fingerprint.ts'
+export { worldTransferables } from './transfer.ts'
 export { flatHeightfield } from './heightfield.ts'
 export { BOAT_WANDER, worldBoatAt } from './globe/boats.ts'
 export { DECK_SKIRT } from './globe/decks.ts'
@@ -44,7 +54,7 @@ export {
   type GridPlace,
   type SphereGround,
 } from './sphere.ts'
-export { DRY } from './world.ts'
+export { DRY, trunkRadius } from './world.ts'
 export type {
   Stand,
   World,
@@ -55,6 +65,7 @@ export type {
   WorldLake,
   WorldKind,
   WorldMesh,
+  WorldPlatform,
   WorldPortal,
   WorldProp,
   WorldRamp,
@@ -72,10 +83,14 @@ export {
   groundDistance,
   groundUnder,
   heightOver,
+  lostUnder,
+  nearestGridPoint,
   onLand,
   overGround,
   overSurface,
   randomDirection,
+  roofOver,
+  surfaceUnder,
   upOf,
   waterUnder,
 } from './world-queries.ts'

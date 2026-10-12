@@ -11,6 +11,9 @@ import type { Quat, Vec3 } from '@buggies/physics'
 import type { SphereGround } from './sphere.ts'
 import type { SphereMountain } from './sphere-heights.ts'
 import type { BuildingKind, PropKind, RoadKind } from './types.ts'
+import type { WorldKind } from './worlds/kinds.ts'
+
+export type { WorldKind } from './worlds/kinds.ts'
 
 /** The level reported where no water reaches: below every possible surface. */
 export const DRY = Number.NEGATIVE_INFINITY
@@ -80,6 +83,11 @@ export interface WorldTree {
   readonly tone: number
 }
 
+/** How thick a tree's trunk is: a sapling's for most, and thicker as a giant's height is. */
+export function trunkRadius(tree: Pick<WorldTree, 'height'>): number {
+  return Math.max(0.35, tree.height * 0.025)
+}
+
 export interface WorldRock extends Stand {
   readonly kind: 'boulder' | 'scree'
   readonly size: number
@@ -133,12 +141,16 @@ export interface WorldPortal extends Stand {
   readonly radius: number
 }
 
-/** A world a planet has: the planet itself, or its moon. */
-export type WorldKind = 'planet' | 'moon'
+/** A platform floating over a world with nothing under it, its top the ground there: the way out to its middle, how far it reaches and how high its top stands. */
+export interface WorldPlatform {
+  readonly center: Vec3
+  readonly radius: number
+  readonly height: number
+}
 
 /** A planet's map, every part of it where it is on the planet. */
 export interface World {
-  /** Which world this is: a planet's seed, or its moon's, the seed with `MOON_BIT` set. */
+  /** Which world this is: its planet's seed, with its kind over it (`worldId`). */
   readonly seed: number
   readonly kind: WorldKind
   readonly radius: number
@@ -146,6 +158,21 @@ export interface World {
   readonly ground: SphereGround
   /** The ground's heights with every tunnel bored out of it: what is driven on, where the drawn hill runs on over the bore. */
   readonly bored: Float32Array
+  /**
+   * Over a world with rooms closed in under a roof, a dome's, a tube's or
+   * a cavern's: the roof's height over the radius at every grid point of
+   * the ground, `NaN` where it is open to the sky, and the ground's own
+   * height where the roof comes down onto it and nothing is between the
+   * two. Empty where the world has no roof anywhere.
+   */
+  readonly roof: Float32Array
+  /**
+   * The platforms floating over the world, where it has them. A world that
+   * has them stands on them alone: each is driven on and drawn by its own
+   * round top (`platformTop`), and its ground's grid, which is as high as
+   * their tops under them, is only for asking how high a place is.
+   */
+  readonly platforms: readonly WorldPlatform[]
   /** The ground's grid points a tunnel's bore takes, where the ground is not drawn: 1 for each. */
   readonly holes: Uint8Array
   /** The water's surface over every grid point of the ground, or `DRY`. */
@@ -174,7 +201,7 @@ export interface World {
   readonly rails: WorldMesh
   /** The sidewalks round the blocks, a curb's step up off the street. */
   readonly curbs: WorldMesh
-  /** The portals over to the moon from a planet, or back from its moon. */
+  /** The portals over to the planet's other worlds. */
   readonly portals: readonly WorldPortal[]
   /** Each ramp's facets, slice by slice from its foot to its lip, as the eight corners of a solid. */
   readonly kickers: readonly Float32Array[]

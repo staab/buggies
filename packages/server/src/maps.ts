@@ -2,14 +2,14 @@ import { Worker } from 'node:worker_threads'
 
 import type { World } from '@buggies/terrain'
 
-/** How many worlds are kept once made, for a planet or moon opened again soon after it was left. */
+/** How many worlds are kept once made, for a planet or one of its other worlds opened again soon after it was left. */
 const KEPT = 8
 
 /**
  * The worlds the server plays on, made on a thread of their own so that
  * making one, seconds of work, never holds up the rooms already being
- * played; and the last few made kept, so that going back to one, or to
- * the moon and back, costs nothing.
+ * played; and the last few made kept, so that going back to one, or
+ * through a portal and back, costs nothing.
  */
 export class MapMaker {
   private readonly worker: Worker
@@ -31,7 +31,7 @@ export class MapMaker {
     this.worker.unref()
   }
 
-  /** The world for an id, a planet's seed or its moon's: kept, being made, or made now. */
+  /** The world for an id, a planet's or one of its other worlds': kept, being made, or made now. */
   worldFor(id: number): Promise<World> {
     const known = this.kept.get(id)
     if (known !== undefined) {

@@ -46,8 +46,11 @@ COPY --from=build /app/packages/game/dist ./packages/game/dist
 COPY --from=build /app/packages/net/dist ./packages/net/dist
 COPY --from=build /app/packages/server/dist ./packages/server/dist
 COPY --from=build /app/packages/client/dist ./packages/client/dist
+# What is kept of each player's key, their achievements and gems: mount a volume here for it to outlast the container.
+RUN mkdir -p /app/data && chown node:node /app/data
+VOLUME /app/data
 USER node
-ENV HOST=0.0.0.0 PORT=8787
+ENV HOST=0.0.0.0 PORT=8787 PLAYERS_FILE=/app/data/players.json
 EXPOSE 8787
 # Alive when the port accepts a connection.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

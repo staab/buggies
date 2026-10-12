@@ -11,6 +11,8 @@ export interface LobbyPlayer {
   name: string
   profile: VehicleProfileId
   score: number
+  /** Gems won with games and races, all told. */
+  gems: number
   /** The count they play for, if any. */
   game: Game | null
   /** Whether they are in the race on. */

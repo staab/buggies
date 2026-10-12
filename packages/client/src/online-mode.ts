@@ -21,7 +21,7 @@ import {
 } from '@buggies/game'
 import { LocalPrediction, NO_ARRIVAL, NO_PASS, NetClient, type PendingGame } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import { alongGround, groundDistance, overSurface, tangentFrame, upOf, type World } from '@buggies/terrain'
+import { WORLD_TRAITS, alongGround, groundDistance, overSurface, planetSeedOf, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { AchievementWatch } from './achievement-toast.ts'
@@ -37,10 +37,12 @@ import { Keyboard } from './input.ts'
 import { SOLO_KEYS } from './keys.ts'
 import type { ModeView } from './mode.ts'
 import { MirrorCars } from './mirror-cars.ts'
+import { playerKey } from './identity.ts'
 import { PredictedCar } from './predicted-car.ts'
 import type { RadarBlip, RadarState } from './radar.ts'
 import { standOn } from './stand.ts'
 import { SUN_DISTANCE, type Sun } from './sun.ts'
+import { lookOf } from './world-looks.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
 /**
@@ -122,6 +124,12 @@ function waitingLine(game: PendingGame, own: number, tick: number, nameOf: (seat
   return `${nameOf(game.host)} wants a game of ${what.toLowerCase()}: join from the trophy · ${left}`
 }
 
+/** Which world the play is on: the island by its seed, or another world by its name and its island's. */
+function whereOf(map: World): string {
+  const seed = planetSeedOf(map.seed)
+  return map.kind === 'planet' ? `seed ${seed}` : `${WORLD_TRAITS[map.kind].name} of seed ${seed}`
+}
+
 /** Seconds as minutes and seconds: "1:05". */
 function clockOf(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
@@ -157,11 +165,16 @@ export async function createOnlineMode(
   name = '',
 ): Promise<ModeView> {
   let lost: string | null = null
-  const client = new NetClient(new WebSocketClientTransport(url), () => performance.now(), {
-    onClosed: (reason) => {
-      lost = reason
+  const client = new NetClient(
+    new WebSocketClientTransport(url),
+    () => performance.now(),
+    {
+      onClosed: (reason) => {
+        lost = reason
+      },
     },
-  })
+    playerKey(),
+  )
   const welcome = await client.connect(profile, seed, arrival, pass, name)
   const map = await mapFor(welcome.seed)
   // A mirror of the server's arena: same map, same seats, so the local car
@@ -222,7 +235,7 @@ export async function createOnlineMode(
     render(renderer) {
       const { frame, up } = prediction.vehicle
       sun.follow(frame.position, up)
-      sun.shade(scene, map.kind === 'moon')
+      sun.shade(scene, lookOf(map.kind).skies)
       bendMaterials(scene)
       bendAround(frame.position, map.radius)
       renderer.render(scene, chase.camera)
@@ -278,7 +291,7 @@ export async function createOnlineMode(
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
       const controls = SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn')
-      const title = `${nameOf(welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | seed ${map.seed} | ${players} ${players === 1 ? 'player' : 'players'}`
+      const title = `${nameOf(welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | ${whereOf(map)} | ${players} ${players === 1 ? 'player' : 'players'}`
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
@@ -329,6 +342,7 @@ export async function createOnlineMode(
             name: nameOf(seat),
             profile: at?.profile ?? 'sportsCar',
             score: at?.score ?? 0,
+            gems: at?.gems ?? 0,
             game: at?.game ?? null,
             racing: at !== undefined && prediction.race !== null && at.racePassed !== NOT_RACING,
           }

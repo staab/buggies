@@ -1,12 +1,10 @@
-import { generatePlanet } from '@buggies/terrain'
+import { generatePlanet, worldTransferables } from '@buggies/terrain'
 import { describe, expect, it } from 'vitest'
-
-import { terrainTransferables } from './terrain-transfer.ts'
 
 describe('a planet crossing from its worker', () => {
   it('arrives whole, with its big buffers handed over rather than copied', () => {
     const world = generatePlanet(11)
-    const transfer = terrainTransferables(world)
+    const transfer = worldTransferables(world)
     expect(transfer.length).toBeGreaterThan(5)
     expect(new Set(transfer).size).toBe(transfer.length)
     const heights = Array.from(world.ground.heights.slice(0, 64))

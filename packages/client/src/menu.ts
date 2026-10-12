@@ -113,9 +113,9 @@ function driving(players: number): string {
 }
 
 /**
- * The islands with people on them, each planet once, with those on its moon
- * counted with it, busiest first and the lower seed among equals: the moons
- * are not picked from the menu, only gone to through a portal.
+ * The islands with people on them, each planet once, with those on its other
+ * worlds counted with it, busiest first and the lower seed among equals:
+ * the other worlds are not picked from the menu, only gone to through a portal.
  */
 export function planetRooms(rooms: readonly RoomSummary[]): RoomSummary[] {
   const players = new Map<number, number>()

@@ -17,6 +17,7 @@ import { createSphereGround } from '../sphere.ts'
 import { findSphereLakes, groundDirections, groundNeighbors, routeSphereFlow, traceSphereRivers } from '../sphere-water.ts'
 import { randomDirection } from '../world-queries.ts'
 import type { World } from '../world.ts'
+import { worldId } from '../worlds/kinds.ts'
 import { buildGlobeStands } from './buildings.ts'
 import { globeDecks } from './decks.ts'
 import { along } from './lines.ts'
@@ -78,7 +79,7 @@ function layIslands(rng: Rng, count: number): SphereIsland[] {
  * about that, each a triangle laid on the plane touching the planet at its
  * middle, with a skirt and a height. Returns the ranges, each its peaks.
  */
-function createRanges(rng: Rng, count: number, islands: readonly SphereIsland[], radius: number): SphereMountain[][] {
+export function createRanges(rng: Rng, count: number, islands: readonly SphereIsland[], radius: number, scale = 1): SphereMountain[][] {
   const hosts = islands.filter((island) => island.radius >= MOUNTAIN_ISLAND_LEAST)
   const pool = hosts.length > 0 ? hosts : islands.slice(0, 1)
   const total = pool.reduce((sum, island) => sum + island.radius * island.radius, 0)
@@ -97,21 +98,21 @@ function createRanges(rng: Rng, count: number, islands: readonly SphereIsland[],
     const { east, north } = tangentFrame(island.center)
     const way = { x: east.x * cos(bearing) + north.x * sin(bearing), y: east.y * cos(bearing) + north.y * sin(bearing), z: east.z * cos(bearing) + north.z * sin(bearing) }
     const middle = along(island.center, way, offset, radius)
-    return Array.from({ length: randomInt(rng, RANGE_PEAKS.min, RANGE_PEAKS.max) }, (_, k) => createPeak(rng, k === 0 ? middle : beside(rng, middle, radius)))
+    return Array.from({ length: randomInt(rng, RANGE_PEAKS.min, RANGE_PEAKS.max) }, (_, k) => createPeak(rng, k === 0 ? middle : beside(rng, middle, radius, scale), scale))
   })
 }
 
 /** A spot a peak of a range may stand on, round its middle. */
-function beside(rng: Rng, middle: Vec3, radius: number): Vec3 {
+function beside(rng: Rng, middle: Vec3, radius: number, scale: number): Vec3 {
   const bearing = randomRange(rng, 0, Math.PI * 2)
   const { east, north } = tangentFrame(middle)
   const way = { x: east.x * cos(bearing) + north.x * sin(bearing), y: east.y * cos(bearing) + north.y * sin(bearing), z: east.z * cos(bearing) + north.z * sin(bearing) }
-  return along(middle, way, MOUNTAIN_RADIUS.max * RANGE_SPREAD * randomRange(rng, 0.5, 1), radius)
+  return along(middle, way, MOUNTAIN_RADIUS.max * scale * RANGE_SPREAD * randomRange(rng, 0.5, 1), radius)
 }
 
-/** A peak standing here: a triangle of a size and turn picked at random, with a skirt and a height. */
-function createPeak(rng: Rng, center: Vec3): SphereMountain {
-  const size = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max)
+/** A peak standing here: a triangle of a size and turn picked at random, with a skirt and a height, each this many times a planet's. */
+function createPeak(rng: Rng, center: Vec3, scale: number): SphereMountain {
+  const size = randomRange(rng, MOUNTAIN_RADIUS.min, MOUNTAIN_RADIUS.max) * scale
   const rotation = randomRange(rng, 0, Math.PI * 2)
   const corner = (k: number): { x: number; z: number } => {
     const angle = rotation + (k * Math.PI * 2) / 3 + randomRange(rng, -0.35, 0.35)
@@ -127,8 +128,8 @@ function createPeak(rng: Rng, center: Vec3): SphereMountain {
     east: frame.east,
     north: frame.north,
     triangle: orientedTriangle({ ax: a.x, az: a.z, bx: b.x, bz: b.z, cx: c.x, cz: c.z }),
-    skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max),
-    height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max),
+    skirt: randomRange(rng, MOUNTAIN_SKIRT.min, MOUNTAIN_SKIRT.max) * scale,
+    height: randomRange(rng, MOUNTAIN_HEIGHT.min, MOUNTAIN_HEIGHT.max) * scale,
   }
 }
 
@@ -159,8 +160,10 @@ export function generatePlanet(seed: number): World {
   const stands = buildGlobeStands(ground, water, districtOf, seaLevel, districts, grids, roads, rivers, mountains, seed)
   const { bored, holes } = boreGround({ ...land, water, districtOf }, roads)
   return {
-    seed,
+    seed: worldId(seed, 'planet'),
     kind: 'planet',
+    roof: new Float32Array(0),
+    platforms: [],
     radius,
     seaLevel,
     ground,

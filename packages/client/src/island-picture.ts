@@ -1,16 +1,11 @@
 import type { Vec3 } from '@buggies/physics'
-import { sphereHeight, type World } from '@buggies/terrain'
+import { nearestGridPoint, roomAt, sphereHeight, type World } from '@buggies/terrain'
+import * as THREE from 'three'
 
-/** Mix two colors, `t` of the way from the first to the second. */
-function mix(a: readonly number[], b: readonly number[], t: number): number[] {
-  return a.map((value, i) => value + (b[i]! - value) * t)
-}
+import { groundTone, lookOf } from './world-looks.ts'
 
-const DEEP = [22, 58, 92]
-const SHALLOW = [58, 118, 150]
-const LOW = [86, 132, 72]
-const HIGH = [150, 128, 96]
-const PEAK = [226, 226, 222]
+/** Rock with no room in it, drawn dark. */
+const SOLID = new THREE.Color('#141110')
 
 /**
  * Where a point of the planet is on its picture, each 0 to 1: its
@@ -33,9 +28,10 @@ export function offPicture(u: number, v: number): Vec3 {
 }
 
 /**
- * The planet as a picture this many pixels across, twice as wide as it is
- * tall: the sea by its depth, the land by its height, the rivers and the
- * roads over it, the whole way round.
+ * A world as a picture this many pixels across, twice as wide as it is
+ * tall: the sea by its depth, the land by its height, in the world's own
+ * colors, the rock it is shut in dark, and the rivers and the roads over
+ * it, the whole way round.
  */
 export function drawIsland(world: World, pixels: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -45,23 +41,29 @@ export function drawIsland(world: World, pixels: number): HTMLCanvasElement {
   canvas.height = down
   const context = canvas.getContext('2d')
   if (context === null) return canvas
-  let highest = world.seaLevel + 1
-  for (const height of world.ground.heights) highest = Math.max(highest, height)
+  const { heights } = world.ground
+  const look = lookOf(world.kind)
+  let lowest = Infinity
+  let highest = -Infinity
+  for (let at = 0; at < heights.length; at++) {
+    if (!roomAt(world.roof, heights, at)) continue
+    lowest = Math.min(lowest, heights[at]!)
+    highest = Math.max(highest, heights[at]!)
+  }
   const image = context.createImageData(across, down)
+  const color = new THREE.Color()
+  const rgb = { r: 0, g: 0, b: 0 }
   for (let row = 0; row < down; row++) {
     for (let col = 0; col < across; col++) {
-      const height = sphereHeight(world.ground, offPicture((col + 0.5) / across, (row + 0.5) / down))
-      const color =
-        height <= world.seaLevel
-          ? mix(DEEP, SHALLOW, Math.max(1 + (height - world.seaLevel) / 30, 0))
-          : (() => {
-              const up = (height - world.seaLevel) / (highest - world.seaLevel)
-              return up < 0.5 ? mix(LOW, HIGH, up * 2) : mix(HIGH, PEAK, (up - 0.5) * 2)
-            })()
+      const direction = offPicture((col + 0.5) / across, (row + 0.5) / down)
+      const nearest = nearestGridPoint(world, direction)
+      if (roomAt(world.roof, heights, nearest)) groundTone(look, sphereHeight(world.ground, direction), lowest, highest, world.seaLevel, world.districtOf[nearest]!, color)
+      else color.copy(SOLID)
+      color.getRGB(rgb, THREE.SRGBColorSpace)
       const at = (row * across + col) * 4
-      image.data[at] = color[0]!
-      image.data[at + 1] = color[1]!
-      image.data[at + 2] = color[2]!
+      image.data[at] = rgb.r * 255
+      image.data[at + 1] = rgb.g * 255
+      image.data[at + 2] = rgb.b * 255
       image.data[at + 3] = 255
     }
   }

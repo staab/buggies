@@ -1,4 +1,4 @@
-import { ROAD_GRADE, ROAD_TUNNEL, TUNNEL_CLEARANCE, TUNNEL_WALL_HEIGHT, groundUnder, type World } from '@buggies/terrain'
+import { ROAD_GRADE, ROAD_TUNNEL, TUNNEL_CLEARANCE, TUNNEL_WALL_HEIGHT, groundUnder, roofOver, type World } from '@buggies/terrain'
 import type * as THREE from 'three'
 
 import type { CameraBoundsAt } from './chase-camera.ts'
@@ -61,7 +61,9 @@ export function cameraBounds(world: World): CameraBoundsAt {
   const reachOf = (span: Span): number => (span.tunnel ? span.half + TUNNEL_CLEARANCE : span.half)
   return (at, out, above) => {
     out.floor = world.radius + groundUnder(world, at)
-    out.ceiling = Number.POSITIVE_INFINITY
+    // Under a dome, down a tube or in a cavern, the roof over the car.
+    const roof = world.radius + roofOver(world, at)
+    out.ceiling = above < roof ? roof : Number.POSITIVE_INFINITY
     for (const span of spans) {
       const { t, aside } = across(span, at)
       if (aside > reachOf(span)) continue

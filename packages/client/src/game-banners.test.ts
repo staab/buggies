@@ -1,11 +1,11 @@
-import { COUNTDOWN_TICKS, FIXED_TIMESTEP, GAME_PRIZE, NOT_RACING, type Race, type Seat } from '@buggies/game'
+import { COUNTDOWN_TICKS, FIXED_TIMESTEP, GAME_GEMS, NOT_RACING, type Race, type Seat } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
 import { GameBanners, GO_SECONDS, OVER_SECONDS, driverOf, playerTag } from './game-banners.ts'
 
 /** Just what the banners read of a seat. */
 function seat(id: number, profile: Seat['profile'] = 'sportsCar'): Seat {
-  return { id, profile, occupied: true, gamesWon: 0, racePassed: NOT_RACING, game: null, score: 0 } as unknown as Seat
+  return { id, profile, occupied: true, gamesWon: 0, racePassed: NOT_RACING, game: null, score: 0, gems: 0 } as unknown as Seat
 }
 
 function heard(): { sounds: string[]; sound: { beep(go: boolean): void; chime(): void; bummer(): void } } {
@@ -73,12 +73,12 @@ describe('the game banners', () => {
 
     // The server pays the winner and closes the race in the one snapshot.
     a.gamesWon = 1
-    a.score = 340
+    a.gems = 340
     a.racePassed = NOT_RACING
     b.racePassed = NOT_RACING
     winner.update(0, { own: a, seats: [a, b], race: null, tick })
     loser.update(0, { own: b, seats: [a, b], race: null, tick })
-    const told = { title: 'Race over!', subtitle: `${driverOf(7, a)} wins!`, detail: `+${GAME_PRIZE} bananas · 340 in all` }
+    const told = { title: 'Race over!', subtitle: `${driverOf(7, a)} wins!`, detail: `+${GAME_GEMS} ${GAME_GEMS === 1 ? 'gem' : 'gems'} · 340 in all` }
     expect(winner.state()).toMatchObject({ ...told, mood: 'won' })
     expect(loser.state()).toMatchObject({ ...told, mood: 'lost' })
     expect(won.sounds).toEqual(['chime'])
@@ -121,7 +121,7 @@ describe('the game banners', () => {
     a.game = null
     b.game = null
     b.gamesWon = 1
-    b.score = 120
+    b.gems = 120
     banners.update(0, { own: a, seats: [a, b], race: null, tick: 1001 })
     expect(banners.state()).toMatchObject({ title: 'Game over!', subtitle: 'Bo in a tank wins!', mood: 'lost' })
     expect(sounds).toContain('bummer')

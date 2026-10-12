@@ -1,11 +1,13 @@
 import type { GameRequest, VehicleInput, VehicleProfileId } from '@buggies/game'
 
 import { BananaLedger } from './ledger.ts'
+import { authTemplate, publicKeyOf, signEvent } from './nostr.ts'
 import type { PredictionUpdate } from './prediction.ts'
 import {
   INPUT_TIMELINE_TICKS,
   SERVER_LOBBY,
   SERVER_REJECT,
+  SERVER_SIGNED_IN,
   SERVER_SNAPSHOT,
   SERVER_WELCOME,
   UNACKNOWLEDGED_INPUT_TICK,
@@ -16,10 +18,12 @@ import type { ClientTransport } from './transport.ts'
 import {
   decodeLobby,
   decodeReject,
+  decodeSignedIn,
   decodeSnapshot,
   decodeWelcome,
   NO_ARRIVAL,
   NO_PASS,
+  encodeAuth,
   encodeHello,
   encodeInput,
   encodeChangeVehicle,
@@ -116,11 +120,23 @@ export class NetClient {
   private heardAtMs = 0
   private ackTick = UNACKNOWLEDGED_INPUT_TICK
   private lobbyMessage: LobbyMessage = { players: [], games: [] }
+  /** The player's nostr key, secret, to prove to the server which seat is theirs; and its public half. */
+  private readonly secret: Uint8Array | null
+  private readonly pubkey: string | null
+  /** The key the server has taken as the player's, once it has. */
+  private signedInAs: string | null = null
 
-  constructor(transport: ClientTransport, clock: () => number, events: Partial<NetClientEvents> = {}) {
+  constructor(transport: ClientTransport, clock: () => number, events: Partial<NetClientEvents> = {}, secret: Uint8Array | null = null) {
     this.transport = transport
     this.clock = clock
     this.events = events
+    this.secret = secret
+    this.pubkey = secret === null ? null : publicKeyOf(secret)
+  }
+
+  /** The nostr key the server has taken as the player's, its public half as hex; or `null` until it has. */
+  signedIn(): string | null {
+    return this.signedInAs
   }
 
   get welcome(): WelcomeMessage | null {
@@ -263,8 +279,15 @@ export class NetClient {
         return
       }
       this.welcomeMessage = welcome
+      this.prove(welcome)
       this.settleWelcome?.resolve(welcome)
       this.settleWelcome = null
+      return
+    }
+
+    if (type === SERVER_SIGNED_IN) {
+      const signed = decodeSignedIn(payload)
+      if (signed !== null && signed.pubkey === this.pubkey) this.signedInAs = signed.pubkey
       return
     }
 
@@ -291,6 +314,20 @@ export class NetClient {
     if (snapshot.ackInputTick !== UNACKNOWLEDGED_INPUT_TICK) {
       this.adjustLead(snapshot.ackInputTick - snapshot.tick, this.clock())
     }
+  }
+
+  /**
+   * Prove to the server which key is the player's, by signing the
+   * challenge it welcomed them with: unless it knows already, as it does
+   * of one come through a portal or back after a dropped connection.
+   */
+  private prove(welcome: WelcomeMessage): void {
+    if (this.secret === null || this.pubkey === null) return
+    if (welcome.signedIn === this.pubkey) {
+      this.signedInAs = this.pubkey
+      return
+    }
+    this.transport.send(encodeAuth(signEvent(authTemplate(welcome.challenge, this.pubkey, Date.now() / 1000), this.secret)))
   }
 
   /**

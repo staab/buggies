@@ -9,6 +9,7 @@ import { Sound } from './audio.ts'
 import { loadCarModels } from './car-model.ts'
 import { GameMenu } from './game-menu.ts'
 import { Hud } from './hud.ts'
+import { playerKey } from './identity.ts'
 import { GamesList, PlayersList } from './lobby-panels.ts'
 import { Menu, type Choice } from './menu.ts'
 import { Shell } from './shell.ts'
@@ -105,6 +106,9 @@ function settle(choice: Choice): void {
     // Kept or not, it is asked for again on the first page.
   }
 }
+
+// The player's key, made and kept on their first visit: what proves to the server which seat is theirs.
+playerKey()
 
 const shell = new Shell(
   {

@@ -98,13 +98,14 @@ const MOUNTAIN_OVERLAP = 0.6
 const MOUNTAIN_KNEE = 70
 const MOUNTAIN_CAP = 95
 
-/** A mountain's height, eased past the knee toward the cap. */
-function capped(height: number): number {
-  if (height <= MOUNTAIN_KNEE) return height
-  const room = MOUNTAIN_CAP - MOUNTAIN_KNEE
+/** A mountain's height, eased past the knee toward the cap, each this many times its own on a planet. */
+function capped(height: number, scale: number): number {
+  const knee = MOUNTAIN_KNEE * scale
+  if (height <= knee) return height
+  const room = (MOUNTAIN_CAP - MOUNTAIN_KNEE) * scale
   // tanh, by the exact exp, so every machine eases it the same.
-  const e = exp((-2 * (height - MOUNTAIN_KNEE)) / room)
-  return MOUNTAIN_KNEE + (room * (1 - e)) / (1 + e)
+  const e = exp((-2 * (height - knee)) / room)
+  return knee + (room * (1 - e)) / (1 + e)
 }
 
 /** Everything the raising reads, in meters. */
@@ -115,6 +116,10 @@ export interface SphereRelief {
   readonly oceanDepth: number
   /** The largest island's radius, which sets how much the plains roll. */
   readonly largest: number
+  /** Land everywhere, with no sea round the islands: a world that is all one continent. */
+  readonly allLand?: boolean
+  /** How many times a planet's its mountains are, which their cap is raised with. */
+  readonly mountainScale?: number
 }
 
 /**
@@ -171,7 +176,7 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
           const rise = island.radius * 0.032 * (1 - smoothstep(0, island.radius * 0.85, arcDistance(direction, island.center, radius)))
           dome = k === 0 ? rise : smoothMax(dome, rise, DOME_BLEND)
         }
-        const mask = 1 - sea
+        const mask = relief.allLand ? 1 : 1 - sea
         const base = fbm3D(px * baseFrequency, py * baseFrequency, pz * baseFrequency, seed + 1, 2)
         const land = base * plainsAmplitude + dome
 
@@ -193,7 +198,7 @@ export function raiseSphereGround(ground: SphereGround, relief: SphereRelief): v
           mountain = high + MOUNTAIN_OVERLAP * low
         }
 
-        heights[groundIndex(ground, face, i, j)] = (land + capped(mountain)) * mask - oceanDepth * (1 - mask)
+        heights[groundIndex(ground, face, i, j)] = (land + capped(mountain, relief.mountainScale ?? 1)) * mask - oceanDepth * (1 - mask)
       }
     }
   }

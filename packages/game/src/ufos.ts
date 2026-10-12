@@ -1,6 +1,6 @@
 import { createRng, uprightRotation, v3, vaddScaled, vdot, type Vec3 } from '@buggies/physics'
 import * as exact from '@buggies/physics'
-import { atHeight, gridPlace, groundIndex, groundUnder, heightOver, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
+import { WORLD_TRAITS, atHeight, gridPlace, groundIndex, groundUnder, heightOver, onLand, overSurface, randomDirection, upOf, type World } from '@buggies/terrain'
 import { addForceAlong, coastFromBody, writeCoast, type Vehicle, type VehicleTuning } from '@buggies/vehicle'
 
 import { nearestRoadSpotTo } from './spawns.ts'
@@ -151,7 +151,8 @@ export function waypoint(map: World, ufo: Ufo, out: Vec3): Vec3 {
 
 /** The island's saucers, each cruising over it, waiting a while before it takes its first car. */
 export function createUfos(map: World): Ufo[] {
-  return Array.from({ length: UFOS }, (_, id) => {
+  // Nothing flies where there is no sky to fly in.
+  return Array.from({ length: WORLD_TRAITS[map.kind].openSky ? UFOS : 0 }, (_, id) => {
     const ufo: Ufo = {
       id,
       position: v3(),

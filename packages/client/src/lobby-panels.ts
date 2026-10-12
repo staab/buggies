@@ -217,14 +217,14 @@ export class GamesList extends SidePanel {
   }
 }
 
-/** Who is on the island, opened from the button beside the trophy: each by name, what they drive, their bananas and what they play. */
+/** Who is on the island, opened from the button beside the trophy: each by name, what they drive, their gems and bananas, and what they play. */
 export class PlayersList extends SidePanel {
   constructor(root: HTMLElement, host: LobbyHost) {
     super(root, host, 'Players', 'Everyone driving on this island.')
   }
 
   protected build(lobby: Lobby): HTMLElement[] {
-    const players = [...lobby.players].sort((a, b) => b.score - a.score || a.seat - b.seat)
+    const players = [...lobby.players].sort((a, b) => b.gems - a.gems || b.score - a.score || a.seat - b.seat)
     if (players.length === 0) return [this.empty('Nobody here yet.')]
     return [
       this.heading(`${players.length} on island ${lobby.seed}`),
@@ -234,7 +234,7 @@ export class PlayersList extends SidePanel {
         const swatch = element('span', 'swatch')
         swatch.style.background = `#${seatColor(player.seat).toString(16).padStart(6, '0')}`
         const top = element('div', 'entry-top')
-        top.append(swatch, element('span', 'name', nameIn(lobby, player.seat)), element('span', 'clock', `${player.score} ${player.score === 1 ? 'banana' : 'bananas'}`))
+        top.append(swatch, element('span', 'name', nameIn(lobby, player.seat)), element('span', 'clock', `${player.gems} ${player.gems === 1 ? 'gem' : 'gems'} · ${player.score} ${player.score === 1 ? 'banana' : 'bananas'}`))
         const doing = [
           VEHICLE_PROFILE_LABELS[player.profile],
           ...(player.racing ? ['racing'] : []),

@@ -12,6 +12,8 @@ export function fingerprint(world: World): string {
   const turn = (q: { x: number; y: number; z: number; w: number }): void => hash.numbers([q.x, q.y, q.z, q.w])
   hash.numbers(world.ground.heights)
   hash.numbers(world.bored)
+  // Where the roof is open, the one value no roof has: `NaN` is any of many bit patterns.
+  hash.numbers(Array.from(world.roof, (height) => (Number.isNaN(height) ? Number.NEGATIVE_INFINITY : height)))
   hash.number(world.seaLevel)
   for (const road of world.roads) {
     hash.text(road.kind)

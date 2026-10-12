@@ -7,6 +7,7 @@ import {
   REJECT_SERVER_FULL,
   UNACKNOWLEDGED_INPUT_TICK,
 } from './protocol.ts'
+import { authTemplate, newChallenge, newSecretKey, publicKeyOf, signEvent, verifyAuth } from './nostr.ts'
 import {
   INPUT_BYTES,
   decodePeek,
@@ -26,8 +27,12 @@ import {
   SNAPSHOT_ROCKET_BYTES,
   SNAPSHOT_SPILLED_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
+  decodeAuth,
   decodeHello,
   decodeInput,
+  decodeSignedIn,
+  encodeAuth,
+  encodeSignedIn,
   decodeReject,
   decodeRooms,
   decodeSnapshot,
@@ -85,6 +90,7 @@ const snapshot: SnapshotMessage = {
       damage: 1,
       wrecked: true,
       score: 60000,
+      gems: 4_000_000,
       collected: 1234,
       robotKills: 1,
     kills: 7,
@@ -118,6 +124,7 @@ const snapshot: SnapshotMessage = {
       damage: 0.4,
       wrecked: false,
       score: 3,
+      gems: 0,
       collected: 3,
       robotKills: 1,
     kills: 0,
@@ -232,8 +239,21 @@ describe('wire', () => {
       name: '',
     })
     expect(decodeHello(encodeHello('tank', 7, 2, 4_000_000_001, 'Zoë ✨'))).toMatchObject({ seed: 7, arrival: 2, pass: 4_000_000_001, name: 'Zoë ✨' })
-    const welcome = { protocolVersion: 3, seed: 4_000_000_000, seat: 7, epoch: 200, tick: 987654, maxPlayers: 8, profile: 'pickup' as const, pass: 3_000_000_000 }
+    const welcome = {
+      protocolVersion: 3,
+      seed: 4_000_000_000,
+      seat: 7,
+      epoch: 200,
+      tick: 987654,
+      maxPlayers: 8,
+      profile: 'pickup' as const,
+      pass: 3_000_000_000,
+      challenge: '00ff1234abcd00ff1234abcd00ff9876',
+      signedIn: '',
+    }
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
+    const known = { ...welcome, signedIn: 'ab'.repeat(32) }
+    expect(decodeWelcome(encodeWelcome(known))).toEqual(known)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })
     expect(isRespawn(encodeRespawn())).toBe(true)
   })
@@ -472,5 +492,36 @@ describe('wire', () => {
       { kind: 'npc' as const, seat: 31, position: { x: 1.5, y: 2.5, z: 3.5 } },
     ]
     expect(decodePeek(encodePeek(marks))).toEqual(marks)
+  })
+
+  it('carries a signed answer to the challenge over, and who the server has taken it to be back', () => {
+    const secret = newSecretKey()
+    const event = signEvent(authTemplate(newChallenge(), publicKeyOf(secret), 1_800_000_000), secret)
+    expect(decodeAuth(encodeAuth(event))).toEqual(event)
+    expect(decodeSignedIn(encodeSignedIn({ pubkey: event.pubkey, earned: 42 }))).toEqual({ pubkey: event.pubkey, earned: 42 })
+  })
+})
+
+describe('proving a nostr key', () => {
+  const secret = newSecretKey()
+  const pubkey = publicKeyOf(secret)
+  const challenge = newChallenge()
+  const now = 1_800_000_000
+  const answer = signEvent(authTemplate(challenge, pubkey, now), secret)
+
+  it('believes a fresh event signed by the key, naming the challenge', () => {
+    expect(verifyAuth(answer, challenge, now + 5)).toBe(pubkey)
+  })
+
+  it('believes nothing else: another challenge, a stale or forged event, another key, or not an event at all', () => {
+    expect(verifyAuth(answer, newChallenge(), now)).toBeNull()
+    expect(verifyAuth(answer, challenge, now + 3600)).toBeNull()
+    expect(verifyAuth({ ...answer, content: 'changed' }, challenge, now)).toBeNull()
+    expect(verifyAuth({ ...answer, kind: 1 }, challenge, now)).toBeNull()
+    const other = newSecretKey()
+    expect(verifyAuth({ ...answer, pubkey: publicKeyOf(other) }, challenge, now)).toBeNull()
+    expect(verifyAuth({ ...answer, sig: signEvent(authTemplate(challenge, pubkey, now), other).sig }, challenge, now)).toBeNull()
+    expect(verifyAuth('nope', challenge, now)).toBeNull()
+    expect(verifyAuth(null, challenge, now)).toBeNull()
   })
 })

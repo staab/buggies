@@ -64,7 +64,7 @@ function ballSkin(): THREE.BufferGeometry {
  * of them carried round it together by the wind. Where they are is the
  * planet's seed's, so everyone sees the same sky.
  */
-export function buildClouds(world: World): THREE.Object3D {
+export function buildClouds(world: World, color: THREE.ColorRepresentation = '#ffffff'): THREE.Object3D {
   const rng = createRng((world.seed ^ CLOUD_SALT) >>> 0)
   const skin = ballSkin()
   const ball = skin.getAttribute('position')
@@ -114,7 +114,7 @@ export function buildClouds(world: World): THREE.Object3D {
   geometry.setIndex(new THREE.BufferAttribute(indices, 1))
   geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
-  const material = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false })
+  const material = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false })
   const mesh = new THREE.Mesh(geometry, material)
   mesh.frustumCulled = false
   mesh.userData.clouds = CLOUDS

@@ -408,6 +408,7 @@ export class LocalPrediction {
       seat.vehicle.damage = vehicle.damage
       seat.vehicle.wrecked = vehicle.wrecked
       seat.score = vehicle.score
+      seat.gems = vehicle.gems
       seat.npc = vehicle.npc
       seat.collected = vehicle.collected
       seat.kills = vehicle.kills

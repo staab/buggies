@@ -103,6 +103,7 @@ function gatherVehicles(
       damage: 0,
       wrecked: false,
       score: 0,
+      gems: 0,
       collected: 0,
       kills: 0,
       robotKills: 0,
@@ -135,6 +136,7 @@ function gatherVehicles(
     vehicle.damage = seat.vehicle.damage
     vehicle.wrecked = seat.vehicle.wrecked
     vehicle.score = seat.score
+    vehicle.gems = seat.gems
     vehicle.npc = seat.npc
     vehicle.collected = seat.collected
     vehicle.kills = seat.kills

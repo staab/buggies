@@ -7,7 +7,8 @@ import * as exact from '@buggies/physics'
 import type { Vec3 } from '@buggies/physics'
 
 import { gridPlace, groundIndex, sphereHeight, type GridPlace } from './sphere.ts'
-import type { World } from './world.ts'
+import { DRY, type World } from './world.ts'
+import { roofedAt, roomAt } from './worlds/hollows.ts'
 
 // The exact trigonometry, copied into this module: called through the import binding it
 // is several times slower under the test runner's module loader, and these run hot.
@@ -41,7 +42,7 @@ export function overGround(world: World, point: Vec3): number {
 }
 
 /** The grid point of the ground nearest under a point. */
-function nearestGridPoint(world: World, point: Vec3): number {
+export function nearestGridPoint(world: World, point: Vec3): number {
   const { n } = world.ground
   gridPlace(n, upOf(point, up), place)
   return groundIndex(world.ground, place.face, Math.min(Math.max(Math.round(place.i), 0), n), Math.min(Math.max(Math.round(place.j), 0), n))
@@ -61,9 +62,39 @@ export function atHeight(world: World, direction: Vec3, height: number, out: Vec
   return out
 }
 
+/** The height over the radius of what is driven on in a direction: the ground, or the water where that is over it and nothing keeps it out. */
+export function surfaceUnder(world: World, direction: Vec3): number {
+  const ground = sphereHeight(world.ground, direction)
+  return roofedAt(world.roof, nearestGridPoint(world, direction)) ? ground : Math.max(ground, world.seaLevel)
+}
+
 /** A point on the ground, or on the water where that is higher, this far over it. */
 export function overSurface(world: World, direction: Vec3, rise: number, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
-  return atHeight(world, direction, Math.max(sphereHeight(world.ground, direction), world.seaLevel) + rise, out)
+  return atHeight(world, direction, surfaceUnder(world, direction) + rise, out)
+}
+
+/** The roof's height over the radius over a point, read between the four grid points round it; `Infinity` where any of them is open to the sky. */
+export function roofOver(world: World, point: Vec3): number {
+  if (world.roof.length === 0) return Number.POSITIVE_INFINITY
+  const { n } = world.ground
+  gridPlace(n, upOf(point, up), place)
+  const i0 = Math.min(Math.max(Math.floor(place.i), 0), n - 1)
+  const j0 = Math.min(Math.max(Math.floor(place.j), 0), n - 1)
+  const fi = Math.min(Math.max(place.i - i0, 0), 1)
+  const fj = Math.min(Math.max(place.j - j0, 0), 1)
+  const at = (i: number, j: number): number => world.roof[groundIndex(world.ground, place.face, i, j)]!
+  const low = at(i0, j0) * (1 - fi) + at(i0 + 1, j0) * fi
+  const high = at(i0, j0 + 1) * (1 - fi) + at(i0 + 1, j0 + 1) * fi
+  const roof = low * (1 - fj) + high * fj
+  return Number.isNaN(roof) ? Number.POSITIVE_INFINITY : roof
+}
+
+/** Whether a point is lost to the world: fallen this far through the ground beneath it, or sunk this far under the sea over it. */
+export function lostUnder(world: World, point: Vec3, depth: number): boolean {
+  const height = heightOver(world, point)
+  // The ground as it is driven on, bored out under the tunnels.
+  if (height < sphereHeight({ n: world.ground.n, radius: world.radius, heights: world.bored }, upOf(point, up)) - depth) return true
+  return height < world.seaLevel - depth && waterUnder(world, point) !== DRY
 }
 
 /** A direction picked evenly over the whole sphere by two draws of a generator. */
@@ -77,9 +108,15 @@ export function randomDirection(rng: () => number, out: Vec3 = { x: 0, y: 0, z: 
   return out
 }
 
-/** Whether the ground in a direction is land, clear of the sea. */
+/**
+ * Whether the ground in a direction is land to drive on: clear of the sea,
+ * or kept dry under a roof; and with room over it, not shut in the rock.
+ */
 export function onLand(world: World, direction: Vec3): boolean {
-  return sphereHeight(world.ground, direction) > world.seaLevel
+  if (world.roof.length === 0) return sphereHeight(world.ground, direction) > world.seaLevel
+  const at = nearestGridPoint(world, direction)
+  if (!roomAt(world.roof, world.ground.heights, at)) return false
+  return roofedAt(world.roof, at) ? world.water[at] === DRY : sphereHeight(world.ground, direction) > world.seaLevel
 }
 
 /** A vector with its part along the way up taken out: its run along the ground. */

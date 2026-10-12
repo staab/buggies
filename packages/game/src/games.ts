@@ -22,8 +22,8 @@ export const COUNT_KINDS: readonly CountKind[] = ['score', 'kills', 'robots']
 /** The most bananas or wrecks a game may ask for. */
 export const GAME_TARGET_MOST = 999
 
-/** How many bananas a game won is worth. */
-export const GAME_PRIZE = 100
+/** How many gems a game or a race won is worth: points a player keeps from one session to the next. */
+export const GAME_GEMS = 1
 
 /** How near a mark of a race a car has to come, across the ground, to have passed it. */
 export const GAME_REACH = 20
@@ -84,7 +84,8 @@ export interface GameSeat {
   gamesWon: number
   /** How many of the race's marks it has passed, counting each again on every lap, or `NOT_RACING`. */
   racePassed: number
-  score: number
+  /** The gems the player has won with games and races, all told, as far as the arena knows. */
+  gems: number
   readonly occupied: boolean
   readonly vehicle: { readonly wrecked: boolean; readonly frame: { readonly position: Vec3 } }
 }
@@ -221,6 +222,6 @@ export function runRace<S extends GameSeat>(seats: readonly S[], race: Race, rad
 }
 
 function pay(seat: GameSeat): void {
-  seat.score += GAME_PRIZE
+  seat.gems += GAME_GEMS
   seat.gamesWon = (seat.gamesWon + 1) & 0xff
 }

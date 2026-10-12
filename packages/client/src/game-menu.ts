@@ -1,7 +1,7 @@
 import {
   GAME_KINDS,
   GAME_LABELS,
-  GAME_PRIZE,
+  GAME_GEMS,
   GAME_TARGET_MOST,
   RACE_LAPS_MOST,
   RACE_LEG_LEAST,
@@ -128,7 +128,7 @@ export class GameMenu {
     title.textContent = 'Start a game'
     const blurb = document.createElement('p')
     blurb.className = 'blurb'
-    blurb.textContent = `Everyone on the island gets a minute to join, then it starts for all who did. Win and you get ${GAME_PRIZE} bananas.`
+    blurb.textContent = `Everyone on the island gets a minute to join, then it starts for all who did. Win and you get ${GAME_GEMS === 1 ? 'a gem' : `${GAME_GEMS} gems`}, yours to keep from one visit to the next.`
     this.current = document.createElement('p')
     this.current.className = 'status current'
 

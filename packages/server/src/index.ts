@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { FIXED_TIMESTEP, createArena, initPhysics } from '@buggies/game'
 import { GameServer, SNAPSHOTS_PER_SECOND, TICKS_PER_SECOND } from '@buggies/net'
 import { MapMaker } from './maps.ts'
+import { PlayerFile } from './player-file.ts'
 import { serveClient } from './static.ts'
 import { WebSocketServerTransport } from './ws-transport.ts'
 
@@ -12,6 +13,8 @@ const port = Number(process.env.PORT ?? 8787)
 const trustProxy = process.env.TRUST_PROXY === '1'
 /** The built client, served on the same port; by default the workspace's own build, next door. */
 const clientDir = process.env.CLIENT_DIR ?? fileURLToPath(new URL('../../client/dist/', import.meta.url))
+/** Where what is kept of each player's key, their achievements and gems, is written: by default `data/players.json` under where the server is run. */
+const playersFile = process.env.PLAYERS_FILE ?? 'data/players.json'
 
 /** How often the loop checks whether a step is due. Finer than a step. */
 const PUMP_INTERVAL_MS = 4
@@ -28,10 +31,11 @@ function log(message: string): void {
 
 await initPhysics()
 
-// A planet, or its moon, is made the first time anyone asks for its seed,
+// A world, a planet or one of its others, is made the first time anyone asks for its id,
 // in a room of its own. Generation takes a few seconds, on a thread of its
 // own, while every room already open goes on.
 const maps = new MapMaker()
+const players = new PlayerFile(playersFile)
 const server = new GameServer(
   async (seed) => {
     log(`generating seed ${seed}...`)
@@ -50,11 +54,14 @@ const server = new GameServer(
     onGameSet: (seat) => log(`game seat=${seat.id} ${seat.game === null ? 'none' : `${seat.game.kind} ${seat.game.target}`}`),
     onGameWon: (seat) => log(`game won seat=${seat.id}`),
     onAchieved: (seat, achievement) => log(`achievement seat=${seat.id} id=${achievement.id}`),
+    onSignedIn: (seat, pubkey) => log(`signed in seat=${seat.id} key=${pubkey.slice(0, 12)}`),
     onRaceStarted: (seat, racers) => log(`race started seat=${seat.id} racers=${racers.length}`),
     onRaceEnded: (seed, winner) => log(`race ended seed=${seed} winner=${winner === null ? 'none' : winner.id}`),
     onRoomOpened: (seed) => log(`room opened seed=${seed}`),
     onRoomClosed: (seed) => log(`room closed seed=${seed}`),
   },
+  undefined,
+  players,
 )
 
 const transport = new WebSocketServerTransport({ host, port }, { trustProxy, onRequest: serveClient(clientDir) })
@@ -87,6 +94,7 @@ const shutdown = (): void => {
   transport.close().then(
     () => {
       server.dispose()
+      players.flush()
       void maps.close()
       log('stopped')
       process.exit(0)
@@ -99,3 +107,4 @@ process.on('SIGTERM', shutdown)
 
 log(`simulation ${TICKS_PER_SECOND}Hz, snapshots ${SNAPSHOTS_PER_SECOND}Hz, a room per seed`)
 log(`listening on http://${address.host}:${address.port}, serving the client from ${clientDir}`)
+log(`keeping players' achievements and gems in ${playersFile}`)

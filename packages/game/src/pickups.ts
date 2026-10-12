@@ -204,7 +204,17 @@ export function pickupSpot(map: World, slot: number, generation: number, out: Ve
     const spot = roadSpot(map, rng, share, shares, out)
     if (spot !== null) return spot
   }
-  return overSurface(map, map.districts[0]?.center ?? middle, PICKUP_HEIGHT, out)
+  // A world of small rooms, a cavern or a station each: somewhere in one of them.
+  const district = map.districts[Math.floor(rng() * map.districts.length)]
+  if (district === undefined) return overSurface(map, middle, PICKUP_HEIGHT, out)
+  const around = tangentFrame(district.center)
+  const r = district.radius * 0.7 * Math.sqrt(rng())
+  const angle = rng() * Math.PI * 2
+  const scale = r / map.radius
+  direction.x = district.center.x + (around.east.x * cos(angle) + around.north.x * sin(angle)) * scale
+  direction.y = district.center.y + (around.east.y * cos(angle) + around.north.y * sin(angle)) * scale
+  direction.z = district.center.z + (around.east.z * cos(angle) + around.north.z * sin(angle)) * scale
+  return overSurface(map, upOf(direction, direction), PICKUP_HEIGHT, out)
 }
 
 /** A map's pickups, each slot's first, all out from the start. */

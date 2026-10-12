@@ -3,18 +3,13 @@ import { sunDirection } from '@buggies/game'
 import * as THREE from 'three'
 
 import { DUSK, setSunWay } from './night.ts'
+import { WORLD_LOOKS, type Skies } from './world-looks.ts'
 
 /** Where the light comes from before the planet has turned at all. */
 export const SUN_DIRECTION = new THREE.Vector3(-300, 500, 200).normalize()
 
-/** The sky by day, at sunset and sunrise, and by night. */
-const DAY_SKY = new THREE.Color('#a9cbe6')
-// A soft peach-pink, not a red: the sunset is a tint on the blue, not a fire.
-const DUSK_SKY = new THREE.Color('#e3b4a6')
-const NIGHT_SKY = new THREE.Color('#000000')
 /** How much of the day there is when the sky is pinkest, between the night's black and the day's blue. */
 const PINKEST = 0.45
-const SPACE = new THREE.Color('#000000')
 /**
  * How bright the sun's light is, and the sky's: the same all round the
  * planet, which is lit only on the side facing the sun, the sky's light from
@@ -147,14 +142,14 @@ export class Sun {
   }
 
   /**
-   * Colour the sky, and the haze over the distance, by how much of the day there is where the play is: blue by
-   * day, a pale pink near the line between day and night, and black by night; over an airless moon, black by day as by night.
+   * Colour the sky, and the haze over the distance, by how much of the day there is where the play is: a
+   * planet's blue by day, a pale pink near the line between day and night, and black by night; each world's
+   * own skies the same way, an airless moon's black by day as by night.
    */
-  shade(scene: THREE.Scene, airless = false): void {
+  shade(scene: THREE.Scene, skies: Skies = WORLD_LOOKS.planet.skies): void {
     const sky = scene.background instanceof THREE.Color ? scene.background : (scene.background = new THREE.Color())
-    if (airless) sky.copy(SPACE)
-    else if (this.daylight < PINKEST) sky.lerpColors(NIGHT_SKY, DUSK_SKY, this.daylight / PINKEST)
-    else sky.lerpColors(DUSK_SKY, DAY_SKY, (this.daylight - PINKEST) / (1 - PINKEST))
+    if (this.daylight < PINKEST) sky.lerpColors(skies.night, skies.dusk, this.daylight / PINKEST)
+    else sky.lerpColors(skies.dusk, skies.day, (this.daylight - PINKEST) / (1 - PINKEST))
     if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(sky)
   }
 

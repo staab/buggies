@@ -168,18 +168,6 @@ export class AchievementToast {
           return star
         })
         break
-      case 'rainbow':
-        pieces.push(div('achievement-rainbow'))
-        many(8, (k) => {
-          const sparkle = div('achievement-star', '✨')
-          sparkle.style.left = `${10 + k * 11}vw`
-          sparkle.style.top = `${random(30, 55)}vh`
-          sparkle.style.setProperty('--dx', '0px')
-          sparkle.style.setProperty('--dy', '-6vh')
-          sparkle.style.animationDelay = `${0.6 + k * 0.08}s`
-          return sparkle
-        })
-        break
       case 'bounce':
         pieces.push(div('achievement-bouncer', achievement.icon))
         break

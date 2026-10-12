@@ -1,8 +1,6 @@
 import { qrotate, v3, vdistance, type Vec3 } from '@buggies/physics'
 import {
   DECK_SKIRT,
-  DISTRICT_CITY,
-  DISTRICT_SUBURB,
   RIVER_BANK_LAP,
   ROAD_BRIDGE,
   ROAD_GRADE,
@@ -14,7 +12,10 @@ import {
   gridPlace,
   groundIndex,
   heightOver,
+  roomAt,
+  sealedAt,
   tangentFrame,
+  trunkRadius,
   worldBoatAt,
   type GridPlace,
   type SphereGround,
@@ -29,6 +30,7 @@ import {
 import * as THREE from 'three'
 
 import { buildClouds } from './clouds-view.ts'
+import { buildGlow, buildPlatforms, buildRoof } from './enclosure-view.ts'
 import { buildMoonCraft, buildPortals } from './portals-view.ts'
 
 /** A building laid out flat about its own foot: turned by `yaw`, `width` along its x and `depth` along its z, from `bottom` up to `top`. */
@@ -80,35 +82,8 @@ interface Rock {
 import { hullGeometry } from './hull-geometry.ts'
 import { litByNight } from './night.ts'
 import { uprightAt } from './stand.ts'
+import { groundTone, lookOf, sampleRamp, type Stops } from './world-looks.ts'
 
-interface ColorStop {
-  t: number
-  color: THREE.Color
-}
-
-/** A ramp of colors: always at least the one to start from. */
-type Stops = [ColorStop, ...ColorStop[]]
-
-const LAND_STOPS: Stops = [
-  { t: 0, color: new THREE.Color('#c8b98a') },
-  { t: 0.06, color: new THREE.Color('#6f8f3f') },
-  { t: 0.32, color: new THREE.Color('#4f7a34') },
-  { t: 0.6, color: new THREE.Color('#7d7367') },
-  { t: 0.82, color: new THREE.Color('#9d9d9d') },
-  { t: 1, color: new THREE.Color('#f4f6f8') },
-]
-
-/** A moon's rock, darker down in its craters and valleys, paler up on its heights. */
-const MOON_STOPS: Stops = [
-  { t: 0, color: new THREE.Color('#58585c') },
-  { t: 0.45, color: new THREE.Color('#8a8a8d') },
-  { t: 1, color: new THREE.Color('#c9c8c4') },
-]
-
-const SEABED_DEEP = new THREE.Color('#1c3a4a')
-const SEABED_SHALLOW = new THREE.Color('#4a7f86')
-const CITY_TINT = new THREE.Color('#8c8f93')
-const SUBURB_TINT = new THREE.Color('#a3a271')
 const ROAD_GRADE_COLOR = new THREE.Color('#43464b')
 /** A curb's lighter edge along a road, the white of its center line, and the gravel of a park path. */
 const KERB_COLOR = new THREE.Color('#8f9296')
@@ -309,6 +284,9 @@ const CROWN_STOPS: Stops = [
 ]
 /** Trunks are this wide, matching the collider. */
 const TRUNK_RADIUS = 0.35
+/** A tree this tall is a giant, and where up it its canopy starts, and how much darker it is than a pine's crown. */
+const GIANT_HEIGHT = 20
+const GIANT_CANOPY = { from: 0.55, shade: 0.8 } as const
 /** How far up a tree the crown starts, as a fraction of its height. */
 const CROWN_FROM = 0.25
 /** Stories are this tall, and a block's windows this far apart along a face. */
@@ -526,38 +504,6 @@ function facadeMaterial(facade: Facade, roughness: number, lights?: FacadeLights
  */
 const TEXELS_PER_METER = 2
 
-function sampleRamp(t: number, stops: Stops, out: THREE.Color): THREE.Color {
-  let lo = stops[0]
-  if (t <= lo.t) return out.copy(lo.color)
-  for (const hi of stops) {
-    if (t <= hi.t) {
-      const span = hi.t - lo.t || 1
-      return out.copy(lo.color).lerp(hi.color, (t - lo.t) / span)
-    }
-    lo = hi
-  }
-  return out.copy(lo.color)
-}
-
-function terrainColor(
-  height: number,
-  min: number,
-  max: number,
-  seaLevel: number,
-  district: number,
-  out: THREE.Color,
-): THREE.Color {
-  if (height <= seaLevel) {
-    const depth = (seaLevel - height) / Math.max(seaLevel - min, 1e-3)
-    return out.copy(SEABED_SHALLOW).lerp(SEABED_DEEP, Math.min(1, depth))
-  }
-  const t = (height - seaLevel) / Math.max(max - seaLevel, 1e-3)
-  sampleRamp(t, LAND_STOPS, out)
-  if (district === DISTRICT_CITY) out.lerp(CITY_TINT, 0.35)
-  else if (district === DISTRICT_SUBURB) out.lerp(SUBURB_TINT, 0.35)
-  return out
-}
-
 /**
  * The land, colored by height and district, with every surface road painted
  * onto it. One texture over the whole island: the ground's color is sampled
@@ -581,9 +527,13 @@ interface GroundColors {
 
 function groundColors(world: World): GroundColors {
   const { heights } = world.ground
+  const look = lookOf(world.kind)
   let min = Infinity
   let max = -Infinity
-  for (const height of heights) {
+  // The ramp runs over the ground there is room on: a world of rock is read from its rooms alone.
+  for (let at = 0; at < heights.length; at++) {
+    if (!roomAt(world.roof, heights, at)) continue
+    const height = heights[at]!
     if (height < min) min = height
     if (height > max) max = height
   }
@@ -592,8 +542,7 @@ function groundColors(world: World): GroundColors {
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
   for (let at = 0; at < heights.length; at++) {
-    if (world.kind === 'moon') sampleRamp((heights[at]! - min) / Math.max(max - min, 1e-3), MOON_STOPS, color)
-    else terrainColor(heights[at]!, min, max, world.seaLevel, world.districtOf[at]!, color)
+    groundTone(look, heights[at]!, min, max, world.seaLevel, world.districtOf[at]!, color)
     color.getRGB(rgb, THREE.SRGBColorSpace)
     srgb[at * 3] = rgb.r
     srgb[at * 3 + 1] = rgb.g
@@ -1055,6 +1004,8 @@ function buildGround(world: World): THREE.Group {
             const c = a + side
             const d = c + 1
             if (holes[points[a]!] || holes[points[b]!] || holes[points[c]!] || holes[points[d]!]) continue
+            // A cell shut in the rock all round, its roof on it, is nowhere to be seen from.
+            if ([a, b, c, d].every((k) => sealedAt(world.roof, heights, points[k]!))) continue
             // Wound to face out, away from the planet's middle.
             indices.push(base + a, base + b, base + c, base + b, base + d, base + c)
           }
@@ -1951,7 +1902,9 @@ function buildStanding(world: World): THREE.Object3D[] {
     stands.set(local, standMatrix(tree.at, uprightAt(tree.at, new THREE.Quaternion())))
     return local
   })
-  const trees = allTrees.filter((tree) => tree.kind === 'tree')
+  // A tree past a giant's height spreads a broad canopy over a thick trunk, as a jungle's do; the rest are pines.
+  const trees = allTrees.filter((tree) => tree.kind === 'tree' && tree.height < GIANT_HEIGHT)
+  const giants = allTrees.filter((tree) => tree.kind === 'tree' && tree.height >= GIANT_HEIGHT)
   const shrubs = allTrees.filter((tree) => tree.kind === 'shrub')
   const fruits = allTrees.filter((tree) => tree.kind === 'fruit')
   const trunk = new THREE.CylinderGeometry(TRUNK_RADIUS, TRUNK_RADIUS * 1.3, 1, 6)
@@ -1966,6 +1919,17 @@ function buildStanding(world: World): THREE.Object3D[] {
       matrix.makeScale(1, tree.height * (CROWN_FROM + 0.1), 1)
       matrix.setPosition(tree.x, tree.bottom, tree.z)
       color.copy(TRUNK_COLOR)
+    }),
+    instanced(trunk, plain, giants, (tree: Tree, matrix, color) => {
+      const thick = trunkRadius(tree) / TRUNK_RADIUS
+      matrix.makeScale(thick, tree.height * GIANT_CANOPY.from + 1, thick)
+      matrix.setPosition(tree.x, tree.bottom, tree.z)
+      color.copy(TRUNK_COLOR)
+    }),
+    instanced(bush, leaves, giants, (tree: Tree, matrix, color) => {
+      matrix.makeScale(tree.radius, tree.height * (1 - GIANT_CANOPY.from), tree.radius)
+      matrix.setPosition(tree.x, tree.bottom + tree.height * GIANT_CANOPY.from, tree.z)
+      sampleRamp(tree.tone, CROWN_STOPS, color).multiplyScalar(GIANT_CANOPY.shade)
     }),
     instanced(crown, leaves, trees, (tree: Tree, matrix, color) => {
       matrix.makeScale(tree.radius, tree.height * (1 - CROWN_FROM), tree.radius)
@@ -2449,10 +2413,11 @@ export function moveBoats(view: THREE.Object3D, seconds: number): void {
  */
 export function createTerrainView(world: World): THREE.Group {
   const group = new THREE.Group()
+  const look = lookOf(world.kind)
   const waterMaterial = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#2f6f9f'),
+    color: look.sea?.color ?? new THREE.Color('#2f6f9f'),
     transparent: true,
-    opacity: 0.75,
+    opacity: look.sea?.opacity ?? 0.75,
     roughness: 0.25,
     metalness: 0.05,
     side: THREE.DoubleSide,
@@ -2461,13 +2426,14 @@ export function createTerrainView(world: World): THREE.Group {
   group.add(buildGround(world))
   group.add(buildPortals(world))
   if (world.kind === 'moon') group.add(buildMoonCraft(world))
-  else {
-    // An airless moon has neither clouds nor a sea; a planet has both.
-    group.add(buildClouds(world))
+  // Each world has clouds and a sea as its look has them: an airless moon neither, a planet both.
+  if (look.clouds !== null) group.add(buildClouds(world, look.clouds))
+  if (look.sea !== null) {
     const sea = new THREE.Mesh(new THREE.SphereGeometry(world.radius + world.seaLevel + 0.02, 192, 96), waterMaterial)
     sea.name = 'water'
     group.add(sea)
   }
+  for (const extra of [buildRoof(world, look), buildPlatforms(world, look), buildGlow(look)]) if (extra !== null) group.add(extra)
   if (world.lakes.length > 0) group.add(new THREE.Mesh(buildLakeGeometry(world), waterMaterial))
   if (world.rivers.length > 0) group.add(new THREE.Mesh(buildRiversGeometry(world.rivers), waterMaterial))
 
@@ -2517,15 +2483,16 @@ export function createTerrainView(world: World): THREE.Group {
   }
 
   // Everything on the island takes the sun's shadows; everything but the
-  // ground itself, the scree, the water and the tunnel lights throws them.
+  // ground itself, the scree, the water, the glass and the tunnel lights throws them.
   // The ground is the size of the planet, and drawing it into every shadow
   // map would cost more than its own shadows are worth; the scree is
   // hundreds of stones too small to throw one worth seeing.
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return
-    if (node.name === 'lights' || node.material === waterMaterial) return
+    if (node.name === 'lights' || node.name === 'glass' || node.material === waterMaterial) return
     node.receiveShadow = true
-    node.castShadow = node.name !== 'ground' && node.name !== 'scree'
+    // Nor does a cavern's roof, which would put every room under it in the dark.
+    node.castShadow = node.name !== 'ground' && node.name !== 'scree' && node.name !== 'roof'
   })
   return group
 }

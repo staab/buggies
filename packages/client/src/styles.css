@@ -284,7 +284,7 @@ body {
 #hud > [hidden] {
   display: none;
 }
-/* The bananas held. */
+/* The bananas held, and the gems won. */
 .row {
   display: flex;
   align-items: center;
@@ -297,7 +297,8 @@ body {
   font-size: 18px;
   font-weight: 600;
 }
-.score .banana {
+.score .banana,
+.score .gem {
   width: 22px;
   height: 22px;
 }
@@ -908,34 +909,6 @@ kbd {
   line-height: 1;
   animation: achievement-burst-out 1.6s cubic-bezier(0.15, 0.8, 0.3, 1) both;
 }
-.achievement-rainbow {
-  position: absolute;
-  left: 50%;
-  bottom: -55vmin;
-  width: 110vmin;
-  height: 110vmin;
-  margin-left: -55vmin;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    transparent 52%,
-    #9d7bff 52%,
-    #9d7bff 55%,
-    #3fa7f0 55%,
-    #3fa7f0 58%,
-    #5bd16a 58%,
-    #5bd16a 61%,
-    #f6d23c 61%,
-    #f6d23c 64%,
-    #ff8a3d 64%,
-    #ff8a3d 67%,
-    #e04a3a 67%,
-    #e04a3a 70%,
-    transparent 70%
-  );
-  opacity: 0.75;
-  animation: achievement-rainbow 2.8s ease-out both;
-}
 .achievement-bouncer {
   position: absolute;
   bottom: 18vh;
@@ -1005,20 +978,6 @@ kbd {
   }
   100% {
     transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1) rotate(200deg);
-    opacity: 0;
-  }
-}
-@keyframes achievement-rainbow {
-  0% {
-    transform: translateY(40vmin) scale(0.6);
-    opacity: 0;
-  }
-  25%,
-  75% {
-    transform: translateY(0) scale(1);
-    opacity: 0.75;
-  }
-  100% {
     opacity: 0;
   }
 }

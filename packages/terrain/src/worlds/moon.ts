@@ -10,36 +10,20 @@ import * as exact from '@buggies/physics'
 import { createRng, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 
 import { fbm3D } from '../noise.ts'
-import { createSphereGround, sphereHeight, type SphereGround } from '../sphere.ts'
+import { sphereHeight, type SphereGround } from '../sphere.ts'
 import { groundDirections } from '../sphere-water.ts'
 import { randomDirection } from '../world-queries.ts'
-import { DRY, type World, type WorldBuilding, type WorldPortal } from '../world.ts'
-import { angleBetween, lift } from './lines.ts'
-import { axisAt, spotFrame, spotSamples, turnOf, type Spot } from './placing.ts'
-import { PLANET_RADIUS, SPHERE_CELLS, generatePlanet } from './planet.ts'
-import { PORTAL_RADIUS } from './portals.ts'
-import { rampRise } from './solids.ts'
-import { fromFrame } from './frame.ts'
+import type { World, WorldBuilding, WorldPortal } from '../world.ts'
+import { angleBetween, lift } from '../globe/lines.ts'
+import { axisAt, spotFrame, spotSamples, turnOf, type Spot } from '../globe/placing.ts'
+import { PORTAL_RADIUS } from '../globe/portals.ts'
+import { rampRise } from '../globe/solids.ts'
+import { fromFrame } from '../globe/frame.ts'
+import { bareWorld } from './bare.ts'
+import { moonOf } from './kinds.ts'
+import { groundOfSize } from './kit.ts'
 
 const { cos, sin } = exact
-
-/** Which bit of a world's id says it is a moon: a moon's id is its planet's seed with this bit set. */
-export const MOON_BIT = 0x8000_0000
-
-/** The id of a planet's moon. */
-export function moonOf(seed: number): number {
-  return (seed | MOON_BIT) >>> 0
-}
-
-/** Whether a world's id is a moon's. */
-export function isMoon(id: number): boolean {
-  return (id & MOON_BIT) !== 0
-}
-
-/** The seed of the planet a world belongs to: its own, or its moon's planet's. */
-export function planetSeedOf(id: number): number {
-  return (id & ~MOON_BIT) >>> 0
-}
 
 /** How big a moon is, as a share of its planet. */
 const MOON_SIZE = 0.5
@@ -149,9 +133,9 @@ function standing(ground: SphereGround, kind: WorldBuilding['kind'], spot: Spot,
 
 /** Make a planet's moon, from the planet's seed. */
 export function generateMoon(seed: number): World {
-  const radius = PLANET_RADIUS * MOON_SIZE
   const rng = createRng((seed ^ MOON_SALT) >>> 0)
-  const ground = createSphereGround(Math.round(SPHERE_CELLS * MOON_SIZE), radius)
+  const ground = groundOfSize(MOON_SIZE)
+  const { radius } = ground
   raiseMoonGround(ground, seed ^ MOON_SALT, rng)
 
   // The portal back, where there is a level run through it.
@@ -177,41 +161,5 @@ export function generateMoon(seed: number): World {
     buildings.push(standing(ground, 'flag', { at: flagAt, u: axisAt(flagAt, randomRange(rng, 0, Math.PI)), width: FLAG.width, depth: FLAG.depth }, FLAG.height, rng()))
   }
 
-  const count = ground.heights.length
-  const empty = { positions: new Float32Array(0), indices: new Uint32Array(0) }
-  return {
-    seed: moonOf(seed),
-    kind: 'moon',
-    radius,
-    seaLevel: MOON_SEA,
-    ground,
-    bored: Float32Array.from(ground.heights),
-    holes: new Uint8Array(count),
-    water: new Float32Array(count).fill(DRY),
-    districtOf: new Uint8Array(count),
-    mountains: [],
-    rivers: [],
-    lakes: [],
-    districts: [],
-    roads: [],
-    buildings,
-    trees: [],
-    rocks: [],
-    props: [],
-    ramps: [],
-    sidewalks: [],
-    fields: [],
-    portals,
-    decks: { ...empty, surfaces: new Uint8Array(0) },
-    paths: [],
-    shells: [],
-    rails: empty,
-    curbs: empty,
-    kickers: [],
-  }
-}
-
-/** Make a planet, or its moon, by its id. */
-export function generateWorld(id: number): World {
-  return isMoon(id) ? generateMoon(planetSeedOf(id)) : generatePlanet(id)
+  return bareWorld({ seed: moonOf(seed), kind: 'moon', radius, seaLevel: MOON_SEA, ground, buildings, portals })
 }

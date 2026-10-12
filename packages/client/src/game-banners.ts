@@ -2,7 +2,7 @@ import {
   COUNTDOWN_TICKS,
   FIXED_TIMESTEP,
   GAME_LABELS,
-  GAME_PRIZE,
+  GAME_GEMS,
   NOT_RACING,
   VEHICLE_PROFILE_LABELS,
   countdownLeft,
@@ -167,7 +167,7 @@ export class GameBanners {
       key: `over:${this.ended}`,
       title,
       subtitle: subtitle ?? `${driverOf(this.seed, winner!, this.nameOf(winner!.id))} wins!`,
-      ...(winner === null ? {} : { detail: `+${GAME_PRIZE} bananas · ${winner.score} in all` }),
+      ...(winner === null ? {} : { detail: `+${GAME_GEMS} ${GAME_GEMS === 1 ? 'gem' : 'gems'} · ${winner.gems} in all` }),
       mood,
     }
     this.overFor = OVER_SECONDS

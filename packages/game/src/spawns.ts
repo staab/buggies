@@ -139,7 +139,7 @@ export function findSpawns(planet: World, count: number): VehicleSpawn[] {
     if (planet.portals.length > 0) return Array.from({ length: count }, (_, place) => portalSpawn(planet, 0, place)!)
     // Or on the ground over the middle of the first city.
     const middle = planet.districts[0]?.center ?? { x: 0, y: 0, z: 1 }
-    return Array.from({ length: count }, () => spawnHere(atHeight(planet, middle, planet.seaLevel + 1), { x: 1, y: 0, z: 0 }))
+    return Array.from({ length: count }, () => spawnHere(overSurface(planet, middle, 1), { x: 1, y: 0, z: 0 }))
   }
 
   // Two abreast, staggered a half length apart, behind the first spot for

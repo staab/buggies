@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  GAME_PRIZE,
+  GAME_GEMS,
   GAME_REACH,
   GAME_TARGET_MOST,
   NOT_RACING,
@@ -32,7 +32,7 @@ function seat(around = 0): GameSeat {
     game: null,
     gamesWon: 0,
     racePassed: NOT_RACING,
-    score: 0,
+    gems: 0,
     occupied: true,
     vehicle: { wrecked: false, frame: { position: onEquator(around) } },
   }
@@ -98,15 +98,15 @@ describe('games', () => {
     setGame(wreck, { kind: 'score', target: 1 }, 1)
     player.collected = 1
     wreck.collected = 1
-    player.score = 3
+    player.gems = 3
     expect(awardGames([player, wreck])).toEqual([player])
-    expect(player.score).toBe(3 + GAME_PRIZE)
+    expect(player.gems).toBe(3 + GAME_GEMS)
     expect(player.game).toBeNull()
     expect(player.gamesWon).toBe(1)
     // A wreck wins nothing until it is back on the road.
     expect(wreck.game).not.toBeNull()
     expect(awardGames([player])).toEqual([])
-    expect(player.score).toBe(3 + GAME_PRIZE)
+    expect(player.gems).toBe(3 + GAME_GEMS)
   })
 
   it('ends a count played together for everyone in it once one of them reaches it, and pays only them', () => {
@@ -144,7 +144,7 @@ describe('games', () => {
     expect(driveTo(player, race, 1200)).toBeNull()
     ;(player.vehicle as { wrecked: boolean }).wrecked = false
     expect(driveTo(player, race, 1200)).toBe(player)
-    expect(player.score).toBe(GAME_PRIZE)
+    expect(player.gems).toBe(GAME_GEMS)
     expect(player.gamesWon).toBe(1)
   })
 

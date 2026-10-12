@@ -1,8 +1,10 @@
 import { FIXED_TIMESTEP, uprightRotation, v3, vaddScaled, vdistance, vdot, type Vec3 } from '@buggies/physics'
-import { DRY, alongGround, heightOver, upOf, waterUnder, type PropKind, type World, type WorldProp } from '@buggies/terrain'
+import { DRY, WORLD_TRAITS, alongGround, heightOver, lostUnder, upOf, waterUnder, type PropKind, type World, type WorldProp } from '@buggies/terrain'
 import {
   DEFAULT_VEHICLE_PROFILE,
+  DEFAULT_WORLD_TUNING,
   NEUTRAL_INPUT,
+  addForceAlong,
   addProp,
   addTerrain,
   propPlacement,
@@ -51,7 +53,7 @@ import {
   walkRobot,
   type Robot,
 } from './robots.ts'
-import { CEILING } from './sky.ts'
+import { ceilingOf } from './sky.ts'
 import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing, startingGrid } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
@@ -111,7 +113,7 @@ export {
 export type { Vec3 as Point } from '@buggies/physics'
 export { findSpawns } from './spawns.ts'
 export { portalCrossed, portalLink, portalSpawn } from './portals.ts'
-export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, sunDirection } from './sky.ts'
+export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, ceilingOf, sunDirection } from './sky.ts'
 export {
   UFOS,
   UFO_CARRY_SPEED,
@@ -162,7 +164,7 @@ export {
   COUNT_KINDS,
   GAME_KINDS,
   GAME_LABELS,
-  GAME_PRIZE,
+  GAME_GEMS,
   GAME_REACH,
   GAME_TARGET_MOST,
   LOBBY_TICKS,
@@ -338,8 +340,10 @@ export interface Seat {
   submersion: number
   /** Consecutive steps spent sunk or off the map. */
   lostTicks: number
-  /** Bananas held: taken since sitting down, less those spent on weapons or spilled from a wreck, and any won with a game. */
+  /** Bananas held: taken since sitting down, less those spent on weapons or spilled from a wreck. */
   score: number
+  /** Gems won with games and races, all told: the player's own, kept by the server from one session to the next. */
+  gems: number
   /** Bananas taken since sitting down, all told. */
   collected: number
   /** Other players' cars its weapons have wrecked since sitting down, and robots they have brought down. */
@@ -439,6 +443,7 @@ export interface Arena {
 
 export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
   const worldTuning = createWorldTuning()
+  worldTuning.gravity *= WORLD_TRAITS[planet.kind].gravity
   const world = createPhysicsWorld(worldTuning)
   addTerrain(world, planet)
   const props: ArenaProp[] = planet.props.map((home, id) => ({ id, kind: home.kind, body: addProp(world, home), home }))
@@ -460,6 +465,7 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       submersion: 0,
       lostTicks: 0,
       score: 0,
+      gems: 0,
       collected: 0,
       kills: 0,
       robotKills: 0,
@@ -705,10 +711,13 @@ export function advance(
 ): void {
   applyWorldTuning(arena.world, arena.worldTuning)
   const gravity = worldGravity(arena.world)
+  // How hard a car is held to what its wheels are on, more than its weight pulls it, where cars cling.
+  const cling = WORLD_TRAITS[arena.planet.kind].cling * DEFAULT_WORLD_TUNING.gravity
   pullToMiddle(arena, gravity)
   for (const seat of arena.seats) {
     seat.vehicle.spared = arena.mirror
-    upOf(seat.vehicle.frame.position, seat.vehicle.up)
+    const clinging = cling > 0 && clingUp(seat.vehicle)
+    if (!clinging) upOf(seat.vehicle.frame.position, seat.vehicle.up)
     if (!seat.occupied) continue
     if (seat.coasting) {
       coastVehicle(seat.vehicle, seat.tuning, inputFor(seat), dt)
@@ -724,6 +733,7 @@ export function advance(
     // One with wings out is held level and steered by them in the air, lifted or not.
     seat.vehicle.winged = winged(seat)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
+    if (clinging) addForceAlong(seat.vehicle.body, seat.vehicle.up, -seat.tuning.mass * (cling - gravity))
     pushWithWeapons(seat, gravity)
     hinder(seat)
     mend(seat)
@@ -750,7 +760,7 @@ export function advance(
   for (const ufo of arena.ufos) flyUfo(arena.planet, ufo, arena.seats, gravity, dt)
   arena.world.step()
   arena.tick += 1
-  for (const seat of arena.seats) if (seat.occupied && !seat.coasting) holdUnderCeiling(arena.planet.radius, seat.vehicle)
+  for (const seat of arena.seats) if (seat.occupied && !seat.coasting) holdUnderCeiling(arena.planet, seat.vehicle)
   restoreProps(arena)
   collectPickups(arena)
   spillBananas(arena)
@@ -785,16 +795,43 @@ function heldStill(input: VehicleInput): VehicleInput {
   return { ...NEUTRAL_INPUT, handbrake: true, weapon: input.weapon }
 }
 
+/** How many of a car's wheels must be on something for it to cling to that. */
+const CLING_WHEELS = 2
+
+/**
+ * Where cars cling: set a car's way up to the way out of whatever its
+ * wheels are on, the mean of the ways they meet it, if enough of them are
+ * on something; and answer whether it was.
+ */
+function clingUp(vehicle: Seat['vehicle']): boolean {
+  if (vehicle.groundedCount < CLING_WHEELS) return false
+  let x = 0
+  let y = 0
+  let z = 0
+  for (const wheel of vehicle.wheels) {
+    if (!wheel.grounded) continue
+    x += wheel.contactNormal.x
+    y += wheel.contactNormal.y
+    z += wheel.contactNormal.z
+  }
+  const length = Math.sqrt(x * x + y * y + z * z)
+  if (length < 1e-6) return false
+  vehicle.up.x = x / length
+  vehicle.up.y = y / length
+  vehicle.up.z = z / length
+  return true
+}
+
 /**
  * Keep a vehicle under the ceiling, a little over the clouds: brought back
  * down to it where it has risen through, and whatever of its way was taking
  * it up and away from the planet taken off.
  */
-function holdUnderCeiling(radius: number, vehicle: Seat['vehicle']): void {
+function holdUnderCeiling(planet: World, vehicle: Seat['vehicle']): void {
   const { body } = vehicle
   const at = body.translation()
   const r = Math.sqrt(at.x * at.x + at.y * at.y + at.z * at.z)
-  const most = radius + CEILING
+  const most = planet.radius + ceilingOf(planet)
   if (r <= most) return
   const ux = at.x / r
   const uy = at.y / r
@@ -853,7 +890,7 @@ function fireRobots(arena: Arena): void {
 /** A prop that has sunk deep under the sea, or through the ground, is put back where the map stands it, at rest. */
 function restoreProps(arena: Arena): void {
   for (const prop of arena.props) {
-    if (heightOver(arena.planet, prop.body.translation()) >= arena.planet.seaLevel - ABYSS) continue
+    if (!lostUnder(arena.planet, prop.body.translation(), ABYSS)) continue
     putPropBack(prop)
   }
 }
@@ -895,6 +932,7 @@ function score(seat: Seat): void {
 /** A seat sat down in, or left, starts again: no bananas, no wrecks and no game. */
 function clearTally(seat: Seat): void {
   seat.score = 0
+  seat.gems = 0
   seat.collected = 0
   seat.kills = 0
   seat.robotKills = 0
@@ -1186,7 +1224,7 @@ export function isLost(arena: Arena, seat: Seat): boolean {
     seat.vehicle.wrecked ||
     // A hull that floats is where it means to be on the water, however far out.
     (seat.submersion > SUNK && seat.tuning.hull === undefined) ||
-    heightOver(arena.planet, seat.vehicle.frame.position) < arena.planet.seaLevel - ABYSS
+    lostUnder(arena.planet, seat.vehicle.frame.position, ABYSS)
   )
 }
 

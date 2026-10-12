@@ -2,7 +2,7 @@ import {
   ACHIEVEMENTS,
   MACHINE_GUN_DAMAGE,
   NEUTRAL_INPUT,
-  GAME_PRIZE,
+  GAME_GEMS,
   LOBBY_TICKS,
   NOT_RACING,
   RACE_LEG_LEAST,
@@ -33,6 +33,8 @@ import { ROAD_TUNNEL, STREET_WIDTH, generateWorld, moonOf, groundDistance, tange
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { ConnectionFailure, NetClient } from './client.ts'
+import { newSecretKey, publicKeyOf } from './nostr.ts'
+import { MemoryPlayerStore } from './player-store.ts'
 import { LocalPrediction } from './prediction.ts'
 import {
   INPUT_TIMELINE_TICKS,
@@ -177,6 +179,10 @@ class Session {
   readonly events: string[] = []
   /** Whether the server is busy with something else, neither stepping nor reading nor sending. */
   serverStalled = false
+  /** What the server keeps of each player's key, the keys it has taken players to have, and the feats it has paid, as seat and feat. */
+  readonly store = new MemoryPlayerStore()
+  readonly signedIn: string[] = []
+  readonly achieved: string[] = []
 
   constructor() {
     this.server = new GameServer(
@@ -194,9 +200,12 @@ class Session {
         onRaceEnded: (_, winner) => this.events.push(`race ended ${winner === null ? 'none' : winner.id}`),
         onRoomOpened: (seed) => this.events.push(`opened ${seed}`),
         onRoomClosed: (seed) => this.events.push(`closed ${seed}`),
+        onSignedIn: (_, pubkey) => this.signedIn.push(pubkey),
+        onAchieved: (seat, achievement) => this.achieved.push(`${seat.id} ${achievement.id}`),
       },
       // No cars nobody drives, to get in the way of what is being looked at.
       0,
+      this.store,
     )
   }
 
@@ -209,8 +218,17 @@ class Session {
     return this.clock.tick * MS_PER_TICK
   }
 
-  async join(profile: VehicleProfileId = 'sportsCar', jitterTicks = 0, seed = map.seed, arrival = NO_ARRIVAL, pass = NO_PASS, name = ''): Promise<Player> {
-    const { client, wire, welcome } = await this.connect(profile, jitterTicks, seed, arrival, pass, name)
+  /** A player joining, with a nostr key of their own unless given one, or `null` for none. */
+  async join(
+    profile: VehicleProfileId = 'sportsCar',
+    jitterTicks = 0,
+    seed = map.seed,
+    arrival = NO_ARRIVAL,
+    pass = NO_PASS,
+    name = '',
+    key: Uint8Array | null = newSecretKey(),
+  ): Promise<Player> {
+    const { client, wire, welcome } = await this.connect(profile, jitterTicks, seed, arrival, pass, name, key)
     const mirror = createArena(welcome.seed === map.seed ? map : planetOf(welcome.seed))
     takeSeat(mirror, welcome.seat, welcome.profile)
     const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
@@ -234,7 +252,7 @@ class Session {
    * mirror run, which is most of what each player costs every tick.
    */
   async listen(): Promise<NetClient> {
-    const { client, wire } = await this.connect('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, '')
+    const { client, wire } = await this.connect('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, '', null)
     this.listeners.push({ client, wire })
     return client
   }
@@ -247,9 +265,10 @@ class Session {
     arrival: number,
     pass: number,
     name: string,
+    key: Uint8Array | null,
   ): Promise<{ client: NetClient; wire: Loopback; welcome: WelcomeMessage }> {
     const wire = new Loopback(this.server, DELAY_TICKS, this.clock, jitterTicks)
-    const client = new NetClient(wire.client, () => this.nowMs)
+    const client = new NetClient(wire.client, () => this.nowMs, {}, key)
     const welcoming = client.connect(profile, seed, arrival, pass, name)
     welcoming.catch(() => undefined)
     // The hello goes out once connect() has had a turn; then it has to get
@@ -771,7 +790,11 @@ describe('a session', () => {
     seat.collected += 2
     session.run(0.5)
     expect(session.events).toContain('won 0')
-    expect(seat.score - paidForFeats(seat)).toBe(held + GAME_PRIZE)
+    // A gem, not bananas, kept against the player's key.
+    expect(seat.score - paidForFeats(seat)).toBe(held)
+    expect(seat.gems).toBe(GAME_GEMS)
+    expect(session.store.gems(a.client.signedIn()!)).toBe(GAME_GEMS)
+    expect(a.prediction.ownSeat.gems).toBe(GAME_GEMS)
     expect(seat.game).toBeNull()
     expect(a.prediction.ownSeat.gamesWon).toBe(1)
     expect(a.prediction.ownSeat.game).toBeNull()
@@ -806,6 +829,46 @@ describe('a session', () => {
     b.client.close('left')
     session.run(0.5)
     expect(a.client.lobby.players).toEqual([{ seat: seatA, name: 'Ada' }])
+    session.dispose()
+  })
+
+  it("pays a player's nostr key each achievement once, ever, keeps its gems from one session to the next, and pays nothing to a player who proves no key", async () => {
+    const session = new Session()
+    const first = ACHIEVEMENTS.find((feat) => feat.title === 'First Banana')!
+    const key = newSecretKey()
+    const pubkey = publicKeyOf(key)
+    const a = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, 'Ada', key)
+    session.run(0.5)
+    expect(a.client.signedIn()).toBe(pubkey)
+    expect(session.signedIn).toEqual([pubkey])
+    const seatA = session.arena.seats[a.client.welcome!.seat]!
+    seatA.collected = Math.max(seatA.collected, 1)
+    session.run(0.5)
+    expect(session.achieved).toContain(`${seatA.id} ${first.id}`)
+    expect(session.store.earned(pubkey).has(first.id)).toBe(true)
+    session.store.addGems(pubkey, 3)
+    a.client.close('done for the day')
+    session.run(0.5)
+
+    // Back another day with the same key: what it has been paid is marked off, and its gems are there.
+    const paidBefore = session.achieved.length
+    const back = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, 'Ada', key)
+    session.run(0.5)
+    const seatBack = session.arena.seats[back.client.welcome!.seat]!
+    expect(seatBack.progress.earned[first.id]).toBe(1)
+    expect(seatBack.gems).toBe(3)
+    expect(back.prediction.ownSeat.gems).toBe(3)
+    seatBack.collected = Math.max(seatBack.collected, 1)
+    session.run(1)
+    expect(session.achieved.slice(paidBefore).filter((paid) => paid.endsWith(` ${first.id}`))).toEqual([])
+
+    // A player with no key to prove is paid nothing.
+    const stranger = await session.join('sportsCar', 0, map.seed, NO_ARRIVAL, NO_PASS, 'Cy', null)
+    const seatC = session.arena.seats[stranger.client.welcome!.seat]!
+    seatC.collected = 5
+    session.run(1)
+    expect(stranger.client.signedIn()).toBeNull()
+    expect(session.achieved.filter((paid) => paid.startsWith(`${seatC.id} `))).toEqual([])
     session.dispose()
   })
 
@@ -861,7 +924,8 @@ describe('a session', () => {
       session.run(0.25)
     }
     expect(session.events).toContain(`race ended ${seatB.id}`)
-    expect(seatB.score - paidForFeats(seatB)).toBe(held + GAME_PRIZE)
+    expect(seatB.score - paidForFeats(seatB)).toBe(held)
+    expect(seatB.gems).toBe(GAME_GEMS)
     expect(session.arena.race).toBeNull()
     expect(b.prediction.ownSeat.gamesWon).toBe(1)
     expect(a.prediction.race).toBeNull()
@@ -913,7 +977,9 @@ describe('a session', () => {
     seatB.collected += 2
     session.run(0.5)
     expect(session.events).toContain(`won ${seatB.id}`)
-    expect(seatB.score - paidForFeats(seatB)).toBe(held + GAME_PRIZE)
+    expect(seatB.score - paidForFeats(seatB)).toBe(held)
+    expect(seatB.gems).toBe(GAME_GEMS)
+    expect(seatA.gems).toBe(0)
     expect(seatA.game).toBeNull()
     expect(seatB.game).toBeNull()
     expect(a.prediction.ownSeat.game).toBeNull()
