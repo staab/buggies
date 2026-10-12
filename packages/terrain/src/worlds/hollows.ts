@@ -36,6 +36,13 @@ export interface Hollow {
   readonly above: number
   /** How deep a bore's floor sinks under its middle. */
   readonly below: number
+  /**
+   * How round a bore's floor is at each point of its line: 1 for its
+   * superellipse, sinking from the walls to its lowest at the middle, down
+   * to 0 for flat right across at that lowest, as a tunnel's mouth is
+   * where it opens onto a floor. Round all along where not given.
+   */
+  readonly round?: readonly number[]
   /** How square it is across: 2 for an ellipse. */
   readonly squareness: number
   /** Whether a tube's first and last ends are open: nothing seals the ground past an open end. */
@@ -56,7 +63,7 @@ function power(x: number, y: number): number {
 }
 
 /** The height of a superellipse of this squareness, 1 at its middle, this share of the way out. */
-function profile(share: number, squareness: number): number {
+export function profile(share: number, squareness: number): number {
   if (share >= 1) return 0
   return power(1 - power(share, squareness), 1 / squareness)
 }
@@ -93,11 +100,16 @@ export function hollowOut(land: Land, hollows: readonly Hollow[], solid: boolean
   for (const hollow of hollows) {
     const { line, middle, reach, above, below, squareness } = hollow
     const pieces = Math.max(line.length - 1, 1)
+    // This hollow's own floor and roof at each point, as the piece of its line nearest the point has them:
+    // on a slope, a piece further along would cut under the floor by as much as it is lower.
+    const own = new Map<number, { distance: number; floor: number; roof: number }>()
     for (let k = 0; k < pieces; k++) {
       const a = line[k]!
       const b = line[Math.min(k + 1, line.length - 1)]!
       const middleA = middle[k]!
       const middleB = middle[Math.min(k + 1, line.length - 1)]!
+      const roundA = hollow.round?.[k] ?? 1
+      const roundB = hollow.round?.[Math.min(k + 1, line.length - 1)] ?? 1
       const center = unit({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z })
       const span = (angleBetween(a, b) * land.radius) / 2
       eachPointNear(land, center, span + reach + seam, (at, p) => {
@@ -108,13 +120,19 @@ export function hollowOut(land: Land, hollows: readonly Hollow[], solid: boolean
         const level = hollow.kind === 'bore' ? middleA + (middleB - middleA) * held : heights[at]!
         if (distance < reach) {
           const rise = profile(distance / reach, squareness)
-          floors[at] = Math.min(floors[at]!, hollow.kind === 'bore' ? level - below * rise : level)
-          roofs[at] = Math.max(roofs[at]!, level + above * rise)
+          const round = roundA + (roundB - roundA) * held
+          const floor = hollow.kind === 'bore' ? level - below * (1 - round + round * rise) : level
+          const known = own.get(at)
+          if (known === undefined || distance < known.distance) own.set(at, { distance, floor, roof: level + above * rise })
         } else if (distance - reach < seamOff[at]! && distance < reach + seam) {
           seamOff[at] = distance - reach
           seamAt[at] = level
         }
       })
+    }
+    for (const [at, { floor, roof }] of own) {
+      floors[at] = Math.min(floors[at]!, floor)
+      roofs[at] = Math.max(roofs[at]!, roof)
     }
   }
   const roof = new Float32Array(count).fill(Number.NaN)

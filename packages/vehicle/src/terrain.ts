@@ -166,12 +166,15 @@ function upOf(point: Vec3): Vec3 {
 }
 
 /**
- * Put a planet into a physics world: the ground, the roads on it, the
- * tunnels through it, the rails along it, and everything standing on it.
+ * Put a planet into a physics world: the ground, the roof over whatever
+ * it closes in, its round tunnels, the roads on it, the tunnels through
+ * it, the rails along it, and everything standing on it.
  */
 export function addTerrain(world: RAPIER.World, map: World): void {
   addGround(world, map)
   addRoof(world, map)
+  // A round tunnel is driven on all the way round.
+  for (const tube of map.tubes) addGroundMesh(world, tube, GROUND_FRICTION)
   addGroundMesh(world, map.decks, ROAD_FRICTION)
   for (const shell of map.shells) addWall(world, shell)
   addWall(world, map.rails)

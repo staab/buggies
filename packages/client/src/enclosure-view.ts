@@ -58,6 +58,36 @@ export function buildRoof(world: World, look: WorldLook): THREE.Object3D | null 
   return group
 }
 
+/**
+ * The round tunnels driven on all the way round, rock seen from inside.
+ * Along its middle a tube's floor lies on the ground under it, so it is
+ * drawn a hair in front of the ground there, never flickering behind it.
+ */
+export function buildTubes(world: World, look: WorldLook): THREE.Object3D | null {
+  if (world.tubes.length === 0) return null
+  const group = new THREE.Group()
+  group.name = 'tubes'
+  const material = new THREE.MeshStandardMaterial({
+    color: look.roof?.color ?? look.underside,
+    roughness: 1,
+    metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+  })
+  for (const tube of world.tubes) {
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(tube.positions, 3))
+    geometry.setIndex(new THREE.Uint32BufferAttribute(tube.indices, 1))
+    geometry.computeVertexNormals()
+    const mesh = new THREE.Mesh(geometry, material)
+    // A roof, as far as the shadows go: it throws none, or the tunnel would be dark all through.
+    mesh.name = 'roof'
+    group.add(mesh)
+  }
+  return group
+}
+
 /** How far down a platform's underside hangs, for its reach, how many rings it is made of, and how ragged its rock is. */
 const UNDERSIDE = { depth: 0.9, rings: 5, ragged: 0.18 } as const
 /** How far under the top the underside's rim is tucked, so no seam shows at the edge. */

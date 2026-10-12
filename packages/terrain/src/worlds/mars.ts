@@ -69,11 +69,10 @@ const SQUARE = 16
 /** How far from any bubble a road keeps outside it. */
 const BUBBLE_BERTH = 18
 
-/** Solar arrays, low and long; radio dishes on their masts; tanks of air, round; a few to each bubble. And the crates and barrels by each tunnel's mouth. */
+/** Solar arrays, low and long; radio dishes on their masts; tanks of air, round; a few to each bubble. */
 const SOLAR = { kind: 'solar', count: 10, width: [10, 14], depth: [4.5, 6], height: [2, 2.6], gap: 3 } as const satisfies FurnitureStyle & { count: number }
 const DISH = { kind: 'dish', count: 2, width: [7, 9], depth: [7, 9], height: [8, 11], gap: 6 } as const satisfies FurnitureStyle & { count: number }
 const TANKS = { kind: 'silo', count: 3, width: [4, 5.5], depth: [4, 5.5], height: [7, 11] } as const satisfies FurnitureStyle & { count: number }
-const CRATES_AT_MOUTH = 4
 
 const CITY: SettlementStyle = {
   kinds: [
@@ -114,7 +113,6 @@ export function generateMars(seed: number): World {
   const nav = navOf(land)
   const tunnels: Hollow[] = []
   const lines: Vec3[][] = []
-  const mouths: Vec3[] = []
   for (const [a, b] of linkAll(bubbles.length)) {
     const from = bubbles[a]!
     const to = bubbles[b]!
@@ -125,7 +123,6 @@ export function generateMars(seed: number): World {
     const startA = toward(from.center, to.center, SQUARE, radius)
     const startB = toward(to.center, from.center, SQUARE, radius)
     lines.push(resample([startA, ...between, startB], 6, radius, false))
-    mouths.push(mouthA, mouthB)
     for (const [bubble, mouth] of [[from, mouthA], [to, mouthB]] as const) {
       const inner = toward(bubble.center, mouth, bubble.reach - TUNNEL.in, radius)
       tunnels.push({ kind: 'shell', line: [inner, mouth], middle: [0, 0], reach: TUNNEL.reach, above: TUNNEL.rise, below: 0, squareness: 3, open: [false, true] })
@@ -155,16 +152,12 @@ export function generateMars(seed: number): World {
     plantWithin(stands, rng, bubble.center, bubble.reach * 0.9, 60, 'tree', [6, 11], [1.8, 3.2], (p) => roofOver(p) - sphereHeight(ground, p) > 14)
     plantWithin(stands, rng, bubble.center, bubble.reach * 0.92, 80, 'shrub', [0.9, 2], [0.7, 1.6])
   }
-  // Outside each bubble, the arrays that power it and the dishes that talk to home; inside, its air in tanks;
-  // and by every tunnel's mouth, supplies left to be fetched in.
+  // Outside each bubble, the arrays that power it and the dishes that talk to home; inside, its air in tanks.
   const outside = (bubble: (typeof bubbles)[number]) => (): Vec3 => pointAround(rng, bubble.center, bubble.reach + 14, bubble.reach + 90, radius)
   for (const bubble of bubbles) {
     furnish(stands, rng, SOLAR.count, outside(bubble), SOLAR)
     furnish(stands, rng, DISH.count, outside(bubble), DISH)
     furnish(stands, rng, TANKS.count, () => pointWithin(rng, bubble.center, bubble.reach * 0.75, radius), TANKS, (p) => roofOver(p) - 3)
-  }
-  for (const mouth of mouths) {
-    for (let k = 0; k < CRATES_AT_MOUTH; k++) stands.prop(pointWithin(rng, mouth, 14, radius), rng() < 0.7 ? 'crate' : 'barrel', rng)
   }
   // Red boulders strewn over the open ground.
   for (let k = 0; k < 400; k++) {
@@ -187,7 +180,6 @@ export function generateMars(seed: number): World {
     buildings: stands.buildings,
     trees: stands.trees,
     rocks: stands.rocks,
-    props: stands.props,
     portals,
   })
 }

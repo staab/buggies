@@ -180,6 +180,7 @@ export function generatePlanet(seed: number): World {
     decks: globeDecks(ground, roads),
     paths: parkPaths(ground, interchangeRings(roads, radius)),
     shells: tunnelShells(roads, radius),
+    tubes: [],
     rails: globeRailMesh(globeRailRuns(roads, radius), radius),
     curbs: curbSolids(ground, stands.sidewalks),
     kickers: kickerSolids(stands.ramps, radius),

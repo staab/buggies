@@ -797,9 +797,16 @@ function heldStill(input: VehicleInput): VehicleInput {
 
 /** How many of a car's wheels must be on something for it to cling to that. */
 const CLING_WHEELS = 2
+/**
+ * How far a clinging car's way up turns toward the way out of what it is
+ * on in a tick: the ways its wheels meet a surface change from one facet
+ * of it to the next, and taken whole each tick they shake the car, and
+ * the camera with it.
+ */
+const CLING_EASE = 0.2
 
 /**
- * Where cars cling: set a car's way up to the way out of whatever its
+ * Where cars cling: turn a car's way up toward the way out of whatever its
  * wheels are on, the mean of the ways they meet it, if enough of them are
  * on something; and answer whether it was.
  */
@@ -816,9 +823,22 @@ function clingUp(vehicle: Seat['vehicle']): boolean {
   }
   const length = Math.sqrt(x * x + y * y + z * z)
   if (length < 1e-6) return false
-  vehicle.up.x = x / length
-  vehicle.up.y = y / length
-  vehicle.up.z = z / length
+  const { up } = vehicle
+  // Come onto something facing another way altogether, a roof from the floor, it is taken whole: eased from so far, the way up would pass through nothing.
+  if (up.x * x + up.y * y + up.z * z <= 0) {
+    up.x = x / length
+    up.y = y / length
+    up.z = z / length
+    return true
+  }
+  const ux = up.x + (x / length - up.x) * CLING_EASE
+  const uy = up.y + (y / length - up.y) * CLING_EASE
+  const uz = up.z + (z / length - up.z) * CLING_EASE
+  const eased = Math.sqrt(ux * ux + uy * uy + uz * uz)
+  if (eased < 1e-6) return false
+  up.x = ux / eased
+  up.y = uy / eased
+  up.z = uz / eased
   return true
 }
 

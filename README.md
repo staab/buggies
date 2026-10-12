@@ -41,15 +41,15 @@ Three to five portals stand in the open country of every planet: glowing rings w
 - **Neptune** is all sea. Glass stations stand on the sea floor, joined by tunnels three times as wide as a planet's road tunnels and low and oval across, each with a road along its floor. Everything closed in is dry, and there is nothing above the water.
 - **Jupiter** is a sky over amber cloud. Its cities stand on floating platforms, joined by highways out over the drop with no guard rails. Smaller platforms float at their own heights, joined to nothing. Anything that goes over an edge falls into the cloud and is put back on a road.
 - **Venus** is jungle under yellow cloud, with giant trees to drive among. It has no cities, only small villages, joined by roads that run straight, wide and flat, the ground stamped level under them.
-- **Mercury** is all underground: huge caverns in solid rock, joined by round tunnels that rise and fall. Its pull is weak, but a car holds on to whatever its wheels are on, so it can drive up a tunnel's wall and along its roof upside down. Let go, and it falls toward the floor.
+- **Mercury** is all underground: huge caverns in solid rock, joined by smooth round tunnels that rise and fall, none crossing another. Each tunnel opens out of a cavern's wall flat across, flush with the cavern floor, and rounds out as it goes in. Its pull is weak, but a car holds on to whatever its wheels are on, so it can drive up a tunnel's wall and along its roof upside down. Let go, and it falls toward the floor.
 
 Each world has furniture of its own:
 
-- **Mars:** solar arrays and radio dishes outside each bubble, tanks of air inside it, and crates and barrels by each tunnel's mouth.
-- **Neptune:** barrels and crates in the stations, and kelp and coral out on the sea floor.
+- **Mars:** solar arrays and radio dishes outside each bubble, and tanks of air inside it.
+- **Neptune:** kelp and coral out on the sea floor.
 - **Jupiter:** red beacons round every platform's edge, wind turbines and gas tanks on the cities, and a flag on each loose platform.
 - **Venus:** stepped temple pyramids deep in the jungle, stone idols round the villages, and giant mushrooms with room to drive under their caps.
-- **Mercury:** clusters of glowing crystals across the cavern floors, and the miners' crates and barrels.
+- **Mercury:** clusters of glowing crystals across the cavern floors.
 
 Saucers fly only where there is a sky, so not on Neptune or Mercury.
 

@@ -12,14 +12,13 @@ import { createRng, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 import { fbm3D } from '../noise.ts'
 import { createSphereGround, sphereHeight, type SphereGround } from '../sphere.ts'
 import { groundDirections, groundNeighbors } from '../sphere-water.ts'
-import type { BuildingKind, PropKind } from '../types.ts'
+import type { BuildingKind } from '../types.ts'
 import { randomDirection } from '../world-queries.ts'
-import { DRY, type WorldBuilding, type WorldDistrict, type WorldPortal, type WorldProp, type WorldRoad, type WorldRock, type WorldTree } from '../world.ts'
+import { DRY, type WorldBuilding, type WorldDistrict, type WorldPortal, type WorldRoad, type WorldRock, type WorldTree } from '../world.ts'
 import { fromFrame } from '../globe/frame.ts'
 import { angleBetween, lift, unit } from '../globe/lines.ts'
 import { axisAt, eachPointNear, Placed, roadClearance, spotFrame, spotSamples, turnOf, type Clearance, type Land, type Spot } from '../globe/placing.ts'
 import { PLANET_RADIUS, SPHERE_CELLS } from '../globe/planet.ts'
-import { PROPS_MOST } from '../globe/sizes.ts'
 import { PORTAL_RADIUS, portalRun } from '../globe/portals.ts'
 
 const { cos, sin } = exact
@@ -111,9 +110,10 @@ export function scatterPlaces(rng: Rng, radius: number, wanted: number, apart: (
 /**
  * Which places to link, as pairs of their indices: a tree of the shortest
  * links that joins them all, and then the next shortest that do not, as
- * many as `extra`, each linking two not yet linked.
+ * many as `extra`, each linking two not yet linked; each only where `fits`
+ * allows it beside those already chosen, so the tree may leave some apart.
  */
-export function linkPlaces(centers: readonly Vec3[], extra: number): [number, number][] {
+export function linkPlaces(centers: readonly Vec3[], extra: number, fits: (a: number, b: number, chosen: readonly [number, number][]) => boolean = () => true): [number, number][] {
   const pairs: { a: number; b: number; d: number }[] = []
   for (let a = 0; a < centers.length; a++) for (let b = a + 1; b < centers.length; b++) pairs.push({ a, b, d: angleBetween(centers[a]!, centers[b]!) })
   pairs.sort((p, q) => p.d - q.d || p.a - q.a || p.b - q.b)
@@ -123,11 +123,18 @@ export function linkPlaces(centers: readonly Vec3[], extra: number): [number, nu
   const spare: [number, number][] = []
   for (const { a, b } of pairs) {
     if (find(a) !== find(b)) {
+      if (!fits(a, b, links)) continue
       parent[find(a)] = find(b)
       links.push([a, b])
     } else spare.push([a, b])
   }
-  return [...links, ...spare.slice(0, extra)]
+  for (const [a, b] of spare) {
+    if (extra <= 0) break
+    if (!fits(a, b, links)) continue
+    links.push([a, b])
+    extra--
+  }
+  return links
 }
 
 /** Every pair of places, to link each with every other. */
@@ -160,7 +167,6 @@ export class Stands {
   readonly buildings: WorldBuilding[] = []
   readonly trees: WorldTree[] = []
   readonly rocks: WorldRock[] = []
-  readonly props: WorldProp[] = []
 
   constructor(
     readonly land: Land,
@@ -207,16 +213,6 @@ export class Stands {
     // A shrub is driven through, and only keeps clear of the roads.
     if (kind !== 'shrub') this.placed.add(spot)
     this.trees.push({ kind, at: lift(p, this.land.radius, sphereHeight(this.land.ground, p)), height, radius, tone })
-    return true
-  }
-
-  /** A crate or a barrel standing on the ground at a way out, to be knocked about, while the world has room for more and nothing is in the way. */
-  prop(p: Vec3, kind: PropKind, rng: Rng): boolean {
-    if (this.props.length >= PROPS_MOST) return false
-    const spot: Spot = { at: p, u: axisAt(p, randomRange(rng, 0, Math.PI)), width: 1.2, depth: 1.2 }
-    if (!this.clear(spot, 1) || this.placed.meets(spot, 0.3)) return false
-    this.placed.add(spot)
-    this.props.push({ kind, at: lift(p, this.land.radius, sphereHeight(this.land.ground, p)), turn: turnOf(p, spot.u) })
     return true
   }
 

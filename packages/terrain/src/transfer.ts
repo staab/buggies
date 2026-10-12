@@ -13,7 +13,7 @@ export function worldTransferables(world: World): ArrayBuffer[] {
     if (array.buffer instanceof ArrayBuffer) buffers.add(array.buffer)
   }
   for (const array of [world.ground.heights, world.bored, world.roof, world.holes, world.water, world.districtOf]) add(array)
-  for (const mesh of [world.decks, world.rails, world.curbs, ...world.shells]) {
+  for (const mesh of [world.decks, world.rails, world.curbs, ...world.shells, ...world.tubes]) {
     add(mesh.positions)
     add(mesh.indices)
   }

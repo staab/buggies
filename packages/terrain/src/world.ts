@@ -199,6 +199,8 @@ export interface World {
   readonly paths: readonly (readonly Vec3[])[]
   /** The walls and roof round each tunnel. */
   readonly shells: readonly WorldMesh[]
+  /** The round tunnels driven on all the way round, wall and roof as much as floor: each a tube faced in. */
+  readonly tubes: readonly WorldMesh[]
   /** Every guardrail, as one wall. */
   readonly rails: WorldMesh
   /** The sidewalks round the blocks, a curb's step up off the street. */

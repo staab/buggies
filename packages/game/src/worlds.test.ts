@@ -1,5 +1,5 @@
-import { uprightRotation, v3 } from '@buggies/physics'
-import { generateWorld, heightOver, nearestGridPoint, roofOver, sphereHeight, tangentFrame, upOf, worldId, type World, type WorldKind } from '@buggies/terrain'
+import { uprightRotation, v3, type Vec3 } from '@buggies/physics'
+import { TUBE_SIDES, generateWorld, heightOver, nearestGridPoint, roofOver, sphereHeight, tangentFrame, upOf, worldId, type World, type WorldKind } from '@buggies/terrain'
 import { worldGravity } from '@buggies/vehicle'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -44,6 +44,40 @@ describe('the worlds past the planet', () => {
     expect(mercury.ufos).toHaveLength(0)
     expect(createArena(worlds.get('neptune')!).ufos).toHaveLength(0)
     expect(mars.ufos.length).toBeGreaterThan(0)
+  })
+
+  it("drives a car out of a cavern on Mercury, through a tunnel's mouth and on down the tube, never thrown or stopped", () => {
+    const map = worlds.get('mercury')!
+    const tube = map.tubes[0]!
+    const ringOf = (ring: number): Vec3 => {
+      // The bottom of a ring of the tube: a quarter turn short of the way round, under its middle.
+      const k = (ring * TUBE_SIDES + (TUBE_SIDES * 3) / 4) * 3
+      return v3(tube.positions[k]!, tube.positions[k + 1]!, tube.positions[k + 2]!)
+    }
+    const mouth = ringOf(0)
+    const inward = ringOf(1)
+    const way = v3(inward.x - mouth.x, inward.y - mouth.y, inward.z - mouth.z)
+    // A car's length back out in the cavern, on its floor, facing in.
+    const length = Math.hypot(way.x, way.y, way.z)
+    const back = upOf(v3(mouth.x - (way.x / length) * 12, mouth.y - (way.y / length) * 12, mouth.z - (way.z / length) * 12))
+    const start = v3(back.x * (map.radius + sphereHeight(map.ground, back)), back.y * (map.radius + sphereHeight(map.ground, back)), back.z * (map.radius + sphereHeight(map.ground, back)))
+    const arena = createArena(map)
+    const seat = takeSeat(arena, 0, 'sportsCar')
+    respawn(seat, { position: start, up: back, rotation: uprightRotation(back, way) })
+    for (let i = 0; i < 30; i++) advance(arena)
+    let grounded = 0
+    for (let i = 0; i < 60 * 3; i++) {
+      advance(arena, () => ({ ...NEUTRAL_INPUT, throttle: 0.7 }))
+      if (seat.vehicle.groundedCount >= 2) grounded++
+    }
+    // Well down the tube: past its mouth, and along its line.
+    const deep = ringOf(Math.min(12, tube.positions.length / 3 / TUBE_SIDES - 1))
+    expect(apart(seat.vehicle.frame.position, mouth)).toBeGreaterThan(20)
+    expect(apart(seat.vehicle.frame.position, deep)).toBeLessThan(apart(seat.vehicle.frame.position, mouth))
+    expect(seat.vehicle.wrecked).toBe(false)
+    expect(isLost(arena, seat)).toBe(false)
+    expect(grounded).toBeGreaterThan(60 * 3 * 0.9)
+    arena.world.free()
   })
 
   it('hold a car upside down to a cavern roof on Mercury, where it would fall anywhere else', () => {

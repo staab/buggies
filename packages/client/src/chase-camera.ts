@@ -26,6 +26,8 @@ export interface CameraTuning {
   positionLambda: number
   lookLambda: number
   fovLambda: number
+  /** How quickly the camera's way up follows the car's: a car clinging to a tunnel's wall turns it as it goes round. */
+  upLambda: number
 
   lookAheadTime: number
   lookAheadMax: number
@@ -56,6 +58,7 @@ export const DEFAULT_CAMERA_TUNING: Readonly<CameraTuning> = Object.freeze({
   positionLambda: 6,
   lookLambda: 9,
   fovLambda: 3,
+  upLambda: 5,
 
   lookAheadTime: 0.25,
   lookAheadMax: 9,
@@ -149,6 +152,7 @@ export class ChaseCamera {
   private boundsAt: CameraBoundsAt | null = null
   /** The way up where the car is, and the middle of the world, which the bounds are measured out from. */
   private readonly up = new THREE.Vector3(0, 1, 0)
+  private readonly targetUp = new THREE.Vector3(0, 1, 0)
   private readonly middle = new THREE.Vector3()
   private readonly offset = new THREE.Vector3()
   private readonly bounds: CameraBounds = { floor: Number.NEGATIVE_INFINITY, ceiling: Number.POSITIVE_INFINITY }
@@ -215,7 +219,7 @@ export class ChaseCamera {
       1,
     )
 
-    this.readTarget(target)
+    this.readTarget(target, dt)
     this.updateArmDirection(target.speed)
     if (target.wrecked && !this.wrecked) {
       this.wreckAnchor.copy(this.targetPosition)
@@ -227,11 +231,17 @@ export class ChaseCamera {
     this.applyToCamera()
   }
 
-  private readTarget(target: ChaseTarget): void {
+  private readTarget(target: ChaseTarget, dt: number): void {
     this.targetPosition.set(target.position.x, target.position.y, target.position.z)
     this.targetRotation.set(target.rotation.x, target.rotation.y, target.rotation.z, target.rotation.w)
     this.targetVelocity.set(target.velocity.x, target.velocity.y, target.velocity.z)
-    if (target.up !== undefined) this.up.set(target.up.x, target.up.y, target.up.z)
+    if (target.up === undefined) return
+    // Eased toward the car's way up, not taken whole: on a surface of facets it turns a little from one to the next.
+    this.targetUp.set(target.up.x, target.up.y, target.up.z)
+    if (!this.settled) this.up.copy(this.targetUp)
+    else dampVector3Toward(this.up, this.targetUp, this.tuning.upLambda, dt)
+    if (this.up.lengthSq() < 1e-9) this.up.copy(this.targetUp)
+    this.up.normalize()
   }
 
   private updateArmDirection(speed: number): void {

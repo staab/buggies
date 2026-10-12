@@ -44,7 +44,7 @@ export function fingerprint(world: World): string {
     point(prop.at)
     turn(prop.turn)
   }
-  for (const mesh of [world.decks, world.rails, world.curbs, ...world.shells]) {
+  for (const mesh of [world.decks, world.rails, world.curbs, ...world.shells, ...world.tubes]) {
     hash.numbers(mesh.positions)
     hash.numbers(mesh.indices)
   }

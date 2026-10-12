@@ -32,7 +32,7 @@ import {
 import * as THREE from 'three'
 
 import { buildClouds } from './clouds-view.ts'
-import { buildGlow, buildPlatforms, buildRoof } from './enclosure-view.ts'
+import { buildGlow, buildPlatforms, buildRoof, buildTubes } from './enclosure-view.ts'
 import { buildFurniture } from './furniture-view.ts'
 import { buildMoonCraft, buildPortals } from './portals-view.ts'
 
@@ -2438,7 +2438,7 @@ export function createTerrainView(world: World): THREE.Group {
     sea.name = 'water'
     group.add(sea)
   }
-  for (const extra of [buildRoof(world, look), buildPlatforms(world, look), buildGlow(look)]) if (extra !== null) group.add(extra)
+  for (const extra of [buildRoof(world, look), buildTubes(world, look), buildPlatforms(world, look), buildGlow(look)]) if (extra !== null) group.add(extra)
   if (world.lakes.length > 0) group.add(new THREE.Mesh(buildLakeGeometry(world), waterMaterial))
   if (world.rivers.length > 0) group.add(new THREE.Mesh(buildRiversGeometry(world.rivers), waterMaterial))
 

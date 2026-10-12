@@ -40,6 +40,7 @@ export function bareWorld(parts: WorldParts): World {
     decks: { ...noMesh(), surfaces: new Uint8Array(0) },
     paths: [],
     shells: [],
+    tubes: [],
     rails: noMesh(),
     curbs: noMesh(),
     kickers: [],

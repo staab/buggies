@@ -202,15 +202,18 @@ describe('the worlds a planet has', () => {
   it('furnish each world as fits it', () => {
     const kinds = (map: World): Set<string> => new Set([...map.buildings, ...map.trees, ...map.rocks, ...map.props].map((thing) => thing.kind))
     const furnished: Partial<Record<(typeof WORLD_KINDS)[number], string[]>> = {
-      mars: ['solar', 'dish', 'silo', 'crate'],
-      neptune: ['kelp', 'coral', 'barrel'],
+      mars: ['solar', 'dish', 'silo'],
+      neptune: ['kelp', 'coral'],
       jupiter: ['beacon', 'turbine', 'watertower', 'flag'],
       venus: ['mushroom', 'pyramid', 'stone'],
-      mercury: ['crystal', 'crate', 'barrel'],
+      mercury: ['crystal'],
     }
     for (const [kind, things] of Object.entries(furnished)) {
-      const has = kinds(world(kind as (typeof WORLD_KINDS)[number]))
+      const map = world(kind as (typeof WORLD_KINDS)[number])
+      const has = kinds(map)
       for (const thing of things) expect(has, `${kind} has ${thing}`).toContain(thing)
+      // No crates or barrels about: none of these worlds has any.
+      expect(map.props, kind).toHaveLength(0)
     }
     // Kelp and coral grow out in the open sea, never inside where the cars are.
     const neptune = world('neptune')
@@ -224,6 +227,39 @@ describe('the worlds a planet has', () => {
     const loose = jupiter.platforms.slice(jupiter.districts.length)
     for (const flag of jupiter.buildings.filter((building) => building.kind === 'flag')) {
       expect(loose.some((platform) => angleBetween(unit(flag.at), platform.center) * jupiter.radius < platform.radius)).toBe(true)
+    }
+  })
+
+  it("drive Mercury's tunnels on smooth tubes, their floors running level into the caverns' with no step", () => {
+    const mercury = world('mercury')
+    expect(mercury.tubes.length).toBeGreaterThanOrEqual(mercury.districts.length - 1)
+    for (const tube of mercury.tubes) {
+      expect(tube.indices.length).toBeGreaterThan(0)
+      // Every corner of the tube is under the roof and over the floor the grid has there: the grid keeps out of its way.
+      for (let k = 0; k < tube.positions.length; k += 3 * 7) {
+        const p = { x: tube.positions[k]!, y: tube.positions[k + 1]!, z: tube.positions[k + 2]! }
+        const height = Math.hypot(p.x, p.y, p.z) - mercury.radius
+        expect(height).toBeLessThanOrEqual(roofOver(mercury, p) + 0.01)
+        expect(height).toBeGreaterThanOrEqual(sphereHeight(mercury.ground, unit(p)) - 0.6)
+      }
+    }
+    // From each cavern's middle out along every tunnel and into the next, the floor rises and falls smoothly: never a step.
+    for (const tube of mercury.tubes) {
+      const sides = tube.positions.length / 3
+      const first = { x: tube.positions[0]!, y: tube.positions[1]!, z: tube.positions[2]! }
+      const last = { x: tube.positions[(sides - 1) * 3]!, y: tube.positions[(sides - 1) * 3 + 1]!, z: tube.positions[(sides - 1) * 3 + 2]! }
+      const from = mercury.districts.reduce((best, cavern) => (angleBetween(unit(first), cavern.center) < angleBetween(unit(first), best.center) ? cavern : best)).center
+      const to = mercury.districts.reduce((best, cavern) => (angleBetween(unit(last), cavern.center) < angleBetween(unit(last), best.center) ? cavern : best)).center
+      const span = angleBetween(from, to) * mercury.radius
+      // However steep it climbs, its slope changes gradually: a step or a kink would turn it sharply from one meter to the next.
+      const at = (d: number): number => {
+        const t = d / span
+        return sphereHeight(mercury.ground, unit({ x: from.x * (1 - t) + to.x * t, y: from.y * (1 - t) + to.y * t, z: from.z * (1 - t) + to.z * t }))
+      }
+      for (let d = 2; d < span; d += 1) {
+        const bend = at(d) - 2 * at(d - 1) + at(d - 2)
+        expect(Math.abs(bend), `${d} m along`).toBeLessThan(0.25)
+      }
     }
   })
 
