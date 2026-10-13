@@ -453,6 +453,12 @@ body {
   font-size: 12px;
   color: var(--dim);
 }
+/* Why the game could not be played, kept up until the player moves on. */
+.warning {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #ffd24a;
+}
 /* How many are driving the island the seed names. */
 .here {
   margin: 8px 0 0;

@@ -21,17 +21,18 @@ export const TUBE_SIDES = 36
 
 /**
  * A tube's course: the line along its middle, how high its middle stands
- * over the radius at each point, how far it reaches across, up and down,
- * and how round its floor is at each point: 1 for an ellipse all round, 0
- * for flat right across at its lowest, walls rising straight from it to
- * where its roof springs, as at a mouth opening onto a floor.
+ * over the radius at each point, how far it reaches across and down, how
+ * high its roof rises over its middle at each point, and how round it is
+ * at each point: 1 for an ellipse all round, 0 for flat right across at
+ * its lowest and its highest with walls straight between, as at a mouth
+ * opening onto a cavern's floor and into its wall.
  */
 export interface Tube {
   readonly line: readonly Vec3[]
   readonly middle: readonly number[]
   readonly round: readonly number[]
   readonly reach: number
-  readonly above: number
+  readonly above: readonly number[]
   readonly below: number
 }
 
@@ -51,9 +52,10 @@ export function tubeMesh(tube: Tube, radius: number): WorldMesh {
     for (let k = 0; k < TUBE_SIDES; k++) {
       const angle = (2 * Math.PI * k) / TUBE_SIDES
       const across = cos(angle) * reach
-      // Over its middle, the roof's ellipse; under it, the floor's, flattened as far as it is not round there.
+      // Over its middle, the roof's ellipse; under it, the floor's; each flattened as far as it is not round there.
       const s = sin(angle)
-      const rise = s >= 0 ? s * above : -below * (1 - round[i]! + round[i]! * -s)
+      const flat = 1 - round[i]!
+      const rise = s >= 0 ? above[i]! * (flat + round[i]! * s) : -below * (flat + round[i]! * -s)
       positions.push(center.x + side.x * across + up.x * rise, center.y + side.y * across + up.y * rise, center.z + side.z * across + up.z * rise)
     }
   }

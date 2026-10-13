@@ -1,5 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
-import { NO_ARRIVAL } from '@buggies/net'
+import { ConnectionFailure, NO_ARRIVAL, REJECT_PROTOCOL_MISMATCH } from '@buggies/net'
 import { moonOf, worldId, worldKindOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
@@ -58,7 +58,7 @@ function fakeMap(seed: number): World {
 class StubMenu implements ShellMenu {
   open = false
   shown: [Choice, Step | undefined][] = []
-  notices: string[] = []
+  warnings: string[] = []
   host: MenuHost | null = null
   show(choice: Choice, step?: Step): void {
     this.open = true
@@ -67,8 +67,8 @@ class StubMenu implements ShellMenu {
   hide(): void {
     this.open = false
   }
-  notice(text: string): void {
-    this.notices.push(text)
+  warn(text: string): void {
+    this.warnings.push(text)
   }
 }
 
@@ -81,8 +81,8 @@ interface StubIsland extends ModeView {
   disposed: boolean
 }
 
-/** A shell with nothing real behind it, and a record of everything it made. */
-function build(refuse: string | null = null) {
+/** A shell with nothing real behind it, and a record of everything it made; `failures` are thrown by the next joins, one each. */
+function build(refuse: string | null = null, failures: Error[] = []) {
   const games: StubGame[] = []
   const showrooms: StubShowroom[] = []
   const islands: StubIsland[] = []
@@ -135,6 +135,8 @@ function build(refuse: string | null = null) {
       arrivals.push(arrival)
       passed.push(pass)
       if (refuse !== null) throw new Error(refuse)
+      const failure = failures.shift()
+      if (failure !== undefined) throw failure
       await mapFor(seed)
       const game: StubGame = {
         kind: `${profile} on ${seed}`,
@@ -333,7 +335,7 @@ describe('the shell', () => {
     await shell.start(CHOICE)
     expect(shell.playing).toBe(false)
     expect(menu.open).toBe(true)
-    expect(menu.notices.at(-1)).toBe(`Could not join ${SERVER}: refused`)
+    expect(menu.warnings.at(-1)).toBe(`Could not join ${SERVER}: refused`)
   })
 
   it('asks the server which islands are busy, and has none to offer when it cannot say', async () => {
@@ -383,6 +385,63 @@ describe('the shell', () => {
     expect(passed.at(-1)).toBe(40)
     expect(games[1]!.kind).toBe('sportsCar on 5')
     expect(shell.onShow).toBe('game')
+  })
+
+  it('tries a portal again when the world beyond it cannot be joined, rather than giving up on the game', async () => {
+    vi.useFakeTimers()
+    const failures: Error[] = []
+    const { shell, menu, games, joined, arrivals, hudStates } = build(null, failures)
+    const dice = vi.spyOn(Math, 'random').mockReturnValue(0)
+    await shell.start(CHOICE)
+    failures.push(new Error('connection closed'), new Error('connection closed'))
+    games[0]!.through = 2
+    shell.frame(1 / 60)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shell.played).toBeNull()
+    expect(hudStates.at(-1)).toEqual({ title: 'could not go through the portal to the moon (connection closed), trying again...' })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(menu.open).toBe(false)
+    expect(joined).toEqual([`${SERVER}#5`, `${SERVER}#${moonOf(5)}`, `${SERVER}#${moonOf(5)}`, `${SERVER}#${moonOf(5)}`])
+    expect(arrivals.slice(1)).toEqual([0, 0, 0])
+    expect(games[1]!.kind).toBe(`sportsCar on ${moonOf(5)}`)
+    expect(shell.onShow).toBe('game')
+    dice.mockRestore()
+    vi.useRealTimers()
+  })
+
+  it('keeps going through a portal behind the menu, and comes out in the vehicle picked on the way', async () => {
+    const { shell, menu, games, showrooms } = build()
+    const dice = vi.spyOn(Math, 'random').mockReturnValue(0)
+    await shell.start(CHOICE)
+    games[0]!.through = 2
+    shell.frame(1 / 60)
+    // Escape on the way: the vehicle page, as from the game, and another vehicle picked there.
+    shell.toggleMenu()
+    expect(menu.shown.at(-1)).toEqual([CHOICE, 'car'])
+    shell.showVehicle('tank')
+    await shell.start({ ...CHOICE, vehicle: 'tank' })
+    await settle()
+    expect(menu.open).toBe(false)
+    expect(showrooms[0]!.disposed).toBe(true)
+    expect(games).toHaveLength(2)
+    expect(games[1]!.swaps).toEqual(['tank'])
+    expect(shell.onShow).toBe('game')
+    dice.mockRestore()
+  })
+
+  it('says to reload when the server has moved on while going through a portal', async () => {
+    const failures: Error[] = []
+    const { shell, menu, games } = build(null, failures)
+    const dice = vi.spyOn(Math, 'random').mockReturnValue(0)
+    await shell.start(CHOICE)
+    failures.push(new ConnectionFailure('protocol mismatch', REJECT_PROTOCOL_MISMATCH))
+    games[0]!.through = 0
+    shell.frame(1 / 60)
+    await settle()
+    expect(shell.playing).toBe(false)
+    expect(menu.open).toBe(true)
+    expect(menu.warnings.at(-1)).toBe('The server has been updated: reload the page to play on.')
+    dice.mockRestore()
   })
 
   it('knows when a choice is the game already on', () => {

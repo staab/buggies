@@ -2,9 +2,11 @@
  * Mercury: all underground. Huge caverns hollowed out of solid rock, and
  * round tunnels between them, rising and falling as they go, each a
  * smooth tube out of a cavern's wall into another's, flat across where it
- * comes out onto the cavern's floor, and none crossing another; there is no sky, no road and no sea. Its pull
- * is weak, but a car holds to whatever its wheels are on, so it can run up
- * a tunnel's wall and over its roof.
+ * comes out onto the cavern's floor and its roof meeting the cavern's
+ * there, and none crossing another; there is no sky, no road and no sea.
+ * Its pull is weak, but a car holds to whatever its wheels are on, so it
+ * can run up a tunnel's wall and over its roof, and along a cavern's
+ * ceiling into a tunnel's.
  */
 
 import { createRng, randomInt, randomRange, type Vec3 } from '@buggies/physics'
@@ -18,7 +20,7 @@ import { bareWorld } from './bare.ts'
 import { groundOfSize, landOf } from './ground.ts'
 import { hollowOut, profile, roofNear, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
-import { districtOfPlace, linkPlaces, markDistricts, pointIn, scatterPlaces, toward, type Link } from './places.ts'
+import { districtOfPlace, linkPlaces, markDistricts, pointIn, scatterPlaces, someOf, toward, type Link } from './places.ts'
 import { Stands, furnish, portalIn, type FurnitureStyle } from './stands.ts'
 import { tubeMesh, type Tube } from './tubes.ts'
 
@@ -38,22 +40,30 @@ const CAVERNS_APART = 70
 const CAVERN_RISE = 18
 /** How many tunnels past the fewest that join every cavern. */
 const EXTRA_TUNNELS = 4
+/** How many of the caverns have a portal in them: a few, not every one. */
+const PORTALS = { least: 2, most: 3 } as const
 /** A tunnel: round, this far from its middle to its wall and to its roof and floor, and how far its middle rises and falls between its ends. */
 const TUNNEL = { reach: 13, above: 11, below: 11 } as const
 const TUNNEL_SWELL = 9
 /** How far out along a tunnel's line its points are laid, for its tube to bend smoothly. */
 const TUNNEL_STEP = 2.5
 /**
- * How far past its tube a tunnel's floor and roof are cut, across it and
- * over it: out of the way of the tube, which is what is driven on. Its
- * floor is cut as deep as the tube's, and lies on the tube's along its middle.
+ * How far past its tube a tunnel's floor and roof are cut across it: out
+ * of the way of the tube, which is what is driven on, but too narrow for a
+ * car to come in beside it. They are cut as deep and as high as the
+ * tube's, and lie on its floor and its roof along its middle, so nothing
+ * driven along a cavern's floor or ceiling can come in over the tube or
+ * under it rather than into it.
  */
-const TUNNEL_MARGIN = 3
+const TUNNEL_MARGIN = 1.5
 /** Where a tunnel comes out into a cavern: this share of the way out from its middle, where the cavern's floor is rising to its wall. */
 const MOUTH = 0.86
 /** How much rock is left between two tunnels at the least, past where each is cut. */
 const TUNNEL_GAP = 6
-/** How far into a tunnel from its mouth its floor goes from flat across to round. */
+/**
+ * How far into a tunnel from its mouth it goes from flat across, floor and
+ * roof, the cavern's own floor and ceiling there, to round and its own height.
+ */
 const FLARE = 14
 
 /** A cubic from one value to another, leaving the first and coming to the second at the slopes given, over 0 to 1. */
@@ -83,18 +93,22 @@ export function generateMercury(seed: number): World {
     () => randomRange(rng, CAVERN_REACH.min, CAVERN_REACH.max),
   )
   const middles = caverns.map(() => randomRange(rng, -CAVERN_RISE, CAVERN_RISE))
+  const ceilings = caverns.map(() => randomRange(rng, CAVERN_ABOVE.min, CAVERN_ABOVE.max))
   const halls: Hollow[] = caverns.map((cavern, k) => ({
     kind: 'bore',
     line: [cavern.center],
     middle: [middles[k]! + CAVERN_BELOW],
     reach: cavern.reach,
-    above: randomRange(rng, CAVERN_ABOVE.min, CAVERN_ABOVE.max),
+    above: ceilings[k]!,
     below: CAVERN_BELOW,
     squareness: 2,
   }))
   // Each tunnel comes out of the wall of each of its caverns, its floor on the cavern's floor there and climbing as that does,
-  // flat across at its mouth and rounding as it goes in, and swells up or down between.
+  // flat across at its mouth and rounding as it goes in, its roof up to the cavern's ceiling there and down to its own as it
+  // goes in, and swells up or down between.
   const mouthFloor = (k: number): number => middles[k]! + CAVERN_BELOW * (1 - profile(MOUTH, 2))
+  // How high the cavern's ceiling is over a tunnel's middle at its mouth: how high the tube's roof rises there.
+  const mouthTop = (k: number): number => middles[k]! + CAVERN_BELOW + ceilings[k]! * profile(MOUTH, 2) - (mouthFloor(k) + TUNNEL.below)
   // How steeply a cavern's floor climbs to its wall at a mouth: a bowl's slope there, outward.
   const mouthSlope = (k: number): number => (CAVERN_BELOW * MOUTH) / Math.sqrt(1 - MOUTH * MOUTH) / caverns[k]!.reach
   const mouthOf = (a: number, b: number): Vec3 => toward(caverns[a]!.center, caverns[b]!.center, caverns[a]!.reach * MOUTH, radius)
@@ -137,15 +151,21 @@ export function generateMercury(seed: number): World {
       const floor = hermite(mouthFloor(a), mouthFloor(b), mouthSlope(a) * length, -mouthSlope(b) * length, t)
       return floor + swell * 16 * t * t * (1 - t) * (1 - t) + TUNNEL.below
     })
-    const round = line.map((_, i) => smoothstep(0, FLARE, Math.min(i, last - i) * (length / last)))
-    return { line, middle, round, ...TUNNEL }
+    const into = (i: number): number => i * (length / last)
+    const round = line.map((_, i) => smoothstep(0, FLARE, Math.min(into(i), into(last - i))))
+    const above = line.map((_, i) => {
+      const fromA = 1 - smoothstep(0, FLARE, into(i))
+      const fromB = 1 - smoothstep(0, FLARE, into(last - i))
+      return TUNNEL.above + (mouthTop(a) - TUNNEL.above) * fromA + (mouthTop(b) - TUNNEL.above) * fromB
+    })
+    return { line, middle, round, reach: TUNNEL.reach, above, below: TUNNEL.below }
   })
   const tunnels: Hollow[] = tubes.map((tube) => ({
     kind: 'bore',
     line: tube.line,
     middle: tube.middle,
     reach: tube.reach + TUNNEL_MARGIN,
-    above: tube.above + TUNNEL_MARGIN,
+    above: tube.above,
     below: tube.below,
     round: tube.round,
     squareness: 2,
@@ -156,7 +176,8 @@ export function generateMercury(seed: number): World {
 
   const stands = new Stands(land, [])
   const roofOver = (p: Vec3): number => roofNear(ground, roof, p)
-  const portals: WorldPortal[] = caverns.map((cavern) => portalIn(stands, rng, cavern.center, cavern.reach * 0.25))
+  const gated = someOf(rng, caverns.length, randomInt(rng, PORTALS.least, PORTALS.most))
+  const portals: WorldPortal[] = gated.map((k) => portalIn(stands, rng, caverns[k]!.center, caverns[k]!.reach * 0.25))
   for (const cavern of caverns) {
     for (let k = 0; k < STALAGMITES; k++) stands.rock(pointIn(rng, cavern.center, cavern.reach * 0.75, radius), 'boulder', randomRange(rng, 1.5, 4.5), rng)
     for (let k = 0; k < STALAGMITES * 3; k++) stands.rock(pointIn(rng, cavern.center, cavern.reach * 0.85, radius), 'scree', randomRange(rng, 0.5, 1.4), rng)

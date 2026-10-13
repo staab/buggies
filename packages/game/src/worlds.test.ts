@@ -4,7 +4,7 @@ import { worldGravity } from '@buggies/vehicle'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { NEUTRAL_INPUT, advance, createArena, initPhysics, isLost, respawn, takeSeat } from './index.ts'
-import { apart } from './test-planet.ts'
+import { apart, between } from './test-planet.ts'
 
 const SEED = 7
 const KINDS: readonly WorldKind[] = ['mars', 'neptune', 'jupiter', 'venus', 'mercury']
@@ -78,6 +78,57 @@ describe('the worlds past the planet', () => {
     expect(isLost(arena, seat)).toBe(false)
     expect(grounded).toBeGreaterThan(60 * 3 * 0.9)
     arena.world.free()
+  })
+
+  it("drives a car along a cavern's ceiling on Mercury into a tunnel, inside its tube, never over it where it is hidden", () => {
+    const map = worlds.get('mercury')!
+    const tube = map.tubes[0]!
+    const rings = tube.positions.length / 3 / TUBE_SIDES
+    const corner = (ring: number, side: number): Vec3 => {
+      const k = (ring * TUBE_SIDES + side) * 3
+      return v3(tube.positions[k]!, tube.positions[k + 1]!, tube.positions[k + 2]!)
+    }
+    // A ring's middle: halfway from its floor to its roof, a quarter turn round from its side either way.
+    const middleOf = (ring: number): Vec3 => {
+      const top = corner(ring, TUBE_SIDES / 4)
+      const bottom = corner(ring, (TUBE_SIDES * 3) / 4)
+      return v3((top.x + bottom.x) / 2, (top.y + bottom.y) / 2, (top.z + bottom.z) / 2)
+    }
+    // How far out of a ring's middle toward its wall a point is: under 1 inside the tube.
+    const outOf = (ring: number, p: Vec3): number => {
+      const middle = middleOf(ring)
+      const offset = (to: Vec3): Vec3 => v3(to.x - middle.x, to.y - middle.y, to.z - middle.z)
+      const side = offset(corner(ring, 0))
+      const top = offset(corner(ring, TUBE_SIDES / 4))
+      const d = offset(p)
+      const share = (axis: Vec3): number => (d.x * axis.x + d.y * axis.y + d.z * axis.z) / (axis.x * axis.x + axis.y * axis.y + axis.z * axis.z)
+      return Math.hypot(share(side), share(top))
+    }
+    const mouth = middleOf(0)
+    const inward = middleOf(1)
+    const way = upOf(v3(inward.x - mouth.x, inward.y - mouth.y, inward.z - mouth.z))
+    const across = upOf(v3(way.y * mouth.z - way.z * mouth.y, way.z * mouth.x - way.x * mouth.z, way.x * mouth.y - way.y * mouth.x))
+    for (const aside of [0, 9]) {
+      // Back in the cavern, under its ceiling and off to one side, wheels up against it, facing the mouth.
+      const out = upOf(v3(mouth.x - way.x * 22 + across.x * aside, mouth.y - way.y * 22 + across.y * aside, mouth.z - way.z * 22 + across.z * aside))
+      const r = map.radius + roofOver(map, out) - 0.55
+      const down = { x: -out.x, y: -out.y, z: -out.z }
+      const arena = createArena(map)
+      const seat = takeSeat(arena, 0, 'sportsCar')
+      respawn(seat, { position: v3(out.x * r, out.y * r, out.z * r), up: down, rotation: uprightRotation(down, way) })
+      let deepest = 0
+      for (let i = 0; i < 60 * 8; i++) {
+        advance(arena, () => ({ ...NEUTRAL_INPUT, throttle: i < 30 ? 0 : 0.6 }))
+        // Past where its mouth flares, the car is never farther from the tube's middle than its wall.
+        const p = seat.vehicle.frame.position
+        const ring = Array.from({ length: rings }, (_, k) => k).reduce((best, k) => (between(p, middleOf(k)) < between(p, middleOf(best)) ? k : best))
+        if (ring < 8 || ring > rings - 9 || between(p, middleOf(ring)) > 30) continue
+        deepest = Math.max(deepest, ring)
+        expect(outOf(ring, p), `${aside} m aside, ${i} ticks in`).toBeLessThan(1)
+      }
+      expect(deepest, `${aside} m aside`).toBeGreaterThan(8)
+      arena.world.free()
+    }
   })
 
   it('hold a car upside down to a cavern roof on Mercury, where it would fall anywhere else', () => {

@@ -12,7 +12,7 @@ import type { ModeView } from './mode.ts'
 import { createOnlineMode } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
-import { createTerrainView, moveBoats, moveClouds } from './terrain-view.ts'
+import { createTerrainView, moveBoats, moveClouds, moveLife } from './terrain-view.ts'
 import { WORLD_LOOKS } from './world-looks.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -23,12 +23,18 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+/** What went wrong, in words. */
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** The menu, as the shell drives it. */
 export interface ShellMenu {
   readonly open: boolean
   show(choice: Choice, step?: Step): void
   hide(): void
-  notice(text: string, busy?: boolean): void
+  /** Why the game could not be played, kept in view until the player moves on. */
+  warn(text: string): void
 }
 
 /** The HUD, as the shell fills it. */
@@ -97,11 +103,15 @@ export interface ShellDeps {
   settle?: (choice: Choice) => void
 }
 
-/** The game being played, and what it was set off with. */
+/**
+ * The game being played, and what it was set off with. It lasts through
+ * a portal and through a lost connection: only its connection, `mode`, is
+ * let go and made again, and there is none while the next is on its way.
+ */
 interface Game {
-  mode: ModeView
+  mode: ModeView | null
   choice: Choice
-  /** Which world is being played: the chosen planet, or its moon, gone to through a portal. */
+  /** Which world is being played, or gone to: the chosen planet, or one of its others, gone to through a portal. */
   world: number
 }
 
@@ -157,12 +167,20 @@ export class Shell implements MenuHost {
   private idle = 0
   /** The planet's portal the moon was gone to by, to come back out of. */
   private cameFrom = 0
+  /** What the HUD last said was being waited for, to say again when the menu goes from over it. */
+  private waitingFor = ''
   /** An island on its way, so that two asking for it at once do not each make one. */
   private making: { seed: number; island: Promise<World> } | null = null
   private game: Game | null = null
   private backdrop: Backdrop | null = null
-  /** Each thing asked for outranks the one before: a slow one that lands late is let go. */
-  private generation = 0
+  /**
+   * Each thing asked for outranks the one before of its sort: a slow one
+   * that lands late is let go. What the menu puts up behind it is one
+   * sort, and joining a world another, so that looking at a vehicle while
+   * a portal is gone through does not call the journey off.
+   */
+  private showing = 0
+  private joining = 0
 
   constructor(deps: ShellDeps, choice: Choice) {
     this.renderer = deps.renderer
@@ -190,18 +208,19 @@ export class Shell implements MenuHost {
 
   get onShow(): OnShow {
     if (this.menu.open && this.backdrop !== null) return this.backdrop.kind
-    return this.game !== null ? 'game' : (this.backdrop?.kind ?? null)
+    return this.game?.mode ? 'game' : (this.backdrop?.kind ?? null)
   }
 
   /** A line on the HUD and nothing else: what is being waited for. */
   notice(text: string): void {
+    this.waitingFor = text
     this.hud.notice(text)
   }
 
   /** A panel over the game, such as the games panel: while it is open, no one is driving. */
   overlay: { readonly open: boolean } = { open: false }
 
-  /** The game being played, if any. */
+  /** The game being played, if any, while it is joined to its world. */
   get played(): ModeView | null {
     return this.game?.mode ?? null
   }
@@ -214,8 +233,9 @@ export class Shell implements MenuHost {
 
   /**
    * The Escape key. From a game, the menu opens on the vehicle page, to swap
-   * and rejoin; closed again, the game goes on. With no game behind it, the
-   * menu stays up.
+   * and rejoin; closed again, the game goes on. Halfway through a portal,
+   * or joining again after a lost connection, it is the same: the journey
+   * carries on behind it. With no game behind it, the menu stays up.
    */
   toggleMenu(): void {
     if (this.menu.open) {
@@ -230,7 +250,7 @@ export class Shell implements MenuHost {
 
   /** Put the island with this seed on show, to be looked over, and say what it is like. The address bar names it as soon as it is picked. */
   async showIsland(seed: number): Promise<string> {
-    const stamp = ++this.generation
+    const stamp = ++this.showing
     this.choiceNow = { ...this.choiceNow, seed }
     this.settle(this.choiceNow)
     if (this.backdrop?.kind === 'island' && this.backdrop.seed === seed && this.map !== null) {
@@ -238,7 +258,7 @@ export class Shell implements MenuHost {
     }
     const island = await this.mapFor(seed)
     // Something else may have been asked for while the island was being made.
-    if (stamp !== this.generation) return ''
+    if (stamp !== this.showing) return ''
     this.setBackdrop({ kind: 'island', seed, mode: this.modes.island(island, this.scene, this.renderer.domElement) })
     return islandSummary(island)
   }
@@ -257,7 +277,7 @@ export class Shell implements MenuHost {
 
   /** Put this vehicle on show, turning on the spot. */
   showVehicle(vehicle: VehicleProfileId): void {
-    this.generation += 1
+    this.showing += 1
     this.choiceNow = { ...this.choiceNow, vehicle }
     if (this.backdrop?.kind !== 'showroom') this.setBackdrop({ kind: 'showroom', mode: this.modes.showroom(this.sound) })
     if (this.backdrop?.kind === 'showroom') this.backdrop.mode.show(vehicle)
@@ -269,23 +289,25 @@ export class Shell implements MenuHost {
    * played, go back to it.
    */
   async start(next: Choice): Promise<void> {
-    const stamp = ++this.generation
+    this.showing += 1
     this.choiceNow = next
     this.settle(next)
     this.menu.hide()
 
-    if (this.game !== null && continues(this.game.choice, next)) {
+    const { game } = this
+    if (game !== null && continues(game.choice, next)) {
       await this.resume()
       return
     }
-    const { game } = this
-    if (game?.mode.changeVehicle !== undefined && sameSeats(game.choice, next)) {
-      game.mode.changeVehicle(next.vehicle)
+    // Another vehicle is the same seat: swapped where the car is, or, halfway through a portal, on the other side.
+    if (game !== null && sameSeats(game.choice, next) && (game.mode === null || game.mode.changeVehicle !== undefined)) {
+      game.mode?.changeVehicle?.(next.vehicle)
       game.choice = next
       await this.resume()
       return
     }
 
+    const stamp = ++this.joining
     this.setBackdrop(null)
     this.setGame(null)
     this.notice('connecting...')
@@ -302,16 +324,15 @@ export class Shell implements MenuHost {
         NO_PASS,
         next.name,
       )
-      if (stamp !== this.generation) {
+      if (stamp !== this.joining) {
         mode.dispose()
         return
       }
       this.setGame({ mode, choice: next, world: next.seed })
     } catch (error: unknown) {
-      if (stamp !== this.generation) return
-      const why = error instanceof Error ? error.message : String(error)
+      if (stamp !== this.joining) return
       this.menu.show(this.choiceNow)
-      this.menu.notice(`Could not join ${this.server}: ${why}`)
+      this.menu.warn(`Could not join ${this.server}: ${reasonOf(error)}`)
     }
   }
 
@@ -319,69 +340,77 @@ export class Shell implements MenuHost {
    * Take the player through a portal to another of the planet's worlds,
    * picked at random; back to the planet itself, out of the portal they
    * left it by. They join the room for the world on the other side, in the
-   * vehicles they are in.
+   * vehicles they are in, with what they hold.
    */
-  private async travel(through: number): Promise<void> {
-    const { game, map } = this
-    if (game === null || map === null || map.seed !== game.world) return
+  private travel(game: Game, through: number): void {
+    const { map } = this
+    if (game.mode === null || map === null || map.seed !== game.world) return
     const link = portalLink(map, this.cameFrom)
     if (map.kind === 'planet') this.cameFrom = through
-    const stamp = ++this.generation
-    // Taken before the game is let go, so that what the car holds goes through with it.
-    const pass = game.mode.pass?.()
-    this.setGame(null)
+    // Taken before the connection is let go, so that what the car holds goes through with it.
+    const pass = game.mode.pass?.() ?? NO_PASS
+    this.leaveWorld(game)
+    game.world = link.to
     const kind = worldKindOf(link.to)
-    this.notice(kind === 'planet' ? 'back through the portal...' : `through the portal to ${WORLD_TRAITS[kind].name}...`)
-    try {
-      const mode = await this.modes.play(this.scene, this.server, link.to, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, link.arrival, pass ?? NO_PASS, game.choice.name)
-      if (stamp !== this.generation) {
-        mode.dispose()
-        return
-      }
-      this.setGame({ mode, choice: game.choice, world: link.to })
-    } catch (error: unknown) {
-      if (stamp !== this.generation) return
-      const why = error instanceof Error ? error.message : String(error)
-      this.menu.show(this.choiceNow)
-      this.menu.notice(`Could not go through the portal: ${why}`)
-    }
+    const going = kind === 'planet' ? 'back through the portal' : `through the portal to ${WORLD_TRAITS[kind].name}`
+    void this.joinWorld(game, link.arrival, pass, (why) => (why === null ? `${going}...` : `could not go ${going} (${why}), trying again...`))
   }
 
   /**
    * Join the world being played again, in the
    * vehicles they were in, after the connection to the server was lost:
    * back where they were, with what they held, if the server still has it.
-   * Tried until it works, or something else is asked for, or the server
-   * has moved on to a version this page does not speak.
    */
-  private async rejoin(why: string): Promise<void> {
-    const { game } = this
-    if (game === null) return
-    const stamp = ++this.generation
-    const pass = game.mode.pass?.()
-    this.setGame(null)
+  private rejoin(game: Game, lost: string): void {
+    const pass = game.mode?.pass?.() ?? NO_PASS
+    this.leaveWorld(game)
+    void this.joinWorld(game, NO_ARRIVAL, pass, (why) => `lost the server (${why ?? lost}), reconnecting...`)
+  }
+
+  /**
+   * Join the room for the world a game has gone to, through a portal or
+   * back after losing it, saying what is being waited for. The world is
+   * made first, so the seat is not held empty while it is. Tried until it
+   * works, or something else is asked for, or the server has moved on to
+   * a version this page does not speak.
+   */
+  private async joinWorld(game: Game, arrival: number, pass: number, waiting: (why: string | null) => string): Promise<void> {
+    const stamp = ++this.joining
+    this.notice(waiting(null))
     for (let attempt = 0; ; attempt++) {
-      this.notice(`lost the server (${why}), reconnecting...`)
+      const vehicle = game.choice.vehicle
       try {
-        const mode = await this.modes.play(this.scene, this.server, game.world, game.choice.vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, NO_ARRIVAL, pass ?? NO_PASS, game.choice.name)
-        if (stamp !== this.generation) {
+        await this.mapFor(game.world)
+        if (stamp !== this.joining) return
+        const mode = await this.modes.play(this.scene, this.server, game.world, vehicle, (seed) => this.mapFor(seed), this.sound, this.sun, arrival, pass, game.choice.name)
+        if (stamp !== this.joining) {
           mode.dispose()
           return
         }
-        this.setGame({ mode, choice: game.choice, world: game.world })
+        // Another vehicle chosen on the way.
+        if (game.choice.vehicle !== vehicle) mode.changeVehicle?.(game.choice.vehicle)
+        game.mode = mode
+        this.resize()
         return
       } catch (error: unknown) {
-        if (stamp !== this.generation) return
+        if (stamp !== this.joining) return
         if (error instanceof ConnectionFailure && error.reject === REJECT_PROTOCOL_MISMATCH) {
+          this.setGame(null)
           this.menu.show(this.choiceNow)
-          this.menu.notice('The server has been updated: reload the page to play on.')
+          this.menu.warn('The server has been updated: reload the page to play on.')
           return
         }
-        why = error instanceof Error ? error.message : String(error)
+        this.notice(waiting(reasonOf(error)))
       }
       await wait(REJOIN_DELAYS_MS[Math.min(attempt, REJOIN_DELAYS_MS.length - 1)]!)
-      if (stamp !== this.generation) return
+      if (stamp !== this.joining) return
     }
+  }
+
+  /** Let go of the connection a game is played over, keeping the game: another is on its way. */
+  private leaveWorld(game: Game): void {
+    game.mode?.dispose()
+    game.mode = null
   }
 
   /**
@@ -391,10 +420,12 @@ export class Shell implements MenuHost {
   async resume(): Promise<void> {
     const { game } = this
     if (game === null) return
-    const stamp = ++this.generation
+    const stamp = ++this.showing
     this.choiceNow = game.choice
+    // On the way to a world, there is nothing to see but what is being waited for.
+    if (game.mode === null) this.hud.notice(this.waitingFor)
     await this.mapFor(game.world)
-    if (stamp !== this.generation) return
+    if (stamp !== this.showing) return
     this.setBackdrop(null)
     this.settle(game.choice)
   }
@@ -403,7 +434,7 @@ export class Shell implements MenuHost {
     const { clientWidth, clientHeight } = this.container
     this.renderer.setSize(clientWidth, clientHeight, false)
     const aspect = clientWidth / Math.max(clientHeight, 1)
-    this.game?.mode.resize(aspect)
+    this.game?.mode?.resize(aspect)
     this.backdrop?.mode.resize(aspect)
   }
 
@@ -415,32 +446,38 @@ export class Shell implements MenuHost {
    */
   frame(dt: number): void {
     const { menu, game, backdrop } = this
-    game?.mode.update(dt, !menu.open && !this.overlay.open)
-    // Through a portal, the player goes over to the world it leads to.
-    const through = game?.mode.portal?.() ?? -1
-    if (through >= 0) void this.travel(through)
-    // Cut off from the server, the player joins again.
-    const lost = game?.mode.lost?.() ?? null
-    if (lost !== null && this.game === game) void this.rejoin(lost)
+    const mode = game?.mode ?? null
+    mode?.update(dt, !menu.open && !this.overlay.open)
+    if (game !== null && mode !== null) {
+      // Through a portal, the player goes over to the world it leads to.
+      const through = mode.portal?.() ?? -1
+      if (through >= 0) this.travel(game, through)
+      // Cut off from the server, the player joins again.
+      const lost = mode.lost?.() ?? null
+      if (lost !== null && game.mode === mode) this.rejoin(game, lost)
+    }
     if (menu.open) backdrop?.mode.update(dt, false)
     // The island's clocks keep the game's time.
     if (this.view !== null) {
-      this.view.userData.tick = game?.mode.tick ?? null
+      this.view.userData.tick = mode?.tick ?? null
       // The boats by the game's time where there is one, to be where the game has them; by the screen's otherwise.
       this.idle += dt
-      const seconds = game?.mode.tick === undefined ? this.idle : game.mode.tick / 60
+      const seconds = mode?.tick === undefined ? this.idle : mode.tick / 60
       moveBoats(this.view, seconds)
       moveClouds(this.view, seconds)
+      moveLife(this.view, seconds)
       // The planet turns under the sun by the game's time, and the sky is as the day is over the whole of it, until a view says where the play is.
       this.sun.turn(seconds)
       this.sun.shade(this.scene, WORLD_LOOKS[this.map?.kind ?? 'planet'].skies)
     }
-    const shown = menu.open && backdrop !== null ? backdrop.mode : (game?.mode ?? backdrop?.mode ?? null)
+    const playing = game?.mode ?? null
+    const shown = menu.open && backdrop !== null ? backdrop.mode : (playing ?? backdrop?.mode ?? null)
     if (shown !== null) {
       if (shown.render) shown.render(this.renderer)
       else this.renderer.render(shown.scene ?? this.scene, shown.camera)
     }
-    if (menu.open || game !== null) this.hud.render(menu.open ? null : (game?.mode.hud?.() ?? null))
+    // Between worlds, the HUD keeps saying what is being waited for.
+    if (menu.open || playing !== null) this.hud.render(menu.open ? null : (playing?.hud?.() ?? null))
   }
 
   /**
@@ -469,6 +506,10 @@ export class Shell implements MenuHost {
       this.sun.centerOn({ x: 0, y: 0, z: 0 })
       return made
     })
+    // One that could not be made is asked for afresh next time.
+    island.catch(() => {
+      if (this.making?.island === island) this.making = null
+    })
     this.making = { seed, island }
     return island
   }
@@ -480,7 +521,7 @@ export class Shell implements MenuHost {
   }
 
   private setGame(next: Game | null): void {
-    this.game?.mode.dispose()
+    this.game?.mode?.dispose()
     this.game = next
     this.resize()
   }

@@ -1,7 +1,11 @@
 import { MUSHROOM_STEM, type Stand, type World, type WorldBuilding } from '@buggies/terrain'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
 import { uprightAt } from './stand.ts'
+
+/** How many seconds the kelp has swayed for: moved on with the game's time, so every strand sways as it does. */
+export const KELP_SWAY = { value: 0 }
 
 /**
  * The furniture of the worlds past the planet, each kind drawn as one
@@ -32,7 +36,11 @@ const DISH_WHITE = new THREE.Color('#e9ebee')
 const BEACON_LIGHT = new THREE.Color('#ff3b2e')
 const STEM = new THREE.Color('#efe6cf')
 const GILLS = new THREE.Color('#5b4a3a')
-const KELP = new THREE.Color('#5b6b2a')
+/** A strand of kelp's stem, its blades from the stem out to their tips, and the green some strands lean toward. */
+const KELP_STEM = new THREE.Color('#4a3e18')
+const KELP_BLADE = new THREE.Color('#7c6d24')
+const KELP_TIP = new THREE.Color('#a8963c')
+const KELP_GREEN = new THREE.Color('#9fbf5a')
 /** The colors a giant mushroom's cap comes in, a crystal's glow, and a coral head. */
 const CAPS = ['#c8372d', '#e0742a', '#8e3fb0', '#d8b23a', '#3f9c8a'].map((hex) => new THREE.Color(hex))
 const GLOWS = ['#5ce1ff', '#b67bff', '#7dffb0', '#ffb45c'].map((hex) => new THREE.Color(hex))
@@ -183,27 +191,170 @@ function crystals(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)
   })
 }
 
-/** Kelp: a tall, slender strand swaying up from the sea floor, leaning with the current. */
-function kelpStrands(found: readonly Piece[]): (THREE.InstancedMesh | null)[] {
-  const strand = footed(new THREE.ConeGeometry(1, 1, 5))
-  return [
-    batch(strand, new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true }), found, (kelp, local, color) => {
-      const lean = (kelp.tone - 0.5) * 0.35
-      const r = (kelp.width ?? 1) * 0.3
-      local.copy(new THREE.Matrix4().makeRotationZ(lean)).multiply(scaled(r, kelp.height, r))
-      color.copy(KELP).offsetHSL((kelp.tone - 0.5) * 0.06, 0, (kelp.tone - 0.5) * 0.1)
-    }),
-  ]
+/** A shape painted one color, as a piece of a model made of several: no texture to it, only its corners and their color. */
+function painted(geometry: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry {
+  const plain = geometry.index === null ? geometry : geometry.toNonIndexed()
+  plain.deleteAttribute('uv')
+  const colors = new Float32Array(plain.getAttribute('position').count * 3)
+  for (let k = 0; k < colors.length; k += 3) color.toArray(colors, k)
+  plain.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  return plain
 }
 
-/** A coral head: a bright, knobbled mound on the sea floor. */
+/** How a strand of kelp is made, as shares of its height: its stem and how much it bends, and how many blades and how long. */
+const STRAND = { stem: 0.007, bend: 0.035, blades: 11, blade: 0.12, bladeWidth: 0.022, crown: 3 } as const
+/** How far a strand sways at its top, as a share of its height, and how fast, one way and across. */
+const SWAY = { reach: 0.07, along: 0.9, across: 0.63 } as const
+
+/** Where the stem of a strand of kelp is across, this share of the way up: bent a little, as it grows toward the light. */
+function stemAt(share: number): number {
+  return STRAND.bend * Math.sin(share * Math.PI * 1.5)
+}
+
+/**
+ * A strand of kelp a unit high, its foot at its origin: a slender stem
+ * curving up, blades out from it all the way up, turned about it a little
+ * more each time, and a few long blades streaming from its top. The stem
+ * darker, the blades paler toward their tips.
+ */
+function kelpGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = []
+  const stem = new THREE.CylinderGeometry(STRAND.stem * 0.7, STRAND.stem, 1, 4, 4, true)
+  stem.translate(0, 0.5, 0)
+  const corners = stem.getAttribute('position') as THREE.BufferAttribute
+  for (let k = 0; k < corners.count; k++) corners.setX(k, corners.getX(k) + stemAt(corners.getY(k)))
+  parts.push(painted(stem, KELP_STEM))
+  const blade = (share: number, turn: number, length: number, lean: number): void => {
+    const leaf = new THREE.PlaneGeometry(STRAND.bladeWidth, length, 1, 3)
+    leaf.translate(0, length / 2, 0)
+    // Out from the stem and drooping toward its tip, paler as it goes.
+    const at = leaf.getAttribute('position') as THREE.BufferAttribute
+    const colors = new Float32Array(at.count * 3)
+    const color = new THREE.Color()
+    for (let k = 0; k < at.count; k++) {
+      const along = at.getY(k) / length
+      at.setZ(k, -0.25 * along * along * length)
+      color.copy(KELP_BLADE).lerp(KELP_TIP, along).toArray(colors, k * 3)
+    }
+    leaf.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    leaf.rotateZ(-lean)
+    leaf.rotateY(turn)
+    leaf.translate(stemAt(share), share, 0)
+    const plain = leaf.toNonIndexed()
+    plain.deleteAttribute('uv')
+    parts.push(plain)
+  }
+  for (let k = 0; k < STRAND.blades; k++) blade(0.16 + (0.78 * k) / (STRAND.blades - 1), k * 2.4, STRAND.blade, 0.95)
+  for (let k = 0; k < STRAND.crown; k++) blade(0.97, k * 2.1, STRAND.blade * 1.4, 0.5)
+  const strand = mergeGeometries(parts)
+  strand.computeVertexNormals()
+  return strand
+}
+
+/**
+ * The kelp's material: its corners pushed with the current, more the
+ * higher up the strand, each strand in its own time by where it stands,
+ * so the beds sway and no two strands together.
+ */
+function kelpMaterial(): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide })
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.kelpSway = KELP_SWAY
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float kelpSway;').replace(
+      '#include <begin_vertex>',
+      /* glsl */ `#include <begin_vertex>
+#ifdef USE_INSTANCING
+{
+  float bend = clamp( position.y, 0.0, 1.0 );
+  bend *= bend;
+  float phase = dot( instanceMatrix[ 3 ].xyz, vec3( 0.071, 0.053, 0.037 ) );
+  // In meters at the top, back into the strand's own measure across and along.
+  float reach = ${SWAY.reach.toFixed(3)} * length( instanceMatrix[ 1 ].xyz );
+  transformed.x += sin( kelpSway * ${SWAY.along.toFixed(3)} + phase ) * reach * bend / length( instanceMatrix[ 0 ].xyz );
+  transformed.z += sin( kelpSway * ${SWAY.across.toFixed(3)} + phase * 1.7 ) * reach * 0.6 * bend / length( instanceMatrix[ 2 ].xyz );
+}
+#endif`,
+    )
+  }
+  material.customProgramCacheKey = () => 'kelp-sway'
+  return material
+}
+
+/** Kelp: tall, slender strands swaying up from the sea floor, golden brown, some greener. */
+function kelpStrands(found: readonly Piece[]): (THREE.InstancedMesh | null)[] {
+  const mesh = batch(kelpGeometry(), kelpMaterial(), found, (kelp, local, color) => {
+    const wide = (kelp.width ?? 1.5) / 1.5
+    local.copy(new THREE.Matrix4().makeRotationY(kelp.tone * Math.PI * 2)).multiply(scaled(kelp.height * wide, kelp.height, kelp.height * wide))
+    color.setScalar(0.8 + 0.25 * kelp.tone).lerp(KELP_GREEN, ((kelp.tone * 7.3) % 1) * 0.35)
+  })
+  // Swayed in the drawing alone: its shadow would stand still.
+  if (mesh !== null) mesh.name = 'kelp'
+  return [mesh]
+}
+
+/** The shapes coral comes in: a knobbled mound, branches like antlers, a fan, and a cluster of tubes. */
+type CoralShape = 'mound' | 'branches' | 'fan' | 'tubes'
+const CORAL_SHAPES: readonly CoralShape[] = ['mound', 'branches', 'fan', 'tubes']
+
+/** A coral's shape, a unit high and its foot at its origin. */
+function coralGeometry(shape: CoralShape): THREE.BufferGeometry {
+  const white = new THREE.Color('#ffffff')
+  switch (shape) {
+    case 'mound': {
+      const mound = new THREE.IcosahedronGeometry(0.5, 1)
+      mound.scale(1, 1.4, 1)
+      mound.translate(0, 0.35, 0)
+      return mound
+    }
+    case 'branches': {
+      // A trunk forking twice, each fork leaning out from the last.
+      const parts: THREE.BufferGeometry[] = []
+      const limb = (from: THREE.Vector3, lean: number, turn: number, length: number, depth: number): void => {
+        const branch = new THREE.CylinderGeometry(0.035 * (depth + 1), 0.05 * (depth + 1), length, 5)
+        branch.translate(0, length / 2, 0)
+        branch.rotateZ(lean)
+        branch.rotateY(turn)
+        branch.translate(from.x, from.y, from.z)
+        parts.push(painted(branch, white))
+        if (depth === 0) return
+        const tip = new THREE.Vector3(0, length, 0).applyAxisAngle(new THREE.Vector3(0, 0, 1), lean).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn).add(from)
+        for (const side of [-1, 1]) limb(tip, lean + side * 0.5, turn + side * 0.9, length * 0.7, depth - 1)
+      }
+      limb(new THREE.Vector3(), 0, 0, 0.4, 2)
+      return mergeGeometries(parts)
+    }
+    case 'fan': {
+      const fan = new THREE.CircleGeometry(0.5, 14, 0, Math.PI)
+      fan.translate(0, 0.1, 0)
+      const stalk = new THREE.CylinderGeometry(0.04, 0.06, 0.15, 5)
+      stalk.translate(0, 0.075, 0)
+      return mergeGeometries([painted(fan, white), painted(stalk, white)])
+    }
+    case 'tubes': {
+      const parts = [
+        [0, 0, 0.9],
+        [0.2, 0.1, 0.65],
+        [-0.15, 0.18, 0.75],
+        [0.05, -0.2, 0.55],
+      ].map(([x, z, height]) => {
+        const tube = new THREE.CylinderGeometry(0.09, 0.07, height!, 7, 1, true)
+        tube.translate(x!, height! / 2, z!)
+        return painted(tube, white)
+      })
+      return mergeGeometries(parts)
+    }
+  }
+}
+
+/** Coral on the sea floor, bright, each head one of the shapes coral comes in. */
 function coralHeads(found: readonly (Stand & { size: number; tone: number })[]): (THREE.InstancedMesh | null)[] {
-  const mound = new THREE.IcosahedronGeometry(0.5, 1)
-  mound.translate(0, 0.25, 0)
-  return [
-    batch(mound, new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), found.map((rock) => ({ ...rock, height: rock.size })), (head, local, color) => {
-      local.copy(scaled(head.height, head.height * 0.7, head.height))
+  const pieces = found.map((rock) => ({ ...rock, height: rock.size }))
+  const shapeOf = (tone: number): CoralShape => pick(CORAL_SHAPES, (tone * 13.7) % 1)
+  return CORAL_SHAPES.map((shape) =>
+    batch(coralGeometry(shape), new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true, side: shape === 'fan' ? THREE.DoubleSide : THREE.FrontSide }), pieces.filter((head) => shapeOf(head.tone) === shape), (head, local, color) => {
+      const across = shape === 'fan' ? head.height * 1.2 : head.height
+      local.copy(new THREE.Matrix4().makeRotationY(head.tone * 17)).multiply(scaled(across, head.height * (shape === 'mound' ? 0.5 : 1), across))
       color.copy(pick(CORALS, head.tone))
     }),
-  ]
+  )
 }

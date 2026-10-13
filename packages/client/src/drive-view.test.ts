@@ -205,6 +205,31 @@ describe('ChaseCamera under a deck', () => {
   })
 })
 
+describe('ChaseCamera under a high roof', () => {
+  it('rides as high as in the open where the roof leaves room, and only as low as it must under a lower one', () => {
+    const tuning = createCameraTuning()
+    const camera = new ChaseCamera(tuning)
+    // A sea tunnel's roof, fifteen meters over the road, then a low one ten meters over it.
+    let roof = 15
+    camera.setBoundsAt(
+      (_at, out) => {
+        out.floor = DEPTH
+        out.ceiling = DEPTH + roof
+        return out
+      },
+      new THREE.Vector3(0, -DEPTH, 0),
+    )
+    const target = createChaseTarget()
+    target.position = { x: 0, y: 0.5, z: 0 }
+    camera.snapTo(target)
+    expect(camera.camera.position.y - target.position.y).toBeCloseTo(tuning.height, 1)
+
+    roof = 7
+    for (let i = 0; i < 180; i++) camera.update(1 / 60, target)
+    expect(camera.camera.position.y).toBeCloseTo(0.5 + 7 - 0.5 - 2, 1)
+  })
+})
+
 describe('ChaseCamera at a wreck', () => {
   it('stops where the car blew up, pulls far back and up to watch it, and snaps back to the chase when it is put back', () => {
     const tuning = createCameraTuning()

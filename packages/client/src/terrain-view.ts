@@ -32,6 +32,7 @@ import * as THREE from 'three'
 
 import { buildClouds } from './clouds-view.ts'
 import { buildGlow, buildPlatforms, buildRoof, buildTubes } from './enclosure-view.ts'
+import { buildLife } from './life-view.ts'
 import { buildFurniture } from './furniture-view.ts'
 import { buildMoonCraft, buildPortals } from './portals-view.ts'
 
@@ -2394,6 +2395,12 @@ export function moveClouds(view: THREE.Object3D, seconds: number): void {
   ;(clouds?.userData.move as ((seconds: number) => void) | undefined)?.(seconds)
 }
 
+/** Move what lives in a terrain view's air or water to where it is this many seconds into the game. */
+export function moveLife(view: THREE.Object3D, seconds: number): void {
+  const life = view.getObjectByName('life')
+  ;(life?.userData.move as ((seconds: number) => void) | undefined)?.(seconds)
+}
+
 /** Move the boats of a terrain view to where they are this many seconds into the game. */
 export function moveBoats(view: THREE.Object3D, seconds: number): void {
   const fleet = view.getObjectByName('boats')
@@ -2487,9 +2494,12 @@ export function createTerrainView(world: World): THREE.Group {
     if (!(node instanceof THREE.Mesh)) return
     if (node.name === 'lights' || node.name === 'glass' || node.material === waterMaterial) return
     node.receiveShadow = true
-    // Nor does a cavern's roof, which would put every room under it in the dark.
-    node.castShadow = node.name !== 'ground' && node.name !== 'scree' && node.name !== 'roof'
+    // Nor does a cavern's roof, which would put every room under it in the dark, nor the kelp, whose shadow would not sway with it.
+    node.castShadow = node.name !== 'ground' && node.name !== 'scree' && node.name !== 'roof' && node.name !== 'kelp'
   })
+  // What lives in the air or the water, which throws no shadow, and is moved with the game's time.
+  const life = buildLife(world)
+  if (life !== null) group.add(life)
   return group
 }
 

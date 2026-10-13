@@ -108,8 +108,12 @@ const BANANAS_KEPT_TICKS = TICKS_PER_SECOND * 10
 /** A player heard nothing from for this long is let go: a tab left behind is not a driver. */
 const IDLE_TIMEOUT_TICKS = TICKS_PER_SECOND * 15
 
-/** How long what a player left a room holding waits for them to come out of a portal into the next, or back into it. */
-const CARRY_TICKS = TICKS_PER_SECOND * 30
+/**
+ * How long what a player left a room holding waits for them to come out of
+ * a portal into the next, or back into it: long enough for their page to
+ * make the world on the other side before it joins its room.
+ */
+const CARRY_TICKS = TICKS_PER_SECOND * 120
 
 export interface GameServerEvents {
   onJoined(seat: Seat, connectionId: number, seed: number): void
@@ -471,7 +475,10 @@ export class GameServer implements TransportHandlers {
   private tendPlayers(): void {
     for (const player of this.players.values()) {
       player.allowance = Math.min(INPUT_ALLOWANCE, player.allowance + INPUTS_PER_TICK)
-      if (this.clock - player.heardTick > IDLE_TIMEOUT_TICKS) this.reject(player.connection, REJECT_IDLE)
+      if (this.clock - player.heardTick <= IDLE_TIMEOUT_TICKS) continue
+      // Let go at once, not again each tick until its connection is seen to close.
+      this.reject(player.connection, REJECT_IDLE)
+      this.leave(player)
     }
   }
 

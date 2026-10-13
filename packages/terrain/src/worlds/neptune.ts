@@ -1,8 +1,9 @@
 /**
  * Neptune: all sea, with nothing above the water at all. On the sea floor
  * stand glass stations, round halls under a dome, and between them run
- * tunnels three times a planet's, wide and low, oval across, each with a
- * road along its floor. The sea is kept out of all of it: inside, it is dry.
+ * tunnels three times a planet's, wide and oval across, each with a road
+ * along its floor. The sea is kept out of all of it: inside, it is dry.
+ * Out on the floor, kelp grows thick in beds and thin between them.
  */
 
 import { createRng, randomInt, randomRange, type Vec3 } from '@buggies/physics'
@@ -18,7 +19,7 @@ import { bareWorld } from './bare.ts'
 import { groundOfSize, landOf, meanHeight, rollGround } from './ground.ts'
 import { hollowOut, roofNear, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
-import { districtOfPlace, linkPlaces, markDistricts, scatterPlaces, toward } from './places.ts'
+import { districtOfPlace, linkPlaces, markDistricts, pointIn, ringAround, scatterPlaces, someOf, toward } from './places.ts'
 import { Stands, buildSettlement, plantTrees, portalIn, type SettlementStyle, type Span, type TreeStyle } from './stands.ts'
 import { roadAlong } from './roads.ts'
 
@@ -33,21 +34,28 @@ const STATION = { above: 20, below: 4, squareness: 3 } as const
 const STATIONS_APART = 160
 /** How many links past the fewest that join every station. */
 const EXTRA_TUNNELS = 2
+/** How many of the stations have a portal in them: a few, not every one. */
+const PORTALS = { least: 2, most: 3 } as const
 /**
- * A tunnel: three times as wide as a planet's highway tunnel, and short
- * and wide across, its roof this high over its middle and its floor this
+ * A tunnel: three times as wide as a planet's highway tunnel, and lower
+ * than it is wide, its roof this high over its middle and its floor this
  * deep under it, at its middle line.
  */
-const TUNNEL = { reach: 3 * (HIGHWAY_WIDTH / 2 + TUNNEL_CLEARANCE), above: 7, below: 3, squareness: 2.4 } as const
+const TUNNEL = { reach: 3 * (HIGHWAY_WIDTH / 2 + TUNNEL_CLEARANCE), above: 12, below: 3, squareness: 2.4 } as const
 /** How far over the sea floor a station's middle stands, so its floor lies on the floor. */
 const STATION_RISE = 4
 /** The roads along the tunnels, how wide, and how far off a station's middle they start. */
 const ROAD_WIDTH = 12
 const SQUARE = 12
 
-/** Kelp, tall and slender, and coral heads, out on the sea floor. */
+/** Kelp, tall and slender, out on the sea floor: in beds, how many, how far each reaches and how thick it grows; and strands between them. */
+const KELP_BEDS = { count: 64, reach: [12, 30] as Span } as const
+const BED_KELP: TreeStyle = { kind: 'kelp', count: 60, height: [14, 30], crown: [1.2, 2.2], spacing: 0.5 }
 const KELP: TreeStyle = { kind: 'kelp', count: 1400, height: [8, 24], crown: [1, 2], spacing: 0.6 }
-const CORAL: { count: number; size: Span } = { count: 900, size: [1.5, 4.5] }
+/** Coral heads, about the floor. */
+const CORAL: { count: number; size: Span } = { count: 1400, size: [1.5, 4.5] }
+/** How far kelp keeps from the glass, so none of its blades sways into a tunnel. */
+const KELP_CLEAR = 8
 
 const PODS: SettlementStyle = {
   kinds: [
@@ -102,15 +110,30 @@ export function generateNeptune(seed: number): World {
   })
 
   const stands = new Stands({ ...land, water }, roads)
-  const portals: WorldPortal[] = stations.map((station) => portalIn(stands, rng, station.center, station.reach * 0.3))
+  const gated = someOf(rng, stations.length, randomInt(rng, PORTALS.least, PORTALS.most))
+  const portals: WorldPortal[] = gated.map((k) => portalIn(stands, rng, stations[k]!.center, stations[k]!.reach * 0.3))
   const roofOver = (p: Vec3): number => roofNear(ground, roof, p)
   for (const station of stations) buildSettlement(stands, rng, { center: station.center, reach: station.reach * 0.75 }, PODS, (p) => roofOver(p) - 3)
-  // Out on the sea floor, open to the water, kelp swaying up and coral heads.
+  // Out on the sea floor, open to the water and clear of the glass, kelp swaying up and coral heads.
+  const open = (p: Vec3): boolean => Number.isNaN(roofOver(p))
+  const clearOfGlass = (p: Vec3): boolean => open(p) && ringAround(p, KELP_CLEAR, 6, radius).every(open)
   const openSea = (): Vec3 | null => {
     const p = randomDirection(rng)
-    return Number.isNaN(roofOver(p)) ? p : null
+    return open(p) ? p : null
   }
-  plantTrees(stands, rng, openSea, KELP)
+  for (let bed = 0; bed < KELP_BEDS.count; bed++) {
+    const center = openSea()
+    if (center === null) continue
+    const reach = randomRange(rng, ...KELP_BEDS.reach)
+    plantTrees(stands, rng, () => {
+      const p = pointIn(rng, center, reach, radius)
+      return clearOfGlass(p) ? p : null
+    }, BED_KELP)
+  }
+  plantTrees(stands, rng, () => {
+    const p = randomDirection(rng)
+    return clearOfGlass(p) ? p : null
+  }, KELP)
   for (let k = 0; k < CORAL.count; k++) {
     const p = openSea()
     if (p !== null) stands.rock(p, 'coral', randomRange(rng, ...CORAL.size), rng)

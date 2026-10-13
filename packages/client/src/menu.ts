@@ -142,6 +142,8 @@ export class Menu {
   private readonly root: HTMLElement
   private readonly host: MenuHost
   private readonly steps = document.createElement('ol')
+  /** Why the game could not be played, if it could not: kept up while the island below it is made and talked about. */
+  private readonly warning = line('warning')
   private readonly status = line('status')
   private readonly back = document.createElement('button')
   private readonly next = document.createElement('button')
@@ -257,7 +259,8 @@ export class Menu {
       credits.append(model, ' (', license, ')')
     })
 
-    panel.append(title, blurb, this.steps, mapPage, carPage, this.status, nav, credits)
+    this.warning.hidden = true
+    panel.append(title, blurb, this.steps, mapPage, carPage, this.warning, this.status, nav, credits)
     // Enter moves on, unless it is pressing a button, which does its own thing.
     panel.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) this.advance(1)
@@ -274,7 +277,14 @@ export class Menu {
   show(choice: Choice, step: Step = 'map'): void {
     this.choice = { ...choice }
     this.root.hidden = false
+    this.warn('')
     this.goTo(step)
+  }
+
+  /** Why the game could not be played, shown until the player moves on. */
+  warn(text: string): void {
+    this.warning.textContent = text
+    this.warning.hidden = text === ''
   }
 
   hide(): void {
@@ -296,11 +306,8 @@ export class Menu {
     }
   }
 
-  /**
-   * Something the player should know, shown until they move on: why the
-   * server could not be joined, or, with `busy`, what is being waited for.
-   */
-  notice(text: string, busy = false): void {
+  /** How the island being picked is coming along, or, with `busy`, what is being waited for. */
+  private notice(text: string, busy = false): void {
     this.status.textContent = text
     this.status.classList.toggle('busy', busy)
   }
@@ -328,6 +335,7 @@ export class Menu {
   /** A page on, or back; on from the last page is setting off. */
   private advance(delta: 1 | -1): void {
     if (delta === 1 && this.next.disabled) return
+    this.warn('')
     const to = STEPS[STEPS.indexOf(this.step) + delta]
     if (to !== undefined) {
       this.goTo(to)

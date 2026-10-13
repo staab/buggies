@@ -67,6 +67,16 @@ export function linkPlaces(centers: readonly Vec3[], extra: number, fits: (link:
   return links
 }
 
+/** Which of so many places, `wanted` of them or all there are, picked at random. */
+export function someOf(rng: Rng, count: number, wanted: number): number[] {
+  const order = Array.from({ length: count }, (_, k) => k)
+  for (let k = 0; k < Math.min(wanted, count); k++) {
+    const other = k + Math.floor(rng() * (count - k))
+    ;[order[k], order[other]] = [order[other]!, order[k]!]
+  }
+  return order.slice(0, wanted)
+}
+
 /** Every pair of places, to link each with every other. */
 export function linkAll(count: number): Link[] {
   const links: Link[] = []
@@ -85,6 +95,12 @@ export function pointIn(rng: Rng, center: Vec3, reach: number, radius: number, i
   const r = Math.sqrt(randomRange(rng, inner * inner, reach * reach))
   const angle = randomRange(rng, 0, Math.PI * 2)
   return fromFrame(frame, cos(angle) * r, sin(angle) * r)
+}
+
+/** Ways out evenly round a middle, `count` of them this far from it along the ground. */
+export function ringAround(center: Vec3, distance: number, count: number, radius: number): Vec3[] {
+  const frame = spotFrame(center, axisAt(center, 0), radius)
+  return Array.from({ length: count }, (_, k) => fromFrame(frame, cos((2 * Math.PI * k) / count) * distance, sin((2 * Math.PI * k) / count) * distance))
 }
 
 /** The ground's grid marked as a kind of district (`DISTRICT_*`) over each place's reach, and as country elsewhere. */

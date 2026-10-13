@@ -1,14 +1,24 @@
-import { gridDirection, groundIndex, nearestGridPoint, platformEdge, platformTop, roofedAt, sealedAt, type World } from '@buggies/terrain'
+import { TUBE_SIDES, gridDirection, groundIndex, nearestGridPoint, platformEdge, platformTop, roofedAt, sealedAt, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { groundTone, type WorldLook } from './world-looks.ts'
 import { meshGeometry } from './world-mesh.ts'
 
+/** How high over the floor rock is before it starts to fade to its color overhead, and how high it has all faded. */
+const FADE = { from: 2, to: 28 } as const
+
+/** The color rock is this high over the floor under it, into `out`: its own near the floor, fading to its color overhead where it has one. */
+function rockTone(finish: NonNullable<WorldLook['roof']>, over: number, out: THREE.Color): THREE.Color {
+  out.copy(finish.color)
+  return finish.high === undefined ? out : out.lerp(finish.high, THREE.MathUtils.smoothstep(over, FADE.from, FADE.to))
+}
+
 /**
  * The roof over what a world closes in, a mesh a face of its grid, facing
  * down into the rooms under it: glass over a dome or a sea tunnel, seen
  * through and from both sides; or rock over a cavern, seen from under it,
- * and throwing no shadow, so that the rooms are lit as the open is.
+ * fading as it rises, and throwing no shadow, so that the rooms are lit as
+ * the open is.
  */
 export function buildRoof(world: World, look: WorldLook): THREE.Object3D | null {
   const { roof, ground } = world
@@ -16,13 +26,15 @@ export function buildRoof(world: World, look: WorldLook): THREE.Object3D | null 
   if (roof.length === 0 || finish === null) return null
   const { n, radius, heights } = ground
   const material = finish.rock
-    ? new THREE.MeshStandardMaterial({ color: finish.color, roughness: 1, metalness: 0, flatShading: true })
+    ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, flatShading: true })
     : new THREE.MeshStandardMaterial({ color: finish.color, roughness: 0.05, metalness: 0.3, transparent: true, opacity: finish.opacity, depthWrite: false, side: THREE.DoubleSide })
   const group = new THREE.Group()
   group.name = 'roof'
   const direction = { x: 0, y: 0, z: 0 }
+  const tone = new THREE.Color()
   for (let face = 0; face < 6; face++) {
     const positions: number[] = []
+    const colors: number[] = []
     const indices: number[] = []
     const known = new Map<number, number>()
     const corner = (i: number, j: number): number => {
@@ -32,6 +44,8 @@ export function buildRoof(world: World, look: WorldLook): THREE.Object3D | null 
       gridDirection(n, face, i, j, direction)
       const r = radius + roof[at]!
       positions.push(direction.x * r, direction.y * r, direction.z * r)
+      rockTone(finish, roof[at]! - heights[at]!, tone)
+      colors.push(tone.r, tone.g, tone.b)
       known.set(at, positions.length / 3 - 1)
       return positions.length / 3 - 1
     }
@@ -50,6 +64,7 @@ export function buildRoof(world: World, look: WorldLook): THREE.Object3D | null 
     if (indices.length === 0) continue
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    if (finish.rock) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     geometry.setIndex(indices)
     geometry.computeVertexNormals()
     const mesh = new THREE.Mesh(geometry, material)
@@ -60,24 +75,42 @@ export function buildRoof(world: World, look: WorldLook): THREE.Object3D | null 
 }
 
 /**
- * The round tunnels driven on all the way round, rock seen from inside.
- * Along its middle a tube's floor lies on the ground under it, so it is
- * drawn a hair in front of the ground there, never flickering behind it.
+ * The round tunnels driven on all the way round, rock seen from inside,
+ * fading as the roof does the higher it rises over the tube's floor.
+ * Along its middle a tube's floor and roof lie on the ground and the roof
+ * the world has there, so it is drawn a hair in front of them, never
+ * flickering behind.
  */
 export function buildTubes(world: World, look: WorldLook): THREE.Object3D | null {
   if (world.tubes.length === 0) return null
   const group = new THREE.Group()
   group.name = 'tubes'
+  const finish = look.roof ?? { color: look.underside, opacity: 1, rock: true }
   const material = new THREE.MeshStandardMaterial({
-    color: look.roof?.color ?? look.underside,
+    vertexColors: true,
     roughness: 1,
     metalness: 0,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -2,
   })
+  const tone = new THREE.Color()
   for (const tube of world.tubes) {
-    const mesh = new THREE.Mesh(meshGeometry(tube), material)
+    const geometry = meshGeometry(tube)
+    // How high each corner is over its ring's floor: the lowest of the ring's corners.
+    const { positions } = tube
+    const colors = new Float32Array(positions.length)
+    const heightOf = (k: number): number => Math.hypot(positions[k * 3]!, positions[k * 3 + 1]!, positions[k * 3 + 2]!)
+    for (let ring = 0; ring < positions.length / 3 / TUBE_SIDES; ring++) {
+      let floor = Infinity
+      for (let side = 0; side < TUBE_SIDES; side++) floor = Math.min(floor, heightOf(ring * TUBE_SIDES + side))
+      for (let side = 0; side < TUBE_SIDES; side++) {
+        const k = ring * TUBE_SIDES + side
+        rockTone(finish, heightOf(k) - floor, tone).toArray(colors, k * 3)
+      }
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    const mesh = new THREE.Mesh(geometry, material)
     // A roof, as far as the shadows go: it throws none, or the tunnel would be dark all through.
     mesh.name = 'roof'
     group.add(mesh)

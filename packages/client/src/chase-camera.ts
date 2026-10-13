@@ -1,5 +1,5 @@
 // The camera behind a car: it hangs back on an arm, looks ahead of the car,
-// widens its view with speed, drops under a bridge or in a tunnel, and pulls
+// widens its view with speed, drops under a low bridge or roof, and pulls
 // far away to watch a wreck.
 
 import * as THREE from 'three'
@@ -11,7 +11,7 @@ import { dampToward, dampVector3Toward } from './damping.ts'
 export interface CameraTuning {
   distance: number
   height: number
-  /** The height the camera drops to with something overhead, under a bridge or in a tunnel. */
+  /** The lowest the camera drops to with something overhead, under a bridge or in a tunnel, when that is all the room there is. */
   lowHeight: number
   distanceSpeedGain: number
   /**
@@ -128,6 +128,8 @@ const MIN_ARM_LENGTH_SQUARED = 1e-6
 
 /** How far the camera keeps below a roof. */
 const ROOF_CLEARANCE = 0.6
+/** How far under the roof over the car the camera rides, where the roof is low enough to bring it down: room for the roof to curve down behind. */
+const ROOF_HEADROOM = 2
 
 export class ChaseCamera {
   readonly camera: THREE.PerspectiveCamera
@@ -267,10 +269,18 @@ export class ChaseCamera {
     this.armDirection.normalize()
   }
 
-  /** Whether there is a roof over the car itself: a bridge deck, or a tunnel. */
-  private covered(): boolean {
-    if (this.boundsAt === null) return false
-    return Number.isFinite(this.boundsAt(this.targetPosition, this.bounds, this.targetPosition.distanceTo(this.middle)).ceiling)
+  /**
+   * How high over the car the camera rides: as high as it likes in the
+   * open, and with a roof over the car, a bridge deck or a tunnel's, as high
+   * as the room under it leaves, down to the low chase where it is low.
+   */
+  private rideHeight(): number {
+    const { height, lowHeight } = this.tuning
+    if (this.boundsAt === null) return height
+    const above = this.targetPosition.distanceTo(this.middle)
+    const { ceiling } = this.boundsAt(this.targetPosition, this.bounds, above)
+    if (!Number.isFinite(ceiling)) return height
+    return clamp(ceiling - above - ROOF_HEADROOM, lowHeight, height)
   }
 
   private updateDesiredPose(speed: number, speedFractionOfReference: number): void {
@@ -289,9 +299,9 @@ export class ChaseCamera {
     }
     const armLength = tuning.distance + tuning.distanceSpeedGain * speedFractionOfReference
     const lookAheadDistance = Math.min(speed * tuning.lookAheadTime, tuning.lookAheadMax)
-    // Under a bridge the camera drops to a low chase, and
+    // Under a low bridge or roof the camera drops to a low chase, and
     // eases back up once the car is out from under it.
-    const height = this.covered() ? tuning.lowHeight : tuning.height
+    const height = this.rideHeight()
 
     this.desiredPosition
       .copy(this.targetPosition)

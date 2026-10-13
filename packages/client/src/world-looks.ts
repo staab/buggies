@@ -51,8 +51,8 @@ export interface WorldLook {
   readonly fog: { near: number; far: number }
   readonly sea: { color: THREE.Color; opacity: number } | null
   readonly clouds: THREE.Color | null
-  /** The roof over what the world closes in: glass to see out of, or rock. */
-  readonly roof: { color: THREE.Color; opacity: number; rock: boolean } | null
+  /** The roof over what the world closes in: glass to see out of, or rock, and what color rock fades to the higher it is over the floor. */
+  readonly roof: { color: THREE.Color; opacity: number; rock: boolean; high?: THREE.Color } | null
   /** Light of its own, lit wherever the sun is. */
   readonly glow: { color: THREE.Color; intensity: number } | null
   readonly underside: THREE.Color
@@ -134,7 +134,7 @@ export const WORLD_LOOKS: Readonly<Record<WorldKind, WorldLook>> = {
     sea: null,
     clouds: color('#e6cf55'),
   },
-  // Dark rock, a little warmer in the caverns, lit by a glow of its own.
+  // Dark rock, a little warmer in the caverns, its ceilings fading to dark brown overhead, lit by a glow of its own.
   mercury: {
     ...PLANET,
     land: stops([0, '#3b302a'], [0.5, '#5a4a3e'], [1, '#806a58']),
@@ -143,7 +143,7 @@ export const WORLD_LOOKS: Readonly<Record<WorldKind, WorldLook>> = {
     fog: { near: 0.12, far: 0.45 },
     sea: null,
     clouds: null,
-    roof: { color: color('#4d4038'), opacity: 1, rock: true },
+    roof: { color: color('#4d4038'), opacity: 1, rock: true, high: color('#21150d') },
     glow: { color: color('#ffb27a'), intensity: 1.1 },
   },
 }

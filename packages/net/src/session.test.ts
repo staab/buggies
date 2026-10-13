@@ -1410,6 +1410,8 @@ describe('a session', () => {
     session.run(16)
     expect(a.client.closed).toBe(rejectLabel(REJECT_IDLE))
     expect(session.events).toContain(`left ${seat}`)
+    // Once, not again each tick until the connection is seen to close.
+    expect(session.events.filter((event) => event === `rejected: ${rejectLabel(REJECT_IDLE)}`)).toHaveLength(1)
     expect(b.client.closed).toBeNull()
     session.dispose()
   }, 120_000)

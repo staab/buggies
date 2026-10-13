@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. The address bar names the island being played as `/{seed}`: to join from a second screen, open the same URL. A game cut off from the server joins it again by itself, with each car back where it was and holding what it held, if the server still has it.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. The address bar names the island being played as `/{seed}`: to join from a second screen, open the same URL. A game cut off from the server joins it again by itself, with each car back where it was and holding what it held, if the server still has it, and a car that can't reach the world on the other side of a portal keeps trying until it gets there. The menu comes back up only when a game can't be joined from it, or the server has been updated, and says why until you move on.
 
 The game server also serves the built client (`pnpm build`) on its own port, answering any path that names no file, such as `/{seed}`, with `index.html`. A built client joins the server that served it, and the Vite client joins the server on port 8787 of the host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`, and `CLIENT_DIR` to serve the client from somewhere other than `packages/client/dist`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
@@ -38,18 +38,23 @@ Three to five portals stand in the open country of every planet: glowing rings w
 
 - **The moon** is half the planet's size, gray and airless under a black sky, with craters, mountain ranges and valleys, and a flag beside the lander that brought it.
 - **Mars** is red rock under a thin pink sky. Its mountains are twice a planet's, and its pull is weaker. Its cities stand under great glass bubbles, with green ground and trees inside. Each bubble has a tunnel out through its foot for every other city, and an arterial road runs from each tunnel to the one facing it, so every city has a road to every other. There are no other roads.
-- **Neptune** is all sea. Glass stations stand on the sea floor, joined by tunnels three times as wide as a planet's road tunnels and low and oval across, each with a road along its floor. Everything closed in is dry, and there is nothing above the water.
+- **Neptune** is all sea. Glass stations stand on the sea floor, joined by tunnels three times as wide as a planet's road tunnels and oval across, each with a road along its floor. Everything closed in is dry, and there is nothing above the water. Two or three of the stations have a portal.
 - **Jupiter** is a sky over amber cloud. Its cities stand on floating platforms, joined by highways out over the drop with no guard rails. Smaller platforms float at their own heights, joined to nothing. Anything that goes over an edge falls into the cloud and is put back on a road.
 - **Venus** is jungle under yellow cloud, with giant trees to drive among. It has no cities, only small villages, joined by roads that run straight, wide and flat, the ground stamped level under them.
-- **Mercury** is all underground: huge caverns in solid rock, joined by smooth round tunnels that rise and fall, none crossing another. Each tunnel opens out of a cavern's wall flat across, flush with the cavern floor, and rounds out as it goes in. Its pull is weak, but a car holds on to whatever its wheels are on, so it can drive up a tunnel's wall and along its roof upside down. Let go, and it falls toward the floor.
+- **Mercury** is all underground: huge caverns in solid rock, joined by smooth round tunnels that rise and fall, none crossing another. Each tunnel opens out of a cavern's wall square, flush with the cavern's floor and its ceiling, and rounds out as it goes in. Its pull is weak, but a car holds on to whatever its wheels are on, so it can drive up a tunnel's wall and along its roof upside down, or along a cavern's ceiling and on into a tunnel's. Let go, and it falls toward the floor. Two or three of the caverns have a portal.
 
 Each world has furniture of its own:
 
 - **Mars:** solar arrays and radio dishes outside each bubble, and tanks of air inside it.
-- **Neptune:** kelp and coral out on the sea floor.
+- **Neptune:** beds of tall kelp swaying in the current out on the sea floor, strands of it between them, and coral heads in four shapes: mounds, branches, fans and clusters of tubes.
 - **Jupiter:** red beacons round every platform's edge, wind turbines and gas tanks on the cities, and a flag on each loose platform.
 - **Venus:** stepped temple pyramids deep in the jungle, stone idols round the villages, and giant mushrooms with room to drive under their caps.
 - **Mercury:** clusters of glowing crystals across the cavern floors.
+
+Two worlds have life of their own, which each player's page draws for itself. Nothing runs into it, but the world's seed and the game's time put it where it is, so everyone sees it about the same:
+
+- **Neptune:** schools of fish swimming loops over the sea floor, glowing jellyfish bobbing and pulsing, two whales swimming slowly right round the world over the stations, and dark vents in the floor with bubbles streaming up from them to the surface.
+- **Mercury:** will-o'-the-wisps drifting and flickering about the caverns, under ceilings that fade to dark brown overhead.
 
 Saucers fly only where there is a sky, so not on Neptune or Mercury.
 

@@ -33,15 +33,16 @@ export interface Hollow {
   readonly middle: readonly number[]
   /** How far it reaches out from its line along the ground. */
   readonly reach: number
-  /** How high its roof rises over its middle, or over the ground for a shell. */
-  readonly above: number
+  /** How high its roof rises over its middle, or over the ground for a shell: the same all along, or at each point of its line. */
+  readonly above: number | readonly number[]
   /** How deep a bore's floor sinks under its middle. */
   readonly below: number
   /**
-   * How round a bore's floor is at each point of its line: 1 for its
-   * superellipse, sinking from the walls to its lowest at the middle, down
-   * to 0 for flat right across at that lowest, as a tunnel's mouth is
-   * where it opens onto a floor. Round all along where not given.
+   * How round a bore is at each point of its line: 1 for its
+   * superellipse, its floor sinking from the walls to its lowest at the
+   * middle and its roof rising to its highest, down to 0 for flat right
+   * across at both, as a tunnel's mouth is where it opens onto a cavern's
+   * floor and into its wall. Round all along where not given.
    */
   readonly round?: readonly number[]
   /** How square it is across: 2 for an ellipse. */
@@ -111,6 +112,8 @@ export function hollowOut(land: Land, hollows: readonly Hollow[], solid: boolean
       const middleB = middle[Math.min(k + 1, line.length - 1)]!
       const roundA = hollow.round?.[k] ?? 1
       const roundB = hollow.round?.[Math.min(k + 1, line.length - 1)] ?? 1
+      const topA = typeof above === 'number' ? above : above[k]!
+      const topB = typeof above === 'number' ? above : above[Math.min(k + 1, line.length - 1)]!
       const center = unit({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z })
       const span = (angleBetween(a, b) * land.radius) / 2
       eachPointNear(land, center, span + reach + seam, (at, p) => {
@@ -122,9 +125,12 @@ export function hollowOut(land: Land, hollows: readonly Hollow[], solid: boolean
         if (distance < reach) {
           const rise = profile(distance / reach, squareness)
           const round = roundA + (roundB - roundA) * held
-          const floor = hollow.kind === 'bore' ? level - below * (1 - round + round * rise) : level
+          const top = topA + (topB - topA) * held
+          // How far a bore's floor sinks and its roof rises here, as shares of all they do: flat across as far as it is not round.
+          const shape = hollow.kind === 'bore' ? 1 - round + round * rise : rise
+          const floor = hollow.kind === 'bore' ? level - below * shape : level
           const known = own.get(at)
-          if (known === undefined || distance < known.distance) own.set(at, { distance, floor, roof: level + above * rise })
+          if (known === undefined || distance < known.distance) own.set(at, { distance, floor, roof: level + top * shape })
         } else if (distance - reach < seamOff[at]! && distance < reach + seam) {
           seamOff[at] = distance - reach
           seamAt[at] = level
