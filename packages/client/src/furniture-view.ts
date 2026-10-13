@@ -1,4 +1,4 @@
-import { MUSHROOM_STEM, type Stand, type World, type WorldBuilding } from '@buggies/terrain'
+import { ARCH, MUSHROOM_STEM, type Stand, type World, type WorldBuilding } from '@buggies/terrain'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
@@ -10,10 +10,11 @@ export const KELP_SWAY = { value: 0 }
 /**
  * The furniture of the worlds past the planet, each kind drawn as one
  * batch of its own: Mars's solar arrays and radio dishes, the beacons
- * round Jupiter's platforms, Venus's giant mushrooms, Mercury's glowing
- * crystals, and Neptune's kelp and coral out on its sea floor. Each piece
- * stands where the world has it, in its own frame: across along its x, up
- * its y, and along its z.
+ * round Jupiter's platforms, Venus's giant mushrooms, monoliths, spires,
+ * screw towers, arches and mine headframes, the glowing crystals of
+ * Mercury's caverns and Venus's mines, and Neptune's kelp and coral out on
+ * its sea floor. Each piece stands where the world has it, in its own
+ * frame: across along its x, up its y, and along its z.
  */
 export function buildFurniture(world: World): THREE.Object3D[] {
   const ofKind = (kind: WorldBuilding['kind']): WorldBuilding[] => world.buildings.filter((building) => building.kind === kind)
@@ -25,6 +26,11 @@ export function buildFurniture(world: World): THREE.Object3D[] {
     ...beacons(ofKind('beacon')),
     ...mushrooms(ofKind('mushroom')),
     ...crystals(ofKind('crystal')),
+    ...monoliths(ofKind('monolith')),
+    ...spires(ofKind('spire')),
+    ...screws(ofKind('screw')),
+    ...arches(ofKind('arch')),
+    ...headframes(ofKind('headframe')),
     ...kelpStrands(kelp.map((tree) => ({ at: tree.at, turn: uprightAt(tree.at, new THREE.Quaternion()), height: tree.height, width: tree.radius, tone: tree.tone }))),
     ...coralHeads(coral),
   ].filter((mesh): mesh is THREE.InstancedMesh => mesh !== null)
@@ -45,6 +51,13 @@ const KELP_GREEN = new THREE.Color('#9fbf5a')
 const CAPS = ['#c8372d', '#e0742a', '#8e3fb0', '#d8b23a', '#3f9c8a'].map((hex) => new THREE.Color(hex))
 const GLOWS = ['#5ce1ff', '#b67bff', '#7dffb0', '#ffb45c'].map((hex) => new THREE.Color(hex))
 const CORALS = ['#ff7f7f', '#ff9f4a', '#c86bd6', '#ffd35c', '#ff5c9a'].map((hex) => new THREE.Color(hex))
+/** The stone of whoever built Venus's wonders: a monolith's black, a spire's dark, a screw tower's and an arch's pale; the gold a spire is capped in, and the light that glows in their seams. */
+const OBSIDIAN = new THREE.Color('#111114')
+const DARKSTONE = new THREE.Color('#2e2822')
+const PALESTONE = new THREE.Color('#9b8c73')
+const GOLD = new THREE.Color('#d9a63a')
+const SEAM = new THREE.Color('#ffd98a')
+const MINE_STEEL = new THREE.Color('#7a4a2a')
 
 /** How far a solar array's panel tilts to the sky, and how high its middle stands, as a share of its height. */
 const PANEL = { tilt: 0.45, middle: 0.7, thick: 0.12 } as const
@@ -357,4 +370,145 @@ function coralHeads(found: readonly (Stand & { size: number; tone: number })[]):
       color.copy(pick(CORALS, head.tone))
     }),
   )
+}
+
+/** A light that glows in the stone, at night and by day. */
+function seamMaterial(): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color: SEAM, emissive: SEAM, emissiveIntensity: 1.6, roughness: 0.4 })
+}
+
+/** A monolith: a sheer slab of polished black stone, a seam of light down the middle of each face. */
+function monoliths(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const box = footed(new THREE.BoxGeometry(1, 1, 1))
+  return [
+    batch(box, new THREE.MeshStandardMaterial({ roughness: 0.18, metalness: 0.65 }), found, (slab, local, color) => {
+      local.copy(scaled(slab.width, slab.height, slab.depth))
+      color.copy(OBSIDIAN)
+    }),
+    batch(box, seamMaterial(), found, (slab, local) => {
+      local.copy(moved(0, slab.height * 0.08, 0)).multiply(scaled(slab.width * 0.05, slab.height * 0.84, slab.depth * 1.04))
+    }),
+  ]
+}
+
+/** A pyramid a unit square at its foot and a unit high, its foot at its origin, its sides square to its x and z. */
+function pyramidGeometry(): THREE.BufferGeometry {
+  const pyramid = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1)
+  pyramid.rotateY(Math.PI / 4)
+  pyramid.translate(0, 0.5, 0)
+  return pyramid
+}
+
+/** How much of a spire's height is its capstone of gold. */
+const CAPSTONE = 0.12
+
+/** A spire: a steep pyramid of dark stone, capped in gold. */
+function spires(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pyramid = pyramidGeometry()
+  return [
+    batch(pyramid, new THREE.MeshStandardMaterial({ roughness: 0.6, flatShading: true }), found, (spire, local, color) => {
+      local.copy(scaled(spire.width, spire.height, spire.depth))
+      color.copy(DARKSTONE).offsetHSL(0, 0, (spire.tone - 0.5) * 0.04)
+    }),
+    batch(pyramid, new THREE.MeshStandardMaterial({ color: GOLD, metalness: 0.85, roughness: 0.3, emissive: GOLD, emissiveIntensity: 0.25, flatShading: true }), found, (spire, local) => {
+      const cap = 1 + 0.02
+      local.copy(moved(0, spire.height * (1 - CAPSTONE), 0)).multiply(scaled(spire.width * CAPSTONE * cap, spire.height * CAPSTONE * cap, spire.depth * CAPSTONE * cap))
+    }),
+  ]
+}
+
+/** How tall a screw tower's crown is, and how far it flares out past the tower. */
+const CROWN = { height: 3.5, flare: 1.25 } as const
+
+/** A screw tower: a round tower of pale stone, its crown flared over the top of the ramp wound round it, a lamp burning on it. */
+function screws(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const drum = footed(new THREE.CylinderGeometry(0.5, 0.5, 1, 28))
+  const crown = footed(new THREE.CylinderGeometry(0.5 * CROWN.flare, 0.5, 1, 28))
+  const lamp = new THREE.SphereGeometry(1, 12, 8)
+  return [
+    batch(drum, new THREE.MeshStandardMaterial({ roughness: 0.9 }), found, (tower, local, color) => {
+      local.copy(scaled(tower.width, tower.height - CROWN.height, tower.depth))
+      color.copy(PALESTONE)
+    }),
+    batch(crown, new THREE.MeshStandardMaterial({ roughness: 0.85 }), found, (tower, local, color) => {
+      local.copy(moved(0, tower.height - CROWN.height, 0)).multiply(scaled(tower.width, CROWN.height, tower.depth))
+      color.copy(PALESTONE).offsetHSL(0, 0, -0.08)
+    }),
+    batch(lamp, seamMaterial(), found, (tower, local) => {
+      local.copy(moved(0, tower.height + 1.2, 0)).multiply(scaled(1.6, 1.6, 1.6))
+    }),
+  ]
+}
+
+/** An arch over a road: two square pillars of pale stone and a lintel across their tops, a band of light along its face. */
+function arches(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const box = footed(new THREE.BoxGeometry(1, 1, 1))
+  const stone = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true })
+  const standing = (arch: WorldBuilding): number => arch.height - ARCH.lintel
+  return [
+    ...[-1, 1].map((side) =>
+      batch(box, stone, found, (arch, local, color) => {
+        local.copy(moved((side * (arch.width - ARCH.pillar)) / 2, 0, 0)).multiply(scaled(ARCH.pillar, standing(arch), arch.depth))
+        color.copy(PALESTONE).offsetHSL(0, 0, (arch.tone - 0.5) * 0.06)
+      }),
+    ),
+    batch(box, stone, found, (arch, local, color) => {
+      local.copy(moved(0, standing(arch), 0)).multiply(scaled(arch.width, ARCH.lintel, arch.depth * 1.1))
+      color.copy(PALESTONE).offsetHSL(0, 0, (arch.tone - 0.5) * 0.06 - 0.04)
+    }),
+    batch(box, seamMaterial(), found, (arch, local) => {
+      local.copy(moved(0, standing(arch) + ARCH.lintel * 0.4, 0)).multiply(scaled(arch.width * 0.8, ARCH.lintel * 0.12, arch.depth * 1.14))
+    }),
+  ]
+}
+
+/**
+ * A headframe a unit square at its foot and a unit high: four legs leaning
+ * in from its corners to a platform at its top, braced across twice on
+ * the way up.
+ */
+function headframeGeometry(): THREE.BufferGeometry {
+  const white = new THREE.Color('#ffffff')
+  const parts: THREE.BufferGeometry[] = []
+  const strut = (from: THREE.Vector3, to: THREE.Vector3, thick: number): void => {
+    const length = from.distanceTo(to)
+    const piece = new THREE.BoxGeometry(thick, length, thick)
+    piece.translate(0, length / 2, 0)
+    piece.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize()))
+    piece.translate(from.x, from.y, from.z)
+    parts.push(painted(piece, white))
+  }
+  const corner = (x: number, z: number, y: number): THREE.Vector3 => new THREE.Vector3(x * (0.5 - 0.3 * y), y, z * (0.5 - 0.3 * y))
+  const corners: [number, number][] = [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ]
+  for (const [x, z] of corners) strut(corner(x, z, 0), corner(x, z, 1), 0.06)
+  for (const y of [0.35, 0.7, 1]) {
+    for (let k = 0; k < 4; k++) {
+      const [x0, z0] = corners[k]!
+      const [x1, z1] = corners[(k + 1) % 4]!
+      strut(corner(x0, z0, y), corner(x1, z1, y), 0.04)
+    }
+  }
+  return mergeGeometries(parts)
+}
+
+/** A headframe over a mine's rim: a frame of rusted steel, and the great wheel at its top that the cage is wound up and down by. */
+function headframes(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const steel = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.5, flatShading: true })
+  const wheel = new THREE.TorusGeometry(1, 0.08, 6, 20)
+  return [
+    batch(headframeGeometry(), steel, found, (frame, local, color) => {
+      local.copy(scaled(frame.width, frame.height, frame.depth))
+      color.copy(MINE_STEEL)
+    }),
+    batch(wheel, steel, found, (frame, local, color) => {
+      const r = frame.width * 0.3
+      local.copy(moved(0, frame.height + r * 0.6, 0)).multiply(scaled(r, r, r))
+      color.copy(MINE_STEEL).offsetHSL(0, 0, -0.05)
+    }),
+  ]
 }

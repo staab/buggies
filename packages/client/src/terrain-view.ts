@@ -1,6 +1,7 @@
 import { qrotate, v3, vdistance, type Vec3 } from '@buggies/physics'
 import {
   DECK_SKIRT,
+  DISTRICT_QUARRY,
   RIVER_BANK_LAP,
   ROAD_BRIDGE,
   ROAD_GRADE,
@@ -534,9 +535,9 @@ function groundColors(world: World): GroundColors {
   const look = WORLD_LOOKS[world.kind]
   let min = Infinity
   let max = -Infinity
-  // The ramp runs over the ground there is room on: a world of rock is read from its rooms alone.
+  // The ramp runs over the ground there is room on: a world of rock is read from its rooms alone, and none from down a pit.
   for (let at = 0; at < heights.length; at++) {
-    if (!roomAt(world.roof, heights, at)) continue
+    if (!roomAt(world.roof, heights, at) || world.districtOf[at] === DISTRICT_QUARRY) continue
     const height = heights[at]!
     if (height < min) min = height
     if (height > max) max = height

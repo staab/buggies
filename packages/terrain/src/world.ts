@@ -169,10 +169,11 @@ export interface World {
    */
   readonly roof: Float32Array
   /**
-   * The platforms floating over the world, where it has them. A world that
-   * has them stands on them alone: each is driven on and drawn by its own
-   * round top (`platformTop`), and its ground's grid, which is as high as
-   * their tops under them, is only for asking how high a place is.
+   * The platforms floating over the world, where it has them, each driven
+   * on and drawn by its own round top (`platformTop`). A world that is
+   * nothing else (`platformsOnly`) stands on them alone, and its ground's
+   * grid, which is as high as their tops under them, is only for asking
+   * how high a place is.
    */
   readonly platforms: readonly WorldPlatform[]
   /** The ground's grid points a tunnel's bore takes, where the ground is not drawn: 1 for each. */

@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { MUSHROOM_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, buriedCell, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
+import { ARCH, MUSHROOM_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, buriedCell, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -86,14 +86,20 @@ const up = v3()
 
 /** The point this far up from a foot, along the way a turn stands things up. */
 function above(at: Vec3, turn: Quat, rise: number): Vec3 {
-  qrotate(up, turn, { x: 0, y: 1, z: 0 })
-  return { x: at.x + up.x * rise, y: at.y + up.y * rise, z: at.z + up.z * rise }
+  return beside(at, turn, 0, rise)
+}
+
+/** The point this far across and this far up from a foot, in the frame a turn stands things in. */
+function beside(at: Vec3, turn: Quat, across: number, rise: number): Vec3 {
+  qrotate(up, turn, { x: across, y: rise, z: 0 })
+  return { x: at.x + up.x, y: at.y + up.y, z: at.z + up.z }
 }
 
 /**
  * Everything standing beside the roads: every building as the box it is
  * drawn as, a sign as its pole and its panel, a giant mushroom as its
- * stem, every tree as its trunk, every boulder as a box its size, and
+ * stem, a spire as its pyramid, an arch as its pillars and its lintel,
+ * every tree as its trunk, every boulder as a box its size, and
  * nothing for a shrub, a strand of kelp, a scree stone or a coral head,
  * which a car drives through. Slick like a wall, so a car that
  * clips a corner scrapes past rather than sticking to it.
@@ -125,6 +131,23 @@ function addBuildings(world: RAPIER.World, map: World): void {
         above(building.at, building.turn, building.height - SIGN_PANEL.height / 2),
         building.turn,
       )
+      continue
+    }
+    // A spire is the steep pyramid it is drawn as, its sides meeting at its point.
+    if (building.kind === 'spire') {
+      const w = building.width / 2
+      const d = building.depth / 2
+      const hull = RAPIER.ColliderDesc.convexHull(new Float32Array([-w, 0, -d, w, 0, -d, w, 0, d, -w, 0, d, 0, building.height, 0]))
+      if (hull !== null) stand(hull, building.at, building.turn)
+      continue
+    }
+    // An arch is its two pillars and the lintel across their tops, with the road between them.
+    if (building.kind === 'arch') {
+      const standing = (building.height - ARCH.lintel) / 2
+      for (const side of [-1, 1]) {
+        stand(RAPIER.ColliderDesc.cuboid(ARCH.pillar / 2, standing, building.depth / 2), beside(building.at, building.turn, side * (building.width - ARCH.pillar) / 2, standing), building.turn)
+      }
+      stand(RAPIER.ColliderDesc.cuboid(building.width / 2, ARCH.lintel / 2, building.depth / 2), above(building.at, building.turn, building.height - ARCH.lintel / 2), building.turn)
       continue
     }
     // A giant mushroom is its stem: there is room to drive under its cap.
@@ -258,14 +281,14 @@ function addSheet(
  * roof, cut in two, at the height it is bored to under a tunnel. The deep
  * sea floor is left out, and so is a cell buried in rock, and a
  * sphere under it all catches anything that sinks that far. A world of
- * floating platforms has only their tops.
+ * floating platforms alone has only their tops.
  */
 function addGround(world: RAPIER.World, map: World): void {
   const { ground, bored, roof } = map
   const floor = map.seaLevel - FLOOR_DEPTH
-  // A world of floating platforms stands on their round tops alone, and drops away sheer at their edges.
+  // Floating platforms are stood on by their round tops, and drop away sheer at their edges; a world of them alone has nothing else.
   for (const platform of map.platforms) addGroundMesh(world, platformTop(platform, map.radius), GROUND_FRICTION)
-  if (map.platforms.length === 0) addSheet(
+  if (!WORLD_TRAITS[map.kind].platformsOnly) addSheet(
     world,
     map,
     (at) => bored[at]!,

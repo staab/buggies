@@ -17,6 +17,8 @@ import type { WorldDistrict } from './world.ts'
 export const DISTRICT_COUNTRY = 0
 export const DISTRICT_SUBURB = 1
 export const DISTRICT_CITY = 2
+/** Dug out: a pit of a mine, its rock and earth bare. */
+export const DISTRICT_QUARRY = 3
 /** Which land mass a grid point is land of: none, or its number from 1 for the largest. */
 export const ISLAND_NONE = 0
 

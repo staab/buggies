@@ -69,6 +69,39 @@ describe('what lives in the worlds', () => {
     }
   })
 
+  it('strikes the tallest things on Venus with lightning now and again, lighting everything as it flashes', () => {
+    const venus = generateWorld(worldId(7, 'venus'))
+    const life = buildLife(venus)!
+    const tops = venus.buildings
+      .filter((building) => ['monolith', 'spire', 'screw'].includes(building.kind))
+      .map((building) => Math.hypot(building.at.x, building.at.y, building.at.z) + building.height)
+    let flashes = 0
+    let dark = 0
+    for (let seconds = 0; seconds < 60; seconds += 0.05) {
+      life.userData.move(seconds)
+      const meshes: THREE.Mesh[] = []
+      let flash = 0
+      life.traverse((node) => {
+        if (node instanceof THREE.Mesh) meshes.push(node)
+        if (node instanceof THREE.AmbientLight) flash = node.intensity
+      })
+      if (!meshes.some((mesh) => mesh.visible)) {
+        expect(flash).toBe(0)
+        dark++
+        continue
+      }
+      flashes++
+      expect(flash).toBeGreaterThan(0)
+      // It comes down onto the top of one of them.
+      const bolt = meshes[0]!.geometry.getAttribute('position') as THREE.BufferAttribute
+      let lowest = Infinity
+      for (let k = 0; k < bolt.count; k++) lowest = Math.min(lowest, new THREE.Vector3().fromBufferAttribute(bolt, k).length())
+      expect(tops.some((top) => Math.abs(top - lowest) < 1)).toBe(true)
+    }
+    expect(flashes).toBeGreaterThan(10)
+    expect(dark).toBeGreaterThan(flashes * 5)
+  }, 60_000)
+
   it('leaves the worlds with nothing of the sort alone', () => {
     expect(buildLife(generateWorld(worldId(7, 'jupiter')))).toBeNull()
   })

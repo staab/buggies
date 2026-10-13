@@ -131,6 +131,50 @@ describe('the worlds past the planet', () => {
     }
   })
 
+  /** Follow a path in a car, keeping to the point of it nearest at about the car's own height and steering at a point a little on. */
+  function follow(arena: ReturnType<typeof createArena>, seat: ReturnType<typeof takeSeat>, path: readonly Vec3[], seconds: number): number {
+    const height = (p: Vec3): number => Math.hypot(p.x, p.y, p.z)
+    let at = 0
+    for (let i = 0; i < seconds * 60 && at < path.length - 2; i++) {
+      const { position, forward, right } = seat.vehicle.frame
+      for (let k = at; k < Math.min(at + 30, path.length); k++) {
+        if (Math.abs(height(path[k]!) - height(position)) < 4 && between(path[k]!, position) < between(path[at]!, position)) at = k
+      }
+      const target = path[Math.min(at + 4, path.length - 1)]!
+      const toward = v3(target.x - position.x, target.y - position.y, target.z - position.z)
+      const steer = Math.atan2(toward.x * right.x + toward.y * right.y + toward.z * right.z, toward.x * forward.x + toward.y * forward.y + toward.z * forward.z)
+      advance(arena, () => ({ ...NEUTRAL_INPUT, throttle: seat.vehicle.speed < 8 ? 0.8 : 0, brake: seat.vehicle.speed > 11 ? 0.6 : 0, steer: Math.max(-1, Math.min(1, steer * 2.5)) }))
+    }
+    return at
+  }
+
+  it('drives a car up a screw tower on Venus, round and round to its top, and over the bridge onto its platform', () => {
+    const map = worlds.get('venus')!
+    // The first ramp's middle line, off its deck: each cross-section's two edges, until the deck jumps to the next ramp.
+    const { positions } = map.decks
+    const corner = (k: number): Vec3 => v3(positions[k * 3]!, positions[k * 3 + 1]!, positions[k * 3 + 2]!)
+    const path: Vec3[] = []
+    for (let k = 0; k + 7 < positions.length / 3; k += 8) {
+      const a = corner(k + 1)
+      const b = corner(k + 2)
+      const middle = v3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2)
+      if (path.length > 0 && between(path.at(-1)!, middle) > 10) break
+      path.push(middle)
+    }
+    const arena = createArena(map, 1)
+    // No saucer to carry the car off partway up.
+    for (const ufo of arena.ufos) ufo.cooldownTicks = Number.POSITIVE_INFINITY
+    const seat = takeSeat(arena, 0, 'sportsCar')
+    const start = path[1]!
+    const up = upOf(start)
+    respawn(seat, { position: v3(start.x + up.x, start.y + up.y, start.z + up.z), up, rotation: uprightRotation(up, v3(path[4]!.x - start.x, path[4]!.y - start.y, path[4]!.z - start.z)) })
+    expect(follow(arena, seat, path, 150)).toBeGreaterThanOrEqual(path.length - 2)
+    const top = Math.hypot(path.at(-1)!.x, path.at(-1)!.y, path.at(-1)!.z) - map.radius
+    expect(heightOver(map, seat.vehicle.frame.position)).toBeGreaterThan(top - 2)
+    expect(map.platforms.some((platform) => apart(platform.center, seat.vehicle.frame.position) < platform.radius)).toBe(true)
+    arena.world.free()
+  })
+
   it('hold a car upside down to a cavern roof on Mercury, where it would fall anywhere else', () => {
     const map = worlds.get('mercury')!
     const cavern = map.districts[0]!

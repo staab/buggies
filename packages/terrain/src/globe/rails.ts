@@ -187,7 +187,7 @@ export function globeRailRuns(roads: readonly WorldRoad[], radius: number): Glob
       })
     }
     for (const side of [1, -1]) {
-      const edge = (index: number): Vec3 => across(road.points[index]!, roadFrameAt(road, index).left, side * half)
+      const edge = (index: number): Vec3 => across(road.points[index]!, roadFrameAt(road, index).left, (side * road.widths[index]!) / 2)
       // A loop is walked from a break in its rail, so no run is cut in two where its points begin; one railed all round is a ring.
       let first = 0
       if (road.closed) {

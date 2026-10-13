@@ -1,4 +1,4 @@
-import { DISTRICT_CITY, DISTRICT_SUBURB, type WorldKind } from '@buggies/terrain'
+import { DISTRICT_CITY, DISTRICT_QUARRY, DISTRICT_SUBURB, type WorldKind } from '@buggies/terrain'
 import * as THREE from 'three'
 
 /** A point on a ramp of colors, and the color there. */
@@ -46,6 +46,8 @@ export interface WorldLook {
   /** What a city's ground and a village's are drawn toward, and how far. */
   readonly city: { color: THREE.Color; share: number }
   readonly suburb: { color: THREE.Color; share: number }
+  /** A pit dug into the ground: its bare earth at the top, and the rock it is down to at the bottom. */
+  readonly quarry: readonly [THREE.Color, THREE.Color]
   readonly skies: Skies
   /** How near the haze starts and how far it closes in, as shares of the way round the world. */
   readonly fog: { near: number; far: number }
@@ -71,6 +73,7 @@ const PLANET: WorldLook = {
   seabed: PLANET_SEABED,
   city: { color: color('#8c8f93'), share: 0.35 },
   suburb: { color: color('#a3a271'), share: 0.35 },
+  quarry: [color('#8a6a48'), color('#4a3a30')],
   skies: BLUE_SKIES,
   fog: { near: 0.65, far: 2.34 },
   sea: { color: color('#2f6f9f'), opacity: 0.75 },
@@ -148,10 +151,14 @@ export const WORLD_LOOKS: Readonly<Record<WorldKind, WorldLook>> = {
   },
 }
 
+/** How deep under the lowest of the rest of the ground a pit has darkened all the way to its rock. */
+const QUARRY_DEPTH = 60
+
 /**
  * The ground's color at a height, in a world of this look: its sea floor
  * under its sea, its land's ramp from the sea up, or from its lowest where
- * it has no sea, drawn toward its cities' and villages' own.
+ * it has no sea, drawn toward its cities' and villages' own; or, down a
+ * pit, its earth darkening to rock the deeper it goes under the rest.
  */
 export function groundTone(
   look: WorldLook,
@@ -162,6 +169,7 @@ export function groundTone(
   district: number,
   out: THREE.Color,
 ): THREE.Color {
+  if (district === DISTRICT_QUARRY) return out.copy(look.quarry[0]).lerp(look.quarry[1], THREE.MathUtils.clamp((min - height) / QUARRY_DEPTH, 0, 1))
   if (height <= seaLevel) {
     const depth = (seaLevel - height) / Math.max(seaLevel - min, 1e-3)
     out.copy(look.seabed[0]).lerp(look.seabed[1], Math.min(1, depth))

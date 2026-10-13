@@ -85,12 +85,17 @@ export type BuildingKind =
   | 'beacon'
   | 'mushroom'
   | 'crystal'
+  | 'monolith'
+  | 'spire'
+  | 'screw'
+  | 'arch'
+  | 'headframe'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
 
 /** The kinds that are round towers rather than boxes, as wide as they are deep. */
-export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower', 'fountain']
+export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower', 'fountain', 'screw']
 
 /** Kinds that stand in the air on something else, a canopy on its posts, a lintel on its stones or a pyramid's tier on the one below, rather than on the ground. */
 export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyramid']
@@ -103,6 +108,9 @@ export const MUSHROOM_STEM = { height: 0.72, radius: 0.09 } as const
 
 /** A filling station's sign: a panel this tall at the top of a pole this thick, and nothing round the pole below it. */
 export const SIGN_PANEL = { height: 2.2, poleRadius: 0.15 } as const
+
+/** An arch over a road: how thick each of its pillars is, square, and how deep its lintel, across them at its top. */
+export const ARCH = { pillar: 4, lintel: 5 } as const
 
 /** The kinds of thing a car can knock about. */
 export type PropKind = 'crate' | 'barrel'

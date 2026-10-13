@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { ROAD_BRIDGE, ROAD_GRADE, ROAD_WIDTH } from '../roads/constants.ts'
-import { DISTRICT_CITY } from '../sphere-districts.ts'
+import { DISTRICT_CITY, DISTRICT_QUARRY } from '../sphere-districts.ts'
 import { sphereHeight } from '../sphere.ts'
 import { onLand, roofOver, surfaceUnder, upOf, waterUnder } from '../world-queries.ts'
 import { DRY, type World } from '../world.ts'
@@ -162,7 +162,8 @@ describe('the worlds a planet has', () => {
     const giants = venus.trees.filter((tree) => tree.kind === 'tree')
     expect(giants.length).toBeGreaterThan(1000)
     for (const tree of giants) expect(tree.height).toBeGreaterThan(25)
-    for (const building of venus.buildings) expect(building.height).toBeLessThan(14)
+    // The villages' own buildings are small: only whatever was here before them stands tall.
+    for (const building of venus.buildings) if (['cottage', 'house', 'church', 'stone'].includes(building.kind)) expect(building.height).toBeLessThan(14)
     expect(venus.roads.length).toBeGreaterThanOrEqual(venus.districts.length - 1)
     for (const road of venus.roads) {
       expect(road.widths[0]).toBeGreaterThan(ROAD_WIDTH)
@@ -182,6 +183,35 @@ describe('the worlds a planet has', () => {
       for (const p of between) expect(Math.abs(sphereHeight(venus.ground, unit(p)) - (Math.hypot(p.x, p.y, p.z) - venus.radius))).toBeLessThan(0.5)
     }
     portalsReachable(venus)
+  }, 120_000)
+
+  it('raise wonders over Venus’s jungle: monoliths, spires, screw towers up to platforms floating beside them, platforms higher still, arches over the roads, and deep mines', () => {
+    const venus = world('venus')
+    const kind = (name: string) => venus.buildings.filter((building) => building.kind === name)
+    // Over the crowns, the tallest of which stand 55 m.
+    expect(kind('monolith').filter((slab) => slab.height > 60).length).toBeGreaterThan(5)
+    expect(kind('spire').length).toBeGreaterThan(0)
+    for (const spire of kind('spire')) expect(spire.height).toBeGreaterThan(55)
+    // Each screw tower with its ramp built and railed, and a platform level with its top beside it.
+    const screws = kind('screw')
+    expect(screws.length).toBeGreaterThan(0)
+    expect(venus.decks.indices.length).toBeGreaterThan(0)
+    expect(venus.rails.indices.length).toBeGreaterThan(0)
+    for (const screw of screws) {
+      const top = Math.hypot(screw.at.x, screw.at.y, screw.at.z) - venus.radius + screw.height
+      const beside = venus.platforms.filter((platform) => angleBetween(unit(screw.at), platform.center) * venus.radius < platform.radius + 60)
+      expect(beside.length).toBe(1)
+      expect(Math.abs(beside[0]!.height - top)).toBeLessThan(10)
+    }
+    // Platforms joined to nothing, higher still, and the ground still under all of them.
+    expect(venus.platforms.filter((platform) => platform.height > 100).length).toBeGreaterThan(0)
+    expect(WORLD_TRAITS.venus.platformsOnly).toBe(false)
+    // An arch over a road, a mine's pit dug deep.
+    expect(kind('arch').length).toBeGreaterThan(0)
+    expect(kind('headframe').length).toBeGreaterThan(0)
+    const quarried = venus.ground.heights.filter((_, at) => venus.districtOf[at] === DISTRICT_QUARRY)
+    expect(quarried.length).toBeGreaterThan(0)
+    expect(Math.min(...quarried)).toBeLessThan(-40)
   }, 120_000)
 
   it('hollow Mercury out of solid rock: caverns with round tunnels between them, and no road', () => {

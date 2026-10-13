@@ -40,7 +40,7 @@ Three to five portals stand in the open country of every planet: glowing rings w
 - **Mars** is red rock under a thin pink sky. Its mountains are twice a planet's, and its pull is weaker. Its cities stand under great glass bubbles, with green ground and trees inside. Each bubble has a tunnel out through its foot for every other city, and an arterial road runs from each tunnel to the one facing it, so every city has a road to every other. There are no other roads.
 - **Neptune** is all sea. Glass stations stand on the sea floor, joined by tunnels three times as wide as a planet's road tunnels and oval across, each with a road along its floor. Everything closed in is dry, and there is nothing above the water. Two or three of the stations have a portal.
 - **Jupiter** is a sky over amber cloud. Its cities stand on floating platforms, joined by highways out over the drop with no guard rails. Smaller platforms float at their own heights, joined to nothing. Anything that goes over an edge falls into the cloud and is put back on a road.
-- **Venus** is jungle under yellow cloud, with giant trees to drive among. It has no cities, only small villages, joined by roads that run straight, wide and flat, the ground stamped level under them.
+- **Venus** is jungle under yellow cloud, with giant trees to drive among. It has no cities, only small villages, joined by roads that run straight, wide and flat, the ground stamped level under them, with a stone arch over the middle of each. Out in the jungle stand the works of whoever was there first. Three screw towers each have a railed ramp wound round them from the jungle floor up to their top, 55 to 85 m up, and a bridge on from there to a platform floating beside them. More platforms float higher still, joined to nothing. Two mines are each a pit dug some 60 m deep, with a road wound down its wall to the floor and a cliff from each turn of it down to the next.
 - **Mercury** is all underground: huge caverns in solid rock, joined by smooth round tunnels that rise and fall, none crossing another. Each tunnel opens out of a cavern's wall square, flush with the cavern's floor and its ceiling, and rounds out as it goes in. Its pull is weak, but a car holds on to whatever its wheels are on, so it can drive up a tunnel's wall and along its roof upside down, or along a cavern's ceiling and on into a tunnel's. Let go, and it falls toward the floor. Two or three of the caverns have a portal.
 
 Each world has furniture of its own:
@@ -48,13 +48,14 @@ Each world has furniture of its own:
 - **Mars:** solar arrays and radio dishes outside each bubble, and tanks of air inside it.
 - **Neptune:** beds of tall kelp swaying in the current out on the sea floor, strands of it between them, and coral heads in four shapes: mounds, branches, fans and clusters of tubes.
 - **Jupiter:** red beacons round every platform's edge, wind turbines and gas tanks on the cities, and a flag on each loose platform.
-- **Venus:** stepped temple pyramids deep in the jungle, stone idols round the villages, and giant mushrooms with room to drive under their caps.
+- **Venus:** stepped temple pyramids deep in the jungle, steep spires of dark stone capped in gold, black monoliths standing up out of the crowns, a monolith ringed with glowing crystals on each tower's platform, stone idols round the villages, giant mushrooms with room to drive under their caps, and a headframe over each mine's rim with ore glowing on its floor.
 - **Mercury:** clusters of glowing crystals across the cavern floors.
 
-Two worlds have life of their own, which each player's page draws for itself. Nothing runs into it, but the world's seed and the game's time put it where it is, so everyone sees it about the same:
+Three worlds have life of their own, which each player's page draws for itself. Nothing runs into it, but the world's seed and the game's time put it where it is, so everyone sees it about the same:
 
 - **Neptune:** schools of fish swimming loops over the sea floor, glowing jellyfish bobbing and pulsing, two whales swimming slowly right round the world over the stations, and dark vents in the floor with bubbles streaming up from them to the surface.
 - **Mercury:** will-o'-the-wisps drifting and flickering about the caverns, under ceilings that fade to dark brown overhead.
+- **Venus:** lightning coming down out of the cloud every few seconds onto a monolith, a spire or a screw tower, lighting everything as it flashes.
 
 Saucers fly only where there is a sky, so not on Neptune or Mercury.
 

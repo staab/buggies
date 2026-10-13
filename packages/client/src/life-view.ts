@@ -1,3 +1,4 @@
+import { CLOUD_HEIGHT } from '@buggies/game'
 import { createRng, randomInt, randomRange, type Rng, type Vec3 } from '@buggies/physics'
 import { randomDirection, roofOver, sphereHeight, tangentFrame, type World } from '@buggies/terrain'
 import * as THREE from 'three'
@@ -10,12 +11,13 @@ import { KELP_SWAY } from './furniture-view.ts'
  * nothing in the game knows of it and nothing runs into it, but it is
  * placed by the world's seed and moved by the game's time, so everyone
  * sees it about alike. Neptune's fish, jellyfish and whales, and the
- * bubbles rising from its vents; and the will-o'-the-wisps drifting about
- * Mercury's caverns.
+ * bubbles rising from its vents; the will-o'-the-wisps drifting about
+ * Mercury's caverns; and the lightning that comes down out of Venus's
+ * cloud onto whatever stands tallest.
  */
 export function buildLife(world: World): THREE.Group | null {
   const rng = createRng((world.seed ^ LIFE_SALT) >>> 0)
-  const living = world.kind === 'neptune' ? seaLife(world, rng) : world.kind === 'mercury' ? [wisps(world, rng)] : []
+  const living = world.kind === 'neptune' ? seaLife(world, rng) : world.kind === 'mercury' ? [wisps(world, rng)] : world.kind === 'venus' ? lightning(world) : []
   if (living.length === 0) return null
   const group = new THREE.Group()
   group.name = 'life'
@@ -530,4 +532,113 @@ function wisps(world: World, rng: Rng): Living {
       geometry.attributes.color!.needsUpdate = true
     },
   }
+}
+
+// Venus.
+
+/**
+ * Lightning: how many seconds apart its strokes come, give or take, how
+ * long each shows, how many kinks a stroke has and how far it wanders from
+ * the straight line down, how thick it and its glow are, and how bright its
+ * flash lights everything.
+ */
+const LIGHTNING = { every: 7, shows: 0.4, kinks: 14, wander: 0.08, thick: 0.35, glow: 1.8, flash: 2.4 } as const
+/** What lightning strikes: the tallest things standing. */
+const STRUCK: readonly string[] = ['monolith', 'spire', 'screw']
+
+/** A number from 0 to 1 that only these two numbers decide, the same on every page. */
+function hashed(a: number, b: number): number {
+  const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453
+  return v - Math.floor(v)
+}
+
+/** How bright a stroke is this long after it struck: a flash, a dip, a second flash, and gone. */
+function flicker(since: number): number {
+  if (since < 0.08) return 1
+  if (since < 0.14) return 0.25
+  if (since < 0.22) return 0.85
+  return Math.max(0, 1 - (since - 0.22) / (LIGHTNING.shows - 0.22)) * 0.5
+}
+
+/**
+ * Lightning coming down out of the cloud now and again onto the top of a
+ * monolith, a spire or a screw tower, jagged, and lighting everything as
+ * it flashes. When it strikes, and where, and how it zigzags, are all the
+ * game's time and the world's seed, the same for everyone.
+ */
+function lightning(world: World): Living[] {
+  const tops = world.buildings
+    .filter((building) => STRUCK.includes(building.kind))
+    .map((building) => new THREE.Vector3(building.at.x, building.at.y, building.at.z).setLength(Math.hypot(building.at.x, building.at.y, building.at.z) + building.height))
+  if (tops.length === 0) return []
+  const stroke = new THREE.MeshBasicMaterial({ color: '#f4f0ff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+  const halo = new THREE.MeshBasicMaterial({ color: '#9db4ff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+  const bolt = new THREE.Mesh(new THREE.BufferGeometry(), stroke)
+  const glow = new THREE.Mesh(new THREE.BufferGeometry(), halo)
+  for (const mesh of [bolt, glow]) {
+    mesh.frustumCulled = false
+    mesh.visible = false
+  }
+  // Lit up all over by a flash: there at nothing the rest of the time, so the shaders never change for it.
+  const flash = new THREE.AmbientLight('#e8e4ff', 0)
+  const group = new THREE.Group()
+  group.add(bolt, glow, flash)
+  let shown = -1
+  const salt = world.seed % 9973
+  /** The `k`th stroke's path, from the cloud down to its target, zigzagging, into the bolt and its glow. */
+  const draw = (k: number): void => {
+    const target = tops[Math.floor(hashed(k, salt) * tops.length)]!
+    const up = target.clone().normalize()
+    const { east, north } = tangentFrame(up)
+    const across = new THREE.Vector3(east.x, east.y, east.z)
+    const along = new THREE.Vector3(north.x, north.y, north.z)
+    const from = up.clone().multiplyScalar(world.radius + CLOUD_HEIGHT)
+    from.addScaledVector(across, (hashed(k, salt + 1) - 0.5) * 60).addScaledVector(along, (hashed(k, salt + 2) - 0.5) * 60)
+    const length = from.distanceTo(target)
+    const points = Array.from({ length: LIGHTNING.kinks + 1 }, (_, i) => {
+      const share = i / LIGHTNING.kinks
+      const point = from.clone().lerp(target, share)
+      // Kinked aside, most in the middle, none where it leaves the cloud or strikes.
+      const wander = Math.sin(share * Math.PI) * LIGHTNING.wander * length
+      return point.addScaledVector(across, (hashed(k, salt + 3 + i) - 0.5) * 2 * wander).addScaledVector(along, (hashed(k, salt + 40 + i) - 0.5) * 2 * wander)
+    })
+    const path = new THREE.CurvePath<THREE.Vector3>()
+    for (let i = 0; i < LIGHTNING.kinks; i++) path.add(new THREE.LineCurve3(points[i]!, points[i + 1]!))
+    bolt.geometry.dispose()
+    glow.geometry.dispose()
+    bolt.geometry = new THREE.TubeGeometry(path, LIGHTNING.kinks * 2, LIGHTNING.thick, 4, false)
+    glow.geometry = new THREE.TubeGeometry(path, LIGHTNING.kinks * 2, LIGHTNING.glow, 5, false)
+  }
+  return [
+    {
+      object: group,
+      move(seconds) {
+        // The stroke now showing, if one is: the last to have struck, if it struck lately enough.
+        const latest = Math.floor(seconds / LIGHTNING.every)
+        let since = Infinity
+        let striking = -1
+        for (const k of [latest, latest - 1]) {
+          const at = (k + hashed(k, salt + 99) * 0.7) * LIGHTNING.every
+          if (seconds >= at && seconds - at < LIGHTNING.shows) {
+            since = seconds - at
+            striking = k
+          }
+        }
+        if (striking < 0) {
+          bolt.visible = glow.visible = false
+          flash.intensity = 0
+          return
+        }
+        if (striking !== shown) {
+          draw(striking)
+          shown = striking
+        }
+        const bright = flicker(since)
+        bolt.visible = glow.visible = true
+        stroke.opacity = bright
+        halo.opacity = bright * 0.35
+        flash.intensity = bright * LIGHTNING.flash
+      },
+    },
+  ]
 }

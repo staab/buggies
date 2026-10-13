@@ -53,14 +53,16 @@ export interface WorldTraits {
   readonly cling: number
   /** Whether it has a sky to fly in, for the saucers. */
   readonly openSky: boolean
+  /** Whether it is nothing but its floating platforms, with no ground under them to land on. */
+  readonly platformsOnly: boolean
 }
 
 export const WORLD_TRAITS: Readonly<Record<WorldKind, WorldTraits>> = {
-  planet: { name: 'the island', gravity: 1, cling: 0, openSky: true },
-  moon: { name: 'the moon', gravity: 1, cling: 0, openSky: true },
-  mars: { name: 'Mars', gravity: 0.7, cling: 0, openSky: true },
-  neptune: { name: 'Neptune', gravity: 1, cling: 0, openSky: false },
-  jupiter: { name: 'Jupiter', gravity: 1, cling: 0, openSky: true },
-  venus: { name: 'Venus', gravity: 0.9, cling: 0, openSky: true },
-  mercury: { name: 'Mercury', gravity: 0.4, cling: 1.1, openSky: false },
+  planet: { name: 'the island', gravity: 1, cling: 0, openSky: true, platformsOnly: false },
+  moon: { name: 'the moon', gravity: 1, cling: 0, openSky: true, platformsOnly: false },
+  mars: { name: 'Mars', gravity: 0.7, cling: 0, openSky: true, platformsOnly: false },
+  neptune: { name: 'Neptune', gravity: 1, cling: 0, openSky: false, platformsOnly: false },
+  jupiter: { name: 'Jupiter', gravity: 1, cling: 0, openSky: true, platformsOnly: true },
+  venus: { name: 'Venus', gravity: 0.9, cling: 0, openSky: true, platformsOnly: false },
+  mercury: { name: 'Mercury', gravity: 0.4, cling: 1.1, openSky: false, platformsOnly: false },
 }
