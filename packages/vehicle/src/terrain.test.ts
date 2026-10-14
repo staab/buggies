@@ -1,6 +1,7 @@
 import { FIXED_TIMESTEP, createRng, qrotate, uprightRotation, v3, vdot, vsub, type Quat, type Vec3 } from '@buggies/physics'
 import {
   CURB_HEIGHT,
+  PASSABLE_KINDS,
   ROAD_BRIDGE,
   ROAD_GRADE,
   ROAD_TUNNEL,
@@ -220,8 +221,8 @@ describe('a planet as colliders', () => {
   })
 
   it('stands every building as a solid to drive into, every tree as a trunk, and passes through the shrubs', () => {
-    // A boat is a body of the game's, which moves it; the ground holds everything else.
-    const standing = planet.buildings.filter((building) => building.kind !== 'boat')
+    // A boat is a body of the game's, which moves it, and a beach umbrella is nothing to hit; the ground holds everything else.
+    const standing = planet.buildings.filter((building) => building.kind !== 'boat' && !PASSABLE_KINDS.includes(building.kind))
     expect(standing.length).toBeGreaterThan(100)
     let roofed = 0
     for (const building of standing) {

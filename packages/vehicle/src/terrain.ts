@@ -1,6 +1,6 @@
 import * as RAPIER from '@dimforge/rapier3d-compat'
 import { qrotate, uprightRotation, v3, type Quat, type Vec3 } from '@buggies/physics'
-import { ARCH, MUSHROOM_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, buriedCell, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
+import { ARCH, MUSHROOM_STEM, PASSABLE_KINDS, PITCHER_STEM, ROUND_KINDS, SIGN_PANEL, WORLD_TRAITS, buriedCell, gridDirection, groundIndex, platformTop, roofedAt, sealedAt, trunkRadius, type Heightfield, type World, type WorldMesh } from '@buggies/terrain'
 
 import { GROUND_GROUPS, WALL_GROUPS } from './groups.ts'
 
@@ -98,10 +98,10 @@ function beside(at: Vec3, turn: Quat, across: number, rise: number): Vec3 {
 /**
  * Everything standing beside the roads: every building as the box it is
  * drawn as, a sign as its pole and its panel, a giant mushroom as its
- * stem, a spire as its pyramid, an arch as its pillars and its lintel,
- * every tree as its trunk, every boulder as a box its size, and
- * nothing for a shrub, a strand of kelp, a scree stone or a coral head,
- * which a car drives through. Slick like a wall, so a car that
+ * stem, a pitcher plant as its stem, a spire as its pyramid, an arch as
+ * its pillars and its lintel, every tree as its trunk, every boulder as
+ * a box its size, and nothing for a shrub, a strand of kelp, a scree
+ * stone, a coral head, or anything else a car drives through or over. Slick like a wall, so a car that
  * clips a corner scrapes past rather than sticking to it.
  */
 function addBuildings(world: RAPIER.World, map: World): void {
@@ -121,7 +121,7 @@ function addBuildings(world: RAPIER.World, map: World): void {
   }
   for (const building of map.buildings) {
     // A boat drifts about where it lies, a body of its own that the game moves.
-    if (building.kind === 'boat') continue
+    if (building.kind === 'boat' || PASSABLE_KINDS.includes(building.kind)) continue
     // A sign is a panel up on a pole, with room to drive under the panel beside the pole.
     if (building.kind === 'sign') {
       const pole = (building.height - SIGN_PANEL.height) / 2
@@ -148,6 +148,12 @@ function addBuildings(world: RAPIER.World, map: World): void {
         stand(RAPIER.ColliderDesc.cuboid(ARCH.pillar / 2, standing, building.depth / 2), beside(building.at, building.turn, side * (building.width - ARCH.pillar) / 2, standing), building.turn)
       }
       stand(RAPIER.ColliderDesc.cuboid(building.width / 2, ARCH.lintel / 2, building.depth / 2), above(building.at, building.turn, building.height - ARCH.lintel / 2), building.turn)
+      continue
+    }
+    // A pitcher plant is its stem: its cup leans out over it, soft.
+    if (building.kind === 'pitcher') {
+      const half = (building.height * PITCHER_STEM.height) / 2
+      stand(RAPIER.ColliderDesc.cylinder(half, building.width * PITCHER_STEM.radius).setCollisionGroups(WALL_GROUPS), above(building.at, building.turn, half), building.turn)
       continue
     }
     // A giant mushroom is its stem: there is room to drive under its cap.

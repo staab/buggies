@@ -90,12 +90,60 @@ export type BuildingKind =
   | 'screw'
   | 'arch'
   | 'headframe'
+  | 'hoodoo'
+  | 'rover'
+  | 'pad'
+  | 'rocket'
+  | 'greenhouse'
+  | 'anemone'
+  | 'clam'
+  | 'starfish'
+  | 'urchin'
+  | 'anchor'
+  | 'amphora'
+  | 'balloon'
+  | 'windsock'
+  | 'helipad'
+  | 'log'
+  | 'pitcher'
+  | 'column'
+  | 'pillar'
+  | 'fungus'
+  | 'lava'
+  | 'stalactite'
+  | 'track'
+  | 'minecart'
+  | 'lifeguard'
+  | 'umbrella'
 
 /** The kinds a house comes in. */
 export const HOUSE_KINDS: readonly BuildingKind[] = ['house', 'cottage', 'villa']
 
 /** The kinds that are round towers rather than boxes, as wide as they are deep. */
-export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower', 'fountain', 'screw']
+export const ROUND_KINDS: readonly BuildingKind[] = ['observatory', 'silo', 'turbine', 'lighthouse', 'watertower', 'fountain', 'screw', 'hoodoo', 'rocket', 'column', 'pillar']
+
+/**
+ * Kinds there is nothing to hit in: too small or soft to stop a car, flat
+ * on the ground to drive over, hanging overhead, or out on a sea floor no
+ * car comes to.
+ */
+export const PASSABLE_KINDS: readonly BuildingKind[] = [
+  'pad',
+  'helipad',
+  'track',
+  'lava',
+  'fungus',
+  'stalactite',
+  'anemone',
+  'clam',
+  'starfish',
+  'urchin',
+  'anchor',
+  'amphora',
+  'balloon',
+  'windsock',
+  'umbrella',
+]
 
 /** Kinds that stand in the air on something else, a canopy on its posts, a lintel on its stones or a pyramid's tier on the one below, rather than on the ground. */
 export const RAISED_KINDS: readonly BuildingKind[] = ['lintel', 'canopy', 'pyramid']
@@ -108,6 +156,9 @@ export const MUSHROOM_STEM = { height: 0.72, radius: 0.09 } as const
 
 /** A filling station's sign: a panel this tall at the top of a pole this thick, and nothing round the pole below it. */
 export const SIGN_PANEL = { height: 2.2, poleRadius: 0.15 } as const
+
+/** A pitcher plant's stem, as shares of its height and width: all there is to hit of it, under its cup. */
+export const PITCHER_STEM = { height: 0.45, radius: 0.12 } as const
 
 /** An arch over a road: how thick each of its pillars is, square, and how deep its lintel, across them at its top. */
 export const ARCH = { pillar: 4, lintel: 5 } as const

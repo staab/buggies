@@ -40,6 +40,7 @@ import {
   BARN,
   BARN_OFF,
   BARNS_APART,
+  BEACH,
   BOAT,
   BOAT_ROAD_MARGIN,
   BOAT_TRIES,
@@ -73,6 +74,7 @@ import {
   FURNITURE_GAP,
   GREEN_TREES,
   HEADLAND_REACH,
+  LIFEGUARDS,
   HEADLAND_SAMPLES,
   HEADLAND_SEA,
   HEDGE_OUT,
@@ -129,6 +131,7 @@ import {
   TURBINE_SPACING,
   TURBINES,
   TURBINES_LEAST,
+  UMBRELLAS,
   VILLAGE_HOUSES,
   VILLAGE_REACH,
   WATER_TOWER,
@@ -630,6 +633,55 @@ export function moorBoats(site: Site, rng: () => number): void {
     site.buildings.push({ kind: 'boat', spot: boat, bottom: land.seaLevel - BOAT.draft, top: land.seaLevel + BOAT.freeboard, tone })
     noteStood(site, 'boat', at)
     moored += 1
+  }
+}
+
+/** The way from a point toward the sea, if there is sea this near it, looked for in as many ways as a headland is. */
+function seaward(site: Site, p: Vec3, reach: number): Vec3 | null {
+  const frame = localAt(p, site.radius)
+  for (let k = 0; k < HEADLAND_SAMPLES; k++) {
+    const angle = (k * Math.PI * 2) / HEADLAND_SAMPLES
+    if (heightAt(site.land, fromFrame(frame, cos(angle) * reach, sin(angle) * reach)) < site.land.seaLevel) return axisOn(frame, angle, p)
+  }
+  return null
+}
+
+/**
+ * The beaches: a lifeguard tower on low sand by the sea here and there,
+ * facing the water, none too near another, and beach umbrellas stuck in
+ * the sand about each.
+ */
+export function setBeaches(site: Site, rng: () => number): void {
+  const { land } = site
+  const sand: Vec3[] = []
+  for (let at = 0; at < land.ground.heights.length; at++) {
+    if (!coastPoint(land.ground.n, at)) continue
+    const height = land.ground.heights[at]! - land.seaLevel
+    if (height < BEACH.low || height > BEACH.high) continue
+    sand.push({ x: land.directions[at * 3]!, y: land.directions[at * 3 + 1]!, z: land.directions[at * 3 + 2]! })
+  }
+  let towers = 0
+  for (let attempt = 0; attempt < LIFEGUARDS.tries && towers < LIFEGUARDS.most && sand.length > 0; attempt++) {
+    const at = sand[Math.floor(rng() * sand.length)]!
+    if (!farFromKind(site, 'lifeguard', at, LIFEGUARDS.apart)) continue
+    const sea = seaward(site, at, BEACH.sea)
+    if (sea === null) continue
+    const spot: Spot = { at, u: sea, width: LIFEGUARDS.width, depth: LIFEGUARDS.width }
+    const ground = standsHere(site, spot, FURNITURE_GAP, 1, FURNITURE_GAP)
+    if (ground === null) continue
+    tower(site, 'lifeguard', spot, ground, LIFEGUARDS.height)
+    noteStood(site, 'lifeguard', at)
+    towers += 1
+    const frame = localAt(at, site.radius)
+    for (let k = randomInt(rng, ...UMBRELLAS.each); k > 0; k--) {
+      const angle = rng() * Math.PI * 2
+      const out = randomRange(rng, ...UMBRELLAS.out)
+      const p = fromFrame(frame, cos(angle) * out, sin(angle) * out)
+      const umbrella: Spot = { at: p, u: axisAt(p, rng() * Math.PI), width: UMBRELLAS.width, depth: UMBRELLAS.width }
+      const under = standsHere(site, umbrella, 1, 1, 0.5)
+      if (under === null) continue
+      tower(site, 'umbrella', umbrella, under, UMBRELLAS.height)
+    }
   }
 }
 

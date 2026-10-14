@@ -15,7 +15,7 @@ import { raiseSphereGround } from '../sphere-heights.ts'
 import { sphereHeight } from '../sphere.ts'
 import { randomDirection } from '../world-queries.ts'
 import type { World, WorldPortal, WorldRoad } from '../world.ts'
-import { angleBetween, resample } from '../globe/lines.ts'
+import { angleBetween, resample, unit } from '../globe/lines.ts'
 import { axisAt } from '../globe/placing.ts'
 import { createRanges } from '../globe/planet.ts'
 import { bareWorld } from './bare.ts'
@@ -55,6 +55,13 @@ const BUBBLE_BERTH = 18
 const SOLAR: FurnitureStyle = { kind: 'solar', count: 10, width: [10, 14], depth: [4.5, 6], height: [2, 2.6], gap: 3 }
 const DISH: FurnitureStyle = { kind: 'dish', count: 2, width: [7, 9], depth: [7, 9], height: [8, 11], gap: 6 }
 const TANKS: FurnitureStyle = { kind: 'silo', count: 3, width: [4, 5.5], depth: [4, 5.5], height: [7, 11] }
+/** Beside each bubble, rovers parked and greenhouses growing under glass. */
+const ROVERS: FurnitureStyle = { kind: 'rover', count: 2, width: [2.6, 2.6], depth: [4.2, 4.2], height: [2.4, 2.4], relief: 1, gap: 3 }
+const GREENHOUSES: FurnitureStyle = { kind: 'greenhouse', count: 2, width: [6, 8], depth: [18, 26], height: [3.5, 4.5], relief: 1.5, gap: 3 }
+/** Out on the open ground: hoodoos of red rock, and landing pads, how many, with a rocket standing on each this thick and tall. */
+const HOODOOS: FurnitureStyle = { kind: 'hoodoo', count: 40, width: [5, 10], depth: [5, 10], height: [12, 28], relief: 4, gap: 6 }
+const PAD: FurnitureStyle = { kind: 'pad', count: 1, width: [20, 24], depth: [20, 24], height: [0.3, 0.3], relief: 1, gap: 6 }
+const ROCKETS = { count: 3, width: [4, 5.5], height: [24, 34] } as const
 /** The trees under each bubble, where there is room over them, and the shrubs about their feet. */
 const TREES: TreeStyle = { kind: 'tree', count: 60, height: [6, 11], crown: [1.8, 3.2] }
 const SHRUBS: TreeStyle = { kind: 'shrub', count: 80, height: [0.9, 2], crown: [0.7, 1.6] }
@@ -147,6 +154,21 @@ export function generateMars(seed: number): World {
     furnish(stands, rng, outside, SOLAR)
     furnish(stands, rng, outside, DISH)
     furnish(stands, rng, () => pointIn(rng, bubble.center, bubble.reach * 0.75, radius), TANKS, (p) => roofOver(p) - 3)
+    furnish(stands, rng, outside, ROVERS)
+    furnish(stands, rng, () => pointIn(rng, bubble.center, bubble.reach + 40, radius, bubble.reach + 10), GREENHOUSES)
+  }
+  // Out on the open ground, well away from the bubbles: hoodoos, and landing pads with a rocket standing on each.
+  const openGround = (): Vec3 | null => {
+    const p = randomDirection(rng)
+    return inBubble(p, 30) ? null : p
+  }
+  furnish(stands, rng, openGround, HOODOOS)
+  for (let k = 0; k < ROCKETS.count; k++) {
+    if (furnish(stands, rng, openGround, PAD) === 0) continue
+    const pad = stands.buildings.at(-1)!
+    const middle = unit(pad.at)
+    const width = randomRange(rng, ...ROCKETS.width)
+    stands.erect('rocket', middle, axisAt(middle, rng() * Math.PI), sphereHeight(ground, middle) + PAD.height[0], width, width, randomRange(rng, ...ROCKETS.height), rng())
   }
   // Red boulders strewn over the open ground.
   for (let k = 0; k < 400; k++) {

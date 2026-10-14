@@ -302,6 +302,18 @@ export const SIGN = { width: 0.5, depth: 2, height: 7 } as const
 export const CAMPS_MOST = 3
 export const CAMP_TRIES = 80
 export const CAMP_SALT = 0x0ca3_9e51
+
+/**
+ * Beaches: how far over the sea a beach's sand is, at least and at most,
+ * and how near the sea; how many lifeguard towers the planet has at most
+ * and how far apart, how wide and how high each is; and how many beach
+ * umbrellas stand about each tower, how far out from it, how wide and how
+ * high. Beaches throw their own dice.
+ */
+export const BEACH = { low: 0.3, high: 2.5, sea: 18 } as const
+export const LIFEGUARDS = { most: 8, apart: 220, width: 3, height: 5.5, tries: 600 } as const
+export const UMBRELLAS = { each: [5, 9] as const, out: [5, 16] as const, width: 2.6, height: 2.6 } as const
+export const BEACH_SALT = 0x0bea_c4e5
 export const CAMP_NEAR_ROAD = { min: 28, max: 60 } as const
 export const CLEARING_RADIUS = 20
 export const TENTS = 6

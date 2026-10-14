@@ -47,6 +47,10 @@ const BEACON = { inset: 2, apart: 24, width: 0.6, height: 4.5 } as const
 const TURBINES: FurnitureStyle = { kind: 'turbine', count: 3, width: [2.6, 2.6], depth: [2.6, 2.6], height: [38, 44], roadMargin: 6, gap: 20, relief: 2 }
 const GAS: FurnitureStyle = { kind: 'watertower', count: 2, width: [2.4, 2.4], depth: [2.4, 2.4], height: [18, 24], roadMargin: 4, gap: 8 }
 const FLAG: FurnitureStyle = { kind: 'flag', count: 1, width: [0.12, 0.12], depth: [0.12, 0.12], height: [4, 4] }
+/** About each city's edge, balloons tethered and wind socks; and landing pads, marked out for whatever flies in. */
+const BALLOONS: FurnitureStyle = { kind: 'balloon', count: 3, width: [6, 9], depth: [6, 9], height: [16, 26], relief: 1, gap: 3, roadMargin: 2 }
+const WINDSOCKS: FurnitureStyle = { kind: 'windsock', count: 3, width: [0.4, 0.4], depth: [2.5, 3.5], height: [6, 8], relief: 1, gap: 2, roadMargin: 2 }
+const HELIPADS: FurnitureStyle = { kind: 'helipad', count: 2, width: [14, 18], depth: [14, 18], height: [0.1, 0.1], relief: 0.5, gap: 3 }
 /** The trees in a city's parks; and the wild trees and shrubs on a loose platform, a few to every so many meters of its reach. */
 const CITY_TREES: TreeStyle = { kind: 'tree', count: 25, height: [5, 9], crown: [1.6, 2.8] }
 const LOOSE_TREES = { kind: 'tree', every: 6, height: [5, 10], crown: [1.6, 3] } as const
@@ -137,6 +141,10 @@ export function generateJupiter(seed: number): World {
   for (const city of cities) {
     furnish(stands, rng, () => pointIn(rng, city.center, city.reach * 0.88, radius, city.reach * 0.72), TURBINES)
     furnish(stands, rng, () => pointIn(rng, city.center, city.reach * 0.8, radius), GAS)
+    const edge = (): Vec3 => pointIn(rng, city.center, city.reach * 0.96, radius, city.reach * 0.86)
+    furnish(stands, rng, edge, BALLOONS)
+    furnish(stands, rng, edge, WINDSOCKS)
+    furnish(stands, rng, () => pointIn(rng, city.center, city.reach * 0.75, radius), HELIPADS)
   }
   // A flag planted on each platform joined to nothing, by whoever got there first.
   for (const place of loose) furnish(stands, rng, () => pointIn(rng, place.center, place.reach * 0.4, radius), FLAG)

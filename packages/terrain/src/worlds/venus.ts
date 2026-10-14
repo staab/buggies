@@ -16,7 +16,7 @@ import { ROAD_SURFACE } from '../roads/constants.ts'
 import { limitSweepGradeAlong } from '../roads/grades.ts'
 import { DISTRICT_QUARRY, DISTRICT_SUBURB } from '../sphere-districts.ts'
 import { sphereHeight } from '../sphere.ts'
-import { ARCH, type BuildingKind } from '../types.ts'
+import { ARCH } from '../types.ts'
 import type { World, WorldPlatform, WorldPortal, WorldRoad } from '../world.ts'
 import { globeDecks } from '../globe/decks.ts'
 import { along, angleBetween, lift, resample, runs, unit } from '../globe/lines.ts'
@@ -63,6 +63,18 @@ const MUSHROOMS: FurnitureStyle = { kind: 'mushroom', count: 260, width: [5, 10]
  * back from their level.
  */
 const TEMPLES = { count: 2, base: 26, tiers: 4, step: 3, rise: 3.5, blend: 18, tries: 300 } as const
+
+/** Giant trees fallen across the jungle floor: how many, how long and how thick. */
+const LOGS = { count: 80, length: [16, 30], thick: [2.5, 4], tries: 1200 } as const
+/** Pitcher plants, tall cups on stems, about the jungle floor. */
+const PITCHERS: FurnitureStyle = { kind: 'pitcher', count: 120, width: [2.5, 4], depth: [2.5, 4], height: [3, 5], relief: 2, gap: 1 }
+/**
+ * Broken columns, ringed round each temple and standing in ruins out in
+ * the jungle: how many round a temple and how far out, how many ruins and
+ * how many columns in each and how far round, and how thick and how high
+ * what is left of each.
+ */
+const COLUMNS = { ring: 10, out: 22, ruins: 6, each: [5, 8], spread: [6, 10], width: [1.8, 2.4], height: [2, 9] } as const
 
 /** Monoliths: slabs of black stone, sheer and smooth, standing alone in the jungle far over its crowns. */
 const MONOLITHS: FurnitureStyle = { kind: 'monolith', count: 14, width: [7, 12], depth: [2, 3.5], height: [60, 140], relief: 4, gap: 8 }
@@ -157,7 +169,7 @@ export function generateVenus(seed: number): World {
     const p = jungle()
     return p !== null && loose.every((platform) => angleBetween(p, platform.center) * radius > platform.radius + LOOSE.clear) ? p : null
   }
-  raiseTemples(stands, rng, jungle)
+  const temples = raiseTemples(stands, rng, jungle)
   for (const mine of digMines(stands, rng, jungle, outOfVillages)) eachPointNear(land, mine.center, mine.rim, (at) => (districtOf[at] = DISTRICT_QUARRY))
   const towers = raiseScrews(stands, rng, openSky, outOfVillages)
   raiseSpires(stands, rng, openSky, outOfVillages)
@@ -167,6 +179,9 @@ export function generateVenus(seed: number): World {
   // The old gods' idols standing about each village's edge, and monoliths and giant mushrooms out in the jungle.
   for (const village of villages) furnish(stands, rng, () => pointIn(rng, village.center, village.reach + 14, radius, village.reach + 2), IDOLS)
   furnish(stands, rng, openSky, MONOLITHS)
+  raiseColumns(stands, rng, temples, jungle)
+  fellLogs(stands, rng, jungle)
+  furnish(stands, rng, jungle, PITCHERS)
   furnish(stands, rng, jungle, MUSHROOMS)
   plantTrees(stands, rng, jungle, GIANTS)
   plantTrees(stands, rng, jungle, UNDERGROWTH)
@@ -212,11 +227,11 @@ function flatLevels(land: ReturnType<typeof landOf>, line: readonly { x: number;
   return levels
 }
 
-/** The temples: each a stepped pyramid on ground levelled for it, off the roads and out of the villages. */
-function raiseTemples(stands: Stands, rng: Rng, pick: () => Vec3 | null): void {
+/** The temples: each a stepped pyramid on ground levelled for it, off the roads and out of the villages. Answers where they stand. */
+function raiseTemples(stands: Stands, rng: Rng, pick: () => Vec3 | null): Vec3[] {
   const { land } = stands
-  let raised = 0
-  for (let attempt = 0; attempt < TEMPLES.tries && raised < TEMPLES.count; attempt++) {
+  const raised: Vec3[] = []
+  for (let attempt = 0; attempt < TEMPLES.tries && raised.length < TEMPLES.count; attempt++) {
     const at = pick()
     if (at === null) continue
     const u = axisAt(at, randomRange(rng, 0, Math.PI / 2))
@@ -232,7 +247,46 @@ function raiseTemples(stands: Stands, rng: Rng, pick: () => Vec3 | null): void {
       stands.buildings.push({ kind: 'pyramid', at: lift(at, land.radius, floor), turn: turnOf(at, u), width: side, depth: side, height: top - floor, tone: tier / TEMPLES.tiers })
       floor = top
     }
-    raised++
+    raised.push(at)
+  }
+  return raised
+}
+
+/** A broken column standing at a way out, on the ground there. */
+function raiseColumn(stands: Stands, rng: Rng, at: Vec3): void {
+  const width = randomRange(rng, ...COLUMNS.width)
+  stands.erect('column', at, axisAt(at, rng() * Math.PI), sphereHeight(stands.land.ground, at), width, width, randomRange(rng, ...COLUMNS.height), rng())
+}
+
+/** Broken columns in a ring round each temple, on the ground levelled for it, and standing in ruins about the jungle where there is room. */
+function raiseColumns(stands: Stands, rng: Rng, temples: readonly Vec3[], pick: () => Vec3 | null): void {
+  const { radius } = stands.land
+  for (const temple of temples) for (const at of ringAround(temple, COLUMNS.out, COLUMNS.ring, radius)) raiseColumn(stands, rng, at)
+  let ruins = 0
+  for (let attempt = 0; attempt < COLUMNS.ruins * 20 && ruins < COLUMNS.ruins; attempt++) {
+    const at = pick()
+    if (at === null) continue
+    const spread = randomRange(rng, ...COLUMNS.spread)
+    const site = siteAt(stands, at, axisAt(at, 0), 2 * spread + 4, 4, 3)
+    if (site === null) continue
+    stands.placed.add(site)
+    for (const p of ringAround(at, spread, randomInt(rng, ...COLUMNS.each), radius)) if (rng() < 0.8) raiseColumn(stands, rng, p)
+    ruins++
+  }
+}
+
+/** Giant trees fallen across the jungle floor, each lying along the ground where it is even enough, clear of the roads and of what stands. */
+function fellLogs(stands: Stands, rng: Rng, pick: () => Vec3 | null): void {
+  let felled = 0
+  for (let attempt = 0; attempt < LOGS.tries && felled < LOGS.count; attempt++) {
+    const at = pick()
+    if (at === null) continue
+    const thick = randomRange(rng, ...LOGS.thick)
+    const spot: Spot = { at, u: axisAt(at, rng() * Math.PI), width: randomRange(rng, ...LOGS.length), depth: thick }
+    const ground = stands.fits(spot, { roadMargin: 3, gap: 1, relief: 3 })
+    if (ground === null) continue
+    stands.raise('log', spot, ground, thick, rng())
+    felled++
   }
 }
 
@@ -240,11 +294,6 @@ function raiseTemples(stands: Stands, rng: Rng, pick: () => Vec3 | null): void {
 function siteAt(stands: Stands, at: Vec3, u: Vec3, size: number, roadMargin: number, relief: number): Spot | null {
   const site: Spot = { at, u, width: size, depth: size }
   return stands.fits(site, { roadMargin, gap: 4, relief }) === null ? null : site
-}
-
-/** A building put straight where it stands, its foot sunk a little under `foot`, standing `height` over it. */
-function erect(stands: Stands, kind: BuildingKind, at: Vec3, u: Vec3, foot: number, width: number, depth: number, height: number, tone: number): void {
-  stands.buildings.push({ kind, at: lift(at, stands.land.radius, foot - BURY), turn: turnOf(at, u), width, depth, height: height + BURY, tone })
 }
 
 /** Whether a place is out of the villages by as much as it reaches past its middle. */
@@ -264,7 +313,7 @@ function raiseSpires(stands: Stands, rng: Rng, pick: () => Vec3 | null, apart: A
     const level = meanHeight(land, at, base / 2)
     levelGround(land, at, base * 0.75, SPIRES.blend, level)
     stands.placed.add(site)
-    erect(stands, 'spire', at, u, level, base, base, base * SPIRES.tall, rng())
+    stands.erect('spire', at, u, level, base, base, base * SPIRES.tall, rng())
     raised++
   }
 }
@@ -310,13 +359,13 @@ function raiseScrews(stands: Stands, rng: Rng, pick: () => Vec3 | null, apart: A
     const foot = level + ROAD_SURFACE
     const screw: Screw = { ...sketch, foot, top: foot + climb }
     const core = SCREWS.reach - SCREWS.width / 2 - 0.3
-    erect(stands, 'screw', at, axisAt(at, start), level, core * 2, core * 2, climb + SCREWS.crown, rng())
+    stands.erect('screw', at, axisAt(at, start), level, core * 2, core * 2, climb + SCREWS.crown, rng())
     const platform: WorldPlatform = { center: landing, radius: size, height: screw.top - ROAD_SURFACE }
     // A shrine on the platform: a monolith, and crystals glowing in a ring round its foot.
-    erect(stands, 'monolith', landing, way, platform.height, SHRINE.width, SHRINE.depth, randomRange(rng, ...SHRINE.height), rng())
+    stands.erect('monolith', landing, way, platform.height, SHRINE.width, SHRINE.depth, randomRange(rng, ...SHRINE.height), rng())
     for (const [k, p] of ringAround(landing, SHRINE.ring, SHRINE.crystals, radius).entries()) {
       const width = randomRange(rng, 1.4, 2.6)
-      erect(stands, 'crystal', p, axisAt(p, k), platform.height, width, width, randomRange(rng, 3, 6), rng())
+      stands.erect('crystal', p, axisAt(p, k), platform.height, width, width, randomRange(rng, 3, 6), rng())
     }
     towers.push({ ramp: screwRamp(screw, SCREWS.bridge + SCREWS.onto, radius), platform })
   }
@@ -350,7 +399,7 @@ function digMines(stands: Stands, rng: Rng, pick: () => Vec3 | null, apart: Apar
     furnish(stands, rng, () => pointIn(rng, at, MINES.floor * 0.85, land.radius), ORE)
     // Over the rim across from where the road goes down.
     const frame = roundPit(at, start + Math.PI, rim + HEADFRAME.width, land.radius)
-    erect(stands, 'headframe', frame, axisAt(frame, start), level, HEADFRAME.width, HEADFRAME.width, HEADFRAME.height, rng())
+    stands.erect('headframe', frame, axisAt(frame, start), level, HEADFRAME.width, HEADFRAME.width, HEADFRAME.height, rng())
     stands.placed.add(site)
     mines.push({ center: at, rim })
   }
@@ -370,7 +419,7 @@ function raiseArches(stands: Stands, rng: Rng, roads: readonly WorldRoad[], vill
     // Across the road: the way along it crossed with the way up.
     const across = unit({ x: ahead.y * at.z - ahead.z * at.y, y: ahead.z * at.x - ahead.x * at.z, z: ahead.x * at.y - ahead.y * at.x })
     const foot = sphereHeight(land.ground, at)
-    erect(stands, 'arch', at, across, foot, ARCHES.span, ARCH.pillar, randomRange(rng, ...ARCHES.height), rng())
+    stands.erect('arch', at, across, foot, ARCHES.span, ARCH.pillar, randomRange(rng, ...ARCHES.height), rng())
     for (const side of [-1, 1]) {
       const pillar = along(at, across, (side * (ARCHES.span - ARCH.pillar)) / 2, radius)
       stands.placed.add({ at: pillar, u: across, width: ARCH.pillar + 2, depth: ARCH.pillar + 2 })

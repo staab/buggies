@@ -106,6 +106,11 @@ export class Stands {
     })
   }
 
+  /** A building put straight where it stands, wherever that is, its foot sunk a little under `foot`, standing `height` over it. */
+  erect(kind: BuildingKind, at: Vec3, u: Vec3, foot: number, width: number, depth: number, height: number, tone: number): void {
+    this.buildings.push({ kind, at: lift(at, this.land.radius, foot - BURY), turn: turnOf(at, u), width, depth, height: height + BURY, tone })
+  }
+
   /** A piece of a size picked at random, at a way out, turned along `u`, if it fits there and its headroom lets it stand tall enough. */
   stand(piece: Piece, spacing: Spacing, at: Vec3, u: Vec3, rng: Rng, headroom: Headroom): boolean {
     const spot: Spot = { at, u, width: randomRange(rng, ...piece.width), depth: randomRange(rng, ...piece.depth) }

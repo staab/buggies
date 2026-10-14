@@ -31,18 +31,17 @@ export interface Hollow {
   readonly line: readonly Vec3[]
   /** How high its middle stands over the radius at each point of its line: a bore's, from which its floor sinks and its roof rises. */
   readonly middle: readonly number[]
-  /** How far it reaches out from its line along the ground. */
-  readonly reach: number
+  /** How far it reaches out from its line along the ground: the same all along, or at each point of its line. */
+  readonly reach: number | readonly number[]
   /** How high its roof rises over its middle, or over the ground for a shell: the same all along, or at each point of its line. */
   readonly above: number | readonly number[]
   /** How deep a bore's floor sinks under its middle. */
   readonly below: number
   /**
-   * How round a bore is at each point of its line: 1 for its
-   * superellipse, its floor sinking from the walls to its lowest at the
-   * middle and its roof rising to its highest, down to 0 for flat right
-   * across at both, as a tunnel's mouth is where it opens onto a cavern's
-   * floor and into its wall. Round all along where not given.
+   * How round a bore's floor is at each point of its line: 1 for its
+   * superellipse, sinking from the walls to its lowest at the middle, down
+   * to 0 for flat right across at that lowest, as a tunnel's mouth is
+   * where it opens onto a floor. Round all along where not given.
    */
   readonly round?: readonly number[]
   /** How square it is across: 2 for an ellipse. */
@@ -114,25 +113,26 @@ export function hollowOut(land: Land, hollows: readonly Hollow[], solid: boolean
       const roundB = hollow.round?.[Math.min(k + 1, line.length - 1)] ?? 1
       const topA = typeof above === 'number' ? above : above[k]!
       const topB = typeof above === 'number' ? above : above[Math.min(k + 1, line.length - 1)]!
+      const reachA = typeof reach === 'number' ? reach : reach[k]!
+      const reachB = typeof reach === 'number' ? reach : reach[Math.min(k + 1, line.length - 1)]!
       const center = unit({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z })
       const span = (angleBetween(a, b) * land.radius) / 2
-      eachPointNear(land, center, span + reach + seam, (at, p) => {
+      eachPointNear(land, center, span + Math.max(reachA, reachB) + seam, (at, p) => {
         const { t, distance } = against(p, a, b, land.radius)
         // Past an open end there is nothing of the tube: not even its seam.
         if ((k === 0 && t < 0 && hollow.open?.[0]) || (k === pieces - 1 && t > 1 && hollow.open?.[1])) return
         const held = Math.min(Math.max(t, 0), 1)
         const level = hollow.kind === 'bore' ? middleA + (middleB - middleA) * held : heights[at]!
-        if (distance < reach) {
-          const rise = profile(distance / reach, squareness)
+        const out = reachA + (reachB - reachA) * held
+        if (distance < out) {
+          const rise = profile(distance / out, squareness)
           const round = roundA + (roundB - roundA) * held
           const top = topA + (topB - topA) * held
-          // How far a bore's floor sinks and its roof rises here, as shares of all they do: flat across as far as it is not round.
-          const shape = hollow.kind === 'bore' ? 1 - round + round * rise : rise
-          const floor = hollow.kind === 'bore' ? level - below * shape : level
+          const floor = hollow.kind === 'bore' ? level - below * (1 - round + round * rise) : level
           const known = own.get(at)
-          if (known === undefined || distance < known.distance) own.set(at, { distance, floor, roof: level + top * shape })
-        } else if (distance - reach < seamOff[at]! && distance < reach + seam) {
-          seamOff[at] = distance - reach
+          if (known === undefined || distance < known.distance) own.set(at, { distance, floor, roof: level + top * rise })
+        } else if (distance - out < seamOff[at]! && distance < out + seam) {
+          seamOff[at] = distance - out
           seamAt[at] = level
         }
       })

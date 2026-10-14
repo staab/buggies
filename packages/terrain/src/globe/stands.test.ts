@@ -10,7 +10,7 @@ import { generatePlanet } from './planet.ts'
 import { apart, axes, districtAt, footprintSamples, groundAt, heightOf, planeAt, roadCrowding } from './test-kit.ts'
 
 /** How little some kinds rise above the ground and still stand on it. */
-const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, camper: 2, post: 3, sign: 3, site: 2.5, fountain: 1, statue: 2.4 }
+const LOW_KINDS: Partial<Record<BuildingKind, number>> = { stone: 0.8, firepit: 0.3, tent: 1.5, camper: 2, post: 3, sign: 3, site: 2.5, fountain: 1, statue: 2.4, umbrella: 2 }
 
 let world: World
 

@@ -1,20 +1,26 @@
 /**
  * Mercury: all underground. Huge caverns hollowed out of solid rock, and
- * round tunnels between them, rising and falling as they go, each a
- * smooth tube out of a cavern's wall into another's, flat across where it
- * comes out onto the cavern's floor and its roof meeting the cavern's
- * there, and none crossing another; there is no sky, no road and no sea.
+ * round tunnels between them, rising and falling as they go, none
+ * crossing another; there is no sky, no road and no sea. Each tunnel
+ * leaves a cavern through a horn cut out of its wall, as tall and wide as
+ * the cavern there and flush with its floor and its ceiling, that
+ * narrows through the cavern's edge into the rock; there it becomes a
+ * smooth tube, rounding as it goes.
  * Its pull is weak, but a car holds to whatever its wheels are on, so it
  * can run up a tunnel's wall and over its roof, and along a cavern's
- * ceiling into a tunnel's.
+ * ceiling into a tunnel's. Rock pillars stand from the caverns' floors to
+ * their ceilings, crystals grow up giant, stalactites hang, fungus and
+ * pools of lava glow, and mine carts stand where they were left.
  */
 
-import { createRng, randomInt, randomRange, type Vec3 } from '@buggies/physics'
+import { createRng, qrotate, randomInt, randomRange, v3, type Rng, type Vec3 } from '@buggies/physics'
 
 import { smoothstep } from '../noise.ts'
+import { sphereHeight } from '../sphere.ts'
 import { DISTRICT_CITY } from '../sphere-districts.ts'
 import type { World, WorldPortal } from '../world.ts'
-import { angleBetween, resample } from '../globe/lines.ts'
+import { along, angleBetween, resample, unit } from '../globe/lines.ts'
+import { axisAt, carryAxis } from '../globe/placing.ts'
 import { nearestOn, piecesGap } from '../globe/segments.ts'
 import { bareWorld } from './bare.ts'
 import { groundOfSize, landOf } from './ground.ts'
@@ -31,13 +37,13 @@ const MERCURY_CELLS = 320
 /** Far under anything: it has no sea. */
 const NO_SEA = -1000
 /** The caverns: how many, how far each reaches, how high its roof and how deep its floor, and how far apart two stand past their reaches. */
-const CAVERNS = { min: 8, max: 11 } as const
-const CAVERN_REACH = { min: 60, max: 110 } as const
-const CAVERN_ABOVE = { min: 32, max: 50 } as const
-const CAVERN_BELOW = 9
-const CAVERNS_APART = 70
+const CAVERNS = { min: 5, max: 7 } as const
+const CAVERN_REACH = { min: 110, max: 160 } as const
+const CAVERN_ABOVE = { min: 50, max: 80 } as const
+const CAVERN_BELOW = 7
+const CAVERNS_APART = 60
 /** How far a cavern's middle stands over or under the rest. */
-const CAVERN_RISE = 18
+const CAVERN_RISE = 10
 /** How many tunnels past the fewest that join every cavern. */
 const EXTRA_TUNNELS = 4
 /** How many of the caverns have a portal in them: a few, not every one. */
@@ -56,15 +62,17 @@ const TUNNEL_STEP = 2.5
  * under it rather than into it.
  */
 const TUNNEL_MARGIN = 1.5
-/** Where a tunnel comes out into a cavern: this share of the way out from its middle, where the cavern's floor is rising to its wall. */
-const MOUTH = 0.86
+/** Where a tunnel's horn opens into a cavern: this share of the way out from its middle, where its ceiling is still gentle. */
+const MOUTH = 0.78
+/** How much wider a horn is at its mouth than the tube it narrows to. */
+const HORN = 1.5
+/** How far past a cavern's edge into the rock a tunnel's tube begins: no tube stands out in a cavern. */
+const INTO = 6
 /** How much rock is left between two tunnels at the least, past where each is cut. */
 const TUNNEL_GAP = 6
-/**
- * How far into a tunnel from its mouth it goes from flat across, floor and
- * roof, the cavern's own floor and ceiling there, to round and its own height.
- */
+/** How far into its tube a tunnel goes from dished, as its horn is, to round, with room cut about it; and how round its dished floor is. */
 const FLARE = 14
+const DISHED = 0.4
 
 /** A cubic from one value to another, leaving the first and coming to the second at the slopes given, over 0 to 1. */
 function hermite(from: number, to: number, leaving: number, arriving: number, t: number): number {
@@ -73,10 +81,21 @@ function hermite(from: number, to: number, leaving: number, arriving: number, t:
   return (2 * t3 - 3 * t2 + 1) * from + (t3 - 2 * t2 + t) * leaving + (-2 * t3 + 3 * t2) * to + (t3 - t2) * arriving
 }
 /** The stalagmites, how many a cavern has, how big. */
-const STALAGMITES = 14
+const STALAGMITES = 24
 
-/** Glowing crystals, how many a cavern has and how big. */
-const CRYSTALS: FurnitureStyle = { kind: 'crystal', count: 18, width: [1.4, 3], depth: [1.4, 3], height: [3, 8], relief: 2.5, gap: 1 }
+/** Glowing crystals in clusters, how many a cavern has and how big; and giant ones, standing up through its air. */
+const CRYSTALS: FurnitureStyle = { kind: 'crystal', count: 30, width: [1.4, 3], depth: [1.4, 3], height: [3, 8], relief: 2.5, gap: 1 }
+const GIANT_CRYSTALS: FurnitureStyle = { kind: 'crystal', count: 4, width: [4, 8], depth: [4, 8], height: [14, 30], relief: 4, gap: 4 }
+/** Pillars where a stalagmite grew up to meet its stalactite: how many to a cavern, how thick, and how far out from its middle they stand. */
+const PILLARS = { count: [2, 4], width: [8, 16], out: 0.6 } as const
+/** Clusters of glowing fungus about the floor, and pools of lava on its level middle. */
+const FUNGUS: FurnitureStyle = { kind: 'fungus', count: 16, width: [2, 4], depth: [2, 4], height: [0.8, 1.8], relief: 1.5, gap: 0.5 }
+const LAVA: FurnitureStyle = { kind: 'lava', count: 2, width: [8, 14], depth: [8, 14], height: [0.1, 0.1], relief: 0.6, gap: 3 }
+/** Stalactites hanging from the roof: how many to a cavern, how thick, and how long, at most this share of the room under them. */
+const STALACTITES = { count: 30, width: [1.5, 4], length: [4, 14], room: 0.35 } as const
+/** A stretch of mine track a cavern, as long as this, the gauge of its rails, and a cart left on it this long, wide and high. */
+const TRACK: FurnitureStyle = { kind: 'track', count: 1, width: [18, 30], depth: [1.8, 1.8], height: [0.3, 0.3], relief: 1.5, gap: 2 }
+const CART = { length: 2.6, width: 1.7, height: 1.6 } as const
 
 /** Make a planet's Mercury, from the planet's seed. */
 export function generateMercury(seed: number): World {
@@ -103,17 +122,21 @@ export function generateMercury(seed: number): World {
     below: CAVERN_BELOW,
     squareness: 2,
   }))
-  // Each tunnel comes out of the wall of each of its caverns, its floor on the cavern's floor there and climbing as that does,
-  // flat across at its mouth and rounding as it goes in, its roof up to the cavern's ceiling there and down to its own as it
-  // goes in, and swells up or down between.
+  // Each tunnel's horn opens out of each of its caverns, its floor the cavern's floor there and its roof the cavern's ceiling.
+  // From there the tunnel climbs as the cavern's floor does, and swells up or down between; its roof eases down from the
+  // ceiling, leaving it as steeply as it falls there, to the tube's own.
+  // How steeply a cavern's floor climbs at a mouth, and its ceiling falls, outward: a bowl's slope there, and a dome's.
+  const steepness = MOUTH / profile(MOUTH, 2)
   const mouthFloor = (k: number): number => middles[k]! + CAVERN_BELOW * (1 - profile(MOUTH, 2))
-  // How high the cavern's ceiling is over a tunnel's middle at its mouth: how high the tube's roof rises there.
-  const mouthTop = (k: number): number => middles[k]! + CAVERN_BELOW + ceilings[k]! * profile(MOUTH, 2) - (mouthFloor(k) + TUNNEL.below)
-  // How steeply a cavern's floor climbs to its wall at a mouth: a bowl's slope there, outward.
-  const mouthSlope = (k: number): number => (CAVERN_BELOW * MOUTH) / Math.sqrt(1 - MOUTH * MOUTH) / caverns[k]!.reach
+  const mouthSlope = (k: number): number => (CAVERN_BELOW * steepness) / caverns[k]!.reach
+  // How high the ceiling is over the tunnel's middle at a mouth, and how fast it comes down toward that middle going out.
+  const mouthTop = (k: number): number => (ceilings[k]! + CAVERN_BELOW) * profile(MOUTH, 2) - TUNNEL.below
+  const mouthFall = (k: number): number => ((ceilings[k]! + CAVERN_BELOW) * steepness) / caverns[k]!.reach
   const mouthOf = (a: number, b: number): Vec3 => toward(caverns[a]!.center, caverns[b]!.center, caverns[a]!.reach * MOUTH, radius)
-  // No tunnel crosses another, runs through a third cavern, or leaves a cavern beside another: each is a tube on its own.
-  const apart = (TUNNEL.reach + TUNNEL_MARGIN) * 2 + TUNNEL_GAP
+  // How far a tunnel's horn runs from its mouth before its tube begins: out past the cavern's edge, into the rock.
+  const lead = (k: number): number => caverns[k]!.reach * (1 - MOUTH) + INTO
+  // No tunnel crosses another, runs through a third cavern, or leaves a cavern beside another, its horn into another's: each is a tube on its own.
+  const apart = Math.max(TUNNEL.reach * HORN, TUNNEL.reach + TUNNEL_MARGIN) * 2 + TUNNEL_GAP
   const fits = ([a, b]: Link, chosen: readonly Link[]): boolean => {
     const from = mouthOf(a, b)
     const to = mouthOf(b, a)
@@ -134,43 +157,62 @@ export function generateMercury(seed: number): World {
     }
     return true
   }
-  const tubes: Tube[] = linkPlaces(
+  // Each tunnel cut from mouth to mouth, square and close about where its tube will be until well into it; and its tube.
+  const tunnels: Hollow[] = []
+  const tubes: Tube[] = []
+  for (const [a, b] of linkPlaces(
     caverns.map((cavern) => cavern.center),
     EXTRA_TUNNELS,
     fits,
-  ).map(([a, b]) => {
+  )) {
     const from = mouthOf(a, b)
     const to = mouthOf(b, a)
     const line = resample([from, to], TUNNEL_STEP, radius, false)
     const length = angleBetween(from, to) * radius
     const swell = randomRange(rng, -TUNNEL_SWELL, TUNNEL_SWELL)
     const last = Math.max(line.length - 1, 1)
-    const middle = line.map((_, i) => {
-      const t = i / last
-      // From one mouth's floor to the other's, leaving each at the slope its cavern's floor climbs at there.
-      const floor = hermite(mouthFloor(a), mouthFloor(b), mouthSlope(a) * length, -mouthSlope(b) * length, t)
-      return floor + swell * 16 * t * t * (1 - t) * (1 - t) + TUNNEL.below
+    const along = (i: number): number => (i * length) / last
+    // Down each horn, straight on at the slope the cavern's floor climbs at its mouth, under the bowl it leaves; and between
+    // where the tubes begin, from the one horn's floor to the other's, leaving and coming to each at that slope.
+    const startA = lead(a)
+    const startB = length - lead(b)
+    const floorAt = (d: number): number => {
+      if (d <= startA) return mouthFloor(a) + mouthSlope(a) * d
+      if (d >= startB) return mouthFloor(b) + mouthSlope(b) * (length - d)
+      const span = startB - startA
+      const t = (d - startA) / span
+      const floor = hermite(mouthFloor(a) + mouthSlope(a) * startA, mouthFloor(b) + mouthSlope(b) * lead(b), mouthSlope(a) * span, -mouthSlope(b) * span, t)
+      return floor + swell * 16 * t * t * (1 - t) * (1 - t)
+    }
+    const middle = line.map((_, i) => floorAt(along(i)) + TUNNEL.below)
+    // How far into its tube each point is, from whichever end is nearer: less than nothing in a horn, before the tube begins.
+    const intoTube = line.map((_, i) => Math.min(along(i) - lead(a), along(last - i) - lead(b)))
+    const round = intoTube.map((into) => DISHED + (1 - DISHED) * smoothstep(0, FLARE, into))
+    // Down a horn from its mouth, its roof from the ceiling there to the tube's, and its reach from wide to the tube's.
+    const horn = (i: number): { top: number; reach: number } => {
+      const [k, out] = along(i) < length / 2 ? [a, along(i)] : [b, along(last - i)]
+      if (out >= lead(k)) return { top: TUNNEL.above, reach: TUNNEL.reach + TUNNEL_MARGIN * smoothstep(0, FLARE, out - lead(k)) }
+      const t = out / lead(k)
+      return { top: hermite(mouthTop(k), TUNNEL.above, -mouthFall(k) * lead(k), 0, t), reach: TUNNEL.reach * (1 + (HORN - 1) * (1 - smoothstep(0, 1, t))) }
+    }
+    const horns = line.map((_, i) => horn(i))
+    tunnels.push({
+      kind: 'bore',
+      line,
+      middle,
+      reach: horns.map((cut) => cut.reach),
+      above: horns.map((cut) => cut.top),
+      below: TUNNEL.below,
+      round,
+      squareness: 2,
+      open: [true, true],
     })
-    const into = (i: number): number => i * (length / last)
-    const round = line.map((_, i) => smoothstep(0, FLARE, Math.min(into(i), into(last - i))))
-    const above = line.map((_, i) => {
-      const fromA = 1 - smoothstep(0, FLARE, into(i))
-      const fromB = 1 - smoothstep(0, FLARE, into(last - i))
-      return TUNNEL.above + (mouthTop(a) - TUNNEL.above) * fromA + (mouthTop(b) - TUNNEL.above) * fromB
-    })
-    return { line, middle, round, reach: TUNNEL.reach, above, below: TUNNEL.below }
-  })
-  const tunnels: Hollow[] = tubes.map((tube) => ({
-    kind: 'bore',
-    line: tube.line,
-    middle: tube.middle,
-    reach: tube.reach + TUNNEL_MARGIN,
-    above: tube.above,
-    below: tube.below,
-    round: tube.round,
-    squareness: 2,
-    open: [true, true],
-  }))
+    const first = intoTube.findIndex((into) => into >= 0)
+    const end = last - [...intoTube].reverse().findIndex((into) => into >= 0)
+    if (first < 0 || end <= first) continue
+    const span = <T,>(values: readonly T[]): T[] => values.slice(first, end + 1)
+    tubes.push({ line: span(line), middle: span(middle), round: span(round), reach: TUNNEL.reach, above: span(line).map(() => TUNNEL.above), below: TUNNEL.below })
+  }
   const roof = hollowOut(land, [...halls, ...tunnels], true)
   const districtOf = markDistricts(land, caverns, DISTRICT_CITY)
 
@@ -179,10 +221,19 @@ export function generateMercury(seed: number): World {
   const gated = someOf(rng, caverns.length, randomInt(rng, PORTALS.least, PORTALS.most))
   const portals: WorldPortal[] = gated.map((k) => portalIn(stands, rng, caverns[k]!.center, caverns[k]!.reach * 0.25))
   for (const cavern of caverns) {
-    for (let k = 0; k < STALAGMITES; k++) stands.rock(pointIn(rng, cavern.center, cavern.reach * 0.75, radius), 'boulder', randomRange(rng, 1.5, 4.5), rng)
-    for (let k = 0; k < STALAGMITES * 3; k++) stands.rock(pointIn(rng, cavern.center, cavern.reach * 0.85, radius), 'scree', randomRange(rng, 0.5, 1.4), rng)
-    // Crystals glowing in clusters across its floor.
-    furnish(stands, rng, () => pointIn(rng, cavern.center, cavern.reach * 0.8, radius), CRYSTALS, roofOver)
+    const anywhere = (out: number) => (): Vec3 => pointIn(rng, cavern.center, cavern.reach * out, radius)
+    // Pillars from floor to roof, and giant crystals, standing up through its air.
+    for (let k = randomInt(rng, ...PILLARS.count); k > 0; k--) raisePillar(stands, rng, anywhere(PILLARS.out)(), roofOver)
+    furnish(stands, rng, anywhere(0.6), GIANT_CRYSTALS, roofOver)
+    for (let k = 0; k < STALAGMITES; k++) stands.rock(anywhere(0.75)(), 'boulder', randomRange(rng, 1.5, 4.5), rng)
+    for (let k = 0; k < STALAGMITES * 3; k++) stands.rock(anywhere(0.85)(), 'scree', randomRange(rng, 0.5, 1.4), rng)
+    // Crystals glowing in clusters across its floor, fungus glowing about it, lava pooled on its level middle, and a cart left on its track.
+    furnish(stands, rng, anywhere(0.8), CRYSTALS, roofOver)
+    furnish(stands, rng, anywhere(0.85), FUNGUS, roofOver)
+    furnish(stands, rng, anywhere(0.3), LAVA, roofOver)
+    layTrack(stands, rng, anywhere(0.55), roofOver)
+    // Stalactites hanging from its roof.
+    for (let k = 0; k < STALACTITES.count; k++) hangStalactite(stands, rng, anywhere(0.8)(), roofOver)
   }
 
   return bareWorld({
@@ -199,4 +250,36 @@ export function generateMercury(seed: number): World {
     tubes: tubes.map((tube) => tubeMesh(tube, radius)),
     portals,
   })
+}
+
+/** A pillar of rock from the floor at a way out up to the roof over it, as thick as it can be there; or none, if it will not fit. */
+function raisePillar(stands: Stands, rng: Rng, at: Vec3, roofOver: (p: Vec3) => number): void {
+  const width = randomRange(rng, ...PILLARS.width)
+  const spot = { at, u: axisAt(at, randomRange(rng, 0, Math.PI)), width, depth: width }
+  const ground = stands.fits(spot, { gap: 3, relief: 6 })
+  if (ground === null) return
+  stands.placed.add(spot)
+  // Up into the roof a little, as it is down into the floor.
+  stands.erect('pillar', at, spot.u, ground.low, width, width, roofOver(at) + 1 - ground.low, rng())
+}
+
+/** A stalactite hanging from the roof over a way out, no longer than a share of the room under it. */
+function hangStalactite(stands: Stands, rng: Rng, at: Vec3, roofOver: (p: Vec3) => number): void {
+  const roof = roofOver(at)
+  const floor = sphereHeight(stands.land.ground, at)
+  const length = Math.min(randomRange(rng, ...STALACTITES.length), (roof - floor) * STALACTITES.room)
+  if (!(length > 1)) return
+  const width = randomRange(rng, ...STALACTITES.width)
+  // Its point at the bottom, its root up in the roof.
+  stands.erect('stalactite', at, axisAt(at, randomRange(rng, 0, Math.PI)), roof - length, width, width, length + 1, rng())
+}
+
+/** A stretch of mine track on level floor, and a cart left standing on it somewhere along it. */
+function layTrack(stands: Stands, rng: Rng, pick: () => Vec3, roofOver: (p: Vec3) => number): void {
+  if (furnish(stands, rng, pick, TRACK, roofOver) === 0) return
+  const track = stands.buildings.at(-1)!
+  const middle = unit(track.at)
+  const way = carryAxis(qrotate(v3(), track.turn, { x: 1, y: 0, z: 0 }), middle)
+  const at = along(middle, way, randomRange(rng, -0.35, 0.35) * track.width, stands.land.radius)
+  stands.erect('minecart', at, way, sphereHeight(stands.land.ground, at) + TRACK.height[0], CART.length, CART.width, CART.height, rng())
 }

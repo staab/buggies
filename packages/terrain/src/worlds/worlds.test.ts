@@ -239,11 +239,11 @@ describe('the worlds a planet has', () => {
   it('furnish each world as fits it', () => {
     const kinds = (map: World): Set<string> => new Set([...map.buildings, ...map.trees, ...map.rocks, ...map.props].map((thing) => thing.kind))
     const furnished: Partial<Record<(typeof WORLD_KINDS)[number], string[]>> = {
-      mars: ['solar', 'dish', 'silo'],
-      neptune: ['kelp', 'coral'],
-      jupiter: ['beacon', 'turbine', 'watertower', 'flag'],
-      venus: ['mushroom', 'pyramid', 'stone'],
-      mercury: ['crystal'],
+      mars: ['solar', 'dish', 'silo', 'hoodoo', 'rover', 'pad', 'rocket', 'greenhouse'],
+      neptune: ['kelp', 'coral', 'anemone', 'clam', 'starfish', 'urchin', 'anchor', 'amphora', 'observatory', 'tree'],
+      jupiter: ['beacon', 'turbine', 'watertower', 'flag', 'balloon', 'windsock', 'helipad'],
+      venus: ['mushroom', 'pyramid', 'stone', 'log', 'pitcher', 'column'],
+      mercury: ['crystal', 'pillar', 'fungus', 'lava', 'stalactite', 'track', 'minecart'],
     }
     for (const [kind, things] of Object.entries(furnished)) {
       const map = world(kind as (typeof WORLD_KINDS)[number])
@@ -252,13 +252,19 @@ describe('the worlds a planet has', () => {
       // No crates or barrels about: none of these worlds has any.
       expect(map.props, kind).toHaveLength(0)
     }
-    // Kelp and coral grow out in the open sea, never inside where the cars are.
+    // Kelp and coral grow out in the open sea, never inside where the cars are; trees grow inside, under the glass.
     const neptune = world('neptune')
-    for (const thing of [...neptune.trees, ...neptune.rocks]) expect(roofOver(neptune, thing.at)).toBe(Infinity)
-    // A crystal stands under its cavern's roof, a flag on a platform joined to nothing.
+    for (const thing of [...neptune.trees.filter((tree) => tree.kind === 'kelp'), ...neptune.rocks]) expect(roofOver(neptune, thing.at)).toBe(Infinity)
+    for (const tree of neptune.trees.filter((tree) => tree.kind === 'tree')) expect(roofOver(neptune, tree.at)).toBeLessThan(Infinity)
+    // A crystal stands under its cavern's roof, and a pillar right up into it, and a stalactite hangs down from it; a flag
+    // stands on a platform joined to nothing.
     const mercury = world('mercury')
-    for (const crystal of mercury.buildings.filter((building) => building.kind === 'crystal')) {
-      expect(Math.hypot(crystal.at.x, crystal.at.y, crystal.at.z) - mercury.radius + crystal.height).toBeLessThan(roofOver(mercury, crystal.at))
+    const top = (building: World['buildings'][number]): number => Math.hypot(building.at.x, building.at.y, building.at.z) - mercury.radius + building.height
+    for (const crystal of mercury.buildings.filter((building) => building.kind === 'crystal')) expect(top(crystal)).toBeLessThan(roofOver(mercury, crystal.at))
+    for (const pillar of mercury.buildings.filter((building) => building.kind === 'pillar')) expect(top(pillar)).toBeGreaterThan(roofOver(mercury, pillar.at))
+    for (const stalactite of mercury.buildings.filter((building) => building.kind === 'stalactite')) {
+      expect(top(stalactite)).toBeGreaterThan(roofOver(mercury, stalactite.at))
+      expect(Math.hypot(stalactite.at.x, stalactite.at.y, stalactite.at.z) - mercury.radius).toBeGreaterThan(sphereHeight(mercury.ground, unit(stalactite.at)) + 1)
     }
     const jupiter = world('jupiter')
     const loose = jupiter.platforms.slice(jupiter.districts.length)
@@ -273,12 +279,12 @@ describe('the worlds a planet has', () => {
     for (const tube of mercury.tubes) {
       expect(tube.indices.length).toBeGreaterThan(0)
       // Every corner of the tube is under the roof and over the floor the grid has there: the grid keeps out of its way,
-      // but for along its middle, where the floor and the roof lie on the tube's own. At its mouths its rim meets the
-      // cavern's own floor and ceiling, which curve a little across it.
+      // but for along its middle, where the floor and the roof lie on the tube's own, and where the tube begins, where
+      // the rock is cut close about it, as it is about the horn that leads to it.
       const rings = tube.positions.length / 3 / TUBE_SIDES
       for (let k = 0; k < tube.positions.length; k += 3 * 7) {
         const ring = Math.floor(k / 3 / TUBE_SIDES)
-        if (ring === 0 || ring === rings - 1) continue
+        if (ring < 6 || ring >= rings - 6) continue
         const p = { x: tube.positions[k]!, y: tube.positions[k + 1]!, z: tube.positions[k + 2]! }
         const height = Math.hypot(p.x, p.y, p.z) - mercury.radius
         expect(height).toBeLessThanOrEqual(roofOver(mercury, p) + 0.6)

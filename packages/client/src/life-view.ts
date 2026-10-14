@@ -456,7 +456,7 @@ function whales(world: World, rng: Rng): Living[] {
 // Mercury.
 
 /** Will-o'-the-wisps: how many in each cavern, how big each glow is, how far out from the cavern's middle they wander and how high, and their colors. */
-const WISPS = { each: [10, 16], glow: 3.2, out: [0.1, 0.55], over: [3, 0.4] } as const
+const WISPS = { each: [20, 30], glow: 3.2, out: [0.1, 0.55], over: [3, 0.4] } as const
 const WISP_COLORS = ['#9fffe0', '#a8d8ff', '#ffe6a0'].map((hex) => new THREE.Color(hex))
 
 /** A soft round glow, white at its heart and fading to nothing at its edge. */

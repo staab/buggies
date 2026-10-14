@@ -24,6 +24,7 @@ import {
   raiseChurches,
   raiseLifts,
   raiseLighthouses,
+  setBeaches,
   raiseObservatory,
   raisePyramid,
   raiseStones,
@@ -34,7 +35,7 @@ import { Placed, interchangeRings, meetsRings, railClearance, roadClearance, wet
 import { globeRailRuns } from './rails.ts'
 import { lineArterials, lineRamps, plantInterchanges, raiseStations } from './roadside.ts'
 import { planter, worldBuilding, type Site } from './site.ts'
-import { BOAT_SALT, BUILDING_SALT, CAMP_SALT, OBSERVATORY_SALT, PROP_SALT, SIDEWALK_BAND } from './sizes.ts'
+import { BEACH_SALT, BOAT_SALT, BUILDING_SALT, CAMP_SALT, OBSERVATORY_SALT, PROP_SALT, SIDEWALK_BAND } from './sizes.ts'
 import type { Grid } from './streets.ts'
 import { raisePortals } from './portals.ts'
 import { plantWilds } from './wilds.ts'
@@ -121,6 +122,7 @@ export function buildGlobeStands(
   raiseStones(site, country)
   raiseLighthouses(site)
   moorBoats(site, createRng((seed ^ BOAT_SALT) >>> 0))
+  setBeaches(site, createRng((seed ^ BEACH_SALT) >>> 0))
   raiseLifts(site, mountains, cities)
   raiseChurches(site, plant)
   raiseWaterTowers(site, cities)

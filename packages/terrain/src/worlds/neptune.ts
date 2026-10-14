@@ -20,17 +20,17 @@ import { groundOfSize, landOf, meanHeight, rollGround } from './ground.ts'
 import { hollowOut, roofNear, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
 import { districtOfPlace, linkPlaces, markDistricts, pointIn, ringAround, scatterPlaces, someOf, toward } from './places.ts'
-import { Stands, buildSettlement, plantTrees, portalIn, type SettlementStyle, type Span, type TreeStyle } from './stands.ts'
+import { Stands, buildSettlement, furnish, plantTrees, portalIn, type FurnitureStyle, type SettlementStyle, type Span, type TreeStyle } from './stands.ts'
 import { roadAlong } from './roads.ts'
 
 const NEPTUNE_SALT = 0x4e97
 const SEA_LEVEL = 0
-/** The sea floor: how deep, and how much it rolls. */
-const FLOOR = { depth: 46, roll: 9, frequency: 0.004 } as const
+/** The sea floor: how deep, and how much it rolls; deep enough that the domes stand well under the surface. */
+const FLOOR = { depth: 64, roll: 9, frequency: 0.004 } as const
 /** The stations: how many, how far each reaches, how high its dome and how deep its floor, and how far apart two stand past their reaches. */
-const STATIONS = { min: 6, max: 8 } as const
-const STATION_REACH = { min: 42, max: 58 } as const
-const STATION = { above: 20, below: 4, squareness: 3 } as const
+const STATIONS = { min: 5, max: 7 } as const
+const STATION_REACH = { min: 90, max: 130 } as const
+const STATION = { above: 34, below: 4, squareness: 3 } as const
 const STATIONS_APART = 160
 /** How many links past the fewest that join every station. */
 const EXTRA_TUNNELS = 2
@@ -57,16 +57,33 @@ const CORAL: { count: number; size: Span } = { count: 1400, size: [1.5, 4.5] }
 /** How far kelp keeps from the glass, so none of its blades sways into a tunnel. */
 const KELP_CLEAR = 8
 
+/** What a station holds under its dome: towers, shops, tanks and domed halls; and trees and shrubs growing between them. */
 const PODS: SettlementStyle = {
   kinds: [
-    { kind: 'block', odds: 2, width: [7, 11], depth: [7, 11], height: [5, 10] },
-    { kind: 'shop', odds: 1, width: [8, 12], depth: [6, 9], height: [4, 5] },
+    { kind: 'block', odds: 3, width: [10, 16], depth: [10, 16], height: [12, 28] },
+    { kind: 'shop', odds: 2, width: [8, 12], depth: [6, 9], height: [4, 6] },
+    { kind: 'silo', odds: 1, width: [6, 9], depth: [6, 9], height: [10, 18] },
+    { kind: 'observatory', odds: 0.5, width: [16, 22], depth: [16, 22], height: [10, 14] },
   ],
-  count: 6,
-  gap: 3,
+  count: 28,
+  gap: 4,
   roadMargin: 3,
   relief: 2.5,
 }
+const STATION_TREES: TreeStyle = { kind: 'tree', count: 30, height: [6, 11], crown: [1.8, 3] }
+const STATION_SHRUBS: TreeStyle = { kind: 'shrub', count: 40, height: [0.9, 2], crown: [0.7, 1.6] }
+/** How far out from a station's middle its trees grow: where the dome is still high over them. */
+const GARDEN = 0.7
+
+/** What lies about the sea floor: anemones, giant clams, starfish, urchins, anchors and amphorae. */
+const SEA_FLOOR: readonly FurnitureStyle[] = [
+  { kind: 'anemone', count: 400, width: [1.5, 3.5], depth: [1.5, 3.5], height: [1, 2.5], relief: 1.5, gap: 0.5 },
+  { kind: 'clam', count: 60, width: [2.5, 4.5], depth: [2, 3.5], height: [1, 2], relief: 1, gap: 1 },
+  { kind: 'starfish', count: 300, width: [0.6, 1.4], depth: [0.6, 1.4], height: [0.12, 0.16], relief: 0.6, gap: 0.3 },
+  { kind: 'urchin', count: 300, width: [0.5, 1.1], depth: [0.5, 1.1], height: [0.4, 0.9], relief: 0.6, gap: 0.3 },
+  { kind: 'anchor', count: 12, width: [2, 3.5], depth: [0.8, 1.2], height: [3, 4.5], relief: 1, gap: 2 },
+  { kind: 'amphora', count: 40, width: [0.6, 0.9], depth: [0.6, 0.9], height: [1.2, 1.8], relief: 0.6, gap: 0.5 },
+]
 
 /** Make a planet's Neptune, from the planet's seed. */
 export function generateNeptune(seed: number): World {
@@ -113,7 +130,10 @@ export function generateNeptune(seed: number): World {
   const gated = someOf(rng, stations.length, randomInt(rng, PORTALS.least, PORTALS.most))
   const portals: WorldPortal[] = gated.map((k) => portalIn(stands, rng, stations[k]!.center, stations[k]!.reach * 0.3))
   const roofOver = (p: Vec3): number => roofNear(ground, roof, p)
-  for (const station of stations) buildSettlement(stands, rng, { center: station.center, reach: station.reach * 0.75 }, PODS, (p) => roofOver(p) - 3)
+  for (const station of stations) {
+    buildSettlement(stands, rng, { center: station.center, reach: station.reach * 0.75 }, PODS, (p) => roofOver(p) - 3)
+    for (const style of [STATION_TREES, STATION_SHRUBS]) plantTrees(stands, rng, () => pointIn(rng, station.center, station.reach * GARDEN, radius), style)
+  }
   // Out on the sea floor, open to the water and clear of the glass, kelp swaying up and coral heads.
   const open = (p: Vec3): boolean => Number.isNaN(roofOver(p))
   const clearOfGlass = (p: Vec3): boolean => open(p) && ringAround(p, KELP_CLEAR, 6, radius).every(open)
@@ -138,6 +158,7 @@ export function generateNeptune(seed: number): World {
     const p = openSea()
     if (p !== null) stands.rock(p, 'coral', randomRange(rng, ...CORAL.size), rng)
   }
+  for (const style of SEA_FLOOR) furnish(stands, rng, openSea, style)
 
   return bareWorld({
     seed: worldId(seed, 'neptune'),

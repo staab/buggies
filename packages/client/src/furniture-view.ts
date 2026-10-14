@@ -33,6 +33,31 @@ export function buildFurniture(world: World): THREE.Object3D[] {
     ...headframes(ofKind('headframe')),
     ...kelpStrands(kelp.map((tree) => ({ at: tree.at, turn: uprightAt(tree.at, new THREE.Quaternion()), height: tree.height, width: tree.radius, tone: tree.tone }))),
     ...coralHeads(coral),
+    ...hoodoos(ofKind('hoodoo')),
+    ...rovers(ofKind('rover')),
+    ...pads(ofKind('pad')),
+    ...rockets(ofKind('rocket')),
+    ...greenhouses(ofKind('greenhouse')),
+    ...anemones(ofKind('anemone')),
+    ...clams(ofKind('clam')),
+    ...starfish(ofKind('starfish')),
+    ...urchins(ofKind('urchin')),
+    ...anchors(ofKind('anchor')),
+    ...amphorae(ofKind('amphora')),
+    ...balloons(ofKind('balloon')),
+    ...windsocks(ofKind('windsock')),
+    ...helipads(ofKind('helipad')),
+    ...logs(ofKind('log')),
+    ...pitchers(ofKind('pitcher')),
+    ...columns(ofKind('column')),
+    ...pillars(ofKind('pillar')),
+    ...fungus(ofKind('fungus')),
+    ...lavaPools(ofKind('lava')),
+    ...stalactites(ofKind('stalactite')),
+    ...tracks(ofKind('track')),
+    ...mineCarts(ofKind('minecart')),
+    ...lifeguards(ofKind('lifeguard')),
+    ...umbrellas(ofKind('umbrella')),
   ].filter((mesh): mesh is THREE.InstancedMesh => mesh !== null)
 }
 
@@ -509,6 +534,469 @@ function headframes(found: readonly WorldBuilding[]): (THREE.InstancedMesh | nul
       const r = frame.width * 0.3
       local.copy(moved(0, frame.height + r * 0.6, 0)).multiply(scaled(r, r, r))
       color.copy(MINE_STEEL).offsetHSL(0, 0, -0.05)
+    }),
+  ]
+}
+
+// Models made of a few plain shapes, each painted its own color: a unit across, along and high unless said, foot at the origin.
+
+/** A shape moved into its place in a model, and painted one color. */
+function piece(geometry: THREE.BufferGeometry, color: THREE.ColorRepresentation, place?: THREE.Matrix4): THREE.BufferGeometry {
+  if (place !== undefined) geometry.applyMatrix4(place)
+  return painted(geometry, new THREE.Color(color))
+}
+
+/** A model of its pieces, merged into one shape. */
+function model(pieces: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const merged = mergeGeometries(pieces)
+  merged.computeVertexNormals()
+  return merged
+}
+
+/** A material that takes its colors from a model's pieces, tinted by each instance's. */
+function modelMaterial(options: THREE.MeshStandardMaterialParameters = {}): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, flatShading: true, ...options })
+}
+
+const at3 = (x: number, y: number, z: number): THREE.Matrix4 => new THREE.Matrix4().makeTranslation(x, y, z)
+const turnedZ = (angle: number): THREE.Matrix4 => new THREE.Matrix4().makeRotationZ(angle)
+const turnedY = (angle: number): THREE.Matrix4 => new THREE.Matrix4().makeRotationY(angle)
+const turnedX = (angle: number): THREE.Matrix4 => new THREE.Matrix4().makeRotationX(angle)
+
+/** A batch of a model, each piece scaled to its building's width, height and depth, and tinted a little by its tone. */
+function stretched(geometry: THREE.BufferGeometry, material: THREE.Material, found: readonly WorldBuilding[], tint = 0.1): THREE.InstancedMesh | null {
+  return batch(geometry, material, found, (thing, local, color) => {
+    local.copy(scaled(thing.width, thing.height, thing.depth))
+    color.setScalar(1 - tint / 2 + tint * thing.tone)
+  })
+}
+
+// Mars.
+
+/** A hoodoo: a column of red rock in bands, narrowing to a neck under a broad flat cap of harder stone. */
+function hoodoos(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const band = (bottom: number, top: number, from: number, to: number, color: string): THREE.BufferGeometry =>
+    piece(new THREE.CylinderGeometry(top, bottom, to - from, 9), color, at3(0, (from + to) / 2, 0))
+  const shape = model([
+    band(0.5, 0.42, 0, 0.3, '#8f3c1f'),
+    band(0.42, 0.33, 0.3, 0.55, '#b4552c'),
+    band(0.33, 0.26, 0.55, 0.78, '#9c4524'),
+    band(0.26, 0.2, 0.78, 0.9, '#c2703f'),
+    band(0.42, 0.38, 0.9, 1, '#6e2b17'),
+  ])
+  return [stretched(shape, modelMaterial({ roughness: 1 }), found)]
+}
+
+/** A rover: a white body on six wheels, a mast with its camera over its front, and a panel over its back. */
+function rovers(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces = [
+    piece(new THREE.BoxGeometry(0.9, 0.28, 0.85), '#e6e3dc', at3(0, 0.48, 0)),
+    piece(new THREE.BoxGeometry(1, 0.04, 0.5), '#1d2f5c', at3(0, 0.64, 0.2)),
+    piece(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 6), '#9aa0a8', at3(0, 0.82, -0.3)),
+    piece(new THREE.BoxGeometry(0.16, 0.1, 0.1), '#3a3a3a', at3(0, 1, -0.3)),
+  ]
+  for (const x of [-0.5, 0.5]) for (const z of [-0.36, 0, 0.36]) pieces.push(piece(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 10).applyMatrix4(turnedZ(Math.PI / 2)), '#2b2b2b', at3(x, 0.16, z)))
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.6 }), found)]
+}
+
+/** A landing pad: a round slab of pale concrete, a ring painted on it. */
+function pads(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const slab = piece(new THREE.CylinderGeometry(0.5, 0.5, 1, 32), '#a8a29a', at3(0, 0.5, 0))
+  const ring = piece(new THREE.RingGeometry(0.34, 0.38, 32).applyMatrix4(turnedX(-Math.PI / 2)), '#e8c547', at3(0, 1.01, 0))
+  return [stretched(model([slab, ring]), modelMaterial({ roughness: 0.95, flatShading: false }), found, 0.04)]
+}
+
+/** A rocket on its pad, nose up: a white body with a red band, its nose, and four fins round its foot. */
+function rockets(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces = [
+    piece(new THREE.CylinderGeometry(0.5, 0.5, 0.58, 16), '#eeeeee', at3(0, 0.29, 0)),
+    piece(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 16), '#c8372d', at3(0, 0.61, 0)),
+    piece(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 16), '#eeeeee', at3(0, 0.69, 0)),
+    piece(new THREE.ConeGeometry(0.5, 0.26, 16), '#c8372d', at3(0, 0.87, 0)),
+  ]
+  for (let k = 0; k < 4; k++) pieces.push(piece(new THREE.BoxGeometry(0.04, 0.2, 0.4), '#9aa0a8', turnedY((k * Math.PI) / 2).multiply(at3(0, 0.1, 0.55))))
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.4, flatShading: false }), found, 0)]
+}
+
+/** A greenhouse: a long half-round of glass along its length, and green rows growing under it. */
+function greenhouses(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const vault = new THREE.CylinderGeometry(0.5, 0.5, 1, 16, 1, false, -Math.PI / 2, Math.PI)
+  // Its round side up, its length along its depth.
+  vault.applyMatrix4(turnedX(-Math.PI / 2))
+  vault.scale(1, 2, 1)
+  const glass = new THREE.MeshStandardMaterial({ color: '#cfe8ff', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+  const rows = model([-0.25, 0, 0.25].map((x) => piece(new THREE.BoxGeometry(0.14, 0.12, 0.92), '#4f8f3a', at3(x, 0.06, 0))))
+  return [stretched(vault, glass, found, 0), stretched(rows, modelMaterial(), found)]
+}
+
+// Neptune.
+
+const ANEMONE_COLORS = ['#ff7fa8', '#ff9f4a', '#b07bff', '#ffd35c', '#7fffb0']
+
+/** An anemone: a short stalk and a tuft of tentacles spreading up and out from its top, in one bright color. */
+function anemones(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces = [piece(new THREE.CylinderGeometry(0.22, 0.28, 0.35, 8), '#ffffff', at3(0, 0.175, 0))]
+  for (let k = 0; k < 16; k++) {
+    const lean = 0.3 + (k % 3) * 0.25
+    const tentacle = new THREE.ConeGeometry(0.035, 0.65, 4)
+    tentacle.translate(0, 0.325, 0)
+    pieces.push(piece(tentacle, '#ffffff', turnedY(k * 2.4).multiply(at3(0.12, 0.35, 0)).multiply(turnedZ(-lean))))
+  }
+  return [
+    batch(model(pieces), modelMaterial({ roughness: 0.6, flatShading: false }), found, (anemone, local, color) => {
+      local.copy(scaled(anemone.width, anemone.height, anemone.depth))
+      color.copy(pick(ANEMONE_COLORS.map((hex) => new THREE.Color(hex)), anemone.tone))
+    }),
+  ]
+}
+
+/** A giant clam lying a little open: two fluted shells hinged at the back, a pearl glowing between them. */
+function clams(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const shell = (): THREE.BufferGeometry => new THREE.SphereGeometry(0.5, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2)
+  const lower = piece(shell().applyMatrix4(turnedX(Math.PI)).scale(1, 0.5, 1), '#8a7f9a', at3(0, 0.25, 0))
+  // The upper shell turned up about its back edge.
+  const upper = piece(shell().scale(1, 0.5, 1), '#9b90ab', at3(0, 0.25, 0.5).multiply(turnedX(-0.35)).multiply(at3(0, 0, -0.5)))
+  const pearl = piece(new THREE.SphereGeometry(0.1, 10, 6), '#fff6ec', at3(0, 0.3, 0.05))
+  return [stretched(model([lower, upper, pearl]), modelMaterial({ roughness: 0.5, flatShading: false, side: THREE.DoubleSide }), found)]
+}
+
+/** A starfish: five arms out from its middle, flat on the sea floor. */
+function starfish(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces: THREE.BufferGeometry[] = [piece(new THREE.CylinderGeometry(0.14, 0.16, 1, 5), '#ffffff', at3(0, 0.5, 0))]
+  for (let k = 0; k < 5; k++) {
+    const arm = new THREE.ConeGeometry(0.11, 0.42, 4)
+    arm.applyMatrix4(turnedZ(-Math.PI / 2))
+    pieces.push(piece(arm, '#ffffff', turnedY((k * 2 * Math.PI) / 5).multiply(at3(0.3, 0.4, 0)).multiply(new THREE.Matrix4().makeScale(1, 1.6, 1))))
+  }
+  return [
+    batch(model(pieces), modelMaterial({ roughness: 0.9 }), found, (star, local, color) => {
+      local.copy(scaled(star.width, star.height, star.depth))
+      color.copy(pick(['#ff6a3d', '#e8443a', '#a94fd1', '#f2a23a'].map((hex) => new THREE.Color(hex)), star.tone))
+    }),
+  ]
+}
+
+/** A sea urchin: a dark ball bristling with spines. */
+function urchins(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const ball = new THREE.IcosahedronGeometry(0.3, 1)
+  const pieces = [piece(ball.clone(), '#2a1530', at3(0, 0.3, 0))]
+  const corners = ball.getAttribute('position') as THREE.BufferAttribute
+  const seen = new Set<string>()
+  for (let k = 0; k < corners.count; k++) {
+    const out = new THREE.Vector3().fromBufferAttribute(corners, k).normalize()
+    const key = out.toArray().map((v) => v.toFixed(2)).join()
+    if (seen.has(key) || out.y < -0.5) continue
+    seen.add(key)
+    const spine = new THREE.ConeGeometry(0.025, 0.35, 3)
+    spine.translate(0, 0.175 + 0.28, 0)
+    spine.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), out))
+    pieces.push(piece(spine, '#3d1f47', at3(0, 0.3, 0)))
+  }
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.7 }), found)]
+}
+
+/** An anchor standing where it sank: its shank, the stock across its top and the ring above, and its two arms curving up. */
+function anchors(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const rust = '#5a3a2a'
+  const pieces = [
+    piece(new THREE.BoxGeometry(0.12, 0.8, 0.5), rust, at3(0, 0.45, 0)),
+    piece(new THREE.BoxGeometry(1, 0.08, 0.2), rust, at3(0, 0.82, 0)),
+    piece(new THREE.TorusGeometry(0.08, 0.025, 5, 10).applyMatrix4(turnedY(Math.PI / 2)), rust, at3(0, 0.95, 0)),
+  ]
+  for (const side of [-1, 1]) pieces.push(piece(new THREE.BoxGeometry(0.4, 0.09, 0.4), rust, at3(side * 0.2, 0.18, 0).multiply(turnedZ(side * 0.6))))
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.9 }), found)]
+}
+
+/** An amphora: a terracotta jar, round-bellied and narrow-necked, with a handle either side. */
+function amphorae(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const outline = [
+    [0, 0],
+    [0.12, 0.02],
+    [0.32, 0.2],
+    [0.42, 0.45],
+    [0.36, 0.68],
+    [0.16, 0.8],
+    [0.13, 0.95],
+    [0.17, 1],
+  ].map(([r, y]) => new THREE.Vector2(r, y))
+  const pieces = [piece(new THREE.LatheGeometry(outline, 12), '#b5653a')]
+  for (const side of [-1, 1]) pieces.push(piece(new THREE.TorusGeometry(0.11, 0.025, 4, 8, Math.PI), '#a65a32', at3(side * 0.2, 0.82, 0).multiply(turnedZ(side * -1.2))))
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.85, flatShading: false }), found)]
+}
+
+// Jupiter.
+
+const BALLOON_COLORS = [
+  ['#e8443a', '#ffd35c'],
+  ['#3a7bd5', '#ffffff'],
+  ['#7a3fb0', '#4fc3c8'],
+] as const
+
+/** A balloon tethered over a platform's edge: a stake, its rope up to a basket, and the balloon over it in two-color bands. */
+function balloons(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  // In its building's height: the rope up to its basket, and the balloon over that, its diameter its width.
+  const rope = footed(new THREE.CylinderGeometry(0.03, 0.03, 1, 4))
+  return [
+    batch(rope, new THREE.MeshStandardMaterial({ color: '#d8cfb8', roughness: 1 }), found, (balloon, local) => {
+      local.copy(scaled(1, balloon.height - balloon.width * 1.05, 1))
+    }),
+    ...BALLOON_COLORS.map((colors, k) => {
+      // Its gores in its two colors by turns, round it.
+      const bands = new THREE.SphereGeometry(0.5, 16, 12).toNonIndexed()
+      bands.deleteAttribute('uv')
+      const corners = bands.getAttribute('position') as THREE.BufferAttribute
+      const paint = new Float32Array(corners.count * 3)
+      for (let c = 0; c < corners.count; c += 3) {
+        const x = corners.getX(c) + corners.getX(c + 1) + corners.getX(c + 2)
+        const z = corners.getZ(c) + corners.getZ(c + 1) + corners.getZ(c + 2)
+        const gore = new THREE.Color(colors[Math.floor(((Math.atan2(z, x) + Math.PI) / (2 * Math.PI)) * 8) % 2])
+        for (let corner = 0; corner < 3; corner++) gore.toArray(paint, (c + corner) * 3)
+      }
+      bands.setAttribute('color', new THREE.BufferAttribute(paint, 3))
+      bands.scale(1, 1.15, 1)
+      bands.translate(0, 0.58, 0)
+      const shape = model([bands, piece(new THREE.BoxGeometry(0.22, 0.14, 0.22), '#7a5230', at3(0, -0.09, 0))])
+      const theirs = found.filter((balloon) => Math.floor(balloon.tone * BALLOON_COLORS.length) % BALLOON_COLORS.length === k)
+      return batch(shape, modelMaterial({ roughness: 0.6, flatShading: false }), theirs, (balloon, local) => {
+        local.copy(moved(0, balloon.height - balloon.width * 1.05, 0)).multiply(scaled(balloon.width, balloon.width, balloon.width))
+      })
+    }),
+  ]
+}
+
+/** A wind sock: a pole, and an orange and white striped sock off its top, out along its depth. */
+function windsocks(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pole = footed(new THREE.CylinderGeometry(0.06, 0.08, 1, 6))
+  const stripes = [0, 1, 2, 3, 4].map((k) => {
+    const ring = new THREE.CylinderGeometry(0.5 - k * 0.07, 0.5 - (k + 1) * 0.07, 0.2, 10, 1, true)
+    return piece(ring, k % 2 === 0 ? '#ff7a1f' : '#ffffff', turnedX(Math.PI / 2 + 0.25).premultiply(at3(0, 0, 0.1 + k * 0.2)))
+  })
+  return [
+    batch(pole, new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.4 }), found, (sock, local, color) => {
+      local.copy(scaled(1, sock.height, 1))
+      color.copy(STEEL)
+    }),
+    batch(model(stripes), modelMaterial({ roughness: 0.9, side: THREE.DoubleSide }), found, (sock, local) => {
+      local.copy(moved(0, sock.height - 0.4, 0)).multiply(scaled(0.7, 0.7, sock.depth))
+    }),
+  ]
+}
+
+/** A landing pad: a round slab of dark paving, a yellow ring round it, and a white H painted in the middle. */
+function helipads(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const flat = (geometry: THREE.BufferGeometry): THREE.BufferGeometry => geometry.applyMatrix4(turnedX(-Math.PI / 2))
+  const pieces = [
+    piece(new THREE.CylinderGeometry(0.5, 0.5, 1, 32), '#3e4146', at3(0, 0.5, 0)),
+    piece(flat(new THREE.RingGeometry(0.4, 0.44, 32)), '#e8c547', at3(0, 1.02, 0)),
+    piece(flat(new THREE.PlaneGeometry(0.06, 0.4)), '#f2f2f2', at3(-0.12, 1.02, 0)),
+    piece(flat(new THREE.PlaneGeometry(0.06, 0.4)), '#f2f2f2', at3(0.12, 1.02, 0)),
+    piece(flat(new THREE.PlaneGeometry(0.24, 0.06)), '#f2f2f2', at3(0, 1.02, 0)),
+  ]
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.9, flatShading: false }), found, 0)]
+}
+
+// Venus.
+
+/** A fallen giant's trunk lying along the jungle floor, its bark brown and mossy on top, its broken ends pale wood. */
+function logs(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const trunk = new THREE.CylinderGeometry(0.5, 0.5, 1, 12, 1)
+  trunk.applyMatrix4(turnedZ(Math.PI / 2))
+  const plain = trunk.toNonIndexed()
+  plain.deleteAttribute('uv')
+  plain.computeVertexNormals()
+  const normals = plain.getAttribute('normal') as THREE.BufferAttribute
+  const colors = new Float32Array(normals.count * 3)
+  const bark = new THREE.Color('#5a3f26')
+  const moss = new THREE.Color('#4e7d2f')
+  const wood = new THREE.Color('#c9a774')
+  const color = new THREE.Color()
+  for (let k = 0; k < normals.count; k++) {
+    const end = Math.abs(normals.getX(k)) > 0.9
+    ;(end ? color.copy(wood) : color.copy(bark).lerp(moss, Math.max(0, normals.getY(k)) * 0.8)).toArray(colors, k * 3)
+  }
+  plain.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  // Lying along its length, resting on the highest ground under it.
+  return [
+    batch(plain, modelMaterial({ roughness: 0.95 }), found, (log, local, color) => {
+      local.copy(moved(0, log.height - log.depth / 2, 0)).multiply(scaled(log.width, log.depth, log.depth))
+      color.setScalar(0.9 + 0.2 * log.tone)
+    }),
+  ]
+}
+
+/** A pitcher plant: a green stem, a tall cup leaning out from its top, reddening to its rim, and its lid held up over it. */
+function pitchers(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const cup = new THREE.CylinderGeometry(0.5, 0.3, 0.5, 12, 4, true)
+  const corners = cup.getAttribute('position') as THREE.BufferAttribute
+  const colors = new Float32Array(corners.count * 3)
+  for (let k = 0; k < corners.count; k++) new THREE.Color('#5d8f2f').lerp(new THREE.Color('#b8322a'), corners.getY(k) + 0.5).toArray(colors, k * 3)
+  cup.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  cup.applyMatrix4(at3(0, 0.25, 0))
+  const tilt = turnedZ(0.25)
+  const cupped = cup.toNonIndexed()
+  cupped.deleteAttribute('uv')
+  cupped.applyMatrix4(at3(0, 0.45, 0).multiply(tilt))
+  const pieces = [
+    piece(new THREE.CylinderGeometry(0.1, 0.12, 0.45, 6), '#4a7a28', at3(0, 0.225, 0)),
+    cupped,
+    piece(new THREE.CircleGeometry(0.42, 10).applyMatrix4(turnedX(-Math.PI / 2 + 0.6)), '#9c2a24', at3(0, 0.45, 0).multiply(tilt).multiply(at3(0.1, 0.62, 0.3))),
+  ]
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.7, side: THREE.DoubleSide }), found)]
+}
+
+/** A broken column on its square plinth, pale stone, worn by the jungle. */
+function columns(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const plinth = piece(new THREE.BoxGeometry(1.25, 0.08, 1.25), '#9b8c73', at3(0, 0.04, 0))
+  const drum = piece(new THREE.CylinderGeometry(0.45, 0.5, 0.92, 12), '#b0a184', at3(0, 0.54, 0))
+  return [stretched(model([plinth, drum]), modelMaterial({ roughness: 0.95 }), found)]
+}
+
+// Mercury.
+
+/** A pillar of rock where a stalagmite grew up to its stalactite: wide at the floor and the roof, waisted between. */
+function pillars(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const outline = [
+    [0.5, 0],
+    [0.36, 0.15],
+    [0.27, 0.35],
+    [0.24, 0.5],
+    [0.27, 0.65],
+    [0.36, 0.85],
+    [0.5, 1],
+  ].map(([r, y]) => new THREE.Vector2(r, y))
+  return [
+    batch(new THREE.LatheGeometry(outline, 10), new THREE.MeshStandardMaterial({ roughness: 1, flatShading: true }), found, (pillar, local, color) => {
+      local.copy(scaled(pillar.width, pillar.height, pillar.depth))
+      color.set('#4d4038').offsetHSL(0, 0, (pillar.tone - 0.5) * 0.06)
+    }),
+  ]
+}
+
+const FUNGUS_GLOWS = ['#7dffd0', '#7fb6ff', '#d38bff'].map((hex) => new THREE.Color(hex))
+
+/** A cluster of fungus: pale stems of different heights, each under a cap that glows; those of each glow drawn together. */
+function fungus(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const tufts = [
+    [0, 0, 1, 0.35],
+    [0.28, 0.12, 0.7, 0.26],
+    [-0.25, 0.18, 0.55, 0.22],
+    [0.1, -0.3, 0.8, 0.3],
+    [-0.2, -0.22, 0.45, 0.18],
+  ]
+  const stems = model(tufts.map(([x, z, high, cap]) => piece(new THREE.CylinderGeometry(cap! * 0.22, cap! * 0.3, high!, 6), '#e8e2cf', at3(x!, high! / 2, z!))))
+  const caps = model(tufts.map(([x, z, high, cap]) => piece(new THREE.SphereGeometry(cap!, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.55, 1), '#ffffff', at3(x!, high!, z!))))
+  return [
+    stretched(stems, modelMaterial({ roughness: 0.8 }), found),
+    ...FUNGUS_GLOWS.map((glow) =>
+      stretched(caps, new THREE.MeshStandardMaterial({ color: glow, emissive: glow, emissiveIntensity: 1.3, roughness: 0.4 }), found.filter((cluster) => pick(FUNGUS_GLOWS, cluster.tone) === glow), 0),
+    ),
+  ]
+}
+
+/** A pool of lava on a level floor: a ragged glowing disc, a dark crust round its edge. */
+function lavaPools(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const ragged = (reach: number, sides: number): THREE.BufferGeometry => {
+    const outline = new THREE.Shape()
+    for (let k = 0; k <= sides; k++) {
+      const angle = (k / sides) * Math.PI * 2
+      const r = reach * (0.85 + 0.15 * Math.sin(k * 2.7) * Math.cos(k * 1.3))
+      if (k === 0) outline.moveTo(Math.cos(angle) * r, Math.sin(angle) * r)
+      else outline.lineTo(Math.cos(angle) * r, Math.sin(angle) * r)
+    }
+    return new THREE.ShapeGeometry(outline).applyMatrix4(turnedX(-Math.PI / 2))
+  }
+  const glow = new THREE.Color('#ff5a1a')
+  return [
+    batch(ragged(0.5, 18), new THREE.MeshStandardMaterial({ color: '#2a1a14', roughness: 1 }), found, (pool, local) => {
+      local.copy(moved(0, pool.height - 0.02, 0)).multiply(scaled(pool.width, 1, pool.depth))
+    }),
+    batch(ragged(0.42, 18), new THREE.MeshStandardMaterial({ color: glow, emissive: glow, emissiveIntensity: 2.2, roughness: 0.3 }), found, (pool, local) => {
+      local.copy(moved(0, pool.height + 0.01, 0)).multiply(scaled(pool.width, 1, pool.depth))
+    }),
+  ]
+}
+
+/** A stalactite: a long point of rock hanging from the roof, its root up in it, paler toward its tip. */
+function stalactites(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const point = new THREE.ConeGeometry(0.5, 1, 7)
+  point.applyMatrix4(turnedX(Math.PI))
+  point.translate(0, 0.5, 0)
+  const corners = point.getAttribute('position') as THREE.BufferAttribute
+  const colors = new Float32Array(corners.count * 3)
+  for (let k = 0; k < corners.count; k++) new THREE.Color('#8a7a68').lerp(new THREE.Color('#3b302a'), corners.getY(k)).toArray(colors, k * 3)
+  point.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  return [stretched(point, modelMaterial({ roughness: 1 }), found)]
+}
+
+/** A stretch of mine track: two rails along its length on sleepers across it. */
+function tracks(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces: THREE.BufferGeometry[] = []
+  for (let k = 0; k < 24; k++) pieces.push(piece(new THREE.BoxGeometry(0.02, 0.3, 1.3), '#5a4632', at3(-0.48 + k * (0.96 / 23), 0.15, 0)))
+  for (const side of [-0.38, 0.38]) pieces.push(piece(new THREE.BoxGeometry(1, 0.35, 0.07), '#6a6a6e', at3(0, 0.47, side)))
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.7, metalness: 0.4 }), found, 0)]
+}
+
+/** A mine cart: an open box of rusted iron on four small wheels, ore heaped in it. */
+function mineCarts(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces = [
+    piece(new THREE.BoxGeometry(1, 0.08, 1), '#6b3f26', at3(0, 0.3, 0)),
+    piece(new THREE.BoxGeometry(1, 0.62, 0.06), '#7a4a2a', at3(0, 0.63, 0.47)),
+    piece(new THREE.BoxGeometry(1, 0.62, 0.06), '#7a4a2a', at3(0, 0.63, -0.47)),
+    piece(new THREE.BoxGeometry(0.06, 0.62, 1), '#7a4a2a', at3(0.47, 0.63, 0)),
+    piece(new THREE.BoxGeometry(0.06, 0.62, 1), '#7a4a2a', at3(-0.47, 0.63, 0)),
+    piece(new THREE.IcosahedronGeometry(0.42, 0).scale(1, 0.5, 1), '#5a4a3e', at3(0, 0.8, 0)),
+  ]
+  for (const x of [-0.32, 0.32]) for (const z of [-0.4, 0.4]) pieces.push(piece(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 10).applyMatrix4(turnedX(Math.PI / 2)), '#2b2b2b', at3(x, 0.15, z)))
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.8, metalness: 0.3 }), found)]
+}
+
+// The planet.
+
+/** A lifeguard tower: four white legs up to a red hut with a white roof, a ramp down from its front to the sand. */
+function lifeguards(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  const pieces: THREE.BufferGeometry[] = []
+  for (const x of [-0.4, 0.4]) for (const z of [-0.4, 0.4]) pieces.push(piece(new THREE.BoxGeometry(0.08, 0.6, 0.08), '#f2f2f2', at3(x, 0.3, z)))
+  pieces.push(
+    piece(new THREE.BoxGeometry(1.1, 0.04, 1.1), '#d9d2c4', at3(0, 0.6, 0)),
+    piece(new THREE.BoxGeometry(0.9, 0.28, 0.9), '#d33a2c', at3(0, 0.76, 0)),
+    piece(new THREE.BoxGeometry(1.15, 0.05, 1.15), '#f2f2f2', at3(0, 0.93, 0)),
+    piece(new THREE.BoxGeometry(0.3, 0.04, 0.9), '#d9d2c4', at3(0.95, 0.3, 0).multiply(turnedZ(0.6))),
+  )
+  return [stretched(model(pieces), modelMaterial({ roughness: 0.7 }), found, 0)]
+}
+
+const UMBRELLA_COLORS = ['#e8443a', '#3a7bd5', '#f2c14a', '#2fae8f']
+
+/** A beach umbrella: a pole stuck in the sand and a low canopy over it, its panels white and one color by turns. */
+function umbrellas(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
+  // The canopy's panels by turns round it: the white ones, or the colored.
+  const panels = (white: boolean): THREE.BufferGeometry => {
+    const canopy = new THREE.ConeGeometry(0.5, 0.18, 8, 1, true).toNonIndexed()
+    const corners = canopy.getAttribute('position') as THREE.BufferAttribute
+    const kept: number[] = []
+    for (let k = 0; k < corners.count; k += 3) {
+      const x = corners.getX(k) + corners.getX(k + 1) + corners.getX(k + 2)
+      const z = corners.getZ(k) + corners.getZ(k + 1) + corners.getZ(k + 2)
+      if ((Math.floor(((Math.atan2(z, x) + Math.PI) / (2 * Math.PI)) * 8) % 2 === 0) !== white) continue
+      for (let c = 0; c < 3; c++) kept.push(corners.getX(k + c), corners.getY(k + c) + 0.91, corners.getZ(k + c))
+    }
+    const half = new THREE.BufferGeometry()
+    half.setAttribute('position', new THREE.Float32BufferAttribute(kept, 3))
+    half.computeVertexNormals()
+    return half
+  }
+  const cloth = (): THREE.MeshStandardMaterial => new THREE.MeshStandardMaterial({ roughness: 0.8, flatShading: true, side: THREE.DoubleSide })
+  const colors = UMBRELLA_COLORS.map((hex) => new THREE.Color(hex))
+  return [
+    batch(footed(new THREE.CylinderGeometry(0.02, 0.02, 1, 4)), new THREE.MeshStandardMaterial({ color: '#eeeeee', roughness: 0.6 }), found, (umbrella, local) => {
+      local.copy(scaled(umbrella.width, umbrella.height * 0.95, umbrella.depth))
+    }),
+    batch(panels(true), cloth(), found, (umbrella, local) => {
+      local.copy(scaled(umbrella.width, umbrella.height, umbrella.depth))
+    }),
+    batch(panels(false), cloth(), found, (umbrella, local, color) => {
+      local.copy(scaled(umbrella.width, umbrella.height, umbrella.depth))
+      color.copy(pick(colors, umbrella.tone))
     }),
   ]
 }
