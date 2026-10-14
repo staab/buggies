@@ -69,8 +69,8 @@ const STEM = new THREE.Color('#efe6cf')
 const GILLS = new THREE.Color('#5b4a3a')
 /** A strand of kelp's stem, its blades from the stem out to their tips, and the green some strands lean toward. */
 const KELP_STEM = new THREE.Color('#4a3e18')
-const KELP_BLADE = new THREE.Color('#7c6d24')
-const KELP_TIP = new THREE.Color('#a8963c')
+const KELP_BLADE = new THREE.Color('#8f8a2e')
+const KELP_TIP = new THREE.Color('#bdb052')
 const KELP_GREEN = new THREE.Color('#9fbf5a')
 /** The colors a giant mushroom's cap comes in, a crystal's glow, and a coral head. */
 const CAPS = ['#c8372d', '#e0742a', '#8e3fb0', '#d8b23a', '#3f9c8a'].map((hex) => new THREE.Color(hex))
@@ -78,7 +78,7 @@ const GLOWS = ['#5ce1ff', '#b67bff', '#7dffb0', '#ffb45c'].map((hex) => new THRE
 const CORALS = ['#ff7f7f', '#ff9f4a', '#c86bd6', '#ffd35c', '#ff5c9a'].map((hex) => new THREE.Color(hex))
 /** The stone of whoever built Venus's wonders: a monolith's black, a spire's dark, a screw tower's and an arch's pale; the gold a spire is capped in, and the light that glows in their seams. */
 const OBSIDIAN = new THREE.Color('#111114')
-const DARKSTONE = new THREE.Color('#2e2822')
+const DARKSTONE = new THREE.Color('#5c4d3f')
 const PALESTONE = new THREE.Color('#9b8c73')
 const GOLD = new THREE.Color('#d9a63a')
 const SEAM = new THREE.Color('#ffd98a')
@@ -240,7 +240,7 @@ function painted(geometry: THREE.BufferGeometry, color: THREE.Color): THREE.Buff
 }
 
 /** How a strand of kelp is made, as shares of its height: its stem and how much it bends, and how many blades and how long. */
-const STRAND = { stem: 0.007, bend: 0.035, blades: 11, blade: 0.12, bladeWidth: 0.022, crown: 3 } as const
+const STRAND = { stem: 0.007, bend: 0.035, blades: 14, blade: 0.14, bladeWidth: 0.05, crown: 4 } as const
 /** How far a strand sways at its top, as a share of its height, and how fast, one way and across. */
 const SWAY = { reach: 0.07, along: 0.9, across: 0.63 } as const
 
@@ -323,7 +323,7 @@ function kelpStrands(found: readonly Piece[]): (THREE.InstancedMesh | null)[] {
   const mesh = batch(kelpGeometry(), kelpMaterial(), found, (kelp, local, color) => {
     const wide = (kelp.width ?? 1.5) / 1.5
     local.copy(new THREE.Matrix4().makeRotationY(kelp.tone * Math.PI * 2)).multiply(scaled(kelp.height * wide, kelp.height, kelp.height * wide))
-    color.setScalar(0.8 + 0.25 * kelp.tone).lerp(KELP_GREEN, ((kelp.tone * 7.3) % 1) * 0.35)
+    color.setScalar(0.9 + 0.2 * kelp.tone).lerp(KELP_GREEN, ((kelp.tone * 7.3) % 1) * 0.35)
   })
   // Swayed in the drawing alone: its shadow would stand still.
   if (mesh !== null) mesh.name = 'kelp'
@@ -425,7 +425,7 @@ function pyramidGeometry(): THREE.BufferGeometry {
 }
 
 /** How much of a spire's height is its capstone of gold. */
-const CAPSTONE = 0.12
+const CAPSTONE = 0.2
 
 /** A spire: a steep pyramid of dark stone, capped in gold. */
 function spires(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
@@ -650,14 +650,15 @@ function anemones(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)
   ]
 }
 
-/** A giant clam lying a little open: two fluted shells hinged at the back, a pearl glowing between them. */
+/** A giant clam lying open: two deep shells hinged at the back, its mantle bright between them, and a pearl. */
 function clams(found: readonly WorldBuilding[]): (THREE.InstancedMesh | null)[] {
   const shell = (): THREE.BufferGeometry => new THREE.SphereGeometry(0.5, 12, 4, 0, Math.PI * 2, 0, Math.PI / 2)
-  const lower = piece(shell().applyMatrix4(turnedX(Math.PI)).scale(1, 0.5, 1), '#8a7f9a', at3(0, 0.25, 0))
-  // The upper shell turned up about its back edge.
-  const upper = piece(shell().scale(1, 0.5, 1), '#9b90ab', at3(0, 0.25, 0.5).multiply(turnedX(-0.35)).multiply(at3(0, 0, -0.5)))
-  const pearl = piece(new THREE.SphereGeometry(0.1, 10, 6), '#fff6ec', at3(0, 0.3, 0.05))
-  return [stretched(model([lower, upper, pearl]), modelMaterial({ roughness: 0.5, flatShading: false, side: THREE.DoubleSide }), found)]
+  const lower = piece(shell().applyMatrix4(turnedX(Math.PI)).scale(1, 0.7, 1), '#a99fb8', at3(0, 0.35, 0))
+  // The upper shell turned well up about its back edge.
+  const upper = piece(shell().scale(1, 0.7, 1), '#b8aec6', at3(0, 0.35, 0.5).multiply(turnedX(-0.75)).multiply(at3(0, 0, -0.5)))
+  const mantle = piece(new THREE.CircleGeometry(0.46, 14).applyMatrix4(turnedX(-Math.PI / 2)), '#18c6c2', at3(0, 0.37, 0))
+  const pearl = piece(new THREE.SphereGeometry(0.1, 10, 6), '#fff6ec', at3(0, 0.44, 0.05))
+  return [stretched(model([lower, upper, mantle, pearl]), modelMaterial({ roughness: 0.5, flatShading: false, side: THREE.DoubleSide }), found)]
 }
 
 /** A starfish: five arms out from its middle, flat on the sea floor. */

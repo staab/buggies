@@ -16,7 +16,7 @@ import { DRY, type World, type WorldPortal } from '../world.ts'
 import { resample } from '../globe/lines.ts'
 import { TUNNEL_CLEARANCE } from '../globe/tunnels.ts'
 import { bareWorld } from './bare.ts'
-import { groundOfSize, landOf, meanHeight, rollGround } from './ground.ts'
+import { groundOfSize, landOf, levelGround, meanHeight, rollGround } from './ground.ts'
 import { hollowOut, roofNear, type Hollow } from './hollows.ts'
 import { worldId } from './kinds.ts'
 import { districtOfPlace, linkPlaces, markDistricts, pointIn, ringAround, scatterPlaces, someOf, toward } from './places.ts'
@@ -30,7 +30,7 @@ const FLOOR = { depth: 64, roll: 9, frequency: 0.004 } as const
 /** The stations: how many, how far each reaches, how high its dome and how deep its floor, and how far apart two stand past their reaches. */
 const STATIONS = { min: 5, max: 7 } as const
 const STATION_REACH = { min: 90, max: 130 } as const
-const STATION = { above: 34, below: 4, squareness: 3 } as const
+const STATION = { above: 34, below: 0, squareness: 3 } as const
 const STATIONS_APART = 160
 /** How many links past the fewest that join every station. */
 const EXTRA_TUNNELS = 2
@@ -42,8 +42,8 @@ const PORTALS = { least: 2, most: 3 } as const
  * deep under it, at its middle line.
  */
 const TUNNEL = { reach: 3 * (HIGHWAY_WIDTH / 2 + TUNNEL_CLEARANCE), above: 12, below: 3, squareness: 2.4 } as const
-/** How far over the sea floor a station's middle stands, so its floor lies on the floor. */
-const STATION_RISE = 4
+/** How far round a station the sea floor is eased to its floor's level, so the dome stands flush on the floor all round. */
+const STATION_BLEND = 40
 /** The roads along the tunnels, how wide, and how far off a station's middle they start. */
 const ROAD_WIDTH = 12
 const SQUARE = 12
@@ -100,7 +100,9 @@ export function generateNeptune(seed: number): World {
     (a, b) => a + b + STATIONS_APART,
     () => randomRange(rng, STATION_REACH.min, STATION_REACH.max),
   )
-  const middles = stations.map((station) => meanHeight(land, station.center, station.reach) + STATION_RISE)
+  // Each station's floor flat, at the sea floor's mean under it, and the sea floor eased to it round the dome.
+  const middles = stations.map((station) => meanHeight(land, station.center, station.reach))
+  stations.forEach((station, k) => levelGround(land, station.center, station.reach, STATION_BLEND, middles[k]!))
   const halls: Hollow[] = stations.map((station, k) => ({ kind: 'bore', line: [station.center], middle: [middles[k]!], reach: station.reach, ...STATION }))
   const links = linkPlaces(
     stations.map((station) => station.center),

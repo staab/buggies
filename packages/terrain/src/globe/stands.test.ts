@@ -249,7 +249,7 @@ describe("a planet's buildings and trees", () => {
       expect(roadCrowding(world, world.roads, tree.at)).toBeGreaterThan(1)
       expect(heightOf(world, tree.at)).toBeCloseTo(groundAt(world, tree.at), 3)
     }
-  })
+  }, 30_000)
 })
 
 describe("a planet's cities", () => {

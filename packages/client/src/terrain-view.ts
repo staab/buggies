@@ -942,6 +942,11 @@ function buildGround(world: World): THREE.Group {
   const textured = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 })
   const plainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 })
   const tiles = Math.ceil(n / GROUND_TILE_CELLS)
+  // Where each thing painted is over the radius the tiles are measured at, whatever its height: a sea floor's roads lie far under it.
+  const paintedAt = paints.map((paint) => {
+    const out = Math.hypot(paint.at.x, paint.at.y, paint.at.z) || 1
+    return { x: (paint.at.x / out) * radius, y: (paint.at.y / out) * radius, z: (paint.at.z / out) * radius }
+  })
   for (let face = 0; face < 6; face++) {
     const plainPositions: number[] = []
     const plainColors: number[] = []
@@ -961,7 +966,7 @@ function buildGround(world: World): THREE.Group {
           gridDirection(n, face, i, j, direction)
           reach = Math.max(reach, vdistance(center, { x: direction.x * radius, y: direction.y * radius, z: direction.z * radius }))
         }
-        const painted = paints.filter((paint) => vdistance(paint.at, center) < reach + paint.reach + 2)
+        const painted = paints.filter((paint, k) => vdistance(paintedAt[k]!, center) < reach + paint.reach + 2)
 
         const positions = painted.length > 0 ? ([] as number[]) : plainPositions
         const shading = painted.length > 0 ? ([] as number[]) : plainColors
