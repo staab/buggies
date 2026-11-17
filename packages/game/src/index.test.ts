@@ -5,18 +5,23 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import {
   CEILING,
   CLOUD_HEIGHT,
+  HOLD_FOREVER,
   MAX_PLAYERS,
   NEUTRAL_INPUT,
   advance,
   changeVehicle,
   createArena,
+  createVehicleInput,
   findSpawns,
+  hurtVehicle,
   initPhysics,
   leaveSeat,
+  npcInput,
   respawn,
   respawnLost,
   respawnNearby,
   restingRideHeight,
+  seatNpc,
   setCoasting,
   writeCoasting,
   spawnHere,
@@ -163,6 +168,34 @@ describe('game', () => {
     // Put back on the nearest road, at rest, its ride height over it.
     expect(offRoad(seat.vehicle.frame.position)).toBeLessThan(1.5)
     expect(seat.vehicle.speed).toBe(0)
+  })
+
+  it('holds the cars the players drive still, and lets the traffic drive, until the hold is up', () => {
+    const arena = createArena(map)
+    const held = takeSeat(arena, 0, 'sportsCar')
+    const traffic = seatNpc(arena, 7)!
+    // Nothing takes a car off the road while this is watched: the saucer takes even a car nobody drives.
+    for (const ufo of arena.ufos) ufo.cooldownTicks = Number.POSITIVE_INFINITY
+    arena.holdUntil = HOLD_FOREVER
+    const waiting = { ...held.vehicle.frame.position }
+    const driving = { ...traffic.vehicle.frame.position }
+    const asking = createVehicleInput()
+    for (let i = 0; i < 100; i++) advance(arena, (seat) => (seat === traffic ? npcInput(arena, traffic, asking) : FLAT_OUT))
+    expect(apart(held.vehicle.frame.position, waiting)).toBeLessThan(1)
+    expect(held.vehicle.speed).toBeLessThan(0.5)
+    expect(apart(traffic.vehicle.frame.position, driving)).toBeGreaterThan(5)
+    // Nor is it hurt where it waits: whatever knocks it in a step is undone, however hard, and it is never wrecked.
+    advance(arena, (seat) => {
+      if (seat === held) hurtVehicle(seat.vehicle, seat.tuning, 10)
+      return seat === traffic ? npcInput(arena, traffic, asking) : FLAT_OUT
+    })
+    expect(held.vehicle.damage).toBe(0)
+    expect(held.vehicle.wrecked).toBe(false)
+    // Once the hold is up, its player drives off like anyone.
+    arena.holdUntil = 0
+    run(arena, FLAT_OUT, 3)
+    expect(apart(held.vehicle.frame.position, waiting)).toBeGreaterThan(3)
+    arena.world.free()
   })
 
   it('keeps a vehicle under the ceiling, a little over the clouds, however hard it is thrown up', () => {

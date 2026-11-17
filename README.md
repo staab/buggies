@@ -1,6 +1,6 @@
 # Buggies
 
-Drive around procedurally generated islands on a small planet, alone or with whoever else is on the same server.
+Race through procedurally generated worlds on a small planet, or drive them freely, with whoever else is on the same server.
 
 ## Run it
 
@@ -9,9 +9,11 @@ pnpm install
 pnpm dev
 ```
 
-This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, choose **1 player** or **2 players**, then an island by its seed, then a vehicle for each player. Everyone who picks the same seed shares that island. While choosing, a beacon stands over every car on the island, driven or not, as the server has them. Each seed is a room on the server with 32 seats, opened when the first player joins and closed when the last one leaves. The address bar names the island being played as `/{seed}`: to join from a second screen, open the same URL. A game cut off from the server joins it again by itself, with each car back where it was and holding what it held, if the server still has it, and a car that can't reach the world on the other side of a portal keeps trying until it gets there. The menu comes back up only when a game can't be joined from it, or the server has been updated, and says why until you move on.
+This starts the Vite client on port 5173 and the game server on port 8787, both reachable from other machines on the network. Every game runs on the server. Open the client, give a name if it does not know one yet, and the start screen lists the games on the server, to join or to watch, with a race of bots playing behind it. **Host a game** above the list makes a race of one's own. Games and races describes the screens and the driving.
 
-The game server also serves the built client (`pnpm build`) on its own port, answering any path that names no file, such as `/{seed}`, with `index.html`. A built client joins the server that served it, and the Vite client joins the server on port 8787 of the host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`, and `CLIENT_DIR` to serve the client from somewhere other than `packages/client/dist`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
+The address bar names the game being played as `/{gameId}`, so opening the same URL joins it from a second screen. A game cut off from the server joins it again by itself, with each car back where it was and holding what it held, if the server still has it; in a race it comes back at the last gate it passed. Players left on the start screen see the games come and go as they are made, joined and played.
+
+The game server also serves the built client (`pnpm build`) on its own port, answering any path that names no file, such as `/{gameId}`, with `index.html`. A built client joins the server that served it, and the Vite client joins the server on port 8787 of the host it was loaded from. To use another server, set `VITE_SERVER_URL` when building or running the client (see `packages/client/.env.example`). The server honors `PORT` and `HOST`, and `CLIENT_DIR` to serve the client from somewhere other than `packages/client/dist`. Behind a reverse proxy, set `TRUST_PROXY=1` so the server tells players apart by the forwarded address.
 
 ## Keys
 
@@ -23,10 +25,12 @@ The game server also serves the built client (`pnpm build`) on its own port, ans
 | Clear the weapon | `0` |
 | Fire | `F` |
 | Siren or horn | `D` |
-| Respawn on the road | `R` |
-| Menu | `Esc` |
+| Respawn | `R` |
+| Leave | `Esc` |
 
 `D` is for show: on the police car, the ambulance and the fire truck it turns the siren on or off, flashing the roof lights and wailing, and on every other vehicle it blows the horn. Everyone nearby sees and hears it, and nothing else comes of it.
+
+`R` puts the car back on the nearest road in a free drive, and in a race at the last gate it passed, facing the next one. `Esc` in the game room leaves the game for the start screen, in a free drive lets go of the world back into the room, and in a race leaves the race for good.
 
 ## The planet
 
@@ -34,9 +38,11 @@ Every island is wrapped round a planet about 612 m in radius, and you can drive,
 
 ## Portals
 
-Three to five portals stand in the open country of every planet: glowing rings wide enough for a truck, with a clear run through them. Every planet has six other worlds, all made from its seed, and each time a car drives through a portal it goes to one of the worlds it isn't on, picked at random, coming out of that world's first portal. A portal that leads back to the planet comes out at the portal you left the planet by. Each world is a room of its own on the server, so everyone who goes through meets there. The menu offers only planets: anyone on another world is counted on its planet among the popular islands, and a link to another world opens its planet.
+Three to five portals stand in the open country of every planet: glowing rings wide enough for a truck, with a clear run through them. Every planet has six other worlds, all made from its seed, and in a free drive each time a car drives through a portal it goes to one of the worlds it isn't on, picked at random, coming out of that world's first portal. A portal that leads back to the planet comes out at the portal you left the planet by. Each world of each game is a room of its own on the server, so everyone in the same game who goes through meets there. A race starts on the planet, so the game room shows the island of the game's seed, its other worlds a click away for a look alone; the start screen draws each game's island.
 
-- **The moon** is half the planet's size, gray and airless under a black sky, with craters, mountain ranges and valleys, and a flag beside the lander that brought it.
+In a race the course decides where a portal leads: the world keeps the portals the course runs through and no others, and the portal at the end of a world's run of checkpoints is the way on to the next world, coming out at its paired portal. The last world has no portal on the course: its finish line is the end of the race.
+
+- **The moon** is half the planet's size, gray and airless under a black sky, with craters, mountain ranges and valleys, a flag beside the lander that brought it, and two portals on it.
 - **Mars** is red rock under a thin pink sky. Its mountains are twice a planet's, and its pull is weaker. Its cities stand under great glass bubbles, with green ground and trees inside. Each bubble has a tunnel out through its foot for every other city, and an arterial road runs from each tunnel to the one facing it, so every city has a road to every other. There are no other roads.
 - **Neptune** is all sea. Glass stations stand on the sea floor, each a town under a great dome some 200 m across, with towers, domed halls, tanks and trees under the glass. They are joined by tunnels three times as wide as a planet's road tunnels and oval across, each with a road along its floor. Everything closed in is dry, and there is nothing above the water. Two or three of the stations have a portal.
 - **Jupiter** is a sky over amber cloud. Its cities stand on floating platforms, joined by highways out over the drop with no guard rails. Smaller platforms float at their own heights, joined to nothing. Anything that goes over an edge falls into the cloud and is put back on a road.
@@ -65,7 +71,7 @@ Every six seconds while anyone is driving on the moon, a meteor comes down somew
 
 ## Bananas
 
-An island has 256 bananas, floating around it and turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Bananas are the fuel every weapon runs on. A wrecked car spills all of its bananas around the wreck for anyone to collect, and they lie there until someone does. Each spilled banana takes one of the island's 256: the ones waiting to reappear first, then ones out on the island, which vanish from where they were. An island holds at most 256 bombs, mines and rockets at once, and past that the oldest disappear.
+An island has 128 bananas, floating around it and turning slowly. Drive through one to collect it, and another appears somewhere else a little later. Bananas are the fuel every weapon runs on. A wrecked car spills all of its bananas around the wreck for anyone to collect, and they lie there until someone does. Each spilled banana takes one of the island's 128: the ones waiting to reappear first, then ones out on the island, which vanish from where they were. An island holds at most 256 bombs, mines and rockets at once, and past that the oldest disappear.
 
 Thirty-two health packs, red crosses on white discs, are scattered the same way. A damaged car that drives through one has half its damage mended, and another pack appears somewhere else a little later. A car with no damage passes through and leaves the pack for someone else, and a magnet does not pull health packs.
 
@@ -85,28 +91,39 @@ A giant spider, its body ten meters up on legs nearly twenty meters long, walks 
 
 Twenty cars nobody drives potter slowly around the arterials of every island in the seats players leave empty: small cars, sports cars, pickups, semis, police cars, ambulances and fire trucks. They are shown in gray on the mini-map, and one gives up its seat whenever the island is full and someone else wants to join. They keep to the right-hand lane, carry no weapons, take no bananas or health packs, and set off any bomb or mine they drive onto. They are fragile: a weapon takes three times as much of one as of any other car, and so does a crash. Wrecked, one comes back on the road nearby like anyone else, and it is put back a little further along its road if it goes nowhere for six seconds.
 
-## Games
+## Games and races
 
-The first page of the menu asks for the player's name, which everyone else on the island knows them by. The browser remembers it for next time. While an island is being played, a button beside the trophy in the top corner opens a list of the players on it, with what each drives, the gems each has won, the bananas each holds and the game each is playing.
+The first screen asks for the player's name if it does not know one yet, and the browser remembers it for next time. The start screen then lists the games on the server as they are now, each with a picture of its island, its seed, whether it is a race or a free drive, who hosts it, how many players it has of the slots it has, and whether it is waiting for players, preparing its course, starting, under way or finished. A game that can be joined has **Join**; a race that is under way has **Watch** in its place; one still preparing or already finished has neither. Behind the list a race plays out, the camera chasing its leader: the server's demo, four bots through two worlds with every rule on, made when somebody comes to the start screen and replaced by a fresh one once it is over. The demo is not itself in the list.
 
-The game is free play, but the trophy beside the speaker opens a list of the games on the island: those waiting for players and those being played. **Start game** opens the picker. A game picked there is offered to everyone on the island for a minute. Each of them hears a chime, and the HUD and a dot on the trophy show how long is left to join. Anyone can join the game from the list, or leave it, and a player is in one waiting game at a time. When the minute is up, the game starts for everyone who joined. A game everyone has left is dropped. With nobody else on the island, a game starts at once. A game is one of four kinds:
+**Host a game** sits above the list and makes a race of one's own to be its host in. A new game has four slots: the host's and three bots'. Anyone may join a game that is waiting with a bot's slot left to take, and a player who leaves turns their slot back into a bot.
 
-- **Score** asks for a number of bananas collected from when the game is set. Bananas spent on weapons still count.
-- **Kills** asks for a number of other players' cars wrecked by the player's own weapons from when the game is set: any weapon hit that finishes a car. Cars nobody drives don't count.
-- **Robots** asks for a number of robots brought down by the player's own weapons from when the game is set.
-- **Race** is played by everyone who joins it. The player picks a course on a map of it: a start, one or more checkpoints and a finish, each mark on land and at least 200 m from the one before it, and a number of laps from 1 to 9. One lap runs from the start to the finish. More make a circuit: from the finish the course runs back round by the start, and the race is won over the finish on the last lap. Starting the race puts every racer on a starting grid at the start, facing the first checkpoint. Each mark has to be passed in order, within 20 m, and a wreck passes nothing. A gold beacon stands over each racer's next mark, which also shows on the mini-map. The first over the finish wins. Only one race runs or waits for players at a time. A race is called off after five minutes with no winner, or when the player who started it stops it.
+The game room fills the screen: down the left, in the start screen's own panel, are the game's slots; down the right, wider, the game's options over the world being looked at. Down the left are the game's title, a line naming who hosts it and what it waits for, and a row for each slot: its name, with a crown for the host and a robot for a bot, the vehicle it drives and whether it is ready. A player's own row has a **Ready** box, or a **Drive** button in a free drive, and a **Car** button that opens the car modal on their vehicle. A bot's row has **Car** and a cross to take its slot away, for the host alone, and **Add a bot** sits under them, up to eight slots. Down the right is the card of options: whether the game is a race or a free drive, its seed with a die to roll another, for a race how many of the seed's worlds it runs through, from two to four, and whether weapons and bananas are on. The host sets them, and only while the game may still be set up; everyone else sees them, and the card says only the host sets the game. Under it is a stage with the seed's seven worlds over it. A race always starts on the island, which is the world shown, and any player may click another of the seed's worlds to look over it, which changes nothing for anyone else.
 
-A new game puts its name across the middle of the screen, says what it asks for, and counts down from three. Its players can pick a weapon during the countdown, but can't drive or fire until it ends. Each player goes by their name, shown in the HUD, or by a tag of seven letters and digits if they gave none. When a game is over, the screen names the winner, as in "Ada in an ambulance", with the gem it paid and how many the winner has now. The winner gets confetti, and the game's other players get a rain cloud and a sad trombone.
+The car modal is a dialog over the room: the vehicle on the showroom's turntable, an arrow either side of it or the arrow keys to flick along the line, its name, a line on what it is like to drive, any ability of its own, its top speed, grip and toughness against the best of them, and a pip for each vehicle. **Choose** takes it, for one's own slot or for a bot's, and **Cancel**, Escape or a click outside leaves it as it was. Everyone sees each change at once.
 
-The HUD shows how each game is going. Winning a game or a race pays a gem, not bananas. Gems are points: the HUD shows them beside the bananas, and the server keeps them against the player's key, so they carry over from one visit to the next. The first to reach a count wins it, and the game then ends for everyone who played it, as a race does. Escape closes the panel.
+Start prepares the course and puts every racer on a starting grid in the island's world, bots included. Once everyone is there and driving, it counts down from three and they are off: there is no intro, and the controls are locked from the grid to the go, so nobody drives or fires and nothing that hits a car on the grid hurts it. A race is a course through the seed's worlds, the island first and then the others, every kind at most once. On each world a run of checkpoints leads from where a racer starts or arrives to the portal on to the next world, along the roads where the world has them; that portal is itself a checkpoint. The last world's run ends at a finish line. The course is worked out from the game's seed and length, so a race on one seed always runs the same course.
+
+Bots race as anyone does. They line up on the grid, follow the course from gate to gate, go through the portal to the next world and finish, and stand in the standings with a robot before their names. They differ a little in pace, so they spread out, and they never fire a weapon. A bot stuck for three seconds, or wrecked, is put back at the last gate it passed.
+
+Each gate has to be passed in order, within 14 m of it, and a wrecked car passes nothing. A gate is a glowing gold arch across the road, wide enough to drive through, with a sign on top giving its number, or PORTAL or FINISH for the last, and a beam of light above it, the next one bright and the one after it faint; the radar shows each of the world's gates by number, the next one large, with a line from the car to it, and a compass under the car always points the way to the next gate, saying which gate it is and how far. The HUD reads the race off as it goes: "2nd of 5", "gate 3 of 6", "world 1 of 3" and the time. `R` puts the car back at the last gate it passed, facing the next one, never on the gate it has still to pass.
+
+The first over the finish line wins, and everyone else has a minute more to finish, or less if everyone is home before that. A racer who is home is taken off the controls, the car braking to a stop past the line, and a celebration goes up over it: the place huge in falling confetti, whether that is a win, a podium or just home, the time, who else is home so far, and then the race's standings in their place, with **Back to lobby** under it, focused, as Escape is too. The camera keeps chasing the car while the others come in behind the celebration, and the drive is let go when the server closes the finished game's rooms, the demo playing on behind it. A racer still out when time runs out sees the standings on their own, and leaves with the same button. A racer who leaves mid-race is out of it; one whose connection drops keeps its place and its gates, and comes back to them.
+
+Anyone may look on at a race that is under way, without taking a seat: **Watch** on its card puts it behind the start screen in the demo's place, the camera following its leader from world to world, and pressing **Watch** again goes back to the demo. A watcher holds no slot and sends nothing, and the race is unaffected by it.
+
+A free drive is never under way: it is joinable while it has room, and pressing Drive in its room puts the player in the world, Escape taking them back to the room. Its bots potter about the world like traffic does, under their names, and its portals lead about the planet's worlds as they always have.
+
+The host can turn weapons or bananas off for a game. A game without weapons has nothing to fire and no engine, wings or plow to switch on. A game without bananas has nothing to collect and nothing to spill, and weapons then cost nothing to fire, however many bananas the car holds. Traffic, robots, meteors, the spider and the flying saucer stay in every game, in both modes, and so do health packs.
+
+While the cars line up the screen says to get ready; then 3, 2, 1 and Go! cross the middle of the screen. Its end names the winner, as in "Ada in an ambulance", with confetti for the winner and a rain cloud and a sad trombone for everyone else.
 
 ## Achievements
 
-A hundred achievements are there to be had, each paid once ever to a player's key, for collecting and holding bananas, wrecking cars with weapons (other players' and traffic alike), bringing down robots, winning races and games, time in the air, top speed, using each weapon and all nine, driving up to landmarks such as the observatory, the lighthouse, a pyramid or the moon's flag, going through portals, driving into the sea and climbing over the clouds. Each pays its bananas, and they come through a portal with the car. The server pays one at a time, three seconds apart, and the player's screen shows a card for it at the top with what it took and what it paid, over a show of its own: confetti, raining bananas, fireworks, balloons, a burst of stars, or its icon bouncing across the screen or spinning up big.
+Ninety-seven achievements are there to be had, each paid once ever to a player's key, for collecting and holding bananas, wrecking cars with weapons (other players' and traffic alike), bringing down robots, winning races, time in the air, top speed, using each weapon and all nine, driving up to landmarks such as the observatory, the lighthouse, a pyramid or the moon's flag, going through portals, driving into the sea and climbing over the clouds. Each pays its bananas, and they come through a portal with the car. They are earned and kept in every mode: in a race they are recorded against the player's key just the same, and what they pay goes into the race's own bananas, which are lost with it. The server pays one at a time, three seconds apart, and the player's screen shows a card for it at the top with what it took and what it paid, over a show of its own: confetti, raining bananas, fireworks, balloons, a burst of stars, or its icon bouncing across the screen or spinning up big.
 
 ## Players' keys
 
-On a player's first visit the page makes them a nostr key and keeps it in the browser. It is used for nothing but proving to the server which seat is theirs. Every time a player joins an island, the server's welcome carries a fresh challenge. The page answers with a nostr event naming it, signed by the key, the way a client authenticates to a relay (NIP-42). The server believes the key only if the signature checks out and the event is less than ten minutes off its own clock. A player who comes through a portal, or rejoins after a dropped connection, keeps the key already proved. The server pays achievements and gems only to a proved key, pays each achievement to a key once ever, and remembers the bananas a key holds: a player joining afresh starts with the bananas they held when they last left, saved every ten seconds while they play and whenever they go. It keeps all of this in `data/players.json`, or wherever `PLAYERS_FILE` says. In the Docker image that is `/app/data`, a volume to mount so it outlasts the container. A browser that has its storage cleared gets a new key, and starts again.
+On a player's first visit the page makes them a nostr key and keeps it in the browser. It is used for nothing but proving to the server which seat is theirs. Every time a player opens a game, the server's welcome carries a fresh challenge. The page answers with a nostr event naming it, signed by the key, the way a client authenticates to a relay (NIP-42). The server believes the key only if the signature checks out and the event is less than ten minutes off its own clock. A player who comes through a portal, or rejoins after a dropped connection, keeps the key already proved. The server pays achievements only to a proved key, pays each achievement to a key once ever, and in a free drive remembers the bananas a key holds: a free-drive player joining afresh starts with the bananas they held when they last left one, saved every ten seconds while they play and whenever they go. A race is not a free drive: a racer starts it with no bananas, and whatever they hold at the end is thrown away, leaving the balance the key keeps untouched. It keeps all of this in `data/players.json`, or wherever `PLAYERS_FILE` says. In the Docker image that is `/app/data`, a volume to mount so it outlasts the container. A browser that has its storage cleared gets a new key, and starts again.
 
 ## Weapons
 
@@ -136,7 +153,7 @@ Every car has all nine weapons, each selected with its own number key, and pays 
 
 ## Vehicles
 
-The vehicles differ in how they drive and what they can take, not in their weapons. Each has its own armor, which sets how much it takes from crashes and weapons alike. Against a weapon, the tank takes under half of what the sports car takes, and the go-kart takes a little more. Some vehicles also have a passive ability, which the vehicle page of the menu describes.
+The vehicles differ in how they drive and what they can take, not in their weapons. Each has its own armor, which sets how much it takes from crashes and weapons alike. Against a weapon, the tank takes under half of what the sports car takes, and the go-kart takes a little more. Some vehicles also have a passive ability, below.
 
 - **Tank** fires its rockets, machine gun and laser from its own gun, with nothing mounted over its roof for them.
 - **Dune buggy** rides on long, soft, lightly damped springs, so it bounces over whatever it meets.
@@ -147,7 +164,7 @@ The vehicles differ in how they drive and what they can take, not in their weapo
 
 ## Docker
 
-The workflow in `.github/workflows/docker.yml` publishes the game server, with the client built in, as an image at `ghcr.io/staab/buggies`. Every push to the default branch is tagged `latest` and with its commit, and a release tag such as `v1.2.0` is tagged with its version. The server listens on port 8787, serving both the page and its WebSockets there, and honors `HOST`, `PORT` and `TRUST_PROXY` as above. It keeps players' achievements, gems and bananas in `/app/data/players.json`: mount a volume at `/app/data`, such as `-v buggies-data:/app/data` or a `volumes:` entry in docker compose, or they are lost with the container. Nothing is baked in at build time: the page joins whatever address it is served from, so a reverse proxy in front only needs to pass WebSocket upgrades through to the same port.
+The workflow in `.github/workflows/docker.yml` publishes the game server, with the client built in, as an image at `ghcr.io/staab/buggies`. Every push to the default branch is tagged `latest` and with its commit, and a release tag such as `v1.2.0` is tagged with its version. The server listens on port 8787, serving both the page and its WebSockets there, and honors `HOST`, `PORT` and `TRUST_PROXY` as above. It keeps players' achievements and bananas in `/app/data/players.json`: mount a volume at `/app/data`, such as `-v buggies-data:/app/data` or a `volumes:` entry in docker compose, or they are lost with the container. Nothing is baked in at build time: the page joins whatever address it is served from, so a reverse proxy in front only needs to pass WebSocket upgrades through to the same port.
 
 ```sh
 docker run --rm -p 8787:8787 ghcr.io/staab/buggies
@@ -168,7 +185,7 @@ podman run --rm -p 8787:8787 buggies-server
 - `game`: the arena, a map with seats on it, stepped one fixed tick at a time.
 - `net`: the protocol, the server and the client's prediction, with no DOM and no three.js.
 - `server`: the authoritative arena, over WebSockets.
-- `client`: the browser, with rendering, input, menus and the online mode.
+- `client`: the browser, with rendering, input, the screens and the online mode.
 
 ## Terrain
 
@@ -196,7 +213,7 @@ pnpm typecheck
 pnpm test
 ```
 
-The tests cover terrain, driving, the wire format, and a full session with two predicting clients connected to a server over a simulated network. They run in Node without a browser.
+The tests cover terrain, driving, the course, the wire format, and full sessions with several predicting clients connected to a server over a simulated network, through the lobby, the game room, races across worlds with bots in them, and a watcher looking on. They run in Node without a browser.
 
 ## Credits
 

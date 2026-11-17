@@ -156,12 +156,13 @@ describe('the planet drawn', () => {
     }
   })
 
-  it('draws a moon gray and airless: no sea, no clouds, its portal back, and the lander and its flag', () => {
+  it('draws a moon gray and airless: no sea, no clouds, both its portals, and the lander and its flag', () => {
     const moon = generateMoon(1)
     const drawn = createTerrainView(moon)
     expect(drawn.getObjectByName('water')).toBeUndefined()
     expect(drawn.getObjectByName('clouds')).toBeUndefined()
-    expect(drawn.getObjectByName('portals')!.children).toHaveLength(1)
+    expect(drawn.getObjectByName('portals')!.children).toHaveLength(moon.portals.length)
+    expect(moon.portals).toHaveLength(2)
     expect(drawn.getObjectByName('moon craft')!.children).toHaveLength(2)
     const pieces: THREE.Mesh[] = []
     drawn.getObjectByName('ground')!.traverse((node) => {

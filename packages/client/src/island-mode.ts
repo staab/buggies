@@ -3,16 +3,7 @@ import * as THREE from 'three'
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js'
 
 import { bendAround, bendMaterials } from './bend.ts'
-import { seatColor } from './car-view.ts'
 import type { ModeView } from './mode.ts'
-
-const UP = new THREE.Vector3(0, 1, 0)
-
-/** How tall and wide a beacon over something on the island is, to be seen from high over the whole of it. */
-const BEACON_HEIGHT = 90
-const BEACON_RADIUS = 4
-/** The color a car nobody drives is marked in; a player's is in its seat's own. */
-const NPC_COLOR = 0x9aa0a6
 
 /** A line about an island, for the player choosing one. */
 export function islandSummary(map: World): string {
@@ -53,10 +44,10 @@ function planetControls(camera: THREE.PerspectiveCamera, surface: HTMLElement, r
 }
 
 /**
- * Looking over a whole island from above while choosing it: orbit it, with
- * a beacon of light standing over every car on it, driven or not, as the
- * server last said. The controls work whether or not the
- * menu is up, since the menu is what this is for.
+ * Looking over a whole island from above while choosing it, or while the
+ * room of a game shows the world it is played on: orbit it, the controls
+ * working whether or not a screen is up, since a screen is what this is
+ * for.
  */
 export function createIslandMode(map: World, scene: THREE.Scene, surface: HTMLElement): ModeView {
   const { radius } = map
@@ -66,23 +57,6 @@ export function createIslandMode(map: World, scene: THREE.Scene, surface: HTMLEl
   // Turned about freely, over its poles and all, by quaternions: an orbit keeps its up the y axis and stops short at each pole.
   const controls = planetControls(camera, surface, radius)
   const facing = new THREE.Vector3()
-
-  const beacons = new THREE.Group()
-  const shaft = new THREE.CylinderGeometry(BEACON_RADIUS * 0.5, BEACON_RADIUS, BEACON_HEIGHT, 12, 1, true).translate(0, BEACON_HEIGHT / 2, 0)
-  const cap = new THREE.SphereGeometry(BEACON_RADIUS * 2, 16, 10)
-  const paints = new Map<number, { shaft: THREE.MeshBasicMaterial; cap: THREE.MeshBasicMaterial }>()
-  const paint = (color: number): { shaft: THREE.MeshBasicMaterial; cap: THREE.MeshBasicMaterial } => {
-    let made = paints.get(color)
-    if (made === undefined) {
-      made = {
-        shaft: new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }),
-        cap: new THREE.MeshBasicMaterial({ color }),
-      }
-      paints.set(color, made)
-    }
-    return made
-  }
-  scene.add(beacons)
 
   return {
     camera,
@@ -102,29 +76,8 @@ export function createIslandMode(map: World, scene: THREE.Scene, surface: HTMLEl
       renderer.render(scene, camera)
       bendAround(null)
     },
-    showMarks(marks) {
-      beacons.clear()
-      for (const mark of marks) {
-        const { shaft: glow, cap: head } = paint(mark.kind === 'player' ? seatColor(mark.seat) : NPC_COLOR)
-        const beacon = new THREE.Group()
-        beacon.position.set(mark.position.x, mark.position.y, mark.position.z)
-        // Standing up where it is, away from the planet's middle.
-        beacon.quaternion.setFromUnitVectors(UP, beacon.position.clone().normalize())
-        const top = new THREE.Mesh(cap, head)
-        top.position.y = BEACON_HEIGHT
-        beacon.add(new THREE.Mesh(shaft, glow), top)
-        beacons.add(beacon)
-      }
-    },
     dispose() {
       controls.dispose()
-      scene.remove(beacons)
-      shaft.dispose()
-      cap.dispose()
-      for (const { shaft: glow, cap: head } of paints.values()) {
-        glow.dispose()
-        head.dispose()
-      }
     },
   }
 }

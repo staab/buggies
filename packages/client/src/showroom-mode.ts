@@ -58,8 +58,8 @@ export function frameShowroom(
 export interface ShowroomView extends ModeView {
   /** Put this vehicle on the turntable. */
   show(vehicle: VehicleProfileId): void
-  /** What is on the turntable. */
-  readonly vehicle: VehicleProfileId | null
+  /** What is on the turntable, or nothing while it is bare. */
+  vehicle(): VehicleProfileId | null
 }
 
 /**
@@ -126,7 +126,7 @@ export function createShowroomMode(sound: Sound | null = null): ShowroomView {
   return {
     camera,
     scene,
-    get vehicle() {
+    vehicle() {
       return vehicle
     },
     show(next) {

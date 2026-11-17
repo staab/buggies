@@ -15,22 +15,19 @@ afterEach(() => {
 })
 
 describe('the players file', () => {
-  it("keeps each key's achievements, gems and bananas across a restart", () => {
+  it("keeps each key's achievements and bananas across a restart", () => {
     dir = mkdtempSync(join(tmpdir(), 'buggies-players-'))
     const path = join(dir, 'kept', 'players.json')
     const before = new PlayerFile(path)
-    expect(before.gems(KEY)).toBe(0)
+    expect(before.bananas(KEY)).toBe(0)
     before.record(KEY, 7)
     before.record(KEY, 2)
-    expect(before.addGems(KEY, 3)).toBe(3)
-    expect(before.addGems(KEY, 2)).toBe(5)
     before.keepBananas(KEY, 37)
     before.flush()
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ [KEY]: { achievements: [2, 7], gems: 5, bananas: 37 } })
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ [KEY]: { achievements: [2, 7], bananas: 37 } })
 
     const after = new PlayerFile(path)
     expect([...after.earned(KEY)].sort()).toEqual([2, 7])
-    expect(after.gems(KEY)).toBe(5)
     expect(after.bananas(KEY)).toBe(37)
     expect(after.earned('cd'.repeat(32)).size).toBe(0)
   })
@@ -38,9 +35,21 @@ describe('the players file', () => {
   it('reads a file kept from before bananas were, as none kept', () => {
     dir = mkdtempSync(join(tmpdir(), 'buggies-players-'))
     const path = join(dir, 'players.json')
-    writeFileSync(path, JSON.stringify({ [KEY]: { achievements: [1], gems: 2 } }))
+    writeFileSync(path, JSON.stringify({ [KEY]: { achievements: [1], bananas: 2 } }))
     const kept = new PlayerFile(path)
-    expect(kept.gems(KEY)).toBe(2)
-    expect(kept.bananas(KEY)).toBe(0)
+    expect([...kept.earned(KEY)]).toEqual([1])
+    expect(kept.bananas(KEY)).toBe(2)
+  })
+
+  it('reads a file kept from before gems went, and keeps it no gems', () => {
+    dir = mkdtempSync(join(tmpdir(), 'buggies-players-'))
+    const path = join(dir, 'players.json')
+    writeFileSync(path, JSON.stringify({ [KEY]: { achievements: [3], gems: 9, bananas: 4 } }))
+    const kept = new PlayerFile(path)
+    expect([...kept.earned(KEY)]).toEqual([3])
+    expect(kept.bananas(KEY)).toBe(4)
+    kept.record(KEY, 5)
+    kept.flush()
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ [KEY]: { achievements: [3, 5], bananas: 4 } })
   })
 })

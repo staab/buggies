@@ -32,7 +32,6 @@ import {
 } from '@buggies/vehicle'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
-import { NOT_RACING, RACE_TICKS_MOST, countdownLeft, runRace, type Game, type Race } from './games.ts'
 import { clearAchievementProgress, copyAchievementProgress, createAchievementProgress, type AchievementProgress } from './achievements.ts'
 import { createBoats, moveBoat, type Boat } from './boats.ts'
 import { createSpiders, rebuildSpider, SPIDER_BELLY, walkSpider, type Spider } from './spiders.ts'
@@ -54,12 +53,13 @@ import {
   type Robot,
 } from './robots.ts'
 import { ceilingOf } from './sky.ts'
-import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing, startingGrid } from './spawns.ts'
+import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
 export {
   ACHIEVEMENTS,
   ACHIEVEMENT_GAP_TICKS,
+  ACHIEVEMENT_NUMBERS,
   LANDMARKS,
   awardAchievements,
   createAchievementProgress,
@@ -67,6 +67,8 @@ export {
   type AchievementProgress,
   type AchievementShow,
 } from './achievements.ts'
+export * from './course.ts'
+export * from './racer-bot.ts'
 export {
   CHASSIS_FORWARD,
   copyVehicleInput,
@@ -111,7 +113,7 @@ export {
   writeVehicleStepState,
 } from '@buggies/vehicle'
 export type { Vec3 as Point } from '@buggies/physics'
-export { findSpawns } from './spawns.ts'
+export { findSpawns, gridAlongRoute, gridDepth } from './spawns.ts'
 export { portalCrossed, portalLink, portalSpawn } from './portals.ts'
 export { CEILING, CLOUD_HEIGHT, DAY_SECONDS, ceilingOf, sunDirection } from './sky.ts'
 export {
@@ -159,37 +161,6 @@ export {
   seatRobotBody,
   type Robot,
 } from './robots.ts'
-export {
-  COUNTDOWN_TICKS,
-  COUNT_KINDS,
-  GAME_KINDS,
-  GAME_LABELS,
-  GAME_GEMS,
-  GAME_REACH,
-  GAME_TARGET_MOST,
-  LOBBY_TICKS,
-  RACE_LAPS_MOST,
-  RACE_LEG_LEAST,
-  RACE_MARKS_MOST,
-  RACE_TICKS_MOST,
-  NOT_RACING,
-  apartOnGround,
-  awardGames,
-  countdownLeft,
-  gameProgress,
-  lapOf,
-  nextMark,
-  raceMarks,
-  runRace,
-  sameGame,
-  setGame,
-  validGame,
-  type CountKind,
-  type Game,
-  type GameKind,
-  type GameRequest,
-  type Race,
-} from './games.ts'
 export {
   BANANA_REACH,
   BANANA_SLOTS,
@@ -322,6 +293,25 @@ function pullToMiddle(arena: Arena, gravity: number): void {
 export const MAX_PLAYERS = 32
 
 /**
+ * What a game is played by: whether weapons are had at all, and whether
+ * there are bananas out to be taken, which are what a weapon costs.
+ */
+export interface ArenaRules {
+  readonly weapons: boolean
+  readonly bananas: boolean
+}
+
+/** A game with everything on: weapons, and the bananas that pay for them. */
+export const OPEN_RULES: ArenaRules = { weapons: true, bananas: true }
+
+/**
+ * A hold that is never up, in ticks, for a room waiting on a race to be
+ * ready: its cars are held still until someone says when the countdown
+ * ends. `Arena.holdUntil` is set to a tick of the arena to end it.
+ */
+export const HOLD_FOREVER = 0xffffffff
+
+/**
  * A place for one vehicle. Seats are created with the arena and never go
  * away: a player takes one, drives, and leaves it for the next. The epoch
  * counts the times the vehicle has been put back on its spawn, so anyone
@@ -342,22 +332,19 @@ export interface Seat {
   lostTicks: number
   /** Bananas held: taken since sitting down, less those spent on weapons or spilled from a wreck. */
   score: number
-  /** Gems won with games and races, all told: the player's own, kept by the server from one session to the next. */
-  gems: number
   /** Bananas taken since sitting down, all told. */
   collected: number
   /** Other players' cars its weapons have wrecked since sitting down, and robots they have brought down. */
   kills: number
   robotKills: number
-  /** The count it is playing for, if any, and how many games it has won, counted around past 255. */
-  game: Game | null
-  gamesWon: number
+  /** How many races it has won, counted around past 255. */
+  racesWon: number
+  /** Whether its weapons cost it nothing: a game whose bananas are off. */
+  freeWeapons: boolean
   /** How many feats it has been paid for since sitting down, counted around past 255, and the last of them; and what it has done toward them, which only the server keeps. */
   achievements: number
   lastAchievement: number
   readonly progress: AchievementProgress
-  /** How many of the race's marks it has passed, or `NOT_RACING`. */
-  racePassed: number
   /** A car nobody drives, and what drives it: a round of the arterials. */
   npc: boolean
   driver: Driver | null
@@ -434,14 +421,20 @@ export interface Arena {
   readonly ufos: readonly Ufo[]
   /** The props, numbered as the map lists them, each a body the physics steps. */
   readonly props: readonly ArenaProp[]
-  /** The race on over the island, if any. Replaced by the server's word. */
-  race: Race | null
+  /** What the game is played by, which a player may not change mid-drive. */
+  rules: ArenaRules
+  /**
+   * The tick the hold on the cars the players drive is up, or `HOLD_FOREVER`:
+   * until then `advance` holds them still, as a race waits on its countdown,
+   * and lets the traffic drive. A tick of this arena's own clock.
+   */
+  holdUntil: number
   tick: number
   /** A client's copy of the server's arena: nothing in it is wrecked or brought down but on the server's word. */
   mirror: boolean
 }
 
-export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
+export function createArena(planet: World, seatCount = MAX_PLAYERS, rules: ArenaRules = OPEN_RULES): Arena {
   const worldTuning = createWorldTuning()
   worldTuning.gravity *= WORLD_TRAITS[planet.kind].gravity
   const world = createPhysicsWorld(worldTuning)
@@ -465,16 +458,14 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
       submersion: 0,
       lostTicks: 0,
       score: 0,
-      gems: 0,
       collected: 0,
       kills: 0,
       robotKills: 0,
-      game: null,
-      gamesWon: 0,
+      racesWon: 0,
+      freeWeapons: !rules.bananas,
       achievements: 0,
       lastAchievement: 0,
       progress: createAchievementProgress(),
-      racePassed: NOT_RACING,
       npc: false,
       coasting: false,
       driver: null,
@@ -515,49 +506,21 @@ export function createArena(planet: World, seatCount = MAX_PLAYERS): Arena {
     spiders: createSpiders(planet, world),
     meteors: [],
     ufos: createUfos(planet),
-    race: null,
+    rules,
+    holdUntil: 0,
     tick: 0,
     mirror: false,
   }
 }
 
 /**
- * Set a race going over this course, this many laps: its racers, everyone
- * driving on the island unless told otherwise, are put on a starting grid
- * at its start, facing its first checkpoint, and are in it from there, the
- * start passed. The cars nobody drives are in no race. Returns the racers.
+ * Play the arena by other rules: weapons on or off, and bananas on or off.
+ * With no bananas a car's weapons cost it nothing, and there are no bananas
+ * out on the map, nor any to spill from a wreck.
  */
-export function startRace(arena: Arena, course: Vec3[], starter: Seat, laps = 1, racers: Seat[] = arena.seats.filter((seat) => seat.occupied && !seat.npc)): Seat[] {
-  const grid = startingGrid(arena.planet, course[0]!, course[1]!, racers.length)
-  racers.forEach((seat, place) => {
-    respawn(seat, grid[place])
-    seat.racePassed = 1
-  })
-  arena.race = { course, laps, starter: starter.id, startTick: arena.tick }
-  return racers
-}
-
-/** Call the race off, or close it once won: nobody is in one. */
-export function endRace(arena: Arena): void {
-  arena.race = null
-  for (const seat of arena.seats) seat.racePassed = NOT_RACING
-}
-
-/**
- * A step of the race on, if any: the first over the finish wins it, and it
- * is over. It is called off once it has gone on too long, or once nobody is
- * left in it. Returns how it ended, with its winner if it has one, or
- * `null` while it goes on.
- */
-export function playRace(arena: Arena): { winner: Seat | null } | null {
-  const { race } = arena
-  if (race === null) return null
-  const winner = runRace(arena.seats, race, arena.planet.radius)
-  if (winner !== null) winner.progress.racesWon += 1
-  const racing = arena.seats.some((seat) => seat.occupied && seat.racePassed !== NOT_RACING)
-  if (winner === null && racing && arena.tick - race.startTick < RACE_TICKS_MOST) return null
-  endRace(arena)
-  return { winner }
+export function setRules(arena: Arena, rules: ArenaRules): void {
+  arena.rules = rules
+  for (const seat of arena.seats) seat.freeWeapons = !rules.bananas
 }
 
 function nextEpoch(epoch: number): number {
@@ -714,8 +677,10 @@ export function advance(
   // How hard a car is held to what its wheels are on, more than its weight pulls it, where cars cling.
   const cling = WORLD_TRAITS[arena.planet.kind].cling * DEFAULT_WORLD_TUNING.gravity
   pullToMiddle(arena, gravity)
+  // A car held still for a race's start is not to be knocked about where it waits: whatever hurts it there is undone at the end of the step.
+  const held = arena.tick < arena.holdUntil ? arena.seats.filter((seat) => seat.occupied && !seat.npc).map((seat) => ({ seat, damage: seat.vehicle.damage })) : []
   for (const seat of arena.seats) {
-    seat.vehicle.spared = arena.mirror
+    seat.vehicle.spared = arena.mirror || held.some((each) => each.seat === seat)
     const clinging = cling > 0 && clingUp(seat.vehicle)
     if (!clinging) upOf(seat.vehicle.frame.position, seat.vehicle.up)
     if (!seat.occupied) continue
@@ -723,18 +688,19 @@ export function advance(
       coastVehicle(seat.vehicle, seat.tuning, inputFor(seat), dt)
       continue
     }
-    // A stunned car takes no driving, and nor does one counting down to a game, though it may pick its weapon.
-    const input = stunned(seat) ? NEUTRAL_INPUT : countdownLeft(seat, arena.race, arena.tick) > 0 ? heldStill(inputFor(seat)) : inputFor(seat)
+    // A stunned car takes no driving, and nor does one held for a countdown, though it may pick its weapon.
+    const input = stunned(seat) ? NEUTRAL_INPUT : arena.tick < arena.holdUntil && !seat.npc ? heldStill(inputFor(seat)) : inputFor(seat)
     // A car its engine or wings are driving along is not one the tires hold
     // still, and one its wings are lifting is not one the road holds down.
-    seat.vehicle.boosted = burning(seat, input)
+    seat.vehicle.boosted = arena.rules.weapons && burning(seat, input)
     // A car in a saucer's beam is lifted off the road the same way.
-    seat.vehicle.lifted = lifting(seat, input) || arena.ufos.some((ufo) => ufo.state === 'lift' && ufo.target === seat.id)
+    seat.vehicle.lifted = (arena.rules.weapons && lifting(seat, input)) || arena.ufos.some((ufo) => ufo.state === 'lift' && ufo.target === seat.id)
     // One with wings out is held level and steered by them in the air, lifted or not.
-    seat.vehicle.winged = winged(seat)
+    seat.vehicle.winged = arena.rules.weapons && winged(seat)
     stepVehicle(arena.world, seat.vehicle, seat.tuning, input, dt)
     if (clinging) addForceAlong(seat.vehicle.body, seat.vehicle.up, -seat.tuning.mass * (cling - gravity))
-    pushWithWeapons(seat, gravity)
+    // Nothing a weapon does reaches a car in a game without them.
+    if (arena.rules.weapons) pushWithWeapons(seat, gravity)
     hinder(seat)
     mend(seat)
     const level = waterAt(arena, seat)
@@ -788,9 +754,10 @@ export function advance(
     }
   }
   trimLoose(arena)
+  for (const { seat, damage } of held) if (!seat.vehicle.wrecked) seat.vehicle.damage = Math.min(seat.vehicle.damage, damage)
 }
 
-/** What a car waiting on a countdown is driven with: nothing, but the weapon picked and the handbrake on. */
+/** What a car held still is driven with: nothing, but the weapon picked and the handbrake on. */
 function heldStill(input: VehicleInput): VehicleInput {
   return { ...NEUTRAL_INPUT, handbrake: true, weapon: input.weapon }
 }
@@ -949,19 +916,16 @@ function score(seat: Seat): void {
   seat.collected += 1
 }
 
-/** A seat sat down in, or left, starts again: no bananas, no wrecks and no game. */
+/** A seat sat down in, or left, starts again: no bananas, no wrecks and no feats. */
 function clearTally(seat: Seat): void {
   seat.score = 0
-  seat.gems = 0
   seat.collected = 0
   seat.kills = 0
   seat.robotKills = 0
-  seat.game = null
-  seat.gamesWon = 0
+  seat.racesWon = 0
   seat.achievements = 0
   seat.lastAchievement = 0
   clearAchievementProgress(seat.progress)
-  seat.racePassed = NOT_RACING
   seat.npc = false
   seat.driver = null
   seat.rover = null
@@ -1001,8 +965,6 @@ export function carryOver(seat: Seat, carried: Carried): void {
   seat.achievements = carried.achievements
   seat.lastAchievement = carried.lastAchievement
   Object.assign(seat.progress, copyAchievementProgress(carried.progress))
-  // Its games won start again from nothing here, and so are counted on from nothing.
-  seat.progress.gamesWonSeen = seat.gamesWon
   seat.progress.portals += 1
 }
 
@@ -1062,9 +1024,11 @@ export function npcInput(arena: Arena, seat: Seat, out: VehicleInput): VehicleIn
 /**
  * A car blown up spills its bananas: they fly out of the blast and land
  * about the wreck, for anyone to come and take. Only so many come out of
- * one blast, and a map only holds so many, the oldest going first.
+ * one blast, and a map only holds so many, the oldest going first. A game
+ * without bananas in it spills none.
  */
 function spillBananas(arena: Arena): void {
+  if (!arena.rules.bananas) return
   for (const seat of arena.seats) {
     if (!seat.occupied || !seat.vehicle.wrecked || seat.score === 0) continue
     const count = holdBananaSlots(arena, seat.score)
@@ -1079,8 +1043,9 @@ function spillBananas(arena: Arena): void {
 /** How many bananas a robot, a saucer or a spider spills when it is brought down. */
 export const MACHINE_BANANAS = 10
 
-/** A machine brought down spills its bananas about the ground under where it fell, for anyone to come and take. */
+/** A machine brought down spills its bananas about the ground under where it fell, for anyone to come and take; none in a game without them. */
 function spillMachine(arena: Arena, target: number, at: Vec3): void {
+  if (!arena.rules.bananas) return
   const count = holdBananaSlots(arena, MACHINE_BANANAS)
   arena.loose.push(...spillFrom(arena.planet, at, count, target, arena.tick, arena.looseNext, NO_TARGET))
   arena.looseNext = (arena.looseNext + count) % LOOSE_IDS
@@ -1144,9 +1109,10 @@ function magnetOf(seat: Seat): number {
  * A car with its magnet pulling reaches bananas from much further off. A
  * health pack is taken the same way, by a car with damage to mend and
  * from its own reach alone, and mends half of what wrecks a car. A wreck
- * takes nothing.
+ * takes nothing, and a game without bananas has none to take.
  */
 function collectPickups(arena: Arena): void {
+  const bananas = arena.rules.bananas
   // Who can take anything at all, in seat order, found once rather than for every slot.
   // A car nobody drives takes nothing: it has no use for bananas or weapons.
   takers.length = 0
@@ -1155,6 +1121,7 @@ function collectPickups(arena: Arena): void {
     const pickup = arena.pickups[slot]!
     if (takers.length === 0 || !pickupOut(pickup, arena.tick)) continue
     const health = pickupKind(slot) === 'health'
+    if (!health && !bananas) continue
     for (const seat of takers) {
       if (health && seat.vehicle.damage <= 0) continue
       if (!reachesPickup(pickup, seat.vehicle.frame.position, health ? 0 : magnetOf(seat))) continue
@@ -1172,6 +1139,7 @@ function collectPickups(arena: Arena): void {
   for (let i = arena.loose.length - 1; i >= 0; i--) {
     const loose = arena.loose[i]!
     if (!looseOut(loose, arena.tick)) continue
+    if (loose.kind === 'banana' && !bananas) continue
     for (const seat of arena.seats) {
       if (!seat.occupied || seat.vehicle.wrecked || !reachesLoose(loose, seat.vehicle.frame.position, magnetOf(seat))) continue
       if (loose.kind === 'banana' && seat.npc) continue

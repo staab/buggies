@@ -1,64 +1,113 @@
-import { NOT_RACING } from '@buggies/game'
 import { describe, expect, it } from 'vitest'
 
-import {
-  CLIENT_INPUT,
-  PROTOCOL_VERSION,
-  REJECT_SERVER_FULL,
-  UNACKNOWLEDGED_INPUT_TICK,
-} from './protocol.ts'
+import { CLIENT_INPUT, NO_SEAT, PROTOCOL_VERSION, REJECT_SERVER_FULL, UNACKNOWLEDGED_INPUT_TICK } from './protocol.ts'
 import { authTemplate, newChallenge, newSecretKey, publicKeyOf, signEvent, verifyAuth } from './nostr.ts'
 import {
+  CHECKPOINT_BYTES,
+  COURSE_WORLD_BYTES,
+  GAME_EDIT_BYTES,
+  GAME_READY_BYTES,
+  GAME_SLOT_BYTES,
+  GAME_START_BYTES,
+  GAME_SUMMARY_BYTES,
+  GAME_VIEW_BYTES,
+  GAMES_HEADER_BYTES,
+  HELLO_BYTES,
   INPUT_BYTES,
-  decodePeek,
-  decodePeekRequest,
-  encodePeek,
-  encodePeekRequest,
+  JOIN_GAME_BYTES,
+  KEEP_PORTAL_BYTES,
+  LEAVE_GAME_BYTES,
+  LOBBY_HEADER_BYTES,
+  LOBBY_HELLO_BYTES,
+  LOBBY_PLAYER_BYTES,
+  LOBBY_WELCOME_BYTES,
+  RACE_PLAN_HEADER_BYTES,
+  RACE_PLAN_TAIL_BYTES,
   SNAPSHOT_HEADER_BYTES,
   SNAPSHOT_METEOR_BYTES,
-  SNAPSHOT_MARK_BYTES,
-  SNAPSHOT_RACE_BYTES,
-  SNAPSHOT_PROP_BYTES,
-  SNAPSHOT_ROBOT_BYTES,
-  SNAPSHOT_SPIDER_BYTES,
-  SNAPSHOT_UFO_BYTES,
   SNAPSHOT_PICKUP_BYTES,
+  SNAPSHOT_PROP_BYTES,
+  SNAPSHOT_RACER_BYTES,
+  SNAPSHOT_RACE_BYTES,
   SNAPSHOT_REMOVED_BYTES,
+  SNAPSHOT_ROBOT_BYTES,
   SNAPSHOT_ROCKET_BYTES,
+  SNAPSHOT_SPIDER_BYTES,
   SNAPSHOT_SPILLED_BYTES,
+  SNAPSHOT_UFO_BYTES,
   SNAPSHOT_VEHICLE_BYTES,
+  SNAPSHOT_VEHICLE_CORE_BYTES,
+  SNAPSHOT_VEHICLE_EXTRAS_BYTES,
+  SLOT_ADD_BYTES,
+  SLOT_REMOVE_BYTES,
+  SLOT_VEHICLE_BYTES,
+  STANDING_BYTES,
+  STANDINGS_HEADER_BYTES,
+  WELCOME_BYTES,
+  cleanName,
   decodeAuth,
+  decodeCreateGame,
+  decodeGame,
+  decodeGameEdit,
+  decodeGameReady,
+  decodeGames,
   decodeHello,
   decodeInput,
-  decodeSignedIn,
-  encodeAuth,
-  encodeSignedIn,
-  decodeReject,
-  decodeRooms,
-  decodeSnapshot,
-  decodeWelcome,
-  encodeHello,
-  encodeInput,
-  encodeReject,
-  encodeRespawn,
-  encodeRooms,
-  encodeRoomsRequest,
-  encodeSnapshot,
-  encodeWelcome,
-  decodeGame,
-  encodeGame,
-  cleanName,
   decodeJoinGame,
   decodeLobby,
+  decodeLobbyHello,
+  decodeLobbyWelcome,
+  decodeRacePlan,
+  decodeReject,
+  decodeSignedIn,
+  decodeSlotRemove,
+  decodeSlotVehicle,
+  decodeSnapshot,
+  decodeStandings,
+  decodeWelcome,
+  encodeAuth,
+  encodeCreateGame,
+  encodeGame,
+  encodeGameEdit,
+  encodeGameReady,
+  encodeGameStart,
+  encodeGames,
+  encodeHello,
+  encodeInput,
   encodeJoinGame,
+  encodeLeaveGame,
   encodeLobby,
-  NO_LOBBY,
+  encodeLobbyHello,
+  encodeLobbyWelcome,
+  encodeRacePlan,
+  encodeReject,
+  encodeRespawn,
+  encodeSignedIn,
+  encodeSlotAdd,
+  encodeSlotRemove,
+  encodeSlotVehicle,
+  encodeSnapshot,
+  encodeStandings,
+  encodeWelcome,
+  flagsOf,
+  isGameStart,
+  isLeaveGame,
   isRespawn,
-  isRoomsRequest,
+  isSlotAdd,
+  messageTypeOf,
+  modeCode,
+  modeOf,
+  rulesOf,
+  statusCode,
+  statusOf,
+  CREATE_GAME_BYTES,
+  HELD,
   NO_ARRIVAL,
   NO_PASS,
-  SNAPSHOT_VEHICLE_CORE_BYTES,
   withAck,
+  type GameOptions,
+  type GameView,
+  type RacePlan,
   type SnapshotMessage,
   type VehicleSnapshot,
 } from './wire.ts'
@@ -69,14 +118,15 @@ const snapshot: SnapshotMessage = {
   full: true,
   looseNext: 4321,
   race: {
-    course: [
-      { x: 0.6, y: 0, z: 0.8 },
-      { x: 0, y: 1, z: 0 },
-      { x: -0.48, y: 0.6, z: 0.64 },
+    world: 2,
+    ofWorlds: 3,
+    elapsed: -180,
+    over: false,
+    racing: 5,
+    racers: [
+      { seat: 0, place: 0, checkpoint: 3, finished: false },
+      { seat: 1, place: 1, checkpoint: 8, finished: true },
     ],
-    laps: 3,
-    starter: 5,
-    startTick: 120000,
   },
   vehicles: [
     {
@@ -90,15 +140,11 @@ const snapshot: SnapshotMessage = {
       damage: 1,
       wrecked: true,
       score: 60000,
-      gems: 4_000_000,
       collected: 1234,
       robotKills: 1,
-    kills: 7,
-      game: { kind: 'robots', target: 4, from: 1, startTick: 70000 },
-      gamesWon: 3,
+      kills: 7,
       achievements: 7,
       lastAchievement: 42,
-      racePassed: 2,
       weapon: 'machineGun',
       weaponHeld: 2,
       burnLeft: 59,
@@ -124,17 +170,13 @@ const snapshot: SnapshotMessage = {
       damage: 0.4,
       wrecked: false,
       score: 3,
-      gems: 0,
       collected: 3,
       robotKills: 1,
-    kills: 0,
-      game: { kind: 'kills', target: 5, from: 2, startTick: 12 },
-      gamesWon: 0,
+      kills: 0,
       achievements: 0,
       lastAchievement: 0,
-      racePassed: NOT_RACING,
       weapon: 'none',
-      weaponHeld: 9,
+      weaponHeld: 2,
       burnLeft: 0,
       npc: false,
       rocketsFired: 7,
@@ -145,7 +187,7 @@ const snapshot: SnapshotMessage = {
       lightsOn: false,
       hornTicks: 45,
       signalHeld: true,
-      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, weapon: 9, fire: false, signal: true },
+      appliedInput: { steer: 0, throttle: 0, brake: 0, handbrake: false, weapon: 2, fire: false, signal: true },
     },
   ],
   pickups: [
@@ -196,6 +238,38 @@ const snapshot: SnapshotMessage = {
   meteors: [{ id: 7, from: { x: 300.5, y: 250.25, z: -40.75 }, to: { x: 150.25, y: 20.5, z: -10.5 }, age: 90 }],
 }
 
+const options: GameOptions = { mode: 'race', seed: 4_000_000_001, weapons: true, bananas: false, raceLength: 3 }
+
+const view: GameView = {
+  id: 7,
+  status: 'starting',
+  host: 2,
+  options,
+  slots: [
+    { slot: 0, bot: false, member: 1, name: 'Ada', vehicle: 'pickup', ready: true, driving: false },
+    { slot: 1, bot: true, member: 0, name: 'Axle', vehicle: 'raceCar', ready: true, driving: true },
+    { slot: 2, bot: false, member: 2, name: 'Bo', vehicle: 'sportsCar', ready: false, driving: true },
+  ],
+  you: 2,
+  drivePass: 3_000_000_000,
+  fault: null,
+}
+
+const plan: RacePlan = {
+  game: 7,
+  world: 2,
+  ofWorlds: 3,
+  keep: [0, 1],
+  checkpoints: Array.from({ length: 8 }, (_, k) => ({
+    at: { x: 100.5 + k * 40, y: 12.25, z: 200.75 - k * 8 },
+    forward: { x: 0.5, y: 0, z: -0.5 },
+    radius: 14,
+  })),
+  exit: 1,
+  next: { world: 1_000_000_002, arrival: 1 },
+  worlds: [1_000_000_001, 1_000_000_002, 1_000_000_003],
+}
+
 describe('wire', () => {
   it('cleans a name of what cannot be shown, and keeps it short', () => {
     expect(cleanName('  Ada \n  Lovelace\u0000 ')).toBe('Ada Lovelace')
@@ -204,43 +278,52 @@ describe('wire', () => {
     expect(cleanName('\u200b')).toBe('')
   })
 
-  it('round-trips who is on an island and the games waiting there, and a join', () => {
-    const lobby = {
-      players: [
-        { seat: 0, name: 'Ada' },
-        { seat: 3, name: 'Zoë ✨' },
-        { seat: 4, name: '' },
-      ],
-      games: [
-        { id: 7, request: { kind: 'score' as const, target: 20, course: [] }, host: 3, startTick: 123_456, joined: [3, 0] },
-        { id: 8, request: { kind: 'race' as const, target: 3, course: [{ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }] }, host: 0, startTick: 9, joined: [0] },
-      ],
-    }
-    expect(decodeLobby(encodeLobby(lobby))).toEqual(lobby)
-    expect(decodeLobby(encodeLobby({ players: [], games: [] }))).toEqual({ players: [], games: [] })
+  it('round-trips who is on the island, by name', () => {
+    const lobby = { players: [{ seat: 0, name: 'Ada' }, { seat: 3, name: 'Zoë ✨' }, { seat: 4, name: '' }] }
+    const payload = encodeLobby(lobby)
+    expect(payload.length).toBe(LOBBY_HEADER_BYTES + LOBBY_PLAYER_BYTES * 3 + 3 + 8)
+    expect(decodeLobby(payload)).toEqual(lobby)
+    expect(decodeLobby(encodeLobby({ players: [] }))).toEqual({ players: [] })
     // Cut short, or with a name that is not UTF-8, it is refused.
-    const encoded = encodeLobby(lobby)
-    expect(decodeLobby(encoded.subarray(0, encoded.length - 1))).toBeNull()
-    const broken = encodeLobby({ players: [{ seat: 0, name: 'ab' }], games: [] })
+    expect(decodeLobby(payload.subarray(0, payload.length - 1))).toBeNull()
+    const broken = encodeLobby({ players: [{ seat: 0, name: 'ab' }] })
     broken[5] = 0xff
     expect(decodeLobby(broken)).toBeNull()
-    expect(decodeJoinGame(encodeJoinGame(7))).toBe(7)
-    expect(decodeJoinGame(encodeJoinGame(NO_LOBBY))).toBe(NO_LOBBY)
-    expect(decodeJoinGame(encodeRespawn())).toBeNull()
   })
 
-  it('round-trips the handshake', () => {
-    expect(decodeHello(encodeHello('raceCar', 4_000_000_000))).toEqual({
+  it('round-trips a lobby connection and the game it asks to be in', () => {
+    const browsing = encodeLobbyHello()
+    expect(browsing.length).toBe(LOBBY_HELLO_BYTES)
+    expect(decodeLobbyHello(browsing)).toEqual({ protocolVersion: PROTOCOL_VERSION, game: 0, name: '' })
+    const joining = encodeLobbyHello(7, 'Ada')
+    expect(joining.length).toBe(LOBBY_HELLO_BYTES + 3)
+    expect(decodeLobbyHello(joining)).toEqual({ protocolVersion: PROTOCOL_VERSION, game: 7, name: 'Ada' })
+    expect(decodeLobbyHello(joining.subarray(0, joining.length - 1))).toBeNull()
+  })
+
+  it('round-trips the handshake, with the game a world belongs to', () => {
+    const hello = encodeHello('raceCar', 7, 4_000_000_000)
+    expect(hello.length).toBe(HELLO_BYTES)
+    expect(decodeHello(hello)).toEqual({
       protocolVersion: PROTOCOL_VERSION,
       profile: 'raceCar',
+      game: 7,
       seed: 4_000_000_000,
       arrival: NO_ARRIVAL,
       pass: NO_PASS,
       name: '',
     })
-    expect(decodeHello(encodeHello('tank', 7, 2, 4_000_000_001, 'Zoë ✨'))).toMatchObject({ seed: 7, arrival: 2, pass: 4_000_000_001, name: 'Zoë ✨' })
+    expect(decodeHello(encodeHello('tank', 9, 7, 2, 4_000_000_001, 'Zoë'))).toMatchObject({ game: 9, seed: 7, arrival: 2, pass: 4_000_000_001, name: 'Zoë' })
+    // A spectator drives nothing, and says so in its profile byte.
+    const watching = encodeHello(null, 7, 4_000_000_000)
+    expect(watching.length).toBe(HELLO_BYTES)
+    expect(decodeHello(watching)).toEqual({ protocolVersion: PROTOCOL_VERSION, profile: null, game: 7, seed: 4_000_000_000, arrival: NO_ARRIVAL, pass: NO_PASS, name: '' })
+    const noSuchCar = encodeHello('raceCar', 7, 4_000_000_000)
+    noSuchCar[3] = 200
+    expect(decodeHello(noSuchCar)).toBeNull()
     const welcome = {
       protocolVersion: 3,
+      game: 7,
       seed: 4_000_000_000,
       seat: 7,
       epoch: 200,
@@ -248,14 +331,21 @@ describe('wire', () => {
       maxPlayers: 8,
       profile: 'pickup' as const,
       pass: 3_000_000_000,
+      race: true,
+      flags: 3,
       challenge: '00ff1234abcd00ff1234abcd00ff9876',
       signedIn: '',
     }
+    expect(encodeWelcome(welcome).length).toBe(WELCOME_BYTES)
     expect(decodeWelcome(encodeWelcome(welcome))).toEqual(welcome)
     const known = { ...welcome, signedIn: 'ab'.repeat(32) }
     expect(decodeWelcome(encodeWelcome(known))).toEqual(known)
+    // A spectator's welcome has no seat, and says nothing about a car to drive.
+    const spectating = { ...welcome, seat: NO_SEAT, pass: 0 }
+    expect(decodeWelcome(encodeWelcome(spectating))).toEqual(spectating)
     expect(decodeReject(encodeReject({ reason: REJECT_SERVER_FULL }))).toEqual({ reason: REJECT_SERVER_FULL })
     expect(isRespawn(encodeRespawn())).toBe(true)
+    expect(decodeReject(encodeWelcome(welcome))).toBeNull()
   })
 
   it('round-trips an input with its tick', () => {
@@ -272,22 +362,157 @@ describe('wire', () => {
     expect(out.fire).toBe(true)
   })
 
-  it('round-trips a game, a count or a race, and the clearing of one', () => {
-    expect(decodeGame(encodeGame({ kind: 'score', target: 20, course: [] }))).toEqual({ kind: 'score', target: 20, course: [] })
-    const course = [
-      { x: 0.625, y: -0.5, z: 0.25 },
-      { x: 0, y: 1, z: 0 },
-      { x: 0.5, y: 0.5, z: -0.25 },
+  it('round-trips making, joining, leaving and driving a game', () => {
+    expect(decodeCreateGame(encodeCreateGame('tank'))).toBe('tank')
+    expect(encodeCreateGame('pickup').length).toBe(CREATE_GAME_BYTES)
+    expect(decodeCreateGame(encodeCreateGame('pickup').subarray(0, CREATE_GAME_BYTES - 1))).toBeNull()
+    expect(decodeCreateGame(encodeGameStart())).toBeNull()
+
+    const join = encodeJoinGame(4_000_000_000, 'raceCar')
+    expect(join.length).toBe(JOIN_GAME_BYTES)
+    expect(decodeJoinGame(join)).toEqual({ game: 4_000_000_000, vehicle: 'raceCar' })
+    expect(decodeJoinGame(encodeGameStart())).toBeNull()
+
+    expect(isLeaveGame(encodeLeaveGame())).toBe(true)
+    expect(encodeLeaveGame().length).toBe(LEAVE_GAME_BYTES)
+    expect(isLeaveGame(encodeGameStart())).toBe(false)
+    expect(isGameStart(encodeGameStart())).toBe(true)
+    expect(isGameStart(encodeLeaveGame())).toBe(false)
+    expect(encodeGameStart().length).toBe(GAME_START_BYTES)
+
+    const ready = encodeGameReady('sportsCar', true)
+    expect(ready.length).toBe(GAME_READY_BYTES)
+    expect(decodeGameReady(ready)).toEqual({ vehicle: 'sportsCar', ready: true })
+    expect(decodeGameReady(encodeGameReady('pickup', false))).toEqual({ vehicle: 'pickup', ready: false })
+    const unsure = encodeGameReady('pickup', true)
+    unsure[2] = 7
+    expect(decodeGameReady(unsure)).toBeNull()
+  })
+
+  it('round-trips the slot a host adds, removes and fills with a vehicle', () => {
+    const add = encodeSlotAdd()
+    expect(add.length).toBe(SLOT_ADD_BYTES)
+    expect(isSlotAdd(add)).toBe(true)
+    expect(isSlotAdd(encodeGameStart())).toBe(false)
+
+    const remove = encodeSlotRemove(5)
+    expect(remove.length).toBe(SLOT_REMOVE_BYTES)
+    expect(decodeSlotRemove(remove)).toBe(5)
+    expect(decodeSlotRemove(encodeSlotRemove(9))).toBeNull()
+    expect(decodeSlotRemove(remove.subarray(0, remove.length - 1))).toBeNull()
+
+    const vehicle = encodeSlotVehicle(3, 'sportsCar')
+    expect(vehicle.length).toBe(SLOT_VEHICLE_BYTES)
+    expect(decodeSlotVehicle(vehicle)).toEqual({ slot: 3, vehicle: 'sportsCar' })
+    const noSuchCar = encodeSlotVehicle(3, 'sportsCar')
+    noSuchCar[2] = 200
+    expect(decodeSlotVehicle(noSuchCar)).toBeNull()
+    expect(decodeSlotVehicle(encodeSlotVehicle(200, 'tank'))).toBeNull()
+    expect(decodeSlotVehicle(vehicle.subarray(0, vehicle.length - 1))).toBeNull()
+  })
+
+  it('round-trips a game\'s mode, world and rules, as its host edits them', () => {
+    const edit = encodeGameEdit(options)
+    expect(edit.length).toBe(GAME_EDIT_BYTES)
+    expect(decodeGameEdit(edit)).toEqual(options)
+    expect(decodeGameEdit(encodeGameEdit({ ...options, mode: 'free', weapons: false, bananas: true, raceLength: 4 }))).toEqual({
+      ...options,
+      mode: 'free',
+      weapons: false,
+      bananas: true,
+      raceLength: 4,
+    })
+    const badMode = encodeGameEdit(options)
+    badMode[1] = 200
+    expect(decodeGameEdit(badMode)).toBeNull()
+    expect(decodeGameEdit(edit.subarray(0, edit.length - 1))).toBeNull()
+  })
+
+  it('round-trips the games listed, each with its host and how full it is', () => {
+    const games = [
+      { id: 1, seed: 4_000_000_001, mode: 'race' as const, status: 'open' as const, host: 'Ada', humans: 3, slots: 4, leader: 0, demo: false },
+      { id: 2, seed: 7, mode: 'free' as const, status: 'racing' as const, host: 'Bo', humans: 1, slots: 1, leader: 4_000_000_003, demo: true },
     ]
-    expect(decodeGame(encodeGame({ kind: 'race', target: 1, course }))).toEqual({ kind: 'race', target: 1, course })
-    expect(decodeGame(encodeGame(null))).toBeNull()
-    // Not a game at all: the wrong length, or a kind that is none of them.
-    expect(decodeGame(encodeRespawn())).toBeUndefined()
-    const bad = encodeGame(null)
-    bad[1] = 99
-    expect(decodeGame(bad)).toBeUndefined()
-    const short = encodeGame({ kind: 'race', target: 1, course })
-    expect(decodeGame(short.slice(0, short.length - 1))).toBeUndefined()
+    const payload = encodeGames(games)
+    expect(payload.length).toBe(GAMES_HEADER_BYTES + 2 * GAME_SUMMARY_BYTES + 3 + 2)
+    expect(decodeGames(payload)).toEqual(games)
+    expect(decodeGames(encodeGames([]))).toEqual([])
+    expect(decodeGames(payload.subarray(0, payload.length - 1))).toBeNull()
+    const wrongMode = encodeGames(games)
+    wrongMode[GAMES_HEADER_BYTES + 8] = 99
+    expect(decodeGames(wrongMode)).toBeNull()
+    const wrongDemo = encodeGames(games)
+    wrongDemo[GAMES_HEADER_BYTES + 16] = 9
+    expect(decodeGames(wrongDemo)).toBeNull()
+  })
+
+  it('round-trips a game room, its slots and who is ready', () => {
+    const payload = encodeGame(view, view.you, view.drivePass)
+    expect(payload.length).toBe(GAME_VIEW_BYTES + 1 + 3 * GAME_SLOT_BYTES + 3 + 4 + 2)
+    expect(decodeGame(payload)).toEqual(view)
+    const faulted = { ...view, fault: 'no road from the grid to the portal' }
+    expect(decodeGame(encodeGame(faulted, 0, 0))).toEqual({ ...faulted, you: 0, drivePass: 0 })
+    expect(decodeGame(payload.subarray(0, payload.length - 1))).toBeNull()
+    expect(decodeGame(encodeGames([]))).toBeNull()
+    // The type byte, then the game's id, then where it is in its life.
+    const badStatus = encodeGame(view, 0, 0)
+    badStatus[5] = 99
+    expect(decodeGame(badStatus)).toBeNull()
+    // A slot's flag is a flag, and its index one of the slots a game has.
+    const badBot = encodeGame(view, 0, 0)
+    badBot[GAME_VIEW_BYTES + 1 + 1] = 9
+    expect(decodeGame(badBot)).toBeNull()
+    const badSlot = encodeGame(view, 0, 0)
+    badSlot[GAME_VIEW_BYTES + 1] = 200
+    expect(decodeGame(badSlot)).toBeNull()
+  })
+
+  it('round-trips the challenge a lobby connection answers', () => {
+    const welcome = { challenge: '00ff1234abcd00ff1234abcd00ff9876', signedIn: '' }
+    const payload = encodeLobbyWelcome(welcome)
+    expect(payload.length).toBe(LOBBY_WELCOME_BYTES)
+    expect(decodeLobbyWelcome(payload)).toEqual(welcome)
+    const known = { ...welcome, signedIn: 'ab'.repeat(32) }
+    expect(decodeLobbyWelcome(encodeLobbyWelcome(known))).toEqual(known)
+    expect(decodeLobbyWelcome(payload.subarray(0, payload.length - 1))).toBeNull()
+  })
+
+  it('round-trips a leg of a race course, its gates and where it leads', () => {
+    const payload = encodeRacePlan(plan)
+    expect(payload.length).toBe(RACE_PLAN_HEADER_BYTES + 2 * KEEP_PORTAL_BYTES + 8 * CHECKPOINT_BYTES + RACE_PLAN_TAIL_BYTES + 3 * COURSE_WORLD_BYTES)
+    const decoded = decodeRacePlan(payload)!
+    expect(decoded).toMatchObject({ game: 7, world: 2, ofWorlds: 3, keep: [0, 1], exit: 1, next: { world: 1_000_000_002, arrival: 1 }, worlds: [1_000_000_001, 1_000_000_002, 1_000_000_003] })
+    for (const [k, checkpoint] of plan.checkpoints.entries()) {
+      const got = decoded.checkpoints[k]!
+      expect(got.radius).toBe(checkpoint.radius)
+      for (const axis of ['x', 'y', 'z'] as const) {
+        expect(got.at[axis]).toBeCloseTo(checkpoint.at[axis], 4)
+        expect(got.forward[axis]).toBeCloseTo(checkpoint.forward[axis], 4)
+      }
+    }
+    // The last leg keeps its arrival alone, and leads nowhere.
+    const last = decodeRacePlan(encodeRacePlan({ ...plan, keep: [0], exit: null, next: null, checkpoints: [] }))!
+    expect(last).toEqual({ ...plan, keep: [0], exit: null, next: null, checkpoints: [] })
+    expect(decodeRacePlan(payload.subarray(0, payload.length - 1))).toBeNull()
+    expect(decodeRacePlan(encodeGames([]))).toBeNull()
+  })
+
+  it('round-trips the standings, bots among them', () => {
+    const standings = [
+      { place: 1, name: 'Ada', vehicle: 'pickup' as const, seconds: 93, dnf: false, bot: false },
+      { place: 2, name: 'Axle', vehicle: 'raceCar' as const, seconds: 120, dnf: true, bot: true },
+    ]
+    const payload = encodeStandings(standings)
+    expect(payload.length).toBe(STANDINGS_HEADER_BYTES + 2 * STANDING_BYTES + 3 + 4)
+    expect(decodeStandings(payload)).toEqual(standings)
+    expect(decodeStandings(encodeStandings([]))).toEqual([])
+    expect(decodeStandings(payload.subarray(0, payload.length - 1))).toBeNull()
+    const badDnf = encodeStandings(standings)
+    badDnf[badDnf.length - 2] = 9
+    expect(decodeStandings(badDnf)).toBeNull()
+    const badBot = encodeStandings(standings)
+    badBot[badBot.length - 1] = 9
+    expect(decodeStandings(badBot)).toBeNull()
   })
 
   it('round-trips a snapshot, every vehicle and field', () => {
@@ -295,7 +520,7 @@ describe('wire', () => {
     expect(payload.length).toBe(
       SNAPSHOT_HEADER_BYTES +
         SNAPSHOT_RACE_BYTES +
-        3 * SNAPSHOT_MARK_BYTES +
+        2 * SNAPSHOT_RACER_BYTES +
         snapshot.props.length * SNAPSHOT_PROP_BYTES +
         snapshot.robots.length * SNAPSHOT_ROBOT_BYTES +
         snapshot.ufos.length * SNAPSHOT_UFO_BYTES +
@@ -312,10 +537,7 @@ describe('wire', () => {
     expect(decoded.ackInputTick).toBe(snapshot.ackInputTick)
     expect(decoded.full).toBe(true)
     expect(decoded.looseNext).toBe(4321)
-    expect(decoded.race).toMatchObject({ laps: 3, starter: 5, startTick: 120000 })
-    for (const [k, mark] of snapshot.race!.course.entries()) {
-      for (const axis of ['x', 'y', 'z'] as const) expect(decoded.race!.course[k]![axis]).toBeCloseTo(mark[axis], 4)
-    }
+    expect(decoded.race).toEqual(snapshot.race)
     expect(decoded.pickups).toEqual(snapshot.pickups)
     expect(decoded.removed).toEqual(snapshot.removed)
     for (const [i, rocket] of snapshot.rockets.entries()) {
@@ -360,11 +582,8 @@ describe('wire', () => {
       expect(throttle).toBeCloseTo(vehicle.appliedInput.throttle, 2)
       expect(brake).toBeCloseTo(vehicle.appliedInput.brake, 2)
       expect(buttons).toEqual({ handbrake: vehicle.appliedInput.handbrake, weapon: vehicle.appliedInput.weapon, fire: vehicle.appliedInput.fire, signal: vehicle.appliedInput.signal })
-      expect(got.game).toEqual(vehicle.game)
-      expect(got.gamesWon).toBe(vehicle.gamesWon)
       expect(got.achievements).toBe(vehicle.achievements)
       expect(got.lastAchievement).toBe(vehicle.lastAchievement)
-      expect(got.racePassed).toBe(vehicle.racePassed)
       expect(got.npc).toBe(vehicle.npc)
       for (const key of ['position', 'linearVelocity', 'angularVelocity'] as const) {
         for (const axis of ['x', 'y', 'z'] as const) expect(got[key][axis]).toBeCloseTo(vehicle[key][axis], 4)
@@ -381,7 +600,15 @@ describe('wire', () => {
     }
   })
 
+  it('tells the race as one world sees it, with the cars held still before the countdown', () => {
+    const held = { ...snapshot.race!, elapsed: HELD, over: true, racers: [] }
+    const decoded = decodeSnapshot(encodeSnapshot({ ...snapshot, race: held }))!
+    expect(decoded.race).toEqual(held)
+    expect(decoded.race!.elapsed).toBe(HELD)
+  })
+
   it('tells a car nobody drives with nothing going on in its core alone, and one with something going on in full', () => {
+    expect(SNAPSHOT_VEHICLE_EXTRAS_BYTES).toBe(23)
     const driven = snapshot.vehicles[1]!
     const quiet: VehicleSnapshot = {
       ...driven,
@@ -390,7 +617,7 @@ describe('wire', () => {
       score: 0,
       collected: 0,
       robotKills: 0,
-      game: null,
+      kills: 0,
       rocketsFired: 0,
       weaponHeld: 0,
       hornTicks: 0,
@@ -402,10 +629,10 @@ describe('wire', () => {
     const payload = encodeSnapshot(message)
     expect(payload.length).toBe(SNAPSHOT_HEADER_BYTES + SNAPSHOT_VEHICLE_CORE_BYTES + 2 * SNAPSHOT_VEHICLE_BYTES)
     const [gotQuiet, gotBusy, gotDriven] = decodeSnapshot(payload)!.vehicles
-    expect(gotQuiet).toMatchObject({ seat: 9, npc: true, score: 0, game: null, racePassed: NOT_RACING, weapon: 'none', weaponHeld: 0, magnetTicks: 0 })
+    expect(gotQuiet).toMatchObject({ seat: 9, npc: true, score: 0, weapon: 'none', weaponHeld: 0, magnetTicks: 0 })
     expect(gotQuiet!.appliedInput.throttle).toBeCloseTo(0.6, 2)
     expect(gotBusy).toMatchObject({ seat: 10, npc: true, weapon: 'magnet', magnetTicks: 90 })
-    expect(gotDriven).toMatchObject({ seat: driven.seat, npc: false, score: driven.score, game: driven.game })
+    expect(gotDriven).toMatchObject({ seat: driven.seat, npc: false, score: driven.score })
   })
 
   it('tells any turn, however it is written, to within a hundred-thousandth, and a velocity to within a step', () => {
@@ -449,49 +676,40 @@ describe('wire', () => {
     expect(decodeSnapshot(shared)!.ackInputTick).toBe(UNACKNOWLEDGED_INPUT_TICK)
   })
 
-  it('carries which islands are busy, and the asking after them', () => {
-    expect(isRoomsRequest(encodeRoomsRequest())).toBe(true)
-    expect(isRoomsRequest(encodeRespawn())).toBe(false)
-    expect(decodeHello(encodeRoomsRequest())).toBeNull()
-    const rooms = [
-      { seed: 4_000_000_000, players: 12 },
-      { seed: 7, players: 1 },
-    ]
-    expect(decodeRooms(encodeRooms(rooms))).toEqual(rooms)
-    expect(decodeRooms(encodeRooms([]))).toEqual([])
-    // Every island with anyone on it fits, up to a byte's count.
-    const many = Array.from({ length: 255 }, (_, i) => ({ seed: i + 1, players: 1 }))
-    expect(decodeRooms(encodeRooms(many))).toEqual(many)
-    // A crowd beyond a byte is a byte's worth.
-    expect(decodeRooms(encodeRooms([{ seed: 1, players: 900 }]))).toEqual([{ seed: 1, players: 255 }])
-    expect(decodeRooms(encodeRooms(rooms).subarray(0, 6))).toBeNull()
-    expect(decodeRooms(encodeRoomsRequest())).toBeNull()
+  it('reads and writes the modes, statuses and rules a game goes by', () => {
+    expect(modeOf(modeCode('race'))).toBe('race')
+    expect(modeOf(modeCode('free'))).toBe('free')
+    expect(modeOf(9)).toBeNull()
+    for (const status of ['open', 'preparing', 'starting', 'racing', 'finished'] as const) expect(statusOf(statusCode(status))).toBe(status)
+    expect(statusOf(9)).toBeNull()
+    expect(rulesOf(flagsOf({ ...options, weapons: true, bananas: true }))).toEqual({ weapons: true, bananas: true })
+    expect(rulesOf(flagsOf({ ...options, weapons: false, bananas: true }))).toEqual({ weapons: false, bananas: true })
+    expect(flagsOf({ ...options, weapons: true, bananas: false })).toBe(1)
   })
 
   it('refuses anything the wrong shape', () => {
     expect(decodeHello(new Uint8Array(0))).toBeNull()
-    expect(decodeHello(encodeHello('sportsCar', 1).subarray(0, 3))).toBeNull()
-    expect(decodeWelcome(encodeHello('sportsCar', 1))).toBeNull()
+    expect(decodeHello(encodeHello('sportsCar', 1, 2).subarray(0, 3))).toBeNull()
+    expect(decodeWelcome(encodeHello('sportsCar', 1, 2))).toBeNull()
     expect(decodeInput(encodeInput(1, snapshot.vehicles[0]!.appliedInput).subarray(0, 10), { ...snapshot.vehicles[0]!.appliedInput })).toBeNull()
     expect(decodeSnapshot(encodeSnapshot(snapshot).subarray(0, SNAPSHOT_HEADER_BYTES + 3))).toBeNull()
 
     // An unknown vehicle profile is not guessed at.
-    const badProfile = encodeSnapshot(snapshot)
-    badProfile[SNAPSHOT_HEADER_BYTES + SNAPSHOT_RACE_BYTES + 3 * SNAPSHOT_MARK_BYTES + 2] = 200
+    const badProfile = encodeSnapshot({ ...snapshot, race: null })
+    badProfile[SNAPSHOT_HEADER_BYTES + 2] = 200
     expect(decodeSnapshot(badProfile)).toBeNull()
 
     const wrongType = encodeInput(1, snapshot.vehicles[0]!.appliedInput)
     wrongType[0] = CLIENT_INPUT + 40
     expect(decodeInput(wrongType, { ...snapshot.vehicles[0]!.appliedInput })).toBeNull()
-  })
 
-  it('round-trips a peek at an island, the question and the answer', () => {
-    expect(decodePeekRequest(encodePeekRequest(4_000_000_000))).toBe(4_000_000_000)
-    const marks = [
-      { kind: 'player' as const, seat: 3, position: { x: 100.5, y: 12.25, z: 900.75 } },
-      { kind: 'npc' as const, seat: 31, position: { x: 1.5, y: 2.5, z: 3.5 } },
-    ]
-    expect(decodePeek(encodePeek(marks))).toEqual(marks)
+    // One message is never read as another.
+    expect(messageTypeOf(encodeGames([]))).not.toBe(messageTypeOf(encodeGame(view, 0, 0)))
+    expect(decodeGames(encodeGame(view, 0, 0))).toBeNull()
+    expect(decodeGame(encodeGames([]))).toBeNull()
+    expect(decodeRacePlan(encodeGame(view, 0, 0))).toBeNull()
+    expect(decodeStandings(encodeLobbyWelcome({ challenge: '', signedIn: '' }))).toBeNull()
+    expect(decodeLobbyWelcome(encodeStandings([]))).toBeNull()
   })
 
   it('carries a signed answer to the challenge over, and who the server has taken it to be back', () => {

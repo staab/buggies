@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { RADAR_RANGE, radarPoint } from './radar.ts'
+import { GATE_MARKER, NEXT_GATE_MARKER, RADAR_RANGE, gateMarker, radarPoint } from './radar.ts'
 
 describe('the mini-map', () => {
   const home = { x: 100, z: 100 }
@@ -30,5 +30,30 @@ describe('the mini-map', () => {
   it('still faces somewhere when the car is pointing straight up or down', () => {
     const point = radarPoint(home, { x: 0, z: 0 }, { x: 100, z: 50 })
     expect(Number.isFinite(point.x) && Number.isFinite(point.y)).toBe(true)
+  })
+})
+
+describe('a race gate on the mini-map', () => {
+  const home = { x: 0, z: 0 }
+  const north = { x: 0, z: -1 }
+
+  it('is laid out where the gate is, and is larger when it is the one to head for', () => {
+    const gate = { x: 0, z: -RADAR_RANGE / 2, label: '2', next: false }
+    const mark = gateMarker({ position: home, forward: north }, gate)
+    expect(mark.x).toBeCloseTo(0, 5)
+    expect(mark.y).toBeCloseTo(-0.5, 5)
+    expect(mark.radius).toBe(GATE_MARKER)
+    expect(mark.beyond).toBe(false)
+    expect(gateMarker({ position: home, forward: north }, { ...gate, next: true }).radius).toBe(NEXT_GATE_MARKER)
+    // Behind the car is up the screen, since it faces up.
+    const behind = gateMarker({ position: home, forward: north }, { x: 0, z: RADAR_RANGE / 2, label: '3', next: false })
+    expect(behind.y).toBeCloseTo(0.5, 5)
+  })
+
+  it('holds a gate past the range on the rim, pointing the way to it', () => {
+    const far = gateMarker({ position: home, forward: north }, { x: 0, z: -RADAR_RANGE * 4, label: '5', next: true })
+    expect(far.beyond).toBe(true)
+    expect(far.x).toBeCloseTo(0, 5)
+    expect(far.y).toBeCloseTo(-1, 5)
   })
 })

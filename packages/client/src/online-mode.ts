@@ -1,47 +1,40 @@
 import {
   FIXED_TIMESTEP,
-  GAME_LABELS,
+  HOLD_FOREVER,
+  MAX_PLAYERS,
   NEUTRAL_INPUT,
-  NOT_RACING,
   VEHICLE_PROFILE_LABELS,
-  hasSiren,
   createArena,
-  gameProgress,
-  lapOf,
-  nextMark,
+  hasSiren,
   portalCrossed,
   takeSeat,
-  type Game,
-  type Race,
   type Robot,
   type Seat,
   type Spider,
   type Ufo,
-  type VehicleProfileId,
+  type VehicleInput,
 } from '@buggies/game'
-import { LocalPrediction, NO_ARRIVAL, NO_PASS, NetClient, type PendingGame } from '@buggies/net'
+import { HELD, LocalPrediction, NetClient, rulesOf, type RaceRacerView } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
-import { WORLD_TRAITS, alongGround, groundDistance, overSurface, planetSeedOf, tangentFrame, upOf, type World } from '@buggies/terrain'
+import { WORLD_TRAITS, alongGround, groundDistance, planetSeedOf, tangentFrame, upOf, type World } from '@buggies/terrain'
 import * as THREE from 'three'
 
 import { AchievementWatch } from './achievement-toast.ts'
 import { ArenaView } from './arena-view.ts'
-import type { Sound } from './audio.ts'
 import { bendAround, bendMaterials } from './bend.ts'
 import { aimPointOf } from './car-presence.ts'
 import { seatColor } from './car-view.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
 import { GameBanners, playerTag } from './game-banners.ts'
+import { playerKey } from './identity.ts'
 import { Keyboard } from './input.ts'
 import { SOLO_KEYS } from './keys.ts'
-import type { ModeView } from './mode.ts'
 import { MirrorCars } from './mirror-cars.ts'
-import { playerKey } from './identity.ts'
+import type { GateArrow, ModeView, PlayRequest, RaceHud, RadarBlip, RadarGate, RadarState } from './mode.ts'
 import { PredictedCar } from './predicted-car.ts'
-import type { RadarBlip, RadarState } from './radar.ts'
-import { standOn } from './stand.ts'
-import { SUN_DISTANCE, type Sun } from './sun.ts'
+import { RaceView, gateLabels } from './race-view.ts'
+import { SUN_DISTANCE } from './sun.ts'
 import { WORLD_LOOKS } from './world-looks.ts'
 import { WebSocketClientTransport } from './ws-transport.ts'
 
@@ -51,11 +44,23 @@ import { WebSocketClientTransport } from './ws-transport.ts'
  */
 const MAX_CATCH_UP = 0.25
 
-/** The color a race's next mark is marked in, on the mini-map and over the island. */
-const MARK_COLOR = 0xffd24a
-/** How tall the beacon over a race's next mark stands, and how wide. */
-const BEACON_HEIGHT = 160
-const BEACON_RADIUS = 3
+/**
+ * How slow a finished car must be going forward, in m/s, before the brake
+ * comes off and the handbrake holds it: under half a metre a second the
+ * brake pedal drives a car backwards, so it is let go well before that.
+ */
+const PARKED_SPEED = 1
+
+/**
+ * What a car that has finished its race is driven with, whatever the player
+ * holds: the brake hard on while it rolls forward, the handbrake alone once
+ * it has all but stopped, and no weapon to fire.
+ */
+function parkedInput(forwardSpeed: number): VehicleInput {
+  const rolling = forwardSpeed > PARKED_SPEED
+  return { steer: 0, throttle: 0, brake: rolling ? 1 : 0, handbrake: !rolling, weapon: 0, fire: false, signal: false }
+}
+
 /** The colors the robots, the cars nobody drives, the saucers and the spiders are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
 const NPC_COLOR = 0x9aa0a6
@@ -64,64 +69,56 @@ const SPIDER_COLOR = 0xc15cff
 
 /**
  * The mini-map from a seat: where it is and faces, every other occupied
- * seat, the robots, and the race's next mark for it, laid out on the
- * ground round the car, east across and south down, as a map is.
+ * seat, the robots and the course's gates, laid out on the ground round
+ * the car, east across and south down, as a map is.
  */
-function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[], race: Race | null, radius: number): RadarState {
+function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[], gates: readonly { at: Vec3; label: string; next: boolean }[]): RadarState {
   const { position, forward } = own.vehicle.frame
   const { east, north } = tangentFrame(upOf(position))
   /** A point on the ground round the car, as far from it and the same way as it is round the planet. */
-  const onRadar = (at: Vec3, color: number): RadarBlip => {
+  const onRadar = (at: Vec3): { x: number; z: number } => {
     const toward = alongGround({ x: at.x - position.x, y: at.y - position.y, z: at.z - position.z }, upOf(position))
     const length = Math.sqrt(toward.x * toward.x + toward.y * toward.y + toward.z * toward.z) || 1
     const distance = groundDistance(at, position)
-    return { x: ((toward.x * east.x + toward.y * east.y + toward.z * east.z) / length) * distance, z: (-(toward.x * north.x + toward.y * north.y + toward.z * north.z) / length) * distance, color }
+    return { x: ((toward.x * east.x + toward.y * east.y + toward.z * east.z) / length) * distance, z: (-(toward.x * north.x + toward.y * north.y + toward.z * north.z) / length) * distance }
   }
+  const blip = (at: Vec3, color: number): RadarBlip => ({ ...onRadar(at), color })
   const others: RadarBlip[] = []
   for (const seat of seats) {
     if (seat.id === own.id || !seat.occupied) continue
-    others.push(onRadar(seat.vehicle.frame.position, seat.npc ? NPC_COLOR : seatColor(seat.id)))
+    others.push(blip(seat.vehicle.frame.position, seat.npc ? NPC_COLOR : seatColor(seat.id)))
   }
-  for (const robot of robots) others.push(onRadar(robot.position, ROBOT_COLOR))
-  for (const ufo of ufos) others.push(onRadar(ufo.position, UFO_COLOR))
-  for (const spider of spiders) others.push(onRadar(spider.position, SPIDER_COLOR))
-  const mark = race === null ? null : nextMark(own, race)
-  if (mark !== null) others.push(onRadar({ x: mark.x * radius, y: mark.y * radius, z: mark.z * radius }, MARK_COLOR))
+  for (const robot of robots) others.push(blip(robot.position, ROBOT_COLOR))
+  for (const ufo of ufos) others.push(blip(ufo.position, UFO_COLOR))
+  for (const spider of spiders) others.push(blip(spider.position, SPIDER_COLOR))
   return {
     position: { x: 0, z: 0 },
     forward: { x: forward.x * east.x + forward.y * east.y + forward.z * east.z, z: -(forward.x * north.x + forward.y * north.y + forward.z * north.z) },
     others,
+    gates: gates.map((gate): RadarGate => ({ ...onRadar(gate.at), label: gate.label, next: gate.next })),
   }
 }
 
-/** How a count is coming along, in a line. */
-function countLine(seat: Seat, game: Game): string {
-  const done = Math.min(Math.max(gameProgress(seat, game), 0), game.target)
-  return `${GAME_LABELS[game.kind]}: ${done} / ${game.target} ${game.kind === 'score' ? 'bananas' : game.kind === 'kills' ? 'wrecks' : 'robots'}`
-}
-
-/** How a race is going for a seat, in a line: how far to which mark, and how long it has been on. */
-function raceLine(seat: Seat, race: Race, tick: number, radius: number): string {
-  const mark = nextMark(seat, race)
-  if (mark === null) return 'A race is on.'
-  const meters = Math.round(groundDistance(seat.vehicle.frame.position, { x: mark.x * radius, y: mark.y * radius, z: mark.z * radius }))
-  const checkpoints = race.course.length - 2
-  const along = seat.racePassed % race.course.length
-  const toward = along === 0 ? 'the start' : along === race.course.length - 1 ? 'the finish' : `checkpoint ${along} of ${checkpoints}`
-  const lap = race.laps === 1 ? '' : ` · lap ${lapOf(seat, race)} of ${race.laps}`
-  const seconds = Math.max(Math.floor((tick - race.startTick) * FIXED_TIMESTEP), 0)
-  return `Race: ${meters} m to ${toward}${lap} · ${clockOf(seconds)}`
-}
-
-/** A game waiting for players, in a line: how long it has left, and whether to join it. */
-function waitingLine(game: PendingGame, own: number, tick: number, nameOf: (seat: number) => string): string {
-  const left = clockOf(Math.max(Math.ceil((game.startTick - tick) * FIXED_TIMESTEP), 0))
-  const what = GAME_LABELS[game.request.kind]
-  if (game.joined.includes(own)) {
-    const others = game.joined.length - 1
-    return `${what} starts in ${left} · ${others === 0 ? 'waiting for players' : `with ${others} more`}`
-  }
-  return `${nameOf(game.host)} wants a game of ${what.toLowerCase()}: join from the trophy · ${left}`
+/**
+ * The way to a gate, in radians clockwise from straight up on the screen,
+ * and how far it is; nothing for a car sitting on it. The car's own heading
+ * is straight up: the chase camera looks along it.
+ */
+function arrowTo(own: Seat, gate: Vec3, label: string): GateArrow | undefined {
+  const { position, forward } = own.vehicle.frame
+  const up = upOf(position)
+  const { east, north } = tangentFrame(up)
+  /** A way flat on the ground, as the screen has it: across to the right and down the screen. */
+  const flat = (way: Vec3): { x: number; z: number } => ({
+    x: way.x * east.x + way.y * east.y + way.z * east.z,
+    z: -(way.x * north.x + way.y * north.y + way.z * north.z),
+  })
+  const toward = flat(alongGround({ x: gate.x - position.x, y: gate.y - position.y, z: gate.z - position.z }, up))
+  if (Math.hypot(toward.x, toward.z) < 1e-3) return undefined
+  const nose = flat({ x: forward.x, y: forward.y, z: forward.z })
+  // Clockwise from up the screen, which is straight ahead of the car.
+  const off = Math.atan2(toward.x, -toward.z) - Math.atan2(nose.x, -nose.z)
+  return { angle: Math.atan2(Math.sin(off), Math.cos(off)), meters: groundDistance(position, gate), label }
 }
 
 /** Which world the play is on: the island by its seed, or another world by its name and its island's. */
@@ -130,43 +127,20 @@ function whereOf(map: World): string {
   return map.kind === 'planet' ? `seed ${seed}` : `${WORLD_TRAITS[map.kind].name} of seed ${seed}`
 }
 
-/** Seconds as minutes and seconds: "1:05". */
-function clockOf(seconds: number): string {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
-}
-
-/** A column of light standing over a spot, to be seen from anywhere on the island. */
-function buildBeacon(): THREE.Mesh {
-  const beacon = new THREE.Mesh(
-    new THREE.CylinderGeometry(BEACON_RADIUS, BEACON_RADIUS, BEACON_HEIGHT, 16, 1, true).translate(0, BEACON_HEIGHT / 2, 0),
-    new THREE.MeshBasicMaterial({ color: MARK_COLOR, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
-  )
-  beacon.visible = false
-  return beacon
-}
-
 /**
- * Join the server's room for an island and drive on it with whoever else is
- * there, with the whole screen: the island drawn round the car, bent as
- * though the planet were bigger, and the sun's shadows cast around it. The
- * server has the last word on which island, so the map is asked for once it
- * has said: `mapFor` is asked for it then.
+ * Join the server's room for one world of one game and drive on it with
+ * whoever else is there, with the whole screen: the world drawn round the
+ * car, bent as though the planet were bigger, and the sun's shadows cast
+ * around it. In a race the course's gates are drawn over the roads of the
+ * world, the HUD says how the race is going and an arrow points to the next
+ * gate when it is out of sight; the portals this world keeps for the course
+ * are the only ones it has, and the one out is followed to the next world.
  */
-export async function createOnlineMode(
-  scene: THREE.Scene,
-  url: string,
-  seed: number,
-  profile: VehicleProfileId,
-  mapFor: (seed: number) => Promise<World>,
-  sound: Sound,
-  sun: Sun,
-  arrival = NO_ARRIVAL,
-  pass = NO_PASS,
-  name = '',
-): Promise<ModeView> {
+export async function createOnlineMode(request: PlayRequest): Promise<ModeView> {
+  const { scene, driver, sound, sun } = request
   let lost: string | null = null
   const client = new NetClient(
-    new WebSocketClientTransport(url),
+    new WebSocketClientTransport(request.url),
     () => performance.now(),
     {
       onClosed: (reason) => {
@@ -175,62 +149,129 @@ export async function createOnlineMode(
     },
     playerKey(),
   )
-  const welcome = await client.connect(profile, seed, arrival, pass, name)
-  const map = await mapFor(welcome.seed)
-  // A mirror of the server's arena: same map, same seats, so the local car
-  // can be driven here the instant a key goes down.
-  const mirror = createArena(map)
+  const welcome = await client.connect(driver.profile, request.world, request.game, request.arrival, driver.pass, driver.name)
+  // A race's gates and the portals its world keeps come with the welcome; a free drive builds the world whole.
+  const plan = await client.racePlan()
+  const map = await request.mapFor(welcome.seed, plan?.keep ?? null)
+  // A mirror of the server's arena: the same map, the same rules, the same
+  // seats, so the local car can be driven here the instant a key goes down.
+  const mirror = createArena(map, MAX_PLAYERS, rulesOf(welcome.flags))
   takeSeat(mirror, welcome.seat, welcome.profile)
-  const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick, client.bananas)
+  const prediction = new LocalPrediction(mirror, welcome.seat, welcome.epoch, client.startTick(), client.bananas)
 
   const root = new THREE.Group()
   scene.add(root)
   const keyboard = new Keyboard(SOLO_KEYS.bindings)
-  // The island around the cars, heard from the local car.
+  // The world around the cars, heard from the local car.
   const arena = new ArenaView(prediction, sound, () => prediction.vehicle.frame.position, mirror.planet)
   root.add(arena.object)
   const car = new PredictedCar(prediction, (tick, input) => client.sendInput(tick, input), seatColor(welcome.seat), arena.effects)
   root.add(car.object)
   const others = new MirrorCars(prediction, welcome.seat, arena.effects)
   root.add(others.object)
+  // The course's gates, bright on the one to head for and faint on the one after it.
+  const gates = plan === null ? null : new RaceView(map, plan.checkpoints, plan.exit === null)
+  if (gates !== null) root.add(gates.object)
 
   const cameraTuning = createCameraTuning()
-  // Far enough to take in the whole island, and the sun beyond it.
+  // Far enough to take in the whole world, and the sun beyond it.
   cameraTuning.far = Math.max(4 * Math.PI * mirror.planet.radius, SUN_DISTANCE * 1.5)
   const chase = new ChaseCamera(cameraTuning)
   chase.setBoundsAt(cameraBounds(mirror.planet))
   const target = createChaseTarget()
 
   const onKey = (event: KeyboardEvent): void => {
-    if (SOLO_KEYS.respawn(event)) client.requestRespawn()
+    // A car that is home stays where it stopped: no respawn for a race already done.
+    if (came === null && SOLO_KEYS.respawn(event)) client.requestRespawn()
   }
   window.addEventListener('keydown', onKey)
 
   let owed = 0
+  /**
+   * How the car's own race ended, noted the once as it crosses the line:
+   * where it came, out of how many in all, and the race's clock then.
+   */
+  let came: { place: number; of: number; ticks: number } | null = null
   // Where the car was before each tick, and the portal it has driven through since last asked.
   const from = { x: 0, y: 0, z: 0 }
   let crossed = -1
   let chaseSnapped = false
   /** What a seat goes by: the name its player gave, or else its tag. */
-  const nameOf = (seat: number): string => client.lobby.players.find((player) => player.seat === seat)?.name || playerTag(welcome.seed, seat)
-  // The big words for a game starting or over.
+  const nameOf = (seat: number): string => client.lobby().players.find((player) => player.seat === seat)?.name || playerTag(welcome.seed, seat)
+  // The big words for a race starting or over.
   const banners = new GameBanners(welcome.seed, sound, nameOf)
-  // The games waiting for players already heard of, for a new one asked for by someone else to be heard.
-  const heardOf = new Set<number>()
   // A feat paid for, told of at the top of the screen.
   const achievements = new AchievementWatch(sound)
-  // How far along the race the car was, for a mark passed to be heard.
-  let racePassed = prediction.ownSeat.racePassed
-  const beacon = buildBeacon()
-  root.add(beacon)
+
+  /** The racer this car is in the race, as the server last said, if this world is one of its course's. */
+  const ownRacer = (): RaceRacerView | undefined => {
+    const race = prediction.race
+    if (race === null) return undefined
+    return race.racers.find((racer) => racer.seat === prediction.ownSeat.id)
+  }
+
+  /** Note the moment the car comes home, if it has: where it came, out of how many, and the race's clock then. */
+  const noteFinish = (): void => {
+    if (came !== null) return
+    const race = prediction.race
+    const racer = ownRacer()
+    if (race === null || racer === undefined || !racer.finished || racer.place <= 0) return
+    came = { place: racer.place, of: Math.max(race.racing, racer.place), ticks: Math.max(race.elapsed, 0) }
+  }
+
+  /** The racers home so far in this world, in the order they came, the car's own left out: the celebration says where it came itself. */
+  const homeNow = (): { place: number; name: string }[] => {
+    const race = prediction.race
+    if (race === null) return []
+    return race.racers
+      .filter((racer) => racer.finished && racer.place > 0 && racer.seat !== prediction.ownSeat.id)
+      .sort((one, other) => one.place - other.place)
+      .map((racer) => ({ place: racer.place, name: nameOf(racer.seat) }))
+  }
+
+  /**
+   * The mirror is held still whenever the server holds its cars: through the
+   * wait for every racer to be on the grid, and through the 3-2-1 after it.
+   * A race's world holds its cars from the first frame, before the server's
+   * word has come, so that the car cannot creep off the grid unladen.
+   */
+  const holdMirror = (): void => {
+    const race = prediction.race
+    if (race === null) mirror.holdUntil = plan === null ? 0 : HOLD_FOREVER
+    else if (race.elapsed > 0) mirror.holdUntil = 0
+    else mirror.holdUntil = race.elapsed === HELD ? HOLD_FOREVER : mirror.tick - race.elapsed
+  }
+
+  /** How the race is going for the car, for the HUD, or nothing in a free drive or before the server has said. */
+  const raceHud = (): RaceHud | undefined => {
+    const race = prediction.race
+    const racer = ownRacer()
+    if (plan === null || race === null || racer === undefined) return undefined
+    return {
+      place: Math.max(racer.place, 1),
+      of: Math.max(race.racing, racer.place, 1),
+      checkpoint: racer.checkpoint,
+      ofCheckpoints: plan.checkpoints.length,
+      world: plan.world,
+      ofWorlds: plan.ofWorlds,
+      seconds: Math.max(race.elapsed, 0) * FIXED_TIMESTEP,
+    }
+  }
+
+  /** What each of this world's gates is called, on its sign and on the compass. */
+  const labels = plan === null ? [] : gateLabels(plan.checkpoints.length, plan.exit === null)
+
+  /** This leg's gates, numbered along it, the one to head for next marked as such. */
+  const gateMarks = (): { at: Vec3; label: string; next: boolean }[] => {
+    if (plan === null) return []
+    const next = ownRacer()?.checkpoint ?? 0
+    return plan.checkpoints.map((checkpoint, index) => ({ at: checkpoint.at, label: String(index + 1), next: index === next }))
+  }
 
   return {
     camera: chase.camera,
     // The game's time, the same on every mirror, so the day, the boats and the clouds are where they are for everyone.
-    get tick() {
-      return prediction.tick
-    },
-    pass: () => welcome.pass,
+    tick: () => prediction.tick,
     position: () => prediction.vehicle.frame.position,
     render(renderer) {
       const { frame, up } = prediction.vehicle
@@ -246,12 +287,16 @@ export async function createOnlineMode(
       chase.camera.updateProjectionMatrix()
     },
     update(dt, active) {
-      // With the menu up the car is not driven, but the world does not wait:
-      // the server keeps going, and so must the mirror.
-      const held = active ? keyboard.read() : null
-      const input = held ?? NEUTRAL_INPUT
+      // With a screen up over the top the car is not driven, but the world
+      // does not wait: the server keeps going, and so must the mirror. A car
+      // that is home is never driven again, whatever keys are held: it brakes
+      // to a stop past the line and sits there while the others come in.
+      const racing = came === null
+      const held = active && racing ? keyboard.read() : null
+      const input = held ?? (racing ? NEUTRAL_INPUT : parkedInput(prediction.ownSeat.vehicle.forwardSpeed))
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
+        holdMirror()
         const before = prediction.ownSeat.vehicle.frame.position
         from.x = before.x
         from.y = before.y
@@ -259,6 +304,7 @@ export async function createOnlineMode(
         if (car.tick(client.pump(input), others) === 'resynced') chaseSnapped = false
         else if (crossed < 0) crossed = portalCrossed(map, from, prediction.ownSeat.vehicle.frame.position)
         arena.captureStep()
+        noteFinish()
         owed -= FIXED_TIMESTEP
       }
       others.render(owed / FIXED_TIMESTEP, dt)
@@ -267,18 +313,9 @@ export async function createOnlineMode(
       arena.update(dt, owed / FIXED_TIMESTEP)
       const own = prediction.ownSeat
       const { race } = prediction
-      if (own.racePassed > racePassed && racePassed !== NOT_RACING) sound.chime()
-      racePassed = own.racePassed
-      banners.update(dt, { own, seats: prediction.seats, race, tick: prediction.tick })
-      achievements.update(dt, own, client.playerCount > 0)
-      for (const game of client.lobby.games) {
-        if (heardOf.has(game.id)) continue
-        heardOf.add(game.id)
-        if (game.host !== welcome.seat) sound.chime()
-      }
-      const mark = race === null ? null : nextMark(own, race)
-      beacon.visible = mark !== null
-      if (mark !== null) standOn(beacon, overSurface(mirror.planet, mark, 0))
+      gates?.show(ownRacer()?.checkpoint ?? 0)
+      banners.update(dt, { own, seats: prediction.seats, race, standings: client.standings() })
+      achievements.update(dt, own, client.playerCount() > 0)
       car.presence.aim(target)
       if (chaseSnapped) chase.update(dt, target)
       else {
@@ -287,7 +324,8 @@ export async function createOnlineMode(
       }
     },
     hud() {
-      const players = client.playerCount
+      // Those driving here, not the cars nobody drives.
+      const players = Math.max(client.lobby().players.length, 1)
       const { profile } = prediction.ownSeat
       // The keys, told with what this car does of its own.
       const controls = SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn')
@@ -296,21 +334,20 @@ export async function createOnlineMode(
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
       const sync =
-        `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks} · ` +
+        `${Math.round(stats.ticksAheadOfServer)} ticks ahead · lead ${client.leadTicks()} · ` +
         `last correction ${stats.lastCorrectionMeters.toFixed(2)} m · ${stats.hardResyncs} resyncs`
       const own = prediction.ownSeat
-      const { race } = prediction
+      const racer = ownRacer()
+      const nextGate = plan === null || racer === undefined ? undefined : plan.checkpoints[racer.checkpoint]
+      const arrow = nextGate === undefined || racer === undefined ? undefined : arrowTo(own, nextGate.at, labels[racer.checkpoint] ?? '')
       const banner = banners.state()
       const achievement = achievements.state()
-      const lines = [
-        ...(race === null ? [] : [raceLine(own, race, prediction.tick, mirror.planet.radius)]),
-        ...(own.game === null ? [] : [countLine(own, own.game)]),
-        ...client.lobby.games.map((game) => waitingLine(game, welcome.seat, prediction.tick, nameOf)),
-      ]
+      const block = raceHud()
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, race, mirror.planet.radius),
-        ...(lines.length === 0 ? {} : { game: lines.join('\n') }),
+        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, gateMarks()),
+        ...(block === undefined ? {} : { race: block }),
+        ...(arrow === undefined ? {} : { arrow }),
         ...(banner === undefined ? {} : { banner }),
         ...(achievement === undefined ? {} : { achievement }),
       }
@@ -319,45 +356,29 @@ export async function createOnlineMode(
       client.changeVehicle(profile)
     },
     map,
-    game() {
-      return prediction.ownSeat.game
-    },
-    race() {
-      const { race } = prediction
-      return race === null ? null : { race, mine: welcome.seat === race.starter }
-    },
-    setGame(game) {
-      client.setGame(game)
-    },
-    lobby() {
-      const seats = prediction.seats
-      return {
-        seed: welcome.seed,
-        seat: welcome.seat,
-        tick: prediction.tick,
-        players: client.lobby.players.map(({ seat }) => {
-          const at = seats[seat]
-          return {
-            seat,
-            name: nameOf(seat),
-            profile: at?.profile ?? 'sportsCar',
-            score: at?.score ?? 0,
-            gems: at?.gems ?? 0,
-            game: at?.game ?? null,
-            racing: at !== undefined && prediction.race !== null && at.racePassed !== NOT_RACING,
-          }
-        }),
-        waiting: client.lobby.games,
-        race: prediction.race,
-      }
-    },
-    joinGame(id) {
-      client.joinGame(id)
-    },
     portal() {
+      // In a race the world's only portals are the course's, and the way on is `trip`, once the exit is the next gate.
+      if (plan !== null) return -1
       const through = crossed
       crossed = -1
       return through
+    },
+    trip() {
+      if (plan === null || plan.next === null || crossed < 0) return null
+      const through = crossed
+      crossed = -1
+      // Only the gate out of this world leads on, and only once every gate before it has been passed.
+      if (plan.exit === null || through !== plan.exit) return null
+      const racer = ownRacer()
+      if (racer === undefined || racer.checkpoint < plan.checkpoints.length - 1) return null
+      return { to: plan.next.world, arrival: plan.next.arrival }
+    },
+    standings() {
+      return client.standings()
+    },
+    finished() {
+      if (came === null) return null
+      return { place: came.place, of: came.of, ticks: came.ticks, home: homeNow() }
     },
     lost() {
       return lost
@@ -369,8 +390,7 @@ export async function createOnlineMode(
       others.dispose()
       car.dispose()
       arena.dispose()
-      beacon.geometry.dispose()
-      ;(beacon.material as THREE.Material).dispose()
+      gates?.dispose()
       scene.remove(root)
     },
   }

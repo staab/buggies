@@ -46,7 +46,7 @@ COPY --from=build /app/packages/game/dist ./packages/game/dist
 COPY --from=build /app/packages/net/dist ./packages/net/dist
 COPY --from=build /app/packages/server/dist ./packages/server/dist
 COPY --from=build /app/packages/client/dist ./packages/client/dist
-# What is kept of each player's key, their achievements and gems: mount a volume here for it to outlast the container.
+# What is kept of each player's key, their achievements and bananas: mount a volume here for it to outlast the container.
 RUN mkdir -p /app/data && chown node:node /app/data
 VOLUME /app/data
 USER node

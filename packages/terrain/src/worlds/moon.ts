@@ -3,7 +3,8 @@
  * smooth but for a few great craters, each a deep bowl inside a high lip
  * that is climbed to from outside as a kicker is,
  * with no sea, no rivers and no roads. On it stand a flag and the lander that
- * brought it, and the one portal back to the planet.
+ * brought it, and the two portals back to the planet, a drive apart, so that
+ * a race may come onto it by one and leave by the other.
  */
 
 import * as exact from '@buggies/physics'
@@ -57,6 +58,9 @@ const FLAG = { width: 0.12, depth: 0.12, height: 4 } as const
 const LANDER = { width: 6, depth: 6, height: 5 } as const
 /** How far from the portal the lander and the flag stand. */
 const LANDING_FROM_PORTAL = { least: 40, most: 120 } as const
+/** How far round the moon from the first portal the second stands, and how far from the lander. */
+const PORTALS_APART = 600
+const LANDER_CLEAR = 60
 
 interface Crater {
   readonly center: Vec3
@@ -159,6 +163,14 @@ export function generateMoon(seed: number): World {
     const angle = randomRange(rng, 0, Math.PI * 2)
     const flagAt = fromFrame(frame, cos(angle) * 9, sin(angle) * 9)
     buildings.push(standing(ground, 'flag', { at: flagAt, u: axisAt(flagAt, randomRange(rng, 0, Math.PI)), width: FLAG.width, depth: FLAG.depth }, FLAG.height, rng()))
+  }
+  // The second portal, round the moon from the first and clear of the lander, so a race can drive
+  // from one to the other. It is placed after them so that they stand where they always have.
+  if (run !== null) {
+    const far = (p: Vec3): boolean =>
+      angleBetween(p, run.at) * radius >= PORTALS_APART && (landing === null || angleBetween(p, landing.at) * radius >= LANDER_CLEAR)
+    const second = levelSpot(ground, rng, PORTAL_RADIUS * 2 + 4, 50, far)
+    if (second !== null) portals.push({ at: lift(second.at, radius, sphereHeight(ground, second.at)), turn: turnOf(second.at, second.u), radius: PORTAL_RADIUS })
   }
 
   return bareWorld({ seed: moonOf(seed), kind: 'moon', radius, seaLevel: MOON_SEA, ground, buildings, portals })

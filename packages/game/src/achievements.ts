@@ -76,8 +76,7 @@ const LANDMARK_EVERY_TICKS = 15
 export interface AchievementProgress {
   /** Cars of any kind its weapons have wrecked, the cars nobody drives as well. */
   carsWrecked: number
-  /** Games and races won, and races alone. */
-  wins: number
+  /** Races won. */
   racesWon: number
   /** Ticks in the air all told, and the most in one go. */
   airTicks: number
@@ -97,14 +96,11 @@ export interface AchievementProgress {
   earned: Uint8Array
   /** The tick before which no feat is paid. */
   readyTick: number
-  /** How many games it had won when last looked at, counted around past 255, to count its wins on from. */
-  gamesWonSeen: number
 }
 
 export function createAchievementProgress(): AchievementProgress {
   return {
     carsWrecked: 0,
-    wins: 0,
     racesWon: 0,
     airTicks: 0,
     longestAirTicks: 0,
@@ -115,9 +111,8 @@ export function createAchievementProgress(): AchievementProgress {
     portals: 0,
     splashed: false,
     ceiling: false,
-    earned: new Uint8Array(ACHIEVEMENTS.length),
+    earned: new Uint8Array(ACHIEVEMENT_NUMBERS),
     readyTick: 0,
-    gamesWonSeen: 0,
   }
 }
 
@@ -178,7 +173,7 @@ const WEAPON_TITLES: Readonly<Record<Weapon, string>> = {
 
 const LANDMARK_SHOWS: readonly AchievementShow[] = ['stars', 'confetti', 'balloons', 'bounce', 'spin', 'fireworks']
 
-const DEFINITIONS: readonly Definition[] = [
+const DEFINITIONS: readonly (Definition | null)[] = [
   ...tiers(
     [
       [1, 'First Banana', 2, '🍌', 'bounce'],
@@ -260,15 +255,10 @@ const DEFINITIONS: readonly Definition[] = [
     (count) => `Win ${plural(count, 'race', 'races')}.`,
     (progress) => progress.racesWon,
   ),
-  ...tiers(
-    [
-      [1, 'Game On', 10, '🎮', 'confetti'],
-      [3, 'Gamer', 20, '🕹️', 'stars'],
-      [5, 'Overachiever', 30, '📈', 'fireworks'],
-    ],
-    (count) => `Win ${plural(count, 'game', 'games')} of score, kills or robots.`,
-    (progress) => progress.wins - progress.racesWon,
-  ),
+  // The three numbers after these went with the games that were played for a count, and are retired: never handed out again, so that every feat after them keeps the number it is already paid by.
+  null,
+  null,
+  null,
   ...tiers(
     [
       [3, 'Hang Time', 5, '🪂', 'balloons'],
@@ -365,14 +355,19 @@ const DEFINITIONS: readonly Definition[] = [
   },
 ]
 
-/** Every feat there is, numbered as it is listed. */
-export const ACHIEVEMENTS: readonly Achievement[] = DEFINITIONS.map((definition, id) => ({ id, ...definition }))
+/**
+ * How many numbers the feats are given, the retired ones counting: every
+ * feat has a number of its own below this, and `earned` has a byte for each.
+ */
+export const ACHIEVEMENT_NUMBERS = DEFINITIONS.length
+
+/** Every feat there is, numbered as it is listed; the retired numbers are none of them. */
+export const ACHIEVEMENTS: readonly Achievement[] = DEFINITIONS.flatMap((definition, id) => (definition === null ? [] : [{ id, ...definition }]))
 
 /** A seat as the feats are kept for: its own counts, its progress, and its car. */
 export interface AchievingSeat extends AchievementSeat {
   readonly occupied: boolean
   readonly npc: boolean
-  readonly gamesWon: number
   readonly submersion: number
   /** How many feats it has been paid for, and the last. */
   achievements: number
@@ -434,8 +429,6 @@ export function awardAchievements<S extends AchievingSeat>(
 /** Count what a seat has done this tick toward its feats. */
 function track(planet: World, seat: AchievingSeat, tick: number): void {
   const { progress, vehicle } = seat
-  progress.wins += (seat.gamesWon - progress.gamesWonSeen) & 0xff
-  progress.gamesWonSeen = seat.gamesWon
   progress.mostHeld = Math.max(progress.mostHeld, seat.score)
   if (vehicle.wrecked) return
   progress.topSpeed = Math.max(progress.topSpeed, Math.abs(vehicle.speed))

@@ -1,5 +1,5 @@
 import { uprightRotation, v3, vdistance, vlength, vscale, type Vec3 } from '@buggies/physics'
-import { ROAD_GRADE, ROAD_TUNNEL, alongGround, atHeight, overSurface, tangentFrame, upOf, type World, type WorldRoad } from '@buggies/terrain'
+import { ROAD_GRADE, ROAD_TUNNEL, alongGround, atHeight, overSurface, upOf, type World, type WorldRoad } from '@buggies/terrain'
 import type { VehicleSpawn } from '@buggies/vehicle'
 
 import { portalSpawn } from './portals.ts'
@@ -7,9 +7,6 @@ import { portalSpawn } from './portals.ts'
 /** Nose to tail along the road, with room to pull out, and side to side, two abreast. */
 const SPAWN_SPACING = 9
 const SPAWN_ABREAST = 5
-
-/** How far from a race's start a road may be for the cars to line up on it rather than on the ground there. */
-const GRID_ROAD_REACH = 30
 
 /** How far along a road to look for the next point when facing a vehicle. */
 const FACING_REACH = 3
@@ -160,38 +157,79 @@ export function findSpawns(planet: World, count: number): VehicleSpawn[] {
 }
 
 /**
- * Where `count` cars line up for a race from a start toward its first
- * checkpoint: two abreast, staggered a half length apart, back from the
- * start along the road nearest it, facing the way to the checkpoint; on the
- * ground round the start where no road runs near it.
+ * How far along a route the pole of a grid of `count` cars stands: the
+ * depth of the field's rows, and so how much route the grid takes up from
+ * the start of a leg before the pole, which is the furthest car on.
  */
-export function startingGrid(planet: World, start: Vec3, toward: Vec3, count: number): VehicleSpawn[] {
-  const at = overSurface(planet, upOf(start), 0)
-  const forward = alongGround(v3(toward.x - at.x, toward.y - at.y, toward.z - at.z), upOf(at))
-  const first = nearestRoadSpotTo(planet, at)
-  if (first === null || vdistance(first.point, at) > GRID_ROAD_REACH) return groundGrid(planet, at, forward, count)
-  const { road, index, point } = first
-  const next = pointOf(road, index + 1)
-  // Back from the start is down the road from the way it runs toward the checkpoint.
-  const back = (next.x - point.x) * forward.x + (next.y - point.y) * forward.y + (next.z - point.z) * forward.z >= 0 ? -1 : 1
-  const lined = [first, ...spotsAlong(first, SPAWN_SPACING / 2, back, count - 1)].map((spot, place) => spawnAside(spot, place, forward))
-  if (lined.length < count) lined.push(...clearSpots(planet, first, lined, count - lined.length))
-  if (lined.length < count) lined.push(...groundGrid(planet, at, forward, count).slice(lined.length))
-  return lined
+export function gridDepth(count: number): number {
+  return Math.max(Math.ceil(count / 2) - 1, 0) * SPAWN_SPACING
 }
 
-/** Cars lined up two abreast on the ground back from a point, facing along `forward`. */
-function groundGrid(planet: World, at: Vec3, forward: Vec3, count: number): VehicleSpawn[] {
-  const up = upOf(at)
-  const ahead = vlength(forward) > 1e-6 ? vscale(v3(), forward, 1 / vlength(forward)) : tangentFrame(up).north
-  // Across: ahead crossed with up.
-  const across = v3(ahead.y * up.z - ahead.z * up.y, ahead.z * up.x - ahead.x * up.z, ahead.x * up.y - ahead.y * up.x)
-  return Array.from({ length: count }, (_, place) => {
+/**
+ * Where `count` cars line up on a leg's route: two abreast across the way the
+ * route runs there, a row every `SPAWN_SPACING` metres from the pole back
+ * toward the start of the route, the pole furthest along, everyone facing
+ * along the route. Each spot keeps the level of the route point it stands
+ * off, so a grid laid on a bridge stays on the bridge's deck, and a spot is
+ * never more than half a field's width off the way it will be driving.
+ */
+export function gridAlongRoute(route: readonly Vec3[], count: number): VehicleSpawn[] {
+  const grid: VehicleSpawn[] = []
+  if (route.length === 0) return grid
+  const run = routeRun(route)
+  const pole = Math.min(gridDepth(count), run)
+  for (let place = 0; place < count; place++) {
+    const row = Math.floor(place / 2)
+    const along = Math.max(pole - row * SPAWN_SPACING, 0)
+    const { point, way } = pointAway(route, along)
+    const up = upOf(point)
+    const side = sideOf(up, way)
+    if (side === null) {
+      grid.push(spawnHere(point, way))
+      continue
+    }
     const aside = (SPAWN_ABREAST / 2) * (place % 2 === 0 ? 1 : -1)
-    const behind = (place * SPAWN_SPACING) / 2
-    const way = v3(at.x + across.x * aside - ahead.x * behind, at.y + across.y * aside - ahead.y * behind, at.z + across.z * aside - ahead.z * behind)
-    return spawnHere(overSurface(planet, upOf(way), 0.5), ahead)
-  })
+    const shifted = v3(point.x + side.x * aside, point.y + side.y * aside, point.z + side.z * aside)
+    const held = vscale(v3(), shifted, vlength(point) / (vlength(shifted) || 1))
+    grid.push(spawnHere(held, way))
+  }
+  return grid
+}
+
+/** How far a route runs from one end to the other. */
+function routeRun(route: readonly Vec3[]): number {
+  let run = 0
+  for (let index = 1; index < route.length; index++) run += vdistance(route[index - 1]!, route[index]!)
+  return run
+}
+
+/**
+ * The point of a route that stands this far from its start as a car would
+ * drive it, and the way it runs there: the furthest point of it still that
+ * near, and the way on to the next. A route that doubles back over itself at
+ * its start still puts the field a field's depth along it, rather than folding
+ * the rows onto one another.
+ */
+function pointAway(route: readonly Vec3[], distance: number): { point: Vec3; way: Vec3 } {
+  const start = route[0]!
+  let at = 0
+  for (let index = 1; index < route.length; index++) {
+    if (vdistance(start, route[index]!) > distance) break
+    at = index
+  }
+  const point = route[at]!
+  const next = route[Math.min(at + 1, route.length - 1)]!
+  const way = alongGround(v3(next.x - point.x, next.y - point.y, next.z - point.z), upOf(point))
+  return { point: { ...point }, way: vlength(way) > 1e-6 ? way : alongGround(v3(point.x - start.x, point.y - start.y, point.z - start.z), upOf(point)) }
+}
+
+/** The way across a way along the ground, to the left of it: the way up crossed with the way along. */
+function sideOf(up: Vec3, way: Vec3): Vec3 | null {
+  const x = up.y * way.z - up.z * way.y
+  const y = up.z * way.x - up.x * way.z
+  const z = up.x * way.y - up.y * way.x
+  const length = Math.sqrt(x * x + y * y + z * z)
+  return length < 1e-6 ? null : v3(x / length, y / length, z / length)
 }
 
 /** A spawn at a spot, in the lane its place in the line puts it in: the right for even places, the left for odd; facing along the road, or the way along it nearer `forward` where one is given. */

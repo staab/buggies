@@ -8,6 +8,7 @@ import {
   HEALTH_MEND,
   HEALTH_SLOTS,
   NEUTRAL_INPUT,
+  OPEN_RULES,
   PICKUP_HEIGHT,
   PICKUP_HELD,
   PICKUP_RESPAWN_TICKS,
@@ -24,6 +25,7 @@ import {
   pickupSpot,
   respawn,
   looseOut,
+  setRules,
   spawnHere,
   takeSeat,
   type Arena,
@@ -70,6 +72,15 @@ describe('pickups', () => {
     expect(onRoads).toBeLessThan(PICKUP_SLOTS / 2)
     // All but the odd coincidence of a slot's next pickup is well away from its first.
     expect(moved).toBeGreaterThan(PICKUP_SLOTS - 4)
+    arena.world.free()
+  })
+
+  it('are 128 bananas to a map, in every mode, and the health packs after them', () => {
+    expect(BANANA_SLOTS).toBe(128)
+    expect(PICKUP_SLOTS).toBe(BANANA_SLOTS + HEALTH_SLOTS)
+    const arena = createArena(map)
+    expect(arena.pickups).toHaveLength(PICKUP_SLOTS)
+    expect(arena.pickups.filter((_, slot) => pickupKind(slot) === 'banana')).toHaveLength(128)
     arena.world.free()
   })
 
@@ -193,6 +204,35 @@ describe('pickups', () => {
     // Sitting down afresh starts from nothing.
     takeSeat(arena, 0, 'tank')
     expect(seat.score).toBe(0)
+    arena.world.free()
+  })
+
+  it('are no bananas at all in a game without them: none are taken, and a wreck spills none', () => {
+    const arena = createArena(map, 2, { weapons: true, bananas: false })
+    const seat = driveOnto(arena, 3)
+    expect(seat.freeWeapons).toBe(true)
+    for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(seat.score).toBe(0)
+    expect(arena.pickups[3]!.generation).toBe(0)
+    // A wreck spills what it holds, which here is nothing to spill.
+    seat.score = 5
+    wreckVehicle(seat.vehicle, seat.tuning)
+    advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.loose).toHaveLength(0)
+    arena.world.free()
+  })
+
+  it('are taken, and spilled, again as soon as the rules have them', () => {
+    const arena = createArena(map, 2, { weapons: true, bananas: false })
+    const seat = driveOnto(arena, 3)
+    setRules(arena, OPEN_RULES)
+    expect(seat.freeWeapons).toBe(false)
+    for (let i = 0; i < 30; i++) advance(arena, () => NEUTRAL_INPUT)
+    expect(seat.score).toBe(1)
+    seat.score = 4
+    wreckVehicle(seat.vehicle, seat.tuning)
+    advance(arena, () => NEUTRAL_INPUT)
+    expect(arena.loose).toHaveLength(4)
     arena.world.free()
   })
 })

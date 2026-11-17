@@ -577,4 +577,34 @@ describe('weapons', () => {
     expect(a.vehicle.damage).toBe(1)
     arena.world.free()
   })
+
+  it('fire nothing at all in a game without weapons, and cost nothing in a game without bananas', () => {
+    // No weapons: their keys do nothing, and no car is driven along by one.
+    const bare = createArena(map, 2, { weapons: false, bananas: true })
+    const [plain] = pair(bare, 40, 0)
+    plain.score = 10
+    expect(hold(bare, plain, 'rocket', 3)).toBe(0)
+    expect(bare.rockets).toHaveLength(0)
+    expect(plain.score).toBe(10)
+    advance(bare, () => key('engine'))
+    expect(plain.vehicle.boosted).toBe(false)
+    expect(plain.weapon).toBe('none')
+
+    // No bananas: the same weapons, for nothing.
+    const free = createArena(map, 2, { weapons: true, bananas: false })
+    const [gunner] = pair(free, 40, 0)
+    expect(gunner.freeWeapons).toBe(true)
+    expect(gunner.score).toBe(0)
+    hold(free, gunner, 'rocket', 1)
+    expect(free.rockets).toHaveLength(1)
+    expect(gunner.score).toBe(0)
+    // A lasting one goes as long as it is held, and burns no bananas either.
+    press(free, gunner, 'machineGun')
+    expect(gunner.score).toBe(0)
+    expect(hold(free, gunner, 'machineGun', 30)).toBeGreaterThan(3)
+    expect(gunner.score).toBe(0)
+    expect(gunner.burnLeft).toBe(0)
+    free.world.free()
+    bare.world.free()
+  })
 })

@@ -1,14 +1,17 @@
-import type { GameRequest, VehicleInput, VehicleProfileId } from '@buggies/game'
+import type { VehicleInput, VehicleProfileId } from '@buggies/game'
 
 import { BananaLedger } from './ledger.ts'
 import { authTemplate, publicKeyOf, signEvent } from './nostr.ts'
 import type { PredictionUpdate } from './prediction.ts'
 import {
   INPUT_TIMELINE_TICKS,
+  NO_SEAT,
   SERVER_LOBBY,
+  SERVER_RACE_PLAN,
   SERVER_REJECT,
   SERVER_SIGNED_IN,
   SERVER_SNAPSHOT,
+  SERVER_STANDINGS,
   SERVER_WELCOME,
   UNACKNOWLEDGED_INPUT_TICK,
   rejectLabel,
@@ -17,9 +20,11 @@ import { SnapshotTimeline, type VehicleRenderState } from './snapshot-timeline.t
 import type { ClientTransport } from './transport.ts'
 import {
   decodeLobby,
+  decodeRacePlan,
   decodeReject,
   decodeSignedIn,
   decodeSnapshot,
+  decodeStandings,
   decodeWelcome,
   NO_ARRIVAL,
   NO_PASS,
@@ -27,13 +32,12 @@ import {
   encodeHello,
   encodeInput,
   encodeChangeVehicle,
-  encodeGame,
-  encodeJoinGame,
   encodeRespawn,
-  NO_LOBBY,
   type LobbyMessage,
   messageTypeOf,
+  type RacePlan,
   type SnapshotMessage,
+  type Standing,
   type WelcomeMessage,
 } from './wire.ts'
 
@@ -119,7 +123,12 @@ export class NetClient {
   /** When anything was last heard from the server. */
   private heardAtMs = 0
   private ackTick = UNACKNOWLEDGED_INPUT_TICK
-  private lobbyMessage: LobbyMessage = { players: [], games: [] }
+  private lobbyMessage: LobbyMessage = { players: [] }
+  /** The leg of the race's course this world is, once the server has said. */
+  private plan: RacePlan | null = null
+  private settlePlan: { resolve(plan: RacePlan | null): void; reject(error: Error): void } | null = null
+  /** How the race finished, once the server has said. */
+  private standingsRows: readonly Standing[] | null = null
   /** The player's nostr key, secret, to prove to the server which seat is theirs; and its public half. */
   private readonly secret: Uint8Array | null
   private readonly pubkey: string | null
@@ -139,53 +148,80 @@ export class NetClient {
     return this.signedInAs
   }
 
-  get welcome(): WelcomeMessage | null {
+  welcome(): WelcomeMessage | null {
     return this.welcomeMessage
   }
 
-  get closed(): string | null {
+  /** Why the connection closed, or `null` while it is open. */
+  closed(): string | null {
     return this.closedReason
   }
 
-  /** Who is on the island by name, and the games waiting for players, as the server last said. */
-  get lobby(): LobbyMessage {
+  /** Who is on the island by name, as the server last said. */
+  lobby(): LobbyMessage {
     return this.lobbyMessage
   }
 
-  get acknowledgedInputTick(): number {
+  acknowledgedInputTick(): number {
     return this.ackTick
   }
 
   /** How many ticks ahead of the server's clock inputs are being sent for. */
-  get leadTicks(): number {
+  leadTicks(): number {
     return this.lead
   }
 
   /** How many vehicles the server last said were on the map. */
-  get playerCount(): number {
+  playerCount(): number {
     return this.newestSnapshot?.vehicles.length ?? 0
   }
 
-  /** Join the room for a seed, in a vehicle, by a name: out of one of its portals, if come through one to it, with what the seat left behind held, if it shows that seat's pass. */
-  async connect(profile: VehicleProfileId, seed: number, arrival = NO_ARRIVAL, pass = NO_PASS, name = ''): Promise<WelcomeMessage> {
-    try {
-      this.heardAtMs = this.clock()
-      await this.transport.connect({
-        onMessage: (payload) => this.receive(payload),
-        onClose: (reason) => this.handleClose(reason),
-      })
-      const welcome = new Promise<WelcomeMessage>((resolve, reject) => {
-        this.settleWelcome = { resolve, reject }
-      })
-      this.transport.send(encodeHello(profile, seed, arrival, pass, name))
-      return await welcome
-    } catch (error) {
-      throw new ConnectionFailure(error instanceof Error ? error.message : String(error), this.rejectReason)
-    }
+  /**
+   * Join the world of a game, in a vehicle, by a name: out of one of its
+   * portals, if come through one to it, with what the seat left behind
+   * held, if it shows that member's pass.
+   */
+  async connect(
+    profile: VehicleProfileId,
+    seed: number,
+    game: number,
+    arrival = NO_ARRIVAL,
+    pass = NO_PASS,
+    name = '',
+  ): Promise<WelcomeMessage> {
+    return await this.handshake(encodeHello(profile, game, seed, arrival, pass, name))
+  }
+
+  /**
+   * Watch a game's world without taking a seat in it: a spectator's welcome,
+   * then the race plan and the snapshots as they come, and never an input.
+   * Resolved once the server has welcomed the connection, whose seat is
+   * `NO_SEAT`. `world` is the seed of the world to watch.
+   */
+  async watch(game: number, world: number): Promise<WelcomeMessage> {
+    return await this.handshake(encodeHello(null, game, world))
+  }
+
+  /**
+   * The leg of a race's course this world is, with its gates, which the
+   * server sends right after the welcome; `null` at once in a free drive.
+   * Rejects if the connection closes before it is told.
+   */
+  racePlan(): Promise<RacePlan | null> {
+    if (this.plan !== null) return Promise.resolve(this.plan)
+    if (this.welcomeMessage !== null && !this.welcomeMessage.race) return Promise.resolve(null)
+    return new Promise<RacePlan | null>((resolve, reject) => {
+      this.settlePlan = { resolve, reject }
+    })
+  }
+
+  /** How the race finished, once the server has said: places, names, vehicles and times. */
+  standings(): readonly Standing[] | null {
+    return this.standingsRows
   }
 
   /** The tick the mirror should start on: the lead ahead of the server's clock at the welcome. */
-  get startTick(): number {
+  startTick(): number {
     return (this.welcomeMessage?.tick ?? 0) + this.lead
   }
 
@@ -230,7 +266,7 @@ export class NetClient {
 
   /** Send the input the mirror is simulating a tick with, stamped with that tick. */
   sendInput(tick: number, input: VehicleInput): void {
-    if (this.welcomeMessage === null || this.closedReason !== null) return
+    if (!this.driving()) return
     if (tick <= this.lastSentTick) return
     this.lastSentTick = tick
     this.transport.send(encodeInput(tick, input))
@@ -238,25 +274,13 @@ export class NetClient {
 
   /** Swap into another vehicle where the car is, keeping the seat. */
   changeVehicle(profile: VehicleProfileId): void {
-    if (this.welcomeMessage === null || this.closedReason !== null) return
+    if (!this.driving()) return
     this.transport.send(encodeChangeVehicle(profile))
   }
 
   requestRespawn(): void {
-    if (this.welcomeMessage === null || this.closedReason !== null) return
+    if (!this.driving()) return
     this.transport.send(encodeRespawn())
-  }
-
-  /** Play this game, or none: free play again. */
-  setGame(game: GameRequest | null): void {
-    if (this.welcomeMessage === null || this.closedReason !== null) return
-    this.transport.send(encodeGame(game))
-  }
-
-  /** Into the game waiting with this id, or out of whichever one this player is in. */
-  joinGame(id: number | null): void {
-    if (this.welcomeMessage === null || this.closedReason !== null) return
-    this.transport.send(encodeJoinGame(id ?? NO_LOBBY))
   }
 
   /** Everyone else, where they were a moment ago. */
@@ -266,6 +290,30 @@ export class NetClient {
 
   close(reason: string): void {
     this.transport.close(reason)
+  }
+
+  /** Whether this connection is open and in a seat: a spectator is in none, and sends nothing. */
+  private driving(): boolean {
+    if (this.closedReason !== null || this.welcomeMessage === null) return false
+    return this.welcomeMessage.seat !== NO_SEAT
+  }
+
+  /** Open the connection and say the hello that asks for a room, or for the sight of one. */
+  private async handshake(hello: Uint8Array): Promise<WelcomeMessage> {
+    try {
+      this.heardAtMs = this.clock()
+      await this.transport.connect({
+        onMessage: (payload) => this.receive(payload),
+        onClose: (reason) => this.handleClose(reason),
+      })
+      const welcome = new Promise<WelcomeMessage>((resolve, reject) => {
+        this.settleWelcome = { resolve, reject }
+      })
+      this.transport.send(hello)
+      return await welcome
+    } catch (error) {
+      throw new ConnectionFailure(error instanceof Error ? error.message : String(error), this.rejectReason)
+    }
   }
 
   private receive(payload: Uint8Array): void {
@@ -301,6 +349,21 @@ export class NetClient {
     if (type === SERVER_LOBBY) {
       const lobby = decodeLobby(payload)
       if (lobby !== null) this.lobbyMessage = lobby
+      return
+    }
+
+    if (type === SERVER_RACE_PLAN) {
+      const plan = decodeRacePlan(payload)
+      if (plan === null) return
+      this.plan = plan
+      this.settlePlan?.resolve(plan)
+      this.settlePlan = null
+      return
+    }
+
+    if (type === SERVER_STANDINGS) {
+      const standings = decodeStandings(payload)
+      if (standings !== null) this.standingsRows = standings
       return
     }
 
@@ -350,6 +413,8 @@ export class NetClient {
     this.closedReason = reason
     this.settleWelcome?.reject(new Error(reason))
     this.settleWelcome = null
+    this.settlePlan?.reject(new Error(reason))
+    this.settlePlan = null
     this.events.onClosed?.(reason)
   }
 }

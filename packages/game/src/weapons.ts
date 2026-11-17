@@ -31,6 +31,7 @@ import { SPIDER_BELLY, SPIDER_BODY } from './spiders.ts'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { PICKUP_HEIGHT, LOOSE_IDS, type Loose, type LooseKind } from './pickups.ts'
+import type { ArenaRules } from './index.ts'
 
 /** A weapon every car has, each on its own number key, or none. */
 export type Weapon = 'none' | 'rocket' | 'machineGun' | 'mines' | 'engine' | 'wings' | 'magnet' | 'plow' | 'laser' | 'shockwave'
@@ -288,8 +289,10 @@ export interface Gunner {
   readonly vehicle: Vehicle
   readonly tuning: VehicleTuning
   readonly profile: VehicleProfileId
-  /** The bananas it has to spend on its weapons. */
+  /** The bananas it has to spend on its weapons, which in a game with none cost nothing. */
   score: number
+  /** Whether its weapons cost it nothing: a game whose bananas are off. */
+  readonly freeWeapons: boolean
   /** The weapon selected by its key, which rides over the roof: none until one is, or once 0 clears it. */
   weapon: Weapon
   /** The key of the weapon fired last tick, or none, so that a press of the fire key is told from a hold. */
@@ -419,6 +422,8 @@ const aimed = v3()
 /** What of an arena the weapons need. */
 export interface Battlefield {
   readonly planet: World
+  /** What the game is played by: nothing a weapon does happens without weapons. */
+  readonly rules: ArenaRules
   readonly seats: readonly Gunner[]
   /** The machines that can be shot at besides the cars: the robots and the saucers. */
   readonly robots: readonly Machine[]
@@ -447,11 +452,20 @@ const aside = v3()
 const shove = v3()
 
 /**
+ * What a weapon costs a car: nothing in a game with no bananas, and the
+ * weapon's own bananas otherwise, which are the car's fuel.
+ */
+function costOf(seat: Gunner, weapon: Weapon): number {
+  return seat.freeWeapons ? 0 : WEAPON_COSTS[weapon]
+}
+
+/**
  * Whether a lasting weapon can go this tick: there is enough left of the
- * banana last broken into, or another banana to break into.
+ * banana last broken into, or another banana to break into, or it is free.
  */
 function fuelled(seat: Gunner, weapon: Weapon): boolean {
-  return seat.burnLeft >= WEAPON_COSTS[weapon] || seat.score > 0
+  const cost = costOf(seat, weapon)
+  return cost === 0 || seat.burnLeft >= cost || seat.score > 0
 }
 
 /** Whether a car is using a lasting weapon this tick: selected and the fire key held, with the fuel for it. A wreck uses nothing. */
@@ -461,7 +475,7 @@ export function using(seat: Gunner, weapon: Weapon, keys: WeaponKeys = seat.vehi
 
 /** Whether a car has the bananas for a weapon: a press of one that goes at once, or a tick of one that lasts. */
 export function affordable(seat: Gunner, weapon: Weapon): boolean {
-  return lasting(weapon) ? fuelled(seat, weapon) : seat.score >= WEAPON_COSTS[weapon]
+  return lasting(weapon) ? fuelled(seat, weapon) : seat.score >= costOf(seat, weapon)
 }
 
 /** Whether a weapon is going on a car now: one that lasts held with the fuel for it, or what one that went at once set going. */
@@ -478,9 +492,10 @@ export function going(seat: Gunner, weapon: Weapon): boolean {
   }
 }
 
-/** Burn a tick's worth of a lasting weapon's fuel, breaking into another banana if need be; whether there was any. */
+/** Burn a tick's worth of a lasting weapon's fuel, breaking into another banana if need be; whether there was any. One that costs nothing burns nothing. */
 function burn(seat: Gunner, weapon: Weapon): boolean {
-  const cost = WEAPON_COSTS[weapon]
+  const cost = costOf(seat, weapon)
+  if (cost === 0) return true
   if (seat.burnLeft < cost) {
     if (seat.score <= 0) return false
     seat.score -= 1
@@ -901,10 +916,11 @@ function wearOff(seat: Gunner): void {
  * every few ticks, the laser burning it, and the rocket engine and the
  * wings, which are read off the keys as the car is stepped. Whatever lasts
  * of what was used runs down meanwhile, the plow shoving all the while. A
- * wreck does nothing.
+ * wreck does nothing, and in a game without weapons nothing fires at all.
  */
 export function fireWeapons(arena: Battlefield): void {
   arena.shots.length = 0
+  if (!arena.rules.weapons) return
   for (const seat of arena.seats) {
     if (!seat.occupied) continue
     const { weapon: key, fire } = seat.vehicle.command
@@ -940,7 +956,7 @@ function tried(seat: Gunner, weapon: Weapon): void {
 /** Use a weapon that goes all at once, if there are the bananas for it, and pay for it. */
 function useAtOnce(arena: Battlefield, seat: Gunner, weapon: Weapon): void {
   if (!affordable(seat, weapon)) return
-  seat.score -= WEAPON_COSTS[weapon]
+  seat.score -= costOf(seat, weapon)
   tried(seat, weapon)
   switch (weapon) {
     case 'rocket':

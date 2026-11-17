@@ -1,19 +1,10 @@
+import type { RadarGate, RadarState } from './mode.ts'
+
+// What the mini-map is drawn from belongs to the shell's contract with a mode: mode.ts has it.
+export type { RadarBlip, RadarGate, RadarState } from './mode.ts'
+
 /** How far the mini-map sees, in meters from the car to its rim. */
 export const RADAR_RANGE = 300
-
-/** What the mini-map shows: where the car is and which way it faces, and everyone else on the island. */
-export interface RadarState {
-  position: { x: number; z: number }
-  forward: { x: number; z: number }
-  others: readonly RadarBlip[]
-}
-
-/** Someone else on the island, in their seat's color. */
-export interface RadarBlip {
-  x: number
-  z: number
-  color: number
-}
 
 /**
  * Where a point falls on the mini-map, turned so the car always faces up:
@@ -42,6 +33,24 @@ export function radarPoint(
 
 const SVG = 'http://www.w3.org/2000/svg'
 
+/** How big a gate's numbered marker on the mini-map is, and how much bigger the one to head for is. */
+export const GATE_MARKER = 0.07
+export const NEXT_GATE_MARKER = 0.11
+
+/** Where a gate's marker goes on the mini-map, how big it is, and whether it is held on the rim, past the range: laid out as `radarPoint` lays everything out, before the rim is drawn in from the edge. */
+export interface GateMark {
+  x: number
+  y: number
+  radius: number
+  beyond: boolean
+}
+
+/** A gate's marker on the mini-map, in the rim's units, laid out as every other thing on it is. */
+export function gateMarker(state: Pick<RadarState, 'position' | 'forward'>, gate: RadarGate): GateMark {
+  const { x, y, beyond } = radarPoint(state.position, state.forward, gate)
+  return { x, y, radius: gate.next ? NEXT_GATE_MARKER : GATE_MARKER, beyond }
+}
+
 function svg<K extends keyof SVGElementTagNameMap>(
   tag: K,
   attributes: Record<string, string | number>,
@@ -57,12 +66,18 @@ const RIM = 0.9
 /**
  * The mini-map in the bottom corner: a round radar with the car in the
  * middle facing up, a ring at half its range, and a dot for everyone else
- * in their own color, held on the rim when they are further off.
+ * in their own color, held on the rim when they are further off. A race's
+ * gates are numbered circles, the one to head for larger and bright with a
+ * line from the car to it, and the rest held on the rim when they are
+ * past the range.
  */
 export class Radar {
   private readonly root: HTMLElement
   private readonly blips = svg('g', {})
   private readonly dots: SVGCircleElement[] = []
+  private readonly gates = svg('g', {})
+  private readonly route = svg('line', { class: 'route' })
+  private readonly marks: { group: SVGGElement; circle: SVGCircleElement; label: SVGTextElement }[] = []
 
   constructor(root: HTMLElement) {
     this.root = root
@@ -71,7 +86,7 @@ export class Radar {
     map.append(svg('circle', { class: 'ring', r: RIM / 2 }))
     map.append(svg('line', { class: 'ring', x1: 0, y1: -RIM, x2: 0, y2: RIM }))
     map.append(svg('line', { class: 'ring', x1: -RIM, y1: 0, x2: RIM, y2: 0 }))
-    map.append(this.blips)
+    map.append(this.blips, this.route, this.gates)
     map.append(svg('path', { class: 'self', d: 'M0 -0.09 L0.065 0.07 L0 0.035 L-0.065 0.07 Z' }))
     const label = document.createElement('span')
     label.className = 'range'
@@ -99,5 +114,39 @@ export class Radar {
       dot.setAttribute('fill', `#${other.color.toString(16).padStart(6, '0')}`)
       dot.classList.toggle('beyond', beyond)
     })
+    this.showGates(state)
+  }
+
+  /** The course's gates: a numbered circle each, the one to head for larger and bright, and the way to it. */
+  private showGates(state: RadarState): void {
+    while (this.marks.length < state.gates.length) {
+      const group = svg('g', { class: 'gate' })
+      const circle = svg('circle', { r: GATE_MARKER })
+      // The number sits in the middle of its circle, half a line down from its middle.
+      const label = svg('text', { x: 0, y: 0, dy: 0.045 })
+      group.append(circle, label)
+      this.marks.push({ group, circle, label })
+      this.gates.append(group)
+    }
+    this.marks.forEach((mark, index) => {
+      const gate = state.gates[index]
+      mark.group.style.display = gate === undefined ? 'none' : ''
+      if (gate === undefined) return
+      const { x, y, radius, beyond } = gateMarker(state, gate)
+      mark.circle.setAttribute('cx', (x * RIM).toFixed(3))
+      mark.circle.setAttribute('cy', (y * RIM).toFixed(3))
+      mark.circle.setAttribute('r', (radius * RIM).toFixed(3))
+      mark.label.setAttribute('x', (x * RIM).toFixed(3))
+      mark.label.setAttribute('y', (y * RIM).toFixed(3))
+      mark.label.textContent = gate.label
+      mark.group.classList.toggle('next', gate.next)
+      mark.group.classList.toggle('beyond', beyond)
+    })
+    const next = state.gates.find((gate) => gate.next)
+    this.route.style.display = next === undefined ? 'none' : ''
+    if (next === undefined) return
+    const { x, y } = gateMarker(state, next)
+    this.route.setAttribute('x2', (x * RIM).toFixed(3))
+    this.route.setAttribute('y2', (y * RIM).toFixed(3))
   }
 }

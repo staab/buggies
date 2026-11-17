@@ -53,6 +53,20 @@ describe('the worlds a planet has', () => {
     expect(isMoon(worldId(9, 'mars'))).toBe(false)
   })
 
+  it('put two portals on the moon, a drive apart, and reachable from the ground', () => {
+    for (const seed of [SEED, 11, 4242]) {
+      const moon = generateWorld(moonOf(seed))
+      expect(moon.kind).toBe('moon')
+      expect(moon.portals, `moon ${seed}`).toHaveLength(2)
+      portalsReachable(moon)
+      // Far enough round from one another that a race may come onto it by one and leave by the other.
+      const [first, second] = moon.portals
+      expect(angleBetween(upOf(first!.at), upOf(second!.at)) * moon.radius).toBeGreaterThanOrEqual(600)
+      // And the lander it brought still stands, with its flag.
+      expect(moon.buildings.map((building) => building.kind).sort()).toEqual(['flag', 'lander'])
+    }
+  }, 120_000)
+
   it('pull weakly on Mercury, and hold its cars to whatever they drive on there alone', () => {
     expect(WORLD_TRAITS.mercury.gravity).toBeLessThan(WORLD_TRAITS.planet.gravity)
     for (const kind of WORLD_KINDS) expect(WORLD_TRAITS[kind].cling > 0).toBe(kind === 'mercury')

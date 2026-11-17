@@ -8,8 +8,8 @@ let known: Uint8Array | null = null
 /**
  * The player's nostr key, secret: made on their first visit and kept in
  * the browser for every visit after. It is used for one thing only, to
- * prove to the server which seat is theirs, so that what they have won,
- * their achievements and gems, is kept for them. Where the browser keeps
+ * prove to the server which player is theirs, so that what they have won
+ * and their achievements are kept for them. Where the browser keeps
  * nothing, it is made afresh for this visit alone.
  */
 export function playerKey(): Uint8Array {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DIAL_LENGTH, DIAL_SWEEP, damageColor, dialArc, dialFraction, dialTop, needleAngle } from './hud.ts'
+import { DIAL_LENGTH, DIAL_SWEEP, clockLabel, compassText, damageColor, dialArc, dialFraction, dialTop, needleAngle, placeLabel, raceText } from './hud.ts'
 
 function channels(style: string): number[] {
   return style.match(/\d+/g)!.map(Number)
@@ -46,5 +46,48 @@ describe('the damage dial', () => {
       lastRed = red!
     }
     expect(damageColor(2)).toBe(damageColor(1))
+  })
+})
+
+describe('the race block', () => {
+  it('says where the car stands, in the order it came', () => {
+    expect(placeLabel(1, 5)).toBe('1st of 5')
+    expect(placeLabel(2, 5)).toBe('2nd of 5')
+    expect(placeLabel(3, 5)).toBe('3rd of 5')
+    expect(placeLabel(4, 8)).toBe('4th of 8')
+    // The teens are all th, however they end.
+    expect(placeLabel(11, 12)).toBe('11th of 12')
+    expect(placeLabel(12, 12)).toBe('12th of 12')
+    expect(placeLabel(13, 20)).toBe('13th of 20')
+    expect(placeLabel(21, 30)).toBe('21st of 30')
+  })
+
+  it('runs the race clock up in minutes and seconds', () => {
+    expect(clockLabel(0)).toBe('0:00')
+    expect(clockLabel(9.9)).toBe('0:09')
+    expect(clockLabel(65)).toBe('1:05')
+    expect(clockLabel(600)).toBe('10:00')
+    // A race that runs long enough is told in hours too, and a countdown is not told as negative time.
+    expect(clockLabel(3725)).toBe('1:02:05')
+    expect(clockLabel(-3)).toBe('0:00')
+  })
+
+  it('reads the race as place, gate, world and time', () => {
+    expect(raceText({ place: 2, of: 5, checkpoint: 2, ofCheckpoints: 6, world: 1, ofWorlds: 3, seconds: 65 })).toEqual({
+      place: '2nd of 5',
+      along: 'gate 3 of 6',
+      world: 'world 1 of 3',
+      time: '1:05',
+    })
+    // Past the last gate of the world, the block still names that gate rather than one past it.
+    expect(raceText({ place: 1, of: 1, checkpoint: 6, ofCheckpoints: 6, world: 3, ofWorlds: 3, seconds: 0 }).along).toBe('gate 6 of 6')
+  })
+})
+
+describe('the compass', () => {
+  it('says which gate it points at and how far, in round meters and then kilometers', () => {
+    expect(compassText({ angle: 0, meters: 123, label: '3' })).toEqual({ gate: 'gate 3', distance: '125 m' })
+    expect(compassText({ angle: 1, meters: 1460, label: 'PORTAL' })).toEqual({ gate: 'portal', distance: '1.5 km' })
+    expect(compassText({ angle: -1, meters: 2, label: 'FINISH' })).toEqual({ gate: 'finish', distance: '0 m' })
   })
 })

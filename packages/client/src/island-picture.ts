@@ -7,6 +7,28 @@ import { WORLD_LOOKS, groundTone } from './world-looks.ts'
 /** Rock with no room in it, drawn dark. */
 const SOLID = new THREE.Color('#141110')
 
+/** A run across an island's picture: a river or a road, drawn over the colors once they are painted. */
+export interface IslandLine {
+  /** Where it goes, in picture coordinates each 0 to 1. */
+  readonly points: readonly { u: number; v: number }[]
+  readonly closed: boolean
+  readonly color: string
+  readonly width: number
+}
+
+/**
+ * A world as a picture, ready to be painted anywhere: its colors a byte a
+ * channel, row by row, and the lines of its rivers and roads over them. It
+ * is plain data, so it can be made off the page's thread and handed over.
+ */
+export interface IslandPicture {
+  /** How many pixels across, and down: twice as wide as it is tall. */
+  readonly width: number
+  readonly height: number
+  readonly pixels: Uint8ClampedArray
+  readonly lines: readonly IslandLine[]
+}
+
 /**
  * Where a point of the planet is on its picture, each 0 to 1: its
  * longitude across, from the far side round, and its latitude down, from
@@ -30,17 +52,14 @@ export function offPicture(u: number, v: number): Vec3 {
 /**
  * A world as a picture this many pixels across, twice as wide as it is
  * tall: the sea by its depth, the land by its height, in the world's own
- * colors, the rock it is shut in dark, and the rivers and the roads over
- * it, the whole way round.
+ * colors, the rock it is shut in dark, and the runs its rivers and its
+ * roads make, the whole way round. No canvas is touched, so it can be made
+ * where there is no page.
  */
-export function drawIsland(world: World, pixels: number): HTMLCanvasElement {
-  const canvas = document.createElement('canvas')
-  const across = pixels
-  const down = Math.round(pixels / 2)
-  canvas.width = across
-  canvas.height = down
-  const context = canvas.getContext('2d')
-  if (context === null) return canvas
+export function islandPixels(world: World, pixels: number): IslandPicture {
+  const width = pixels
+  const height = Math.round(pixels / 2)
+  const data = new Uint8ClampedArray(width * height * 4)
   const { heights } = world.ground
   const look = WORLD_LOOKS[world.kind]
   let lowest = Infinity
@@ -50,47 +69,73 @@ export function drawIsland(world: World, pixels: number): HTMLCanvasElement {
     lowest = Math.min(lowest, heights[at]!)
     highest = Math.max(highest, heights[at]!)
   }
-  const image = context.createImageData(across, down)
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
-  for (let row = 0; row < down; row++) {
-    for (let col = 0; col < across; col++) {
-      const direction = offPicture((col + 0.5) / across, (row + 0.5) / down)
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const direction = offPicture((col + 0.5) / width, (row + 0.5) / height)
       const nearest = nearestGridPoint(world, direction)
       if (roomAt(world.roof, heights, nearest)) groundTone(look, sphereHeight(world.ground, direction), lowest, highest, world.seaLevel, world.districtOf[nearest]!, color)
       else color.copy(SOLID)
       color.getRGB(rgb, THREE.SRGBColorSpace)
-      const at = (row * across + col) * 4
-      image.data[at] = rgb.r * 255
-      image.data[at + 1] = rgb.g * 255
-      image.data[at + 2] = rgb.b * 255
-      image.data[at + 3] = 255
+      const at = (row * width + col) * 4
+      data[at] = rgb.r * 255
+      data[at + 1] = rgb.g * 255
+      data[at + 2] = rgb.b * 255
+      data[at + 3] = 255
     }
   }
-  context.putImageData(image, 0, 0)
-  // A line through the points, broken where it runs off one side of the picture and on at the other.
-  const trace = (points: readonly Vec3[], closed: boolean): void => {
-    const spots = points.map(onPicture)
-    if (closed && spots.length > 0) spots.push(spots[0]!)
-    context.beginPath()
-    spots.forEach((spot, i) => {
-      const x = spot.u * across
-      const y = spot.v * down
-      if (i === 0 || Math.abs(spot.u - spots[i - 1]!.u) > 0.5) context.moveTo(x, y)
-      else context.lineTo(x, y)
-    })
-    context.stroke()
+  const lines: IslandLine[] = []
+  for (const river of world.rivers) {
+    lines.push({ points: river.points.map((point) => onPicture(point.at)), closed: false, color: '#4f9fd0', width: 1.5 })
   }
-  context.lineCap = 'round'
-  context.lineJoin = 'round'
-  context.strokeStyle = '#4f9fd0'
-  context.lineWidth = 1.5
-  for (const river of world.rivers) trace(river.points.map((point) => point.at), false)
   for (const road of world.roads) {
     if (road.kind === 'street' || road.kind === 'ramp') continue
-    context.strokeStyle = road.kind === 'highway' ? '#f2d27a' : '#d8d2c4'
-    context.lineWidth = road.kind === 'highway' ? 2.5 : 1.2
-    trace(road.points, road.closed)
+    lines.push({
+      points: road.points.map(onPicture),
+      closed: road.closed,
+      color: road.kind === 'highway' ? '#f2d27a' : '#d8d2c4',
+      width: road.kind === 'highway' ? 2.5 : 1.2,
+    })
+  }
+  return { width, height, pixels: data, lines }
+}
+
+/** Paint an island's picture into a canvas: its colors first, then a line through the points of every river and road, broken where it runs off one side of the picture and on at the other. */
+export function paintIsland(picture: IslandPicture): HTMLCanvasElement {
+  const { width, height } = picture
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (context === null) return canvas
+  const image = context.createImageData(width, height)
+  image.data.set(picture.pixels)
+  context.putImageData(image, 0, 0)
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  for (const line of picture.lines) {
+    const spots = line.points
+    context.strokeStyle = line.color
+    context.lineWidth = line.width
+    context.beginPath()
+    spots.forEach((spot, i) => {
+      const x = spot.u * width
+      const y = spot.v * height
+      const before = spots[i - 1]
+      if (i === 0 || before === undefined || Math.abs(spot.u - before.u) > 0.5) context.moveTo(x, y)
+      else context.lineTo(x, y)
+    })
+    if (line.closed && spots.length > 0) context.closePath()
+    context.stroke()
   }
   return canvas
+}
+
+/**
+ * A world as a picture this many pixels across, twice as wide as it is
+ * tall, ready to draw, the whole way round.
+ */
+export function drawIsland(world: World, pixels: number): HTMLCanvasElement {
+  return paintIsland(islandPixels(world, pixels))
 }

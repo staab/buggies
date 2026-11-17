@@ -1,7 +1,19 @@
-import { NOT_RACING, NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
+import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
-import type { LooseSnapshot, MeteorSnapshot, PickupSnapshot, PropSnapshot, RobotSnapshot, RocketSnapshot, SnapshotMessage, SpiderSnapshot, UfoSnapshot, VehicleSnapshot } from './wire.ts'
+import type {
+  LooseSnapshot,
+  MeteorSnapshot,
+  PickupSnapshot,
+  PropSnapshot,
+  RaceView,
+  RobotSnapshot,
+  RocketSnapshot,
+  SnapshotMessage,
+  SpiderSnapshot,
+  UfoSnapshot,
+  VehicleSnapshot,
+} from './wire.ts'
 
 /**
  * What a room's snapshots are gathered into, kept from one to the next so
@@ -44,16 +56,18 @@ export function createRoomSnapshots(): RoomSnapshots {
 }
 
 /**
- * Where everything in an arena is, for the wire. The vehicles and rockets
- * go every time; of the bananas, the whole word or only what changed since
- * the last snapshot told of them, as asked. The message points into the
- * room's scratch, so it is to be encoded before the next is gathered.
+ * Where everything in an arena is, for the wire, and how the race this
+ * world is one of stands. The vehicles and rockets go every time; of the
+ * bananas, the whole word or only what changed since the last snapshot told
+ * of them, as asked. The message points into the room's scratch, so it is
+ * to be encoded before the next is gathered.
  */
 export function gatherSnapshot(
   arena: Arena,
   out: RoomSnapshots,
   appliedInputOf: (seat: Seat) => VehicleInput,
   whole: boolean,
+  race: RaceView | null,
 ): SnapshotMessage {
   if (whole) out.removed.length = 0
   else gatherRemoved(arena, out)
@@ -62,7 +76,7 @@ export function gatherSnapshot(
     ackInputTick: -1,
     full: whole,
     looseNext: arena.looseNext,
-    race: arena.race,
+    race,
     vehicles: gatherVehicles(arena, out, appliedInputOf),
     pickups: gatherPickups(arena, out, whole),
     loose: gatherLoose(arena, out, whole),
@@ -103,15 +117,11 @@ function gatherVehicles(
       damage: 0,
       wrecked: false,
       score: 0,
-      gems: 0,
       collected: 0,
       kills: 0,
       robotKills: 0,
-      game: null,
-      gamesWon: 0,
       achievements: 0,
       lastAchievement: 0,
-      racePassed: NOT_RACING,
       weapon: 'none',
       weaponHeld: 0,
       burnLeft: 0,
@@ -136,16 +146,12 @@ function gatherVehicles(
     vehicle.damage = seat.vehicle.damage
     vehicle.wrecked = seat.vehicle.wrecked
     vehicle.score = seat.score
-    vehicle.gems = seat.gems
     vehicle.npc = seat.npc
     vehicle.collected = seat.collected
     vehicle.kills = seat.kills
     vehicle.robotKills = seat.robotKills
-    vehicle.game = seat.game
-    vehicle.gamesWon = seat.gamesWon
     vehicle.achievements = seat.achievements
     vehicle.lastAchievement = seat.lastAchievement
-    vehicle.racePassed = seat.racePassed
     vehicle.weapon = seat.weapon
     vehicle.weaponHeld = seat.weaponHeld
     vehicle.burnLeft = seat.burnLeft

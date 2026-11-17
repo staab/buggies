@@ -6,20 +6,20 @@ import { MemoryPlayerStore } from '@buggies/net'
 /** How long after something changes it is written down: changes close together are written once. */
 const WRITE_AFTER_MS = 2000
 
-/** What the file holds of each key. */
+/** What the file holds of each key: the feats it has been paid, and the bananas it held when it last left a free drive. */
 interface Kept {
   readonly achievements: readonly number[]
-  readonly gems: number
   /** Kept only since bananas were remembered: none, in a file from before. */
   readonly bananas?: number
 }
 
 /**
- * What the server keeps of each player's nostr key, their achievements,
- * their gems and their bananas, kept in a file so it outlasts the server: read when the
- * server starts, and written a moment after anything changes, to a file
- * beside it first and then put in its place, so a crash part way through
- * never leaves half a file.
+ * What the server keeps of each player's nostr key, their achievements and
+ * the bananas they last held in a free drive, kept in a file so it outlasts
+ * the server: read when the server starts, and written a moment after
+ * anything changes, to a file beside it first and then put in its place, so
+ * a crash part way through never leaves half a file. A file from before
+ * gems went is read as it is, the gems ignored.
  */
 export class PlayerFile extends MemoryPlayerStore {
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -34,7 +34,7 @@ export class PlayerFile extends MemoryPlayerStore {
     }
     if (text === null) return
     const kept = JSON.parse(text) as Record<string, Kept>
-    for (const [pubkey, { achievements, gems, bananas = 0 }] of Object.entries(kept)) this.byKey.set(pubkey, { earned: new Set(achievements), gems, bananas })
+    for (const [pubkey, { achievements, bananas = 0 }] of Object.entries(kept)) this.byKey.set(pubkey, { earned: new Set(achievements), bananas })
   }
 
   protected override changed(): void {
@@ -55,7 +55,7 @@ export class PlayerFile extends MemoryPlayerStore {
 
   private write(): void {
     const kept: Record<string, Kept> = {}
-    for (const [pubkey, record] of this.byKey) kept[pubkey] = { achievements: [...record.earned].sort((a, b) => a - b), gems: record.gems, bananas: record.bananas }
+    for (const [pubkey, record] of this.byKey) kept[pubkey] = { achievements: [...record.earned].sort((a, b) => a - b), bananas: record.bananas }
     mkdirSync(dirname(this.path), { recursive: true })
     const fresh = `${this.path}.writing`
     writeFileSync(fresh, JSON.stringify(kept))

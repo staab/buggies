@@ -22,9 +22,9 @@ describe('showroom', () => {
   it('turns whatever is on the turntable, and swaps it for another', () => {
     const showroom = createShowroomMode()
     showroom.resize(16 / 9)
-    expect(showroom.vehicle).toBeNull()
+    expect(showroom.vehicle()).toBeNull()
     showroom.show('tank')
-    expect(showroom.vehicle).toBe('tank')
+    expect(showroom.vehicle()).toBe('tank')
     const before = showroom.camera.position.clone()
     // It starts side on, nose to the left of the camera, and turns from there.
     const turntable = showroom.scene!.children.find((child) => child instanceof THREE.Group)!
@@ -37,7 +37,7 @@ describe('showroom', () => {
     expect(box.min.y).toBeLessThanOrEqual(0)
     expect(showroom.camera.position.equals(before)).toBe(true)
     showroom.show('goKart')
-    expect(showroom.vehicle).toBe('goKart')
+    expect(showroom.vehicle()).toBe('goKart')
     expect(turntable.rotation.y).toBeCloseTo(START_YAW, 5)
     // A smaller vehicle is looked at from nearer.
     expect(showroom.camera.position.length()).toBeLessThan(before.length())

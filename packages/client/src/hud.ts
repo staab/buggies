@@ -1,42 +1,12 @@
 import * as THREE from 'three'
 
-import { AchievementToast, type AchievementState } from './achievement-toast.ts'
-import { Banner, type BannerState } from './banner.ts'
-import { Radar, type RadarState } from './radar.ts'
+import { AchievementToast } from './achievement-toast.ts'
+import { Banner } from './banner.ts'
+import type { ControlHint, GateArrow, HudState, RaceHud } from './mode.ts'
+import { Radar } from './radar.ts'
 
-/** What the HUD shows of a mode: a title always, and the driving gauges when someone is driving. */
-export interface HudState {
-  /** Who is driving what, where. */
-  title: string
-  /** How fast, in m/s. */
-  speed?: number
-  /** The most this vehicle does, in m/s: the dial reads to just past it. */
-  maxSpeed?: number
-  /** How beaten up, 0 untouched to 1 wrecked. */
-  damage?: number
-  /** Which keys do what, for whoever this is for. */
-  controls?: readonly ControlHint[]
-  /** Bananas taken. */
-  score?: number
-  /** Gems won with games and races, all told. */
-  gems?: number
-  /** How the car is keeping up with the server, in a line, for anyone wondering about a jump. */
-  sync?: string
-  /** Where everyone else is, for the mini-map. */
-  radar?: RadarState
-  /** The games being played and how far along they are, a line each; nothing in free play. */
-  game?: string
-  /** The big words across the middle of the screen, for a game starting or over. */
-  banner?: BannerState
-  /** A feat just paid for, told of at the top of the screen. */
-  achievement?: AchievementState
-}
-
-/** Keys and what they do: `W` `A` `S` `D` "to drive". */
-export interface ControlHint {
-  keys: readonly string[]
-  does: string
-}
+// What the HUD is filled with belongs to the shell's contract with a mode: mode.ts has it.
+export type { ControlHint, HudState } from './mode.ts'
 
 const TO_KPH = 3.6
 
@@ -88,6 +58,62 @@ const mixed = new THREE.Color()
 export function damageColor(damage: number): string {
   return mixed.lerpColors(UNHURT, WRECKED, THREE.MathUtils.clamp(damage, 0, 1)).getStyle()
 }
+
+/** A place in words: "1st", "2nd", "3rd", "11th", "21st". */
+function ordinal(place: number): string {
+  const rest = place % 100
+  if (rest >= 11 && rest <= 13) return `${place}th`
+  const last = place % 10
+  return `${place}${last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th'}`
+}
+
+/** Where a car stands in a race, among how many are in it: "2nd of 5". */
+export function placeLabel(place: number, of: number): string {
+  return `${ordinal(place)} of ${of}`
+}
+
+/** A time, in seconds, as minutes and seconds: "1:05", and hours before those where it runs that long. */
+export function clockLabel(seconds: number): string {
+  const whole = Math.max(Math.floor(seconds), 0)
+  const padded = (value: number): string => String(value).padStart(2, '0')
+  const hours = Math.floor(whole / 3600)
+  const minutes = Math.floor(whole / 60) % 60
+  return hours > 0 ? `${hours}:${padded(minutes)}:${padded(whole % 60)}` : `${minutes}:${padded(whole % 60)}`
+}
+
+/** The race block's four readings, as the HUD shows them. */
+export interface RaceText {
+  /** Where the car stands, and out of how many: "2nd of 5". */
+  place: string
+  /** The gate it is heading for, and how many this world has: "gate 3 of 6". */
+  along: string
+  /** Which world of the course it is on: "world 2 of 3". */
+  world: string
+  /** How long the race has been on: "1:05". */
+  time: string
+}
+
+/**
+ * The race block's readings, from how the race is going for the car: where
+ * it stands, which gate it is heading for, which world of the course it is
+ * on, and how long the race has been on.
+ */
+export function raceText(race: RaceHud): RaceText {
+  return {
+    place: placeLabel(race.place, race.of),
+    along: `gate ${Math.min(race.checkpoint + 1, race.ofCheckpoints)} of ${race.ofCheckpoints}`,
+    world: `world ${race.world} of ${race.ofWorlds}`,
+    time: clockLabel(race.seconds),
+  }
+}
+
+/** What the compass says of the gate it points at: which it is, and how far. */
+export function compassText(arrow: GateArrow): { gate: string; distance: string } {
+  const gate = /^\d+$/.test(arrow.label) ? `gate ${arrow.label}` : arrow.label.toLowerCase()
+  const distance = arrow.meters >= 1000 ? `${(arrow.meters / 1000).toFixed(1)} km` : `${Math.round(arrow.meters / 5) * 5} m`
+  return { gate, distance }
+}
+
 
 const SVG = 'http://www.w3.org/2000/svg'
 
@@ -176,18 +202,27 @@ function caret(): SVGSVGElement {
 }
 
 /**
- * The corner of the screen that says how it is going: the bananas held,
- * the gems won,
- * a speedometer, a damage dial beside it
- * that fills and reddens as the car is knocked about, a word on the moment,
- * and the keys in a drawer under it all that a caret pulls open and shut.
+ * The corner of the screen that says how it is going: where the car stands
+ * in a race and which gate it is heading for, the bananas held, a
+ * speedometer, a damage dial beside it that fills and reddens as the car
+ * is knocked about, a word on the moment, and the keys in a drawer under
+ * it all that a caret pulls open and shut. An arrow at the edge of the
+ * screen points the way to the next gate while it is out of sight.
  */
 export class Hud {
   private readonly root: HTMLElement
   private readonly title = div('title')
+  private readonly race = div('race')
+  private readonly racePlace = div('place')
+  private readonly raceAlong = div('along')
+  private readonly raceWorld = div('world')
+  private readonly raceTime = div('time')
+  private readonly compass: HTMLElement | null
+  private readonly needle = div('needle')
+  private readonly compassGate = div('gate')
+  private readonly compassDistance = div('distance')
   private readonly row = div('row')
   private readonly score = div('score')
-  private readonly gems = div('score gems')
   private readonly game = div('game')
   private readonly gauges = div('gauges')
   private readonly speedo = buildDial('km/h')
@@ -200,16 +235,21 @@ export class Hud {
   private shownTitle = ''
   private shownControls = ''
   private shownScore = ''
+  private shownRace = ''
   private readonly scoreCount = document.createElement('span')
-  private shownGems = ''
-  private readonly gemCount = document.createElement('span')
   private readonly radar: Radar | null
   private readonly banner: Banner | null
   private readonly achievement: AchievementToast | null
 
-  /** `radarRoot` is where the mini-map goes, in a corner of its own, `bannerRoot` where the big words go, over the middle, and `achievementRoot` where a feat is told of. */
-  constructor(root: HTMLElement, radarRoot?: HTMLElement, bannerRoot?: HTMLElement, achievementRoot?: HTMLElement) {
+  /**
+   * `radarRoot` is where the mini-map goes, in a corner of its own,
+   * `bannerRoot` where the big words go, over the middle, `achievementRoot`
+   * where a feat is told of, and `compassRoot` where the compass to the next
+   * gate stands, under the car.
+   */
+  constructor(root: HTMLElement, radarRoot?: HTMLElement, bannerRoot?: HTMLElement, achievementRoot?: HTMLElement, compassRoot?: HTMLElement) {
     this.root = root
+    this.compass = compassRoot ?? null
     this.radar = radarRoot === undefined ? null : new Radar(radarRoot)
     this.banner = bannerRoot === undefined ? null : new Banner(bannerRoot)
     this.achievement = achievementRoot === undefined ? null : new AchievementToast(achievementRoot)
@@ -234,20 +274,26 @@ export class Hud {
     )
     banana.append(tilted)
     this.score.append(banana, this.scoreCount)
-    // A gem: a cut stone, its table and its crown's facets catching the light.
-    const gem = svg('svg', { class: 'gem', viewBox: '0 0 24 24' })
-    gem.append(svg('path', { d: 'M6 4 L18 4 L22 9 L12 21 L2 9 Z', fill: '#3fb6e8' }))
-    gem.append(svg('path', { d: 'M2 9 L22 9 L12 21 Z', fill: '#2a8fc4' }))
-    gem.append(svg('path', { d: 'M6 4 L9 9 L12 4 L15 9 L18 4', fill: 'none', stroke: '#bfeaff', 'stroke-width': 0.8, 'stroke-linejoin': 'round' }))
-    this.gems.append(gem, this.gemCount)
-    this.row.append(this.score, this.gems)
+    this.row.append(this.score)
     this.drawer.append(this.controls, this.sync)
     this.toggle.type = 'button'
     this.toggle.className = 'toggle'
     this.toggle.append(caret())
     this.toggle.addEventListener('click', () => this.expand(!this.expanded))
     this.expand(false)
-    root.append(this.title, this.row, this.game, this.gauges, this.drawer, this.toggle)
+    this.race.append(this.racePlace, this.raceAlong, this.raceWorld, this.raceTime)
+    this.race.hidden = true
+    // An arrowhead, pointing straight up, the way the car faces, until the way to the next gate turns it.
+    const arrowhead = svg('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' })
+    arrowhead.append(svg('path', { d: 'M12 1.5 L21.5 17 L12 12.5 L2.5 17 Z', fill: 'currentColor', stroke: 'rgba(20, 16, 4, 0.85)', 'stroke-width': 1.2, 'stroke-linejoin': 'round' }))
+    this.needle.append(arrowhead)
+    if (this.compass !== null) {
+      const reading = div('reading')
+      reading.append(this.compassGate, this.compassDistance)
+      this.compass.replaceChildren(this.needle, reading)
+      this.compass.hidden = true
+    }
+    root.append(this.title, this.race, this.row, this.game, this.gauges, this.drawer, this.toggle)
     this.render(null)
   }
 
@@ -266,6 +312,7 @@ export class Hud {
     this.radar?.render(state?.radar)
     this.banner?.render(state?.banner)
     this.achievement?.render(state?.achievement)
+    this.showCompass(state?.arrow)
     if (state === null) return
 
     if (state.title !== this.shownTitle) {
@@ -278,16 +325,10 @@ export class Hud {
       this.scoreCount.textContent = score
     }
     this.score.hidden = score === ''
-    const gems = state.gems === undefined ? '' : String(state.gems)
-    if (gems !== this.shownGems) {
-      this.shownGems = gems
-      this.gemCount.textContent = gems
-    }
-    this.gems.hidden = gems === ''
+    this.showRace(state.race)
     const game = state.game ?? ''
     if (game !== this.game.textContent) this.game.textContent = game
     this.game.hidden = game === ''
-
     const { speed, maxSpeed, damage: wear } = state
     const driving = speed !== undefined && maxSpeed !== undefined && wear !== undefined
     this.row.hidden = !driving && score === ''
@@ -310,6 +351,33 @@ export class Hud {
   notice(text: string): void {
     this.render({ title: text })
     this.root.classList.add('busy')
+  }
+
+  /** The compass under the car: always pointing the way to the next gate through a race, with which gate it is and how far. */
+  private showCompass(arrow: GateArrow | undefined): void {
+    if (this.compass === null) return
+    this.compass.hidden = arrow === undefined
+    if (arrow === undefined) return
+    this.needle.style.transform = `rotate(${arrow.angle.toFixed(3)}rad)`
+    const { gate, distance } = compassText(arrow)
+    if (this.compassGate.textContent !== gate) this.compassGate.textContent = gate
+    if (this.compassDistance.textContent !== distance) this.compassDistance.textContent = distance
+  }
+
+  private showRace(race: RaceHud | undefined): void {
+    this.race.hidden = race === undefined
+    if (race === undefined) {
+      this.shownRace = ''
+      return
+    }
+    const text = raceText(race)
+    const key = JSON.stringify(text)
+    if (key === this.shownRace) return
+    this.shownRace = key
+    this.racePlace.textContent = text.place
+    this.raceAlong.textContent = text.along
+    this.raceWorld.textContent = text.world
+    this.raceTime.textContent = text.time
   }
 
   private showControls(controls: readonly ControlHint[]): void {

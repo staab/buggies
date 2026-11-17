@@ -309,6 +309,9 @@ const CHIME = [1318.5, 1661.2, 1975.5]
 /** The notes of a sad trombone, falling by half steps. */
 const BUMMER = [293.7, 277.2, 261.6, 246.9]
 
+/** The four rising notes of a race won: a call, with its top note held over its fifth and octave. */
+const FANFARE = [523.3, 659.3, 784, 1046.5]
+
 /** A siren: a tone wailing up and down between these, this many times a second and this loud. */
 const SIREN = { low: 620, high: 960, wail: 0.9, level: 0.18 } as const
 
@@ -566,6 +569,36 @@ export class Sound {
     note.connect(gain).connect(this.master)
     note.start(now)
     note.stop(now + length)
+  }
+
+  /** A race won: a fanfare of four rising notes over the chime, the last note held over its fifth and octave. */
+  fanfare(distance = 0): void {
+    const loudness = earshot(distance)
+    if (loudness <= 0) return
+    const { context } = this
+    const now = context.currentTime
+    FANFARE.forEach((frequency, index) => {
+      const last = index === FANFARE.length - 1
+      const at = now + index * 0.16
+      const length = last ? 0.9 : 0.18
+      // The last note is played with its fifth and its octave under it, which is what makes it carry.
+      for (const ratio of last ? [1, 1.5, 2] : [1]) {
+        const note = context.createOscillator()
+        note.type = 'sawtooth'
+        note.frequency.value = frequency * ratio
+        const muffle = context.createBiquadFilter()
+        muffle.type = 'lowpass'
+        muffle.frequency.value = 3200
+        const gain = context.createGain()
+        gain.gain.setValueAtTime(0.0001, at)
+        gain.gain.exponentialRampToValueAtTime((0.16 * loudness) / (ratio === 1 ? 1 : 2), at + 0.02)
+        gain.gain.setValueAtTime((0.16 * loudness) / (ratio === 1 ? 1 : 2), at + length - 0.08)
+        gain.gain.exponentialRampToValueAtTime(0.001, at + length)
+        note.connect(muffle).connect(gain).connect(this.master)
+        note.start(at)
+        note.stop(at + length)
+      }
+    })
   }
 
   /** A game lost: a sad trombone, four notes falling, the last one wobbling away. */

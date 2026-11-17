@@ -15,10 +15,12 @@ describe('the portals', () => {
     moon = generateMoon(5)
   }, 120_000)
 
-  it('stand three to five on a planet and one on its moon', () => {
+  it('stand three to five on a planet and two on its moon', () => {
     expect(planet.portals.length).toBeGreaterThanOrEqual(3)
     expect(planet.portals.length).toBeLessThanOrEqual(5)
-    expect(moon.portals).toHaveLength(1)
+    // Two ways off the moon, well apart, so that a course can come in by one and go out of the other.
+    expect(moon.portals).toHaveLength(2)
+    expect(apart(moon.portals[0]!.at, moon.portals[1]!.at)).toBeGreaterThanOrEqual(600)
     expect(moon.radius).toBeCloseTo(planet.radius / 2, 6)
     expect(moon.kind).toBe('moon')
     expect(isMoon(moon.seed)).toBe(true)

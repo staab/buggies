@@ -7,7 +7,7 @@ import { DRY, onLand, overSurface, randomDirection, tangentFrame, upOf, waterUnd
 const { cos, sin } = exact
 
 /** How many bananas a map has, out on it or spilled from wrecks: a spilled one holds a slot until it is taken. */
-export const BANANA_SLOTS = 256
+export const BANANA_SLOTS = 128
 /** How many health packs are out on a map at once, in the slots after the bananas'. */
 export const HEALTH_SLOTS = 32
 export const PICKUP_SLOTS = BANANA_SLOTS + HEALTH_SLOTS

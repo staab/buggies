@@ -4,23 +4,15 @@ import {
   copyVehicleInput,
   createVehicleInput,
   createVehicleStepState,
-  leaveSeat,
   readVehicleStepState,
-  placeRobot,
-  seatRobotBody,
-  setPickup,
-  movedBody,
   setCoasting,
   writeCoasting,
-  takeSeat,
   writeVehicleStepState,
   type Arena,
   type Pickup,
-  type Race,
   type Robot,
   type Ufo,
   type Spider,
-  seatSpiderBody,
   type Meteor,
   type Rocket,
   type Loose,
@@ -30,11 +22,15 @@ import {
   type VehicleStepState,
   type VehicleTuning,
 } from '@buggies/game'
-import { quat, v3, vcopy, vlength, vsub, type Quat, type Vec3 } from '@buggies/physics'
+import { quat, v3, vlength, vsub, type Quat, type Vec3 } from '@buggies/physics'
 
 import type { BananaLedger } from './ledger.ts'
 import { INPUT_TIMELINE_TICKS } from './protocol.ts'
-import type { SnapshotMessage } from './wire.ts'
+import { rememberAppliedInputs, seatVehicles, writeSnapshotBodies, type ReconcileOutcome } from './spectator.ts'
+import type { RaceView, SnapshotMessage } from './wire.ts'
+
+// What a watcher's mirror is made of is kept with the prediction, which shares its snapshot handling, and is offered from here so the package need not name it.
+export * from './spectator.ts'
 
 /** The most ticks a correction will be replayed over before giving up and snapping. */
 export const MAX_REPLAY_TICKS = INPUT_TIMELINE_TICKS
@@ -108,8 +104,6 @@ class PredictionHistory {
   }
 }
 
-export type ReconcileOutcome = 'idle' | 'replayed' | 'resynced'
-
 export interface PredictionStats {
   replayHorizonTicks: number
   lastCorrectionMeters: number
@@ -169,6 +163,12 @@ export class LocalPrediction {
   private readonly stepInput = createVehicleInput()
   private readonly displacement = v3()
 
+  /**
+   * How the race this world is one of stands, as the server last said: the
+   * places, the gates passed and the countdown. `null` in free drive.
+   */
+  race: RaceView | null = null
+
   private epoch: number
   private reconciledThroughTick: number
   private newestSnapshot: SnapshotMessage | null = null
@@ -217,11 +217,6 @@ export class LocalPrediction {
   /** Bananas spilled from wrecks, as the mirror has them. */
   get loose(): readonly Loose[] {
     return this.mirror.loose
-  }
-
-  /** The race on over the island, as the server last said, if any. */
-  get race(): Race | null {
-    return this.mirror.race
   }
 
   /** The robots, as the mirror has them: the server's word, run ahead. */
@@ -276,8 +271,8 @@ export class LocalPrediction {
     const own = snapshot.vehicles.find((vehicle) => vehicle.seat === this.seat.id)
     if (own === undefined) return 'idle'
 
-    this.seatVehicles(snapshot)
-    this.rememberAppliedInputs(snapshot)
+    seatVehicles(this.mirror, snapshot)
+    rememberAppliedInputs(this.appliedInputs, snapshot)
 
     const predictedThroughTick = this.mirror.tick
     const horizon = predictedThroughTick - snapshot.tick
@@ -296,7 +291,7 @@ export class LocalPrediction {
     this.stats.lastCorrectionMeters = vlength(vsub(this.displacement, predicted.translation, own.position))
     this.stats.lastCorrectionRadians = angleBetween(predicted.rotation, own.rotation)
 
-    this.writeSnapshotBodies(snapshot)
+    this.applySnapshot(snapshot)
     writeVehicleStepState(this.seat.vehicle, predicted.step)
     // How beaten up the car is, and whether it is a wreck, is the server's
     // word, not the prediction's: a wreck predicted that the server never
@@ -367,7 +362,7 @@ export class LocalPrediction {
     // reset too, not only its pose; the knocks it kept are the snapshot's
     // to say, which is why it comes after.
     if (fresh) writeVehicleStepState(this.seat.vehicle, createVehicleStepState())
-    this.writeSnapshotBodies(snapshot)
+    this.applySnapshot(snapshot)
     const from = Math.max(snapshot.tick, throughTick - MAX_REPLAY_TICKS)
     this.mirror.tick = from
     this.history.forget()
@@ -384,7 +379,7 @@ export class LocalPrediction {
    * the next snapshot starts it over properly.
    */
   private jumpTo(tick: number): void {
-    if (this.newestSnapshot !== null) this.writeSnapshotBodies(this.newestSnapshot)
+    if (this.newestSnapshot !== null) this.applySnapshot(this.newestSnapshot)
     this.mirror.tick = tick
     this.history.forget()
     this.history.recordState(tick, this.seat.vehicle)
@@ -392,125 +387,14 @@ export class LocalPrediction {
     this.stats.hardResyncs += 1
   }
 
-  private writeSnapshotBodies(snapshot: SnapshotMessage): void {
-    for (const vehicle of snapshot.vehicles) {
-      const seat = this.mirror.seats[vehicle.seat]
-      if (seat === undefined) continue
-      const { body } = seat.vehicle
-      body.setTranslation(vehicle.position, true)
-      body.setRotation(vehicle.rotation, true)
-      body.setLinvel(vehicle.linearVelocity, true)
-      body.setAngvel(vehicle.angularVelocity, true)
-      movedBody(seat)
-      // Being moved by the server is not being hit: the car reads its knocks
-      // against the velocity it has just been given.
-      vcopy(seat.vehicle.lastLinearVelocity, vehicle.linearVelocity)
-      seat.vehicle.damage = vehicle.damage
-      seat.vehicle.wrecked = vehicle.wrecked
-      seat.score = vehicle.score
-      seat.gems = vehicle.gems
-      seat.npc = vehicle.npc
-      seat.collected = vehicle.collected
-      seat.kills = vehicle.kills
-      seat.robotKills = vehicle.robotKills
-      seat.game = vehicle.game === null ? null : { ...vehicle.game }
-      seat.gamesWon = vehicle.gamesWon
-      seat.achievements = vehicle.achievements
-      seat.lastAchievement = vehicle.lastAchievement
-      seat.racePassed = vehicle.racePassed
-      seat.weapon = vehicle.weapon
-      // Which key was down, so that a replay from here tells a press from a hold as the server will.
-      seat.weaponHeld = vehicle.weaponHeld
-      seat.burnLeft = vehicle.burnLeft
-      seat.rocketsFired = vehicle.rocketsFired
-      seat.stunnedTicks = vehicle.stunnedTicks
-      seat.shockTicks = vehicle.shockTicks
-      seat.magnetTicks = vehicle.magnetTicks
-      seat.plowTicks = vehicle.plowTicks
-      seat.lightsOn = vehicle.lightsOn
-      seat.hornTicks = vehicle.hornTicks
-      // Whether the signal key was down, so that a replay tells a press from a hold as the server will.
-      seat.signalHeld = vehicle.signalHeld
-    }
-    // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
-    for (const moved of this.bananas.takeProps()) {
-      const prop = this.mirror.props[moved.id]
-      if (prop === undefined) continue
-      prop.body.setTranslation(moved.position, true)
-      prop.body.setRotation(moved.rotation, true)
-      prop.body.setLinvel(moved.linearVelocity, true)
-      prop.body.setAngvel(moved.angularVelocity, true)
-    }
-    this.mirror.race = snapshot.race
-    // The robots are where the server has them, their bodies put straight there.
-    for (const known of snapshot.robots) {
-      const robot = this.mirror.robots[known.id]
-      if (robot === undefined) continue
-      robot.road = known.road
-      robot.along = known.along
-      robot.direction = known.direction
-      robot.legs = known.legs
-      robot.target = known.target
-      robot.beamTicks = known.beamTicks
-      robot.cooldownTicks = known.cooldownTicks
-      robot.damage = known.damage
-      robot.deaths = known.deaths
-      placeRobot(this.mirror.planet, robot)
-      seatRobotBody(robot, true)
-    }
-    for (const known of snapshot.ufos) {
-      const ufo = this.mirror.ufos[known.id]
-      if (ufo === undefined) continue
-      vcopy(ufo.position, known.position)
-      ufo.state = known.state
-      ufo.target = known.target
-      ufo.stateTicks = known.stateTicks
-      ufo.cooldownTicks = known.cooldownTicks
-      ufo.legs = known.legs
-      ufo.abductions = known.abductions
-      ufo.damage = known.damage
-      ufo.deaths = known.deaths
-      vcopy(ufo.velocity, known.velocity)
-      ufo.climb = known.climb
-    }
-    for (const known of snapshot.spiders) {
-      const spider = this.mirror.spiders[known.id]
-      if (spider === undefined) continue
-      vcopy(spider.position, known.position)
-      vcopy(spider.forward, known.forward)
-      spider.legs = known.legs
-      vcopy(spider.target, known.target)
-      spider.stride = known.stride
-      spider.bombTicks = known.bombTicks
-      spider.damage = known.damage
-      spider.deaths = known.deaths
-      seatSpiderBody(spider, true)
-    }
-    this.mirror.meteors = snapshot.meteors.map((meteor) => ({
-      id: meteor.id,
-      from: { ...meteor.from },
-      to: { ...meteor.to },
-      bornTick: snapshot.tick - meteor.age,
-    }))
-    this.mirror.rockets = snapshot.rockets.map((rocket) => ({
-      id: rocket.id,
-      owner: rocket.owner,
-      target: rocket.target,
-      position: { ...rocket.position },
-      velocity: { ...rocket.velocity },
-      bornTick: snapshot.tick - rocket.age,
-    }))
-    // The bananas are the server's word alone: whatever the mirror took or
-    // spilled since is put back as the server has it, to be taken again in
-    // the replay if it was right.
-    const { planet } = this.mirror
-    this.bananas.pickups.forEach((known, slot) => {
-      const mine = this.mirror.pickups[slot]
-      if (mine !== undefined) setPickup(planet, mine, slot, known.generation, known.spawnTick)
-    })
-    this.mirror.loose = this.bananas.loose.slice()
-    // Numbered on from where the server is, so a replay's drops get the numbers the server's will.
-    this.mirror.looseNext = snapshot.looseNext
+  /**
+   * The server's word taken into the mirror, and with it the race as this
+   * world sees it; the cars near the local one are then simulated and the
+   * rest coasted round the planet.
+   */
+  private applySnapshot(snapshot: SnapshotMessage): void {
+    writeSnapshotBodies(this.mirror, snapshot, this.bananas)
+    this.race = snapshot.race
     this.chooseCoasting()
   }
 
@@ -527,27 +411,6 @@ export class LocalPrediction {
       const at = seat.vehicle.body.translation()
       const apart = Math.hypot(at.x - own.x, at.y - own.y, at.z - own.z)
       if (seat.coasting ? apart < DRIVEN_WITHIN : apart > COASTING_BEYOND) setCoasting(this.mirror, seat, !seat.coasting)
-    }
-  }
-
-  /** Whoever the server has on the map, the mirror has too, in the same car. */
-  private seatVehicles(snapshot: SnapshotMessage): void {
-    for (const seat of this.mirror.seats) {
-      const present = snapshot.vehicles.find((vehicle) => vehicle.seat === seat.id)
-      if (present === undefined) {
-        if (seat.occupied) leaveSeat(this.mirror, seat.id)
-      } else if (!seat.occupied || seat.profile !== present.profile) {
-        takeSeat(this.mirror, seat.id, present.profile)
-      }
-    }
-  }
-
-  private rememberAppliedInputs(snapshot: SnapshotMessage): void {
-    for (const vehicle of snapshot.vehicles) {
-      if (vehicle.seat === this.seat.id) continue
-      const known = this.appliedInputs.get(vehicle.seat)
-      if (known !== undefined) copyVehicleInput(known, vehicle.appliedInput)
-      else this.appliedInputs.set(vehicle.seat, copyVehicleInput(createVehicleInput(), vehicle.appliedInput))
     }
   }
 }

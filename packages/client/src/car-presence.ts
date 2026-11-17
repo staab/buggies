@@ -21,7 +21,7 @@ import { disposeObject } from './dispose.ts'
 import { distanceFrom, type Ear } from './ear.ts'
 import { Headlights } from './headlights.ts'
 import type { Explosions } from './explosion.ts'
-import type { ControlHint, HudState } from './hud.ts'
+import type { ControlHint, HudState } from './mode.ts'
 import type { Smoke } from './smoke.ts'
 import { SmoothedBody } from './smoothed-body.ts'
 import { PLOW_BLADE_RADIUS, buildPlow } from './weapon-models.ts'
@@ -232,7 +232,7 @@ export class CarPresence {
 
   /** What the HUD says of it, with a line on how it is keeping up with the server if there is one. */
   hudState(title: string, controls: readonly ControlHint[], sync?: string): HudState {
-    const { vehicle, tuning, score, gems } = this.seat
+    const { vehicle, tuning, score } = this.seat
     return {
       title,
       speed: vehicle.speed,
@@ -240,7 +240,6 @@ export class CarPresence {
       damage: vehicle.wrecked ? 1 : vehicle.damage,
       controls,
       score,
-      gems,
       ...(sync === undefined ? {} : { sync }),
     }
   }

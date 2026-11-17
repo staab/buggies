@@ -1,0 +1,477 @@
+/*
+ * The game's room: the slots down the left in the start screen's own
+ * place and size, and the game's options over the world being looked at
+ * down the right. The stage is a hole the world is drawn through; the car
+ * modal, over everything, is where a vehicle is chosen on the showroom's
+ * turntable, a hole of its own.
+ */
+.game-room {
+  position: fixed;
+  inset: 16px;
+  display: grid;
+  grid-template-columns: min(440px, calc(100vw - 32px)) minmax(0, 1fr);
+  gap: 12px;
+  font-size: 13px;
+  pointer-events: none;
+}
+.game-room[hidden] {
+  display: none;
+}
+.game-room h1,
+.game-room h2,
+.game-room h3,
+.game-room p {
+  margin: 0;
+}
+.game-room .label {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+/* Down the left: what the game is, one row a seat, and the two ways on. */
+.game-room .players {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 16px 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+.game-room .head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--edge);
+}
+.game-room .head h1 {
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.game-room .head .status {
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.game-room .slots {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.game-room .slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.game-room .slot.you {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.game-room .slot.in {
+  border-color: rgba(111, 211, 199, 0.55);
+}
+.game-room .slot .said {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.game-room .slot .name {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.game-room .slot .note {
+  color: var(--dim);
+  font-size: 11px;
+}
+.game-room .slot .state {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.game-room .slot.in .state {
+  color: var(--accent);
+}
+.game-room .slot .doing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.game-room .slot .doing button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+/* The car in a slot, as a button where this tab may change it and as a word where it may not, the same width either way so the rows line up. */
+.game-room .slot .vehicle {
+  min-width: 112px;
+  box-sizing: border-box;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+.game-room .slot span.vehicle {
+  padding: 6px 10px;
+  color: var(--dim);
+}
+.game-room .slot .ready {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.game-room .slot .ready input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.game-room .slot .doing .go {
+  border-color: rgba(111, 211, 199, 0.6);
+}
+.game-room .slot .remove {
+  padding: 6px 9px;
+}
+.game-room .add {
+  margin-top: 10px;
+  text-align: center;
+}
+.game-room .add[hidden],
+.game-room .foot .big[hidden] {
+  display: none;
+}
+.game-room .warning {
+  margin-top: 10px;
+  color: #ffb4a2;
+  font-size: 12px;
+}
+.game-room .warning[hidden] {
+  display: none;
+}
+.game-room .foot {
+  display: flex;
+  /* Leave stands as tall as the start beside it, whatever the start says. */
+  align-items: stretch;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+.game-room .foot .leave {
+  margin-left: auto;
+}
+.game-room .big {
+  min-width: 190px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.game-room .big.go:not(:disabled) {
+  border-color: #ffd24a;
+  background: #ffd24a;
+  color: #1d1a10;
+}
+
+/* Down the right: the options card on top, the seed's worlds under it, and the stage they are looked at in. */
+.game-room .course {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.game-room .options {
+  margin: 0;
+  padding: 12px 14px;
+  min-width: 0;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+.game-room .modes {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.game-room .modes .mode {
+  padding: 7px 18px;
+  text-align: center;
+}
+.game-room .fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 20px;
+}
+.game-room .field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.game-room .field[hidden] {
+  display: none;
+}
+.game-room .seed {
+  display: flex;
+  gap: 6px;
+}
+.game-room .seed input {
+  width: 8.5em;
+}
+.game-room .dice {
+  padding: 6px 10px;
+  font-size: 18px;
+  line-height: 1;
+}
+.game-room .segments,
+.game-room .switches {
+  display: flex;
+}
+.game-room .switches {
+  gap: 6px;
+}
+.game-room .segment {
+  padding: 8px 15px;
+  border-radius: 0;
+  text-align: center;
+}
+.game-room .segment:first-child {
+  border-radius: 8px 0 0 8px;
+}
+.game-room .segment:last-child {
+  border-radius: 0 8px 8px 0;
+}
+.game-room .segment + .segment {
+  margin-left: -1px;
+}
+.game-room .switch::before {
+  content: '○ ';
+  color: var(--dim);
+}
+.game-room .switch[aria-pressed='true']::before {
+  content: '● ';
+  color: var(--accent);
+}
+.game-room .host-note {
+  margin-top: 10px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.game-room .host-note[hidden] {
+  display: none;
+}
+.game-room .worlds {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  pointer-events: auto;
+}
+.game-room .world {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 3px;
+  font-size: 11px;
+  text-align: center;
+}
+.game-room .world .icon {
+  font-size: 18px;
+  line-height: 1;
+}
+.game-room .world .label {
+  overflow: hidden;
+  max-width: 100%;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: normal;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+/* The hole the world is drawn through. */
+.game-room .stage {
+  position: relative;
+  flex: 1;
+  min-height: 200px;
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.game-room .stage.making::after {
+  content: 'making the world…';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+}
+
+/* The car modal: the showroom's turntable over the room, its readings under it. */
+.game-room .car-modal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+}
+.game-room .car-modal[hidden] {
+  display: none;
+}
+.game-room .car-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+  padding: 16px 18px 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  /* The room dimmed round the dialog, and the dialog's own panel round the stage: the car shows through a clear hole. */
+  box-shadow: 0 0 0 100vmax rgba(4, 10, 16, 0.62);
+  isolation: isolate;
+}
+.game-room .car-dialog h2 {
+  font-size: 20px;
+}
+/* The turntable's hole, with the way to the car before and after either side of it. */
+.game-room .car-stage {
+  position: relative;
+  flex: none;
+  z-index: -1;
+  box-shadow: 0 0 0 100vmax rgba(8, 20, 30, 0.94);
+  height: min(240px, 34vh);
+  margin: 10px 0 8px;
+}
+.game-room .flick {
+  position: absolute;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(8, 20, 30, 0.65);
+  font-size: 28px;
+  line-height: 1;
+  text-align: center;
+  transform: translateY(-50%);
+}
+.game-room .flick.back {
+  left: 6px;
+}
+.game-room .flick.on {
+  right: 6px;
+}
+.game-room .car-name {
+  font-size: 18px;
+}
+.game-room .car-note {
+  margin-top: 2px;
+  font-size: 12px;
+}
+.game-room .car-ability {
+  margin-top: 3px;
+  color: #ffd24a;
+  font-size: 12px;
+}
+.game-room .car-ability[hidden] {
+  display: none;
+}
+.game-room .stats {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+}
+.game-room .stat {
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.game-room .bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.game-room .bar .fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent), #ffd24a);
+  transition: width 200ms;
+}
+.game-room .pips {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 12px;
+}
+.game-room .pip {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border-radius: 50%;
+}
+.game-room .pip[aria-pressed='true'] {
+  background: var(--accent);
+}
+.game-room .car-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+.game-room .car-foot button {
+  min-width: 120px;
+  padding: 10px 16px;
+  text-align: center;
+}
+.game-room .car-foot .choose {
+  border-color: #ffd24a;
+  background: #ffd24a;
+  color: #1d1a10;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .game-room {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .game-room .players {
+    max-height: 52vh;
+  }
+  .game-room .worlds {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

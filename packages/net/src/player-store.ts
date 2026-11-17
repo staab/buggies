@@ -1,29 +1,24 @@
 /**
  * What the server keeps of each player for good, by their nostr key: the
- * achievements it has been paid, each once ever, whichever island,
- * session or connection it does it again on; the gems its games and races
- * have won it; and the bananas it last held, all kept from one session to
- * the next. The server asks this before it pays and tells it after.
+ * achievements it has been paid, each once ever, whichever world, session
+ * or connection it does it again on; and the bananas it held when it last
+ * left a free drive, to start the next one with. The server asks this
+ * before it pays and tells it after.
  */
 export interface PlayerStore {
   /** The feats a key has been paid for, by id. */
   earned(pubkey: string): ReadonlySet<number>
   /** A feat paid to a key: never to be paid to it again. */
   record(pubkey: string, id: number): void
-  /** How many gems a key has won, all told. */
-  gems(pubkey: string): number
-  /** Gems won by a key, added to what it has; and what it has now. */
-  addGems(pubkey: string, gems: number): number
-  /** How many bananas a key held when last it was told of, to start its next session with. */
+  /** How many bananas a key held when last it was told of, to start its next free drive with. */
   bananas(pubkey: string): number
-  /** How many bananas a key holds now. */
+  /** How many bananas a key holds now: a race's never reach it. */
   keepBananas(pubkey: string, bananas: number): void
 }
 
 /** What is kept of one key. */
 export interface PlayerRecord {
   readonly earned: Set<number>
-  gems: number
   bananas: number
 }
 
@@ -38,17 +33,6 @@ export class MemoryPlayerStore implements PlayerStore {
   record(pubkey: string, id: number): void {
     this.recordOf(pubkey).earned.add(id)
     this.changed()
-  }
-
-  gems(pubkey: string): number {
-    return this.byKey.get(pubkey)?.gems ?? 0
-  }
-
-  addGems(pubkey: string, gems: number): number {
-    const record = this.recordOf(pubkey)
-    record.gems += gems
-    this.changed()
-    return record.gems
   }
 
   bananas(pubkey: string): number {
@@ -68,7 +52,7 @@ export class MemoryPlayerStore implements PlayerStore {
   private recordOf(pubkey: string): PlayerRecord {
     const known = this.byKey.get(pubkey)
     if (known !== undefined) return known
-    const fresh: PlayerRecord = { earned: new Set(), gems: 0, bananas: 0 }
+    const fresh: PlayerRecord = { earned: new Set(), bananas: 0 }
     this.byKey.set(pubkey, fresh)
     return fresh
   }
