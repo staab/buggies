@@ -63,13 +63,22 @@ function signTexture(label: string): THREE.Texture | null {
   return texture
 }
 
+/** A part of a gate, and the material it wears as the next gate to head for and as the one after it. */
+interface GatePart {
+  readonly mesh: THREE.Mesh
+  readonly next: THREE.Material
+  readonly later: THREE.Material
+}
+
 /** One gate: its parts, each with the material it wears as the next gate and as the one after. */
 interface Gate {
   readonly group: THREE.Group
-  readonly parts: { mesh: THREE.Mesh; next: THREE.Material; later: THREE.Material }[]
-  readonly geometry: THREE.BufferGeometry[]
+  readonly parts: readonly GatePart[]
+  readonly geometry: readonly THREE.BufferGeometry[]
   /** Its sign's own paint and face, if it has a sign. */
   readonly sign: { material: THREE.Material; texture: THREE.Texture } | null
+  /** Whether it is drawn, as it was last shown: only what changes is written. */
+  shown: boolean
 }
 
 /** How wide the road under a gate is, or the narrowest a gate gets where no road runs under it. */
@@ -124,21 +133,28 @@ function makeGate(paints: Paints, world: World, checkpoint: CheckpointView, labe
   const height = gateHeight(world, foot)
   const group = new THREE.Group()
   group.name = 'gate'
+  const geometry: THREE.BufferGeometry[] = []
+  const parts: GatePart[] = []
+  // A part of the gate: its own shape, where it stands on the gate, and the paints it wears.
+  const add = (shape: THREE.BufferGeometry, material: { next: THREE.Material; later: THREE.Material }, x: number, y: number, z = 0): THREE.Mesh => {
+    const mesh = new THREE.Mesh(shape, material.next)
+    mesh.position.set(x, y, z)
+    group.add(mesh)
+    geometry.push(shape)
+    parts.push({ mesh, next: material.next, later: material.later })
+    return mesh
+  }
   const post = new THREE.BoxGeometry(PILLAR, height, PILLAR)
-  const lintel = new THREE.BoxGeometry(span + PILLAR * 2, LINTEL, PILLAR)
-  const sheet = new THREE.PlaneGeometry(span, height)
-  const shaft = new THREE.CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, SHAFT_HEIGHT, 12, 1, true).translate(0, height + SHAFT_HEIGHT / 2, 0)
-  const left = new THREE.Mesh(post, paints.post.next)
-  left.position.set(-span / 2 - PILLAR / 2, height / 2, 0)
-  const right = new THREE.Mesh(post, paints.post.next)
-  right.position.set(span / 2 + PILLAR / 2, height / 2, 0)
-  const beam = new THREE.Mesh(lintel, paints.post.next)
-  beam.position.set(0, height + LINTEL / 2, 0)
-  const across = new THREE.Mesh(sheet, paints.sheet.next)
-  across.position.set(0, height / 2, 0)
-  const above = new THREE.Mesh(shaft, paints.shaft.next)
-  group.add(left, right, beam, across, above)
-  const geometry: THREE.BufferGeometry[] = [post, lintel, sheet, shaft]
+  add(post, paints.post, -span / 2 - PILLAR / 2, height / 2)
+  add(post, paints.post, span / 2 + PILLAR / 2, height / 2)
+  add(new THREE.BoxGeometry(span + PILLAR * 2, LINTEL, PILLAR), paints.post, 0, height + LINTEL / 2)
+  add(new THREE.PlaneGeometry(span, height), paints.sheet, 0, height / 2)
+  add(
+    new THREE.CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, SHAFT_HEIGHT, 12, 1, true).translate(0, height + SHAFT_HEIGHT / 2, 0),
+    paints.shaft,
+    0,
+    0,
+  )
   const texture = signTexture(label)
   let sign: Gate['sign'] = null
   if (texture !== null) {
@@ -151,10 +167,7 @@ function makeGate(paints: Paints, world: World, checkpoint: CheckpointView, labe
     sign = { material, texture }
   }
   standOn(group, foot, forward)
-  const parts: { mesh: THREE.Mesh; next: THREE.Material; later: THREE.Material }[] = [left, right, beam].map((mesh) => ({ mesh, next: paints.post.next, later: paints.post.later }))
-  parts.push({ mesh: across, next: paints.sheet.next, later: paints.sheet.later })
-  parts.push({ mesh: above, next: paints.shaft.next, later: paints.shaft.later })
-  return { group, parts, geometry, sign }
+  return { group, parts, geometry, sign, shown: true }
 }
 
 /**
@@ -169,6 +182,8 @@ export class RaceView {
 
   private readonly gates: Gate[]
   private readonly paints: Paints
+  /** The place along the course of the gate last shown as the next one: nothing is written while it is the same. */
+  private shownNext = Number.NaN
 
   /** `finish`: whether this world's last gate is the race's finish, rather than the portal on to the next world. */
   constructor(world: World, checkpoints: readonly CheckpointView[], finish = false) {
@@ -186,16 +201,26 @@ export class RaceView {
   /**
    * Show the gate to head for and the one after it, by their places along
    * the course; nothing where there is no such gate. A negative or past-the-
-   * end number, as a racer who has passed them all has, shows nothing.
+   * end number, as a racer who has passed them all has, shows nothing. Asked
+   * for every frame, it writes nothing while the gate to head for is the
+   * same one, and only the gates that change along the course.
    */
   show(next: number): void {
-    this.gates.forEach((gate, index) => {
+    if (next === this.shownNext) return
+    this.shownNext = next
+    for (const [index, gate] of this.gates.entries()) {
       const near = index === next
-      const later = index === next + 1
-      gate.group.visible = near || later
-      if (!gate.group.visible) return
-      for (const part of gate.parts) part.mesh.material = near ? part.next : part.later
-    })
+      const shown = near || index === next + 1
+      if (gate.shown !== shown) {
+        gate.shown = shown
+        gate.group.visible = shown
+      }
+      if (!shown) continue
+      for (const part of gate.parts) {
+        const paint = near ? part.next : part.later
+        if (part.mesh.material !== paint) part.mesh.material = paint
+      }
+    }
   }
 
   dispose(): void {

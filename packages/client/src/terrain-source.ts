@@ -21,6 +21,7 @@ export class TerrainSource {
   private queue: Promise<unknown> = Promise.resolve()
   private readonly pictures = new Map<string, Promise<HTMLCanvasElement>>()
 
+  /** The world with this id, generated off the page's thread, or on it where there are no workers to be had. */
   generate(world: number): Promise<World> {
     if (typeof Worker === 'undefined') return Promise.resolve(generateWorld(world))
     return this.ask({ kind: 'world', world }, (reply) => (reply.kind === 'world' ? reply.world : null))
@@ -53,6 +54,7 @@ export class TerrainSource {
     return made
   }
 
+  /** The page is going, or this source is: the worker goes with it, and the pictures it has kept. */
   dispose(): void {
     this.worker?.terminate()
     this.worker = null

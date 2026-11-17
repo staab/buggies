@@ -39,6 +39,14 @@ export type ReconcileOutcome = 'idle' | 'replayed' | 'resynced'
  * anything, so it is done once, here.
  */
 export function writeSnapshotBodies(mirror: Arena, snapshot: SnapshotMessage, bananas: BananaLedger): void {
+  writeVehicles(mirror, snapshot)
+  writeMachines(mirror, snapshot)
+  writeSky(mirror, snapshot)
+  writeBananas(mirror, snapshot, bananas)
+}
+
+/** Every car as the server has it, and what it has been paid, is carrying and holding: the mirror's car is its own no longer. */
+function writeVehicles(mirror: Arena, snapshot: SnapshotMessage): void {
   for (const vehicle of snapshot.vehicles) {
     const seat = mirror.seats[vehicle.seat]
     if (seat === undefined) continue
@@ -74,15 +82,10 @@ export function writeSnapshotBodies(mirror: Arena, snapshot: SnapshotMessage, ba
     // Whether the signal key was down, so that a replay tells a press from a hold as the server will.
     seat.signalHeld = vehicle.signalHeld
   }
-  // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
-  for (const moved of bananas.takeProps()) {
-    const prop = mirror.props[moved.id]
-    if (prop === undefined) continue
-    prop.body.setTranslation(moved.position, true)
-    prop.body.setRotation(moved.rotation, true)
-    prop.body.setLinvel(moved.linearVelocity, true)
-    prop.body.setAngvel(moved.angularVelocity, true)
-  }
+}
+
+/** The robots, the saucers and the spiders, kept where the server has them: the mirror computes none of them. */
+function writeMachines(mirror: Arena, snapshot: SnapshotMessage): void {
   // The robots are where the server has them, their bodies put straight there.
   for (const known of snapshot.robots) {
     const robot = mirror.robots[known.id]
@@ -127,6 +130,10 @@ export function writeSnapshotBodies(mirror: Arena, snapshot: SnapshotMessage, ba
     spider.deaths = known.deaths
     seatSpiderBody(spider, true)
   }
+}
+
+/** The meteors and the rockets in the air, from where they were to where they are: nothing the mirror can see for itself. */
+function writeSky(mirror: Arena, snapshot: SnapshotMessage): void {
   mirror.meteors = snapshot.meteors.map((meteor) => ({
     id: meteor.id,
     from: { ...meteor.from },
@@ -141,6 +148,19 @@ export function writeSnapshotBodies(mirror: Arena, snapshot: SnapshotMessage, ba
     velocity: { ...rocket.velocity },
     bornTick: snapshot.tick - rocket.age,
   }))
+}
+
+/** The bananas as the server has them: the props that moved, what lies loose each slot, and what is out. */
+function writeBananas(mirror: Arena, snapshot: SnapshotMessage, bananas: BananaLedger): void {
+  // From the ledger, not this snapshot: a prop at rest is told of once, maybe in a snapshot since overtaken.
+  for (const moved of bananas.takeProps()) {
+    const prop = mirror.props[moved.id]
+    if (prop === undefined) continue
+    prop.body.setTranslation(moved.position, true)
+    prop.body.setRotation(moved.rotation, true)
+    prop.body.setLinvel(moved.linearVelocity, true)
+    prop.body.setAngvel(moved.angularVelocity, true)
+  }
   // The bananas are the server's word alone: whatever the mirror took or
   // spilled since is put back as the server has it, to be taken again in
   // the replay if it was right.
@@ -223,9 +243,12 @@ export class SpectatorMirror {
     this.arena.tick = snapshot.tick
     // Too far behind to walk to in one frame: the mirror is left where the
     // server's word has it, and the next snapshot starts it over properly.
-    if (through - snapshot.tick > MAX_MIRROR_TICKS) this.arena.tick = through
-    else while (this.arena.tick < through) this.step()
-    return 'resynced'
+    if (through - snapshot.tick > MAX_MIRROR_TICKS) {
+      this.arena.tick = through
+      return 'resynced'
+    }
+    while (this.arena.tick < through) this.step()
+    return through > snapshot.tick ? 'replayed' : 'resynced'
   }
 
   /**

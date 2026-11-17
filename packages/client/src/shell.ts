@@ -20,7 +20,7 @@ import type { FinishScreen } from './finish-screen.ts'
 import { ownMember, type GameRoom, type RoomHost } from './game-room.ts'
 import { createIslandMode } from './island-mode.ts'
 import { playerKey } from './identity.ts'
-import type { Choice, FinishState, HudState, LocalDriver, ModeView, PlayRequest, PortalTrip, Screen, ShellModes } from './mode.ts'
+import type { Choice, DriveMode, FinishState, HudState, LiveMode, LocalDriver, ModeView, Page, PlayRequest, PortalTrip, Screen, ShellModes } from './mode.ts'
 import type { NameScreen } from './name-screen.ts'
 import { createOnlineMode } from './online-mode.ts'
 import { createShowroomMode, type ShowroomView } from './showroom-mode.ts'
@@ -44,10 +44,6 @@ const THUMBS_KEPT = 16
  * leaves it: a server that turns every one away is not to be hammered.
  */
 const LOBBY_TRIES = 3
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 /** What went wrong, in words. */
 function reasonOf(error: unknown): string {
@@ -124,9 +120,13 @@ export interface ShellDeps {
   settle?: (choice: Choice) => void
 }
 
-/** One game being driven: its connection to the world, whose it is and where, outliving any one connection. */
-interface Driving {
-  mode: ModeView | null
+/**
+ * One game being driven: its connection to the world, whose it is and where,
+ * outliving any one connection. A gate, or a lost server, is a new
+ * connection to the same drive; the end of the race lets it go.
+ */
+interface Drive {
+  mode: DriveMode | null
   readonly driver: LocalDriver
   readonly game: number
   /** The world being driven, or gone to through a gate. */
@@ -139,19 +139,40 @@ interface Driving {
  * the leader is in is remade as the leader goes on to another, and keeps
  * trying on the same world while the room is not there yet.
  */
-interface Watching {
+interface Watch {
   /** The game watched. */
   readonly game: number
   /** The world it is in, or on its way to. */
   world: number
-  mode: ModeView | null
+  mode: LiveMode | null
   /** Whether a connection to it is being made right now. */
-  trying: boolean
+  opening: boolean
   /** How many tries in a row have come to nothing: the wait between them grows with it. */
   tries: number
   /** When it may be tried again, in milliseconds since the page opened, after a try that failed. */
   again: number
 }
+
+/** A world looked over in the room: the island of the game's seed, or another of its worlds, turning in its stage. */
+interface Preview {
+  readonly world: number
+  readonly mode: ModeView
+}
+
+/**
+ * What is drawn behind the screens, when there is something: the world being
+ * driven, the race watched, or the world looked over in the room. One at a
+ * time, so a drive and a watch are never both live, and the screens that have
+ * nothing behind them say so.
+ */
+type Behind =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'drive'; readonly drive: Drive }
+  | { readonly kind: 'watch'; readonly watch: Watch }
+  | { readonly kind: 'preview'; readonly preview: Preview }
+
+/** Nothing is drawn behind the screens. */
+const NOTHING: Behind = { kind: 'none' }
 
 /**
  * What is on the screen and why: the pages of the game, from the name asked
@@ -177,23 +198,19 @@ export class Shell implements ScreenHost {
   private readonly screens: ShellScreens
 
   private choiceNow: Choice
-  private screenNow: Screen = 'name'
+  /** The screen that is up, and what it holds. */
+  private page: Page = { kind: 'name' }
+  /** What is drawn behind it, and what the connection behind it is. */
+  private behind: Behind = NOTHING
   private lobby: ShellLobby | null = null
   /** The game this tab's member is in, as the server last said; nothing while it is only browsing. */
-  private current: GameView | null = null
-  private drive: Driving | null = null
-  /** The race playing behind the screens, the demo until one is picked. */
-  private watched: Watching | null = null
+  private gameView: GameView | null = null
   /** The game picked to watch instead of the demo, or `0` for the demo. */
-  private picked = 0
-  /** The world looked over in the room, turning in its stage. */
-  private preview: { world: number; mode: ModeView } | null = null
+  private pickedGame = 0
+  /** The turntable the room's car modal turns, made the first time a vehicle is shown on it. */
   private showroom: ShowroomView | null = null
-  /** Whether the last frame drew the room's stages, so the views are shaped to them and not to the screen. */
-  private staged = false
-  private readonly clearWas = new THREE.Color()
   /** The view of the world behind the screens: its terrain, its boats, its clouds and its life. */
-  private view: THREE.Group | null = null
+  private terrain: THREE.Group | null = null
   /** The world last made, which a portal's way out is read from. */
   private map: World | null = null
   private readonly worlds = new Map<number, Promise<World>>()
@@ -209,15 +226,17 @@ export class Shell implements ScreenHost {
   /** How many lobby connections have been made in a row: bought down to nothing by one that works. */
   private lobbyTries = 0
   /**
-   * Each thing asked for outranks the one before of its sort: a slow one
-   * that lands late is let go. What is put up behind the screens is one
-   * sort, and joining a world another, so that looking at another world
-   * while a gate is gone through does not call the journey off.
+   * Each world asked for behind the screens outranks the one before of its
+   * sort: a slow one that lands late is let go. The world looked over is one
+   * sort, and joining a world another, so that looking at another world while
+   * a gate is gone through does not call the journey off.
    */
   private showing = 0
   private joining = 0
   /** A camera for the sky alone, where there is no world to look at. */
   private readonly sky = new THREE.PerspectiveCamera()
+  /** The clear color the room's stages are drawn over, put back once they are. */
+  private readonly clearWas = new THREE.Color()
 
   constructor(deps: ShellDeps, choice: Choice) {
     this.renderer = deps.renderer
@@ -244,12 +263,13 @@ export class Shell implements ScreenHost {
 
   /** Which screen is up. */
   screen(): Screen {
-    return this.screenNow
+    return this.page.kind
   }
 
   /** What the player is driving, if anything: for anyone asking. */
   driving(): { game: number; world: number } | null {
-    return this.drive === null ? null : { game: this.drive.game, world: this.drive.world }
+    const drive = this.liveDrive()
+    return drive === null ? null : { game: drive.game, world: drive.world }
   }
 
   /** Open the page: the name first if none is kept from last time, the start screen otherwise. */
@@ -294,10 +314,12 @@ export class Shell implements ScreenHost {
     return null
   }
 
+  /** Whether a game may be joined at all, by its state and its seats. */
   joinable(game: GameSummary): boolean {
     return joinable(game)
   }
 
+  /** Whether a game is a race under way, to be looked on at as it happens. */
   watchable(game: GameSummary): boolean {
     return watchable(game)
   }
@@ -325,13 +347,13 @@ export class Shell implements ScreenHost {
    * for a race under way, which takes nobody: the page follows its leader.
    */
   watch(game: number): void {
-    this.picked = this.picked === game ? 0 : game
+    this.pickedGame = this.pickedGame === game ? 0 : game
     this.screens.start.update()
   }
 
   /** The game playing behind the screens: `0` for the demo, or the race the player picked. */
   watching(): number {
-    return this.picked
+    return this.pickedGame
   }
 
   /** Make a race of one's own, and go into its room: the room sets its worlds and rules. */
@@ -342,19 +364,19 @@ export class Shell implements ScreenHost {
 
   /** The game this tab's member is in, as the room shows it. */
   game(): GameView | null {
-    return this.current
+    return this.gameView
   }
 
   /** Whether this tab's member is the game's host. */
   isHost(): boolean {
-    const game = this.current
+    const game = this.gameView
     return game !== null && (ownMember(game)?.member ?? 0) === game.host
   }
 
   /** This tab's member drives this from now on, ready or not, and the turntable shows it. */
   setVehicle(profile: VehicleProfileId): void {
     this.choiceNow = { ...this.choiceNow, vehicle: profile }
-    const game = this.current
+    const game = this.gameView
     this.lobby?.ready(profile, game === null ? false : (ownMember(game)?.ready ?? false))
     this.showVehicle(profile)
   }
@@ -390,7 +412,7 @@ export class Shell implements ScreenHost {
    * player alone: a race starts on the island, wherever anyone looks.
    */
   previewWorld(kind: WorldKind): void {
-    const seed = this.current?.options.seed ?? null
+    const seed = this.gameView?.options.seed ?? null
     if (seed !== null) void this.showPreview(worldId(seed, kind))
   }
 
@@ -423,7 +445,7 @@ export class Shell implements ScreenHost {
    * the start screen, nothing is left to leave.
    */
   escape(): void {
-    switch (this.screenNow) {
+    switch (this.page.kind) {
       case 'name':
       case 'start':
         return
@@ -444,13 +466,12 @@ export class Shell implements ScreenHost {
     this.closeLobby()
   }
 
+  /** The page is another shape: the canvas fills it again, and what is drawn behind the screens is shaped to it. */
   resize(): void {
     const { clientWidth, clientHeight } = this.container
     this.renderer.setSize(clientWidth, clientHeight, false)
     const aspect = clientWidth / Math.max(clientHeight, 1)
-    this.drive?.mode?.resize(aspect)
-    this.watched?.mode?.resize(aspect)
-    this.preview?.mode.resize(aspect)
+    this.shown()?.resize(aspect)
   }
 
   /**
@@ -460,110 +481,138 @@ export class Shell implements ScreenHost {
    * on show is drawn: the drive, or the world behind the screens.
    */
   frame(dt: number): void {
-    const drive = this.drive
-    if (drive !== null) {
-      drive.mode?.update(dt, this.screenNow === 'drive')
-      // The moment the player's own racer is home the celebration goes up
-      // over the drive, which is not let go: it goes on behind, and is not
-      // joined again once its room closes.
-      if (this.drive === drive) {
-        const came = drive.mode?.finished?.() ?? null
-        if (came !== null) {
-          if (this.screenNow === 'finish') this.screens.finish.update(came)
-          else if (this.screenNow === 'drive') this.celebrate(came)
-        }
-      }
-      if (this.drive === drive) {
-        const trip = drive.mode?.trip?.() ?? null
-        if (trip !== null) this.follow(drive, trip)
-      }
-      if (this.drive === drive) {
-        const through = drive.mode?.portal?.() ?? -1
-        if (through >= 0) this.travel(drive, through)
-      }
-      if (this.drive === drive) {
-        const lost = drive.mode?.lost?.() ?? null
-        if (lost !== null) {
-          // A finished race is never joined again: a room closing is the
-          // server's way of ending it, and the celebration stays up.
-          if (this.screenNow === 'finish') this.clearDrive()
-          else this.rejoin(drive, lost)
-        }
-      }
-      if (this.drive === drive) {
-        const rows = drive.mode?.standings?.() ?? null
-        if (rows !== null) this.finish(rows)
-      }
-    }
-    if (this.screenNow === 'start') {
+    const drive = this.liveDrive()
+    if (drive !== null) this.driveFrame(drive, dt)
+
+    const page = this.page
+    if (page.kind === 'start' || page.kind === 'finish') {
       this.rejoinWatch()
       this.tendWatch()
       // The race behind the screen goes on whether or not anyone is looking at it closely.
-      this.watched?.mode?.update(dt, false)
-      this.screens.start.update()
-    } else if (this.screenNow === 'finish') {
-      // The server's demo plays behind the celebration too, as it does behind the start screen.
-      this.rejoinWatch()
-      this.tendWatch()
-      this.watched?.mode?.update(dt, false)
-    } else if (this.screenNow !== 'drive') {
-      this.preview?.mode.update(dt, this.screenNow === 'room')
+      this.liveWatch()?.mode?.update(dt, false)
+      if (page.kind === 'start') this.screens.start.update()
+    } else if (page.kind === 'room') {
+      // The world looked over in the room turns in its stage, and the turntable in the modal's.
+      this.livePreview()?.mode.update(dt, true)
+      this.showroom?.update(dt, false)
     }
-    if (this.screenNow === 'room') this.showroom?.update(dt, false)
 
-    // The world's clocks keep the game's time where there is one.
+    // The world's clocks keep the game's time where there is one: the drive's, or the watched race's.
     this.idle += dt
-    if (this.view !== null) {
-      const tick = this.drive?.mode?.tick?.() ?? this.watched?.mode?.tick?.() ?? this.preview?.mode.tick?.()
-      const seconds = tick === undefined ? this.idle : tick / 60
-      moveBoats(this.view, seconds)
-      moveClouds(this.view, seconds)
-      moveLife(this.view, seconds)
+    if (this.terrain !== null) {
+      const drive = this.liveDrive()
+      const tick = drive?.mode != null ? drive.mode.tick() : this.liveWatch()?.mode?.tick()
+      const seconds = tick ?? this.idle
+      moveBoats(this.terrain, seconds)
+      moveClouds(this.terrain, seconds)
+      moveLife(this.terrain, seconds)
       this.sun.turn(seconds)
       this.sun.shade(this.scene, WORLD_LOOKS[this.map?.kind ?? 'planet'].skies)
     }
 
     this.draw()
     // Between worlds there is nothing to fill the HUD with, so what is being waited for stays up.
-    if (this.screenNow !== 'drive') this.hud.render(null)
-    else if (this.drive?.mode !== undefined && this.drive.mode !== null) this.hud.render(this.drive.mode.hud?.() ?? null)
+    if (this.page.kind !== 'drive') this.hud.render(null)
+    else {
+      const mode = this.liveDrive()?.mode ?? null
+      if (mode !== null) this.hud.render(mode.hud())
+    }
+  }
+
+  // -- what is on show -----------------------------------------------------
+
+  /** What is drawn behind the screens: the drive, the race watched, or the world looked over in the room. */
+  private shown(): ModeView | null {
+    const behind = this.behind
+    switch (behind.kind) {
+      case 'drive':
+        return behind.drive.mode
+      case 'watch':
+        return behind.watch.mode
+      case 'preview':
+        return behind.preview.mode
+      case 'none':
+        return null
+    }
+  }
+
+  /** The game being driven, if this tab's member is in one. */
+  private liveDrive(): Drive | null {
+    const behind = this.behind
+    return behind.kind === 'drive' ? behind.drive : null
+  }
+
+  /** The race playing behind the screens, if one is. */
+  private liveWatch(): Watch | null {
+    const behind = this.behind
+    return behind.kind === 'watch' ? behind.watch : null
+  }
+
+  /** The world the room looks over, if it is looking over one. */
+  private livePreview(): Preview | null {
+    const behind = this.behind
+    return behind.kind === 'preview' ? behind.preview : null
   }
 
   // -- the screens ---------------------------------------------------------
 
-  private showName(): void {
-    this.screenNow = 'name'
-    this.current = null
-    this.clearDrive()
-    this.clearWatch()
+  /** Put a screen up and every other one away, with what it holds: the page's own screens, and the HUD out of its way. */
+  private show(page: Page): void {
+    const was = this.page
+    this.page = page
+    this.screens.name.hide()
     this.screens.start.hide()
     this.screens.room.hide()
     this.screens.finish.hide()
     this.screens.standings.hide()
-    this.screens.name.show(this.choiceNow.name)
-    this.clearPreview()
+    switch (page.kind) {
+      case 'name':
+        this.screens.name.show(this.choiceNow.name)
+        break
+      case 'start':
+        this.screens.start.show()
+        break
+      case 'room':
+        if (this.gameView !== null) this.screens.room.show(this.gameView)
+        break
+      case 'drive':
+        break
+      case 'finish':
+        this.screens.finish.show(page.came)
+        break
+      case 'standings':
+        this.screens.standings.show(page.standings)
+        break
+    }
     this.hud.render(null)
+    // The room draws the world into stages of the page: out of it, the world takes the whole screen again.
+    if (was.kind === 'room' && page.kind !== 'room') this.resize()
+  }
+
+  /** The name screen, with everything else let go: nothing plays behind it. */
+  private showName(): void {
+    this.gameView = null
+    this.clearDrive()
+    this.clearWatch()
+    this.clearPreview()
+    this.show({ kind: 'name' })
   }
 
   /** The start screen, with its lobby connection made or asked for again. */
   private enterStart(warning: string | null = null): void {
     const asked = this.asked
     this.asked = 0
-    this.current = null
+    this.gameView = null
     this.clearDrive()
     this.showStart(warning)
     if (this.lobby === null) void this.openLobby(asked)
   }
 
+  /** The start screen itself, naming a game in the address bar no longer, and the room's world let go with the room. */
   private showStart(warning: string | null): void {
-    this.screenNow = 'start'
-    this.screens.name.hide()
-    this.screens.room.hide()
-    this.screens.finish.hide()
-    this.screens.standings.hide()
-    this.screens.start.show()
+    this.clearPreview()
+    this.show({ kind: 'start' })
     if (warning !== null) this.screens.start.warn(warning)
-    this.hud.render(null)
     this.choiceNow = { ...this.choiceNow, game: 0 }
     this.settle(this.choiceNow)
     this.screens.start.update()
@@ -593,7 +642,7 @@ export class Shell implements ScreenHost {
       // One that something newer has taken over is not this one's to report.
       if (this.lobby !== lobby) return
       this.lobby = null
-      if (this.screenNow !== 'start') return
+      if (this.page.kind !== 'start') return
       this.screens.start.warn(
         error instanceof ConnectionFailure && error.reject === REJECT_PROTOCOL_MISMATCH
           ? 'The server has been updated: reload the page to play on.'
@@ -603,7 +652,7 @@ export class Shell implements ScreenHost {
     }
     if (this.lobby !== lobby) return
     this.lobbyTries = 0
-    if (this.current !== null) this.enterRoom()
+    if (this.gameView !== null) this.enterRoom()
     else {
       this.screens.start.update()
       if (asked !== 0) this.screens.start.warn('that game is gone')
@@ -614,18 +663,18 @@ export class Shell implements ScreenHost {
   private seeGame(view: GameView | null): void {
     if (view === null || view.you === 0) {
       // Out of the game: the room goes, and so does any drive in it.
-      this.current = null
-      if (this.screenNow === 'room') this.enterStart('that game has closed')
+      this.gameView = null
+      if (this.page.kind === 'room') this.enterStart('that game has closed')
       return
     }
-    this.current = view
-    if (this.screenNow === 'start' || this.screenNow === 'name') {
-      this.enterRoom()
-    } else if (this.screenNow === 'room') {
+    this.gameView = view
+    if (this.page.kind === 'start' || this.page.kind === 'name') this.enterRoom()
+    else if (this.page.kind === 'room') {
       // The room says which of the seed's worlds it wants in its stage: the island of another seed, or the one picked.
       this.screens.room.show(view)
     }
-    if (this.drive === null && this.screenNow !== 'standings' && this.screenNow !== 'finish' && this.needsDrive(view)) this.go(view)
+    const page = this.page
+    if (this.liveDrive() === null && page.kind !== 'standings' && page.kind !== 'finish' && this.needsDrive(view)) this.go(view)
   }
 
   /** Whether the game is at the point where this tab's member belongs in the world. */
@@ -636,23 +685,18 @@ export class Shell implements ScreenHost {
     return view.status === 'starting' || view.status === 'racing'
   }
 
+  /** Into the room of the game this tab's member is in, with the island of its seed looked over in the stage. */
   private enterRoom(): void {
-    const view = this.current
+    const view = this.gameView
     if (view === null) {
       this.enterStart()
       return
     }
     this.clearWatch()
-    this.screenNow = 'room'
-    this.screens.name.hide()
-    this.screens.start.hide()
-    this.screens.finish.hide()
-    this.screens.standings.hide()
-    this.screens.room.show(view)
+    this.show({ kind: 'room' })
     const own = ownMember(view)
     this.choiceNow = { ...this.choiceNow, game: view.id, ...(own === null ? {} : { vehicle: own.vehicle }) }
     this.settle(this.choiceNow)
-    this.hud.render(null)
     // Every room opens on the island of its seed: a race starts there, wherever anyone looked.
     void this.showPreview(worldId(view.options.seed, 'planet'))
   }
@@ -663,42 +707,32 @@ export class Shell implements ScreenHost {
    * did not finish is shown the standings on their own, and stays there
    * until they leave.
    */
-  private finish(rows: readonly Standing[]): void {
-    if (this.screenNow === 'finish') {
-      this.screens.finish.standings(rows)
+  private finish(standings: readonly Standing[]): void {
+    const page = this.page
+    if (page.kind === 'finish') {
+      this.page = { ...page, standings }
+      this.screens.finish.standings(standings)
       return
     }
     this.clearDrive()
-    this.screenNow = 'standings'
-    this.screens.name.hide()
-    this.screens.start.hide()
-    this.screens.room.hide()
-    this.screens.finish.hide()
-    this.screens.standings.show(rows)
-    this.hud.render(null)
+    this.show({ kind: 'standings', standings })
   }
 
   /** Throw the celebration of the player's own finish up over the drive, which goes on behind it. */
   private celebrate(came: FinishState): void {
-    this.screenNow = 'finish'
-    this.screens.name.hide()
-    this.screens.start.hide()
-    this.screens.room.hide()
-    this.screens.standings.hide()
-    this.screens.finish.show(came)
-    this.hud.render(null)
+    this.show({ kind: 'finish', came, standings: null })
   }
 
   /** Out of the game: leave it on the server, and let go of the drive. */
   private leaveGame(): void {
     this.lobby?.leave()
-    this.current = null
+    this.gameView = null
     this.clearDrive()
   }
 
   /** Escape from a drive: out of a free drive into the room, out of a race altogether. */
   private leaveDrive(): void {
-    const view = this.current
+    const view = this.gameView
     if (view !== null && view.options.mode === 'race') {
       this.leaveGame()
       this.enterStart()
@@ -713,20 +747,51 @@ export class Shell implements ScreenHost {
 
   // -- the game ------------------------------------------------------------
 
+  /** One frame of the drive, whatever is up over it: its clock, and what its mode says of how it is going. */
+  private driveFrame(drive: Drive, dt: number): void {
+    const mode = drive.mode
+    mode?.update(dt, this.page.kind === 'drive')
+    if (mode === null) return
+    const came = mode.finished()
+    if (came !== null) this.playerHome(came)
+    // A gate, a lost connection or the race's end lets go of the mode, and then nothing more of it is read this frame.
+    const trip = mode.trip()
+    if (trip !== null) return this.follow(drive, trip)
+    const through = mode.portal()
+    if (through >= 0) return this.travel(drive, through)
+    const lost = mode.lost()
+    if (lost !== null) {
+      // A finished race is never joined again: its room closing is how the server ends it, and the celebration stays up.
+      if (this.page.kind === 'finish') this.clearDrive()
+      else this.rejoin(drive, lost)
+      return
+    }
+    const standings = mode.standings()
+    if (standings !== null) this.finish(standings)
+  }
+
+  /** The player's own racer is home: the celebration goes up over the drive, and whoever else comes in is told of under the place. */
+  private playerHome(came: FinishState): void {
+    const page = this.page
+    if (page.kind === 'finish') {
+      this.page = { ...page, came }
+      this.screens.finish.update(came)
+    } else if (page.kind === 'drive') this.celebrate(came)
+  }
+
   /** Into the world the game starts on, in the vehicle this player picked there. */
   private go(view: GameView): void {
-    if (this.drive !== null) return
     const own = ownMember(view)
-    if (own === null) return
+    if (own === null || this.liveDrive() !== null) return
     // A race starts on its seed's island, and so does a free drive.
     const world = worldId(view.options.seed, 'planet')
-    const drive: Driving = {
+    const drive: Drive = {
       mode: null,
       driver: { name: this.choiceNow.name, profile: own.vehicle, pass: view.drivePass },
       game: view.id,
       world,
     }
-    this.drive = drive
+    this.behind = { kind: 'drive', drive }
     this.enterDrive()
     this.choiceNow = { ...this.choiceNow, game: view.id, vehicle: own.vehicle }
     this.settle(this.choiceNow)
@@ -736,17 +801,11 @@ export class Shell implements ScreenHost {
     )
   }
 
+  /** The drive takes the whole screen: the room's stages and the race behind the screens are let go. */
   private enterDrive(): void {
-    // The world looked over in the room lets go of its camera; the world itself stays on view until the drive's own is made.
     this.clearPreview()
     this.clearWatch()
-    this.screenNow = 'drive'
-    this.screens.name.hide()
-    this.screens.start.hide()
-    this.screens.room.hide()
-    this.screens.finish.hide()
-    this.screens.standings.hide()
-    this.hud.render(null)
+    this.show({ kind: 'drive' })
   }
 
   /**
@@ -756,7 +815,7 @@ export class Shell implements ScreenHost {
    * else is asked for, or the server has moved on to a version this page
    * does not speak.
    */
-  private async joinWorld(drive: Driving, world: number, arrival: number, waiting: (why: string | null) => string): Promise<void> {
+  private async joinWorld(drive: Drive, world: number, arrival: number, waiting: (why: string | null) => string): Promise<void> {
     const stamp = ++this.joining
     drive.world = world
     this.notice(waiting(null))
@@ -764,7 +823,7 @@ export class Shell implements ScreenHost {
       const driver = drive.driver
       try {
         await this.mapFor(world, null)
-        if (stamp !== this.joining || this.drive !== drive) return
+        if (stamp !== this.joining || this.liveDrive() !== drive) return
         const request: PlayRequest = {
           scene: this.scene,
           url: this.server,
@@ -777,7 +836,7 @@ export class Shell implements ScreenHost {
           sun: this.sun,
         }
         const mode = await this.modes.play(request)
-        if (stamp !== this.joining || this.drive !== drive) {
+        if (stamp !== this.joining || this.liveDrive() !== drive) {
           mode.dispose()
           return
         }
@@ -785,23 +844,22 @@ export class Shell implements ScreenHost {
         this.resize()
         return
       } catch (error: unknown) {
-        if (stamp !== this.joining || this.drive !== drive) return
+        if (stamp !== this.joining || this.liveDrive() !== drive) return
         if (error instanceof ConnectionFailure && error.reject === REJECT_PROTOCOL_MISMATCH) {
           this.closeLobby()
-          this.current = null
           this.clearDrive()
           this.showStart('The server has been updated: reload the page to play on.')
           return
         }
         this.notice(waiting(reasonOf(error)))
       }
-      await wait(REJOIN_DELAYS_MS[Math.min(attempt, REJOIN_DELAYS_MS.length - 1)]!)
+      await new Promise((resolve) => setTimeout(resolve, REJOIN_DELAYS_MS[Math.min(attempt, REJOIN_DELAYS_MS.length - 1)]!))
       if (stamp !== this.joining) return
     }
   }
 
   /** Through the gate out of a race's world and on to the next world of the course. */
-  private follow(drive: Driving, trip: PortalTrip): void {
+  private follow(drive: Drive, trip: PortalTrip): void {
     this.leaveWorld(drive)
     void this.joinWorld(drive, trip.to, trip.arrival, (why) =>
       why === null ? 'on to the next world...' : `could not go on to the next world (${why}), trying again...`,
@@ -813,7 +871,7 @@ export class Shell implements ScreenHost {
    * picked at random; back to the planet itself, out of the portal they
    * left it by.
    */
-  private travel(drive: Driving, through: number): void {
+  private travel(drive: Drive, through: number): void {
     const map = this.map
     if (map === null || map.seed !== drive.world) return
     const link = portalLink(map, this.cameFrom)
@@ -827,22 +885,25 @@ export class Shell implements ScreenHost {
   }
 
   /** Join the world being driven again, where the server still has it, after losing the connection. */
-  private rejoin(drive: Driving, lost: string): void {
+  private rejoin(drive: Drive, lost: string): void {
     const world = drive.world
     this.leaveWorld(drive)
     void this.joinWorld(drive, world, NO_ARRIVAL, (why) => `lost the server (${why ?? lost}), reconnecting...`)
   }
 
   /** Let go of the connection a game is played over, keeping the game: another is on its way. */
-  private leaveWorld(drive: Driving): void {
+  private leaveWorld(drive: Drive): void {
     this.joining += 1
     drive.mode?.dispose()
     drive.mode = null
   }
 
+  /** Let go of the drive and its world: the game is over, or left. */
   private clearDrive(): void {
-    if (this.drive !== null) this.leaveWorld(this.drive)
-    this.drive = null
+    const drive = this.liveDrive()
+    if (drive === null) return
+    this.leaveWorld(drive)
+    this.behind = NOTHING
   }
 
   // -- watching ------------------------------------------------------------
@@ -853,8 +914,11 @@ export class Shell implements ScreenHost {
    * its leader is. Nothing plays behind any other screen.
    */
   private tendWatch(): void {
+    const page = this.page
+    // A race plays behind the start screen and behind the celebration of a finish, and nowhere else.
+    const playsBehind = page.kind === 'start' || page.kind === 'finish'
     // Behind the celebration the drive is drawn until it is let go: only then does the demo come in its place.
-    if (!this.playsBehind() || this.lobby === null || (this.screenNow === 'finish' && this.drive !== null)) {
+    if (!playsBehind || this.lobby === null || (page.kind === 'finish' && this.liveDrive() !== null)) {
       this.clearWatch()
       return
     }
@@ -864,40 +928,48 @@ export class Shell implements ScreenHost {
       this.clearWatch()
       return
     }
-    const watch = this.watched
+    const watch = this.liveWatch()
     if (watch === null || watch.game !== game.id || watch.world !== game.leader) {
       this.startWatch(game.id, game.leader)
       return
     }
-    if (watch.mode === null && !watch.trying && performance.now() >= watch.again) void this.openWatch(watch)
+    if (watch.mode === null && !watch.opening && performance.now() >= watch.again) void this.openWatch(watch)
   }
 
   /** The race to play behind the screens: the one picked while it is under way, or else the server's demo. */
   private watchedGame(): GameSummary | null {
     const games = this.games()
     // A celebration of a finish has the demo behind it, whatever was picked to watch before the race.
-    if (this.picked !== 0 && this.screenNow !== 'finish') {
-      const picked = games.find((game) => game.id === this.picked)
-      if (picked !== undefined && watchable(picked)) return picked
+    if (this.pickedGame !== 0 && this.page.kind !== 'finish') {
+      for (const game of games) {
+        if (game.id !== this.pickedGame) continue
+        if (watchable(game)) return game
+        break
+      }
       // A race that is over, or gone from the server, is nobody's to watch any more: the demo comes back.
-      this.picked = 0
+      this.pickedGame = 0
     }
-    return games.find((game) => game.demo) ?? null
+    for (const game of games) {
+      if (game.demo) return game
+    }
+    return null
   }
 
   /** Look on at this race's world, letting whatever was watched before go. */
   private startWatch(game: number, world: number): void {
     this.clearWatch()
-    const watching: Watching = { game, world, mode: null, trying: false, tries: 0, again: 0 }
-    this.watched = watching
-    void this.openWatch(watching)
+    const watch: Watch = { game, world, mode: null, opening: false, tries: 0, again: 0 }
+    this.behind = { kind: 'watch', watch }
+    void this.openWatch(watch)
   }
 
   /** Let go of the race playing behind the screens, if one is. */
   private clearWatch(): void {
-    const watch = this.watched
-    this.watched = null
-    watch?.mode?.dispose()
+    const watch = this.liveWatch()
+    if (watch === null) return
+    this.behind = NOTHING
+    watch.mode?.dispose()
+    watch.mode = null
   }
 
   /**
@@ -906,44 +978,44 @@ export class Shell implements ScreenHost {
    * there yet is tried again, waiting longer each time; the list says when
    * the leader has gone on to another world.
    */
-  private async openWatch(watching: Watching): Promise<void> {
-    watching.trying = true
+  private async openWatch(watch: Watch): Promise<void> {
+    watch.opening = true
     try {
       const mode = await this.modes.watch({
         scene: this.scene,
         url: this.server,
-        game: watching.game,
-        world: watching.world,
+        game: watch.game,
+        world: watch.world,
         mapFor: (asked, keep) => this.driveMap(asked, keep),
         sound: this.sound,
         sun: this.sun,
       })
-      if (this.watched !== watching) {
+      if (this.liveWatch() !== watch) {
         mode.dispose()
         return
       }
-      watching.mode = mode
-      watching.tries = 0
+      watch.mode = mode
+      watch.tries = 0
       this.resize()
     } catch (error: unknown) {
-      if (this.watched !== watching) return
+      if (this.liveWatch() !== watch) return
       if (error instanceof ConnectionFailure && error.reject === REJECT_PROTOCOL_MISMATCH) {
         this.clearWatch()
         this.screens.start.warn('The server has been updated: reload the page to play on.')
         return
       }
-      watching.tries += 1
-      watching.again = performance.now() + REJOIN_DELAYS_MS[Math.min(watching.tries - 1, REJOIN_DELAYS_MS.length - 1)]!
+      watch.tries += 1
+      watch.again = performance.now() + REJOIN_DELAYS_MS[Math.min(watch.tries - 1, REJOIN_DELAYS_MS.length - 1)]!
     } finally {
-      watching.trying = false
+      watch.opening = false
     }
   }
 
   /** A watched room has closed under us: the race has gone on to another world, or is over. Follow it. */
   private rejoinWatch(): void {
-    const watch = this.watched
-    if (watch === null || watch.mode === null) return
-    if (watch.mode.lost?.() == null) return
+    const watch = this.liveWatch()
+    if (watch?.mode == null) return
+    if (watch.mode.lost() === null) return
     watch.mode.dispose()
     watch.mode = null
     watch.tries = 0
@@ -996,7 +1068,8 @@ export class Shell implements ScreenHost {
   /** Put the world with this id behind the screens, to be looked over: the room's preview of it, or a race's first world. */
   private async showPreview(world: number): Promise<void> {
     const stamp = ++this.showing
-    if (this.preview !== null && this.preview.world === world) return
+    const preview = this.livePreview()
+    if (preview !== null && preview.world === world) return
     this.screens.room.making(true)
     let map: World
     try {
@@ -1011,15 +1084,16 @@ export class Shell implements ScreenHost {
     this.screens.room.making(false)
   }
 
+  /** Put this world in the scene, in place of whatever was drawn there, and its own light and fog about it. */
   private setView(map: World): void {
-    if (this.view !== null && this.map === map) return
+    if (this.map === map && this.terrain !== null) return
     this.map = map
-    if (this.view !== null) {
-      disposeObject(this.view)
-      this.scene.remove(this.view)
+    if (this.terrain !== null) {
+      disposeObject(this.terrain)
+      this.scene.remove(this.terrain)
     }
-    this.view = this.modes.terrainView(map)
-    this.scene.add(this.view)
+    this.terrain = this.modes.terrainView(map)
+    this.scene.add(this.terrain)
     // View distances ride the planet's size so the framing stays the same.
     const across = 2 * Math.PI * map.radius
     const { fog, skies } = WORLD_LOOKS[map.kind]
@@ -1028,17 +1102,23 @@ export class Shell implements ScreenHost {
     this.sun.centerOn({ x: 0, y: 0, z: 0 })
   }
 
-  private setPreview(next: { world: number; mode: ModeView } | null): void {
-    this.preview?.mode.dispose()
-    this.preview = next
-    if (next === null && this.view !== null) {
-      disposeObject(this.view)
-      this.scene.remove(this.view)
-      this.view = null
+  /** Put a world's view behind the screens, or let the one there go: its camera, and the world it looked over. */
+  private setPreview(next: Preview | null): void {
+    const was = this.livePreview()
+    was?.mode.dispose()
+    if (next !== null) this.behind = { kind: 'preview', preview: next }
+    else if (was !== null) {
+      this.behind = NOTHING
+      if (this.terrain !== null) {
+        disposeObject(this.terrain)
+        this.scene.remove(this.terrain)
+        this.terrain = null
+      }
     }
     this.resize()
   }
 
+  /** Let the world the room looks over go, camera and terrain alike, and any world asked for that has not landed yet with it. */
   private clearPreview(): void {
     this.showing += 1
     this.setPreview(null)
@@ -1054,6 +1134,7 @@ export class Shell implements ScreenHost {
     }
   }
 
+  /** Let the lobby connection go: the tab has left, or is another player's now. */
   private closeLobby(): void {
     const lobby = this.lobby
     this.lobby = null
@@ -1068,25 +1149,16 @@ export class Shell implements ScreenHost {
 
   // -- drawing -------------------------------------------------------------
 
-  /** Whether a race plays behind the screen that is up: behind the start screen, and behind the celebration of a finish. */
-  private playsBehind(): boolean {
-    return this.screenNow === 'start' || this.screenNow === 'finish'
-  }
-
+  /** Draw the frame: the room's stages, or whatever is behind the screen through its own camera. */
   private draw(): void {
-    if (this.screenNow === 'room' && this.screens.room.open()) {
+    if (this.page.kind === 'room' && this.screens.room.open()) {
       this.drawRoom()
       return
     }
-    // Back from the room's stages to the whole screen: the views take its shape again.
-    if (this.staged) {
-      this.staged = false
-      this.resize()
-    }
-    const shown = this.drive?.mode ?? (this.playsBehind() ? (this.watched?.mode ?? null) : (this.preview?.mode ?? null))
+    const shown = this.shown()
     if (shown === null) {
       // With neither drive nor demo behind the celebration, the last frame stays up rather than a blank sky.
-      if (this.screenNow === 'finish') return
+      if (this.page.kind === 'finish') return
       this.renderer.render(this.scene, this.sky)
     } else if (shown.render !== undefined) {
       shown.render(this.renderer)
@@ -1102,7 +1174,6 @@ export class Shell implements ScreenHost {
    * scissored to the box the room leaves for it.
    */
   private drawRoom(): void {
-    this.staged = true
     const { clientWidth, clientHeight } = this.container
     // Round the stages, the night of the page, not the sky of whatever was drawn last.
     this.renderer.getClearColor(this.clearWas)
@@ -1112,7 +1183,7 @@ export class Shell implements ScreenHost {
     this.renderer.setViewport(0, 0, clientWidth, clientHeight)
     this.renderer.clear()
     this.renderer.setClearColor(this.clearWas, alpha)
-    const world = this.preview?.mode
+    const world = this.livePreview()?.mode
     if (world !== undefined) this.drawInto(this.screens.room.worldBox(), world)
     // The turntable is only drawn into the car modal, which is shut until a car is picked there.
     const car = this.screens.room.carBox()

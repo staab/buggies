@@ -1,9 +1,10 @@
-import { FIXED_TIMESTEP } from '@buggies/game'
 import type { Standing } from '@buggies/net'
 
 import './finish.css'
 
-import type { FinishState } from './mode.ts'
+import { button, element, setClass, setHidden, writeText } from './dom.ts'
+import type { FinishedRacer, FinishState } from './mode.ts'
+import { finishTime, ordinal } from './race-text.ts'
 import { fillStandings, standingsTable } from './standings.ts'
 
 /** How many pieces of confetti a finish throws: a win throws as many again, a moment later. */
@@ -24,15 +25,6 @@ export interface FinishSound {
   fanfare(): void
 }
 
-/** A place in words: "1st", "2nd", "3rd", "4th", and "11th" through "13th" for the awkward ones. */
-export function ordinal(place: number): string {
-  const whole = Math.max(Math.round(place), 1)
-  const last = whole % 10
-  const tens = whole % 100
-  const ending = tens >= 11 && tens <= 13 ? 'th' : last === 1 ? 'st' : last === 2 ? 'nd' : last === 3 ? 'rd' : 'th'
-  return `${whole}${ending}`
-}
-
 /** The line under the place: a win, a podium, or simply home. */
 export function finishLine(place: number): string {
   const whole = Math.max(Math.round(place), 1)
@@ -41,24 +33,9 @@ export function finishLine(place: number): string {
   return 'Finished!'
 }
 
-/** A race time as minutes, seconds and tenths: `2:30.5`. Ticks less than none are none. */
-export function finishTime(ticks: number): string {
-  const tenths = Math.max(Math.round(ticks * FIXED_TIMESTEP * 10), 0)
-  const seconds = Math.floor((tenths % 600) / 10)
-  return `${Math.floor(tenths / 600)}:${String(seconds).padStart(2, '0')}.${tenths % 10}`
-}
-
 /** Whether the player has asked the page to keep its animation down. */
 function stillMotion(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-/** A new element of the page, of this tag, with these classes and these words. */
-function make(tag: string, className: string, words = ''): HTMLElement {
-  const made = document.createElement(tag)
-  made.className = className
-  if (words !== '') made.textContent = words
-  return made
 }
 
 /**
@@ -82,45 +59,44 @@ export class FinishScreen {
   private readonly table: HTMLElement
   private readonly tableBody: HTMLTableSectionElement
   private readonly button: HTMLButtonElement
-  /** Who was home last time they were listed, so that the list is only rebuilt when it changes. */
-  private shownHome = ''
+  /** Who was home last time they were listed, so that the list is only rebuilt where it has changed. */
+  private readonly shownRacers: { place: number; name: string }[] = []
+  /** The standings last put up, for the same reason: the same race is asked for every frame it is over. */
+  private readonly shownRows: Standing[] = []
   /** The place the player came, whose row of the standings is theirs. */
   private ownPlace = 0
 
   constructor(root: HTMLElement, sound: FinishSound, back: () => void) {
     this.root = root
     this.sound = sound
-    this.confetti = make('div', 'finish-confetti')
+    this.confetti = element('div', 'finish-confetti')
     this.confetti.setAttribute('aria-hidden', 'true')
-    this.card = make('div', 'finish-card')
+    this.card = element('div', 'finish-card')
     this.card.setAttribute('role', 'dialog')
     this.card.setAttribute('aria-modal', 'true')
     this.card.setAttribute('aria-label', 'Race finished')
 
-    this.place = make('p', 'finish-place')
-    this.word = make('span', 'finish-place-word')
-    this.of = make('span', 'finish-of')
+    this.place = element('p', 'finish-place')
+    this.word = element('span', 'finish-place-word')
+    this.of = element('span', 'finish-of')
     this.place.append(this.word, this.of)
-    this.line = make('p', 'finish-line')
-    this.time = make('p', 'finish-time')
+    this.line = element('p', 'finish-line')
+    this.time = element('p', 'finish-time')
 
-    this.home = make('div', 'finish-home')
-    this.homeList = make('ol', 'finish-home-list')
-    this.home.append(make('h2', '', 'Home so far'), this.homeList)
+    this.home = element('div', 'finish-home')
+    this.homeList = element('ol', 'finish-home-list')
+    this.home.append(element('h2', '', 'Home so far'), this.homeList)
     const { table, body } = standingsTable()
-    this.table = make('div', 'finish-table standings')
+    this.table = element('div', 'finish-table standings')
     this.table.append(table)
     this.tableBody = body
     this.table.hidden = true
 
-    this.button = document.createElement('button')
-    this.button.type = 'button'
-    this.button.className = 'finish-back'
-    this.button.textContent = 'Back to lobby'
+    this.button = button('Back to lobby', 'finish-back')
     this.button.addEventListener('click', back)
 
-    this.card.append(make('p', 'finish-kicker', 'Race finished'), this.place, this.line, this.time, this.home, this.table, this.button)
-    this.root.append(this.confetti, make('div', 'finish-scrim'), this.card)
+    this.card.append(element('p', 'finish-kicker', 'Race finished'), this.place, this.line, this.time, this.home, this.table, this.button)
+    this.root.append(this.confetti, element('div', 'finish-scrim'), this.card)
   }
 
   /** Whether the celebration is up. */
@@ -130,17 +106,17 @@ export class FinishScreen {
 
   /** Throw the celebration: the place, the time, the chime, the confetti and the button under the hand. */
   show(state: FinishState): void {
-    this.root.hidden = false
+    setHidden(this.root, false)
     this.ownPlace = state.place
-    this.card.classList.toggle('win', state.place === 1)
-    this.word.textContent = ordinal(state.place)
-    this.of.textContent = `of ${state.of}`
-    this.line.textContent = finishLine(state.place)
-    this.time.textContent = finishTime(state.ticks)
-    this.home.hidden = false
-    this.table.hidden = true
+    setClass(this.card, 'win', state.place === 1)
+    writeText(this.word, ordinal(state.place))
+    writeText(this.of, `of ${state.of}`)
+    writeText(this.line, finishLine(state.place))
+    writeText(this.time, finishTime(state.ticks))
+    setHidden(this.home, false)
+    setHidden(this.table, true)
     this.homeList.replaceChildren()
-    this.shownHome = ''
+    this.shownRacers.length = 0
     this.update(state)
     this.pop()
     this.scatter(state.place === 1)
@@ -149,35 +125,77 @@ export class FinishScreen {
     this.button.focus()
   }
 
-  /** Keep the list of who is home so far up to date, as the ones behind come in. */
+  /** Keep the list of who is home so far up to date, as the ones behind come in. Asked every frame, it writes nothing while nobody else is home. */
   update(state: FinishState): void {
     // Once the standings are up, they are what is shown below the place.
     if (!this.table.hidden) return
-    const shown = state.home.map((racer) => `${racer.place}:${racer.name}`).join('|')
-    this.home.hidden = state.home.length === 0
-    if (shown === this.shownHome) return
-    this.shownHome = shown
+    setHidden(this.home, state.home.length === 0)
+    if (!this.homeChanged(state.home)) return
     this.homeList.replaceChildren()
     for (const racer of state.home) {
-      const row = make('li', 'finish-home-row')
-      row.append(make('span', 'finish-home-place', ordinal(racer.place)), make('span', 'finish-home-name', racer.name))
+      const row = element('li', 'finish-home-row')
+      row.append(element('span', 'finish-home-place', ordinal(racer.place)), element('span', 'finish-home-name', racer.name))
       this.homeList.append(row)
     }
   }
 
   /** The race's standings, in place of who was home so far, once the race is over. */
   standings(rows: readonly Standing[]): void {
+    if (!this.standingsChanged(rows)) return
     fillStandings(this.tableBody, rows, this.ownPlace)
-    this.table.hidden = false
-    this.home.hidden = true
+    setHidden(this.table, false)
+    setHidden(this.home, true)
+  }
+
+  /** Whether who is home has changed, a racer at a time: no list is built for the same one over again. */
+  private homeChanged(home: readonly FinishedRacer[]): boolean {
+    if (home.length !== this.shownRacers.length) {
+      this.shownRacers.length = 0
+      for (const racer of home) this.shownRacers.push({ place: racer.place, name: racer.name })
+      return true
+    }
+    for (const [index, racer] of home.entries()) {
+      const shown = this.shownRacers[index]!
+      if (shown.place === racer.place && shown.name === racer.name) continue
+      shown.place = racer.place
+      shown.name = racer.name
+      return true
+    }
+    return false
+  }
+
+  /** Whether these standings are not the ones already up, a racer at a time. */
+  private standingsChanged(rows: readonly Standing[]): boolean {
+    if (rows.length !== this.shownRows.length) {
+      this.shownRows.length = 0
+      for (const row of rows) this.shownRows.push(row)
+      return true
+    }
+    for (const [index, row] of rows.entries()) {
+      const shown = this.shownRows[index]!
+      if (
+        shown.place === row.place &&
+        shown.name === row.name &&
+        shown.vehicle === row.vehicle &&
+        shown.seconds === row.seconds &&
+        shown.dnf === row.dnf &&
+        shown.bot === row.bot
+      ) {
+        continue
+      }
+      this.shownRows[index] = row
+      return true
+    }
+    return false
   }
 
   /** Take the celebration down, with its confetti. */
   hide(): void {
-    this.root.hidden = true
-    this.card.classList.remove('win')
+    setHidden(this.root, true)
+    setClass(this.card, 'win', false)
     this.confetti.replaceChildren()
-    this.shownHome = ''
+    this.shownRacers.length = 0
+    this.shownRows.length = 0
   }
 
   /** Pop the place in: the bounce is started again from the beginning. */
@@ -192,16 +210,17 @@ export class FinishScreen {
   private scatter(win: boolean): void {
     this.confetti.replaceChildren()
     if (stillMotion()) return
-    // Wave after wave over the whole screen, and twice as many for a win.
+    // Wave after wave over the whole screen, and twice as many for a win, each wave put in in one go.
     const waves = win ? CONFETTI_WAVES_WON : CONFETTI_WAVES
-    for (let wave = 0; wave < waves; wave++) this.throwPieces(CONFETTI_PIECES, wave * CONFETTI_WAVE_SECONDS)
+    const confetti = document.createDocumentFragment()
+    for (let wave = 0; wave < waves; wave++) this.throwPieces(confetti, CONFETTI_PIECES, wave * CONFETTI_WAVE_SECONDS)
+    this.confetti.append(confetti)
   }
 
-  /** Scatter this many pieces, this many seconds after the first, each falling and tumbling its own way. */
-  private throwPieces(count: number, after: number): void {
+  /** Scatter this many pieces into what is being gathered, this many seconds after the first, each falling and tumbling its own way. */
+  private throwPieces(into: DocumentFragment, count: number, after: number): void {
     for (let index = 0; index < count; index++) {
-      const piece = document.createElement('i')
-      piece.className = index % 3 === 0 ? 'finish-piece round' : 'finish-piece'
+      const piece = element('i', index % 3 === 0 ? 'finish-piece round' : 'finish-piece')
       piece.style.left = `${Math.random() * 100}%`
       piece.style.background = CONFETTI_COLORS[index % CONFETTI_COLORS.length]!
       piece.style.setProperty('--fall', `${3 + Math.random() * 3}s`)
@@ -209,7 +228,7 @@ export class FinishScreen {
       piece.style.setProperty('--drift', `${(Math.random() - 0.5) * 40}vw`)
       piece.style.setProperty('--size', `${0.7 + Math.random() * 0.9}`)
       piece.style.setProperty('--turn', `${Math.round(Math.random() * 720 - 360)}deg`)
-      this.confetti.append(piece)
+      into.append(piece)
     }
   }
 }

@@ -1,4 +1,4 @@
-import { NO_TARGET, createVehicleInput, occupiedSeats, type Arena, type Seat, type VehicleInput } from '@buggies/game'
+import { NO_TARGET, createVehicleInput, type Arena, type Seat, type VehicleInput } from '@buggies/game'
 import { quat, v3, vcopy } from '@buggies/physics'
 
 import type {
@@ -92,11 +92,13 @@ export function gatherSnapshot(
 
 /** What this snapshot told of the bananas, for the next to tell only what differs. */
 export function rememberTold(arena: Arena, out: RoomSnapshots): void {
-  arena.pickups.forEach((pickup, slot) => (out.toldGenerations[slot] = pickup.generation))
+  const { toldGenerations } = out
+  for (let slot = 0; slot < arena.pickups.length; slot++) toldGenerations[slot] = arena.pickups[slot]!.generation
   out.toldLoose.clear()
   for (const loose of arena.loose) out.toldLoose.add(loose.id)
 }
 
+/** Every occupied seat's car, gathered into the room's own scratch vehicle for each: where it is, how it moves and what it carries. */
 function gatherVehicles(
   arena: Arena,
   out: RoomSnapshots,
@@ -104,7 +106,8 @@ function gatherVehicles(
 ): VehicleSnapshot[] {
   const { vehicles } = out
   let count = 0
-  for (const seat of occupiedSeats(arena)) {
+  for (const seat of arena.seats) {
+    if (!seat.occupied) continue
     const { body } = seat.vehicle
     const vehicle = (vehicles[count] ??= {
       seat: 0,
@@ -163,7 +166,15 @@ function gatherVehicles(
     vehicle.lightsOn = seat.lightsOn
     vehicle.hornTicks = seat.hornTicks
     vehicle.signalHeld = seat.signalHeld
-    Object.assign(vehicle.appliedInput, appliedInputOf(seat))
+    const input = appliedInputOf(seat)
+    const applied = vehicle.appliedInput
+    applied.steer = input.steer
+    applied.throttle = input.throttle
+    applied.brake = input.brake
+    applied.handbrake = input.handbrake
+    applied.weapon = input.weapon
+    applied.fire = input.fire
+    applied.signal = input.signal
     count += 1
   }
   vehicles.length = count
@@ -172,16 +183,17 @@ function gatherVehicles(
 
 /** The slots whose banana has moved on since the last snapshot told of them, or every slot. */
 function gatherPickups(arena: Arena, out: RoomSnapshots, all: boolean): PickupSnapshot[] {
-  const { pickups } = out
+  const { pickups, toldGenerations } = out
   let count = 0
-  arena.pickups.forEach((pickup, slot) => {
-    if (!all && pickup.generation === out.toldGenerations[slot]) return
+  for (let slot = 0; slot < arena.pickups.length; slot++) {
+    const pickup = arena.pickups[slot]!
+    if (!all && pickup.generation === toldGenerations[slot]) continue
     const entry = (pickups[count] ??= { slot: 0, generation: 0, ticksUntilOut: 0 })
     entry.slot = slot
     entry.generation = pickup.generation
     entry.ticksUntilOut = Math.max(pickup.spawnTick - arena.tick, 0)
     count += 1
-  })
+  }
   pickups.length = count
   return pickups
 }
@@ -256,7 +268,8 @@ function gatherRockets(arena: Arena, out: RoomSnapshots): RocketSnapshot[] {
 /** Every robot, where it is on its rounds and what its eyes are on. */
 function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
   const { robots } = out
-  arena.robots.forEach((robot, index) => {
+  for (let index = 0; index < arena.robots.length; index++) {
+    const robot = arena.robots[index]!
     const entry = (robots[index] ??= {
       id: 0,
       road: 0,
@@ -279,7 +292,7 @@ function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
     entry.cooldownTicks = robot.cooldownTicks
     entry.damage = robot.damage
     entry.deaths = robot.deaths
-  })
+  }
   robots.length = arena.robots.length
   return robots
 }
@@ -287,7 +300,8 @@ function gatherRobots(arena: Arena, out: RoomSnapshots): RobotSnapshot[] {
 /** Every saucer, where it is and what it is about. */
 function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
   const { ufos } = out
-  arena.ufos.forEach((ufo, index) => {
+  for (let index = 0; index < arena.ufos.length; index++) {
+    const ufo = arena.ufos[index]!
     const entry = (ufos[index] ??= {
       id: 0,
       position: v3(),
@@ -314,7 +328,7 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
     entry.deaths = ufo.deaths
     vcopy(entry.velocity, ufo.velocity)
     entry.climb = ufo.climb
-  })
+  }
   ufos.length = arena.ufos.length
   return ufos
 }
@@ -322,7 +336,8 @@ function gatherUfos(arena: Arena, out: RoomSnapshots): UfoSnapshot[] {
 /** Every spider, where it is and how far on its walk. */
 function gatherSpiders(arena: Arena, out: RoomSnapshots): SpiderSnapshot[] {
   const { spiders } = out
-  arena.spiders.forEach((spider, index) => {
+  for (let index = 0; index < arena.spiders.length; index++) {
+    const spider = arena.spiders[index]!
     const entry = (spiders[index] ??= { id: 0, position: v3(), forward: v3(), legs: 0, target: v3(), stride: 0, bombTicks: 0, damage: 0, deaths: 0 })
     entry.id = spider.id
     vcopy(entry.position, spider.position)
@@ -333,7 +348,7 @@ function gatherSpiders(arena: Arena, out: RoomSnapshots): SpiderSnapshot[] {
     entry.bombTicks = spider.bombTicks
     entry.damage = spider.damage
     entry.deaths = spider.deaths
-  })
+  }
   spiders.length = arena.spiders.length
   return spiders
 }
@@ -341,13 +356,14 @@ function gatherSpiders(arena: Arena, out: RoomSnapshots): SpiderSnapshot[] {
 /** Every meteor coming down: few, and short-lived, so all of them every time. */
 function gatherMeteors(arena: Arena, out: RoomSnapshots): MeteorSnapshot[] {
   const { meteors } = out
-  arena.meteors.forEach((meteor, index) => {
+  for (let index = 0; index < arena.meteors.length; index++) {
+    const meteor = arena.meteors[index]!
     const entry = (meteors[index] ??= { id: 0, from: v3(), to: v3(), age: 0 })
     entry.id = meteor.id
     vcopy(entry.from, meteor.from)
     vcopy(entry.to, meteor.to)
     entry.age = arena.tick - meteor.bornTick
-  })
+  }
   meteors.length = arena.meteors.length
   return meteors
 }

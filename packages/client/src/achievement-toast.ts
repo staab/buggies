@@ -1,4 +1,5 @@
 import { ACHIEVEMENTS, type Achievement, type Seat } from '@buggies/game'
+import { setHidden } from './dom.ts'
 
 /** How long a feat is told of, in seconds: up until the next may be paid. */
 export const ACHIEVEMENT_SECONDS = 2.8
@@ -80,7 +81,7 @@ export class AchievementToast {
 
   /** Show this, or nothing. */
   render(state: AchievementState | undefined): void {
-    this.root.hidden = state === undefined
+    setHidden(this.root, state === undefined)
     if (state === undefined) {
       this.shownKey = ''
       return

@@ -57,7 +57,7 @@ import {
   TICKS_PER_SNAPSHOT,
   rejectLabel,
 } from './protocol.ts'
-import { SLOTS_START } from './game-registry.ts'
+import { SLOTS_START, gameStatus } from './game-registry.ts'
 import { GameServer, ROOM_CLOSED, type ArenaRequest } from './server.ts'
 import type { ClientTransport, ClientTransportHandlers, TransportConnection, TransportHandlers } from './transport.ts'
 import {
@@ -236,8 +236,8 @@ class Session {
     this.server = new GameServer(
       { worldFor: (world) => worldOf(world), arenaFor: (request) => this.arenaMaker(request) },
       {
-        onJoined: (seat, _connection, room) => this.events.push(`joined ${room.key} ${seat.id}`),
-        onLeft: (seat, _connection, room) => this.events.push(`left ${room.key} ${seat.id}`),
+        onJoined: (seat, _connection, room) => this.events.push(`joined ${room.game}:${room.world} ${seat.id}`),
+        onLeft: (seat, _connection, room) => this.events.push(`left ${room.game}:${room.world} ${seat.id}`),
         onRejected: (_, reason) => this.events.push(`rejected: ${reason}`),
         onRespawned: (seat, why) => this.events.push(`respawned ${seat.id} ${why}`),
         onChangedVehicle: (seat) => this.events.push(`changed ${seat.id} ${seat.profile}`),
@@ -248,8 +248,8 @@ class Session {
         onGameFinished: (game) => this.events.push(`finished game ${game.id}`),
         onGameClosed: (game) => this.events.push(`closed game ${game.id}`),
         onCourseFailed: (game, reason) => this.events.push(`no course for game ${game.id}: ${reason}`),
-        onRoomOpened: (room) => this.events.push(`opened ${room.key}`),
-        onRoomClosed: (room) => this.events.push(`closed ${room.key}`),
+        onRoomOpened: (room) => this.events.push(`opened ${room.game}:${room.world}`),
+        onRoomClosed: (room) => this.events.push(`closed ${room.game}:${room.world}`),
       },
       this.npcs,
       this.store,
@@ -1079,7 +1079,7 @@ describe('a session', () => {
 
     // The countdown over, both drive.
     await session.run(COUNTDOWN_TICKS / TICKS_PER_SECOND + 0.5)
-    expect(session.server.gameFor(id)!.status).toBe('racing')
+    expect(gameStatus(session.server.gameFor(id)!)).toBe('racing')
     await session.until(() => cy.client.games().find((game) => game.id === id)?.status === 'racing')
     expect(a.prediction.race!.elapsed).toBeGreaterThanOrEqual(0)
     await session.run(1.5)
@@ -1178,7 +1178,7 @@ describe('a session', () => {
     // The other never moves from the grid, and is a DNF at the end of it.
     await session.play(bo, 'tank', map.seed)
     await session.run(COUNTDOWN_TICKS / TICKS_PER_SECOND + 0.5)
-    expect(session.server.gameFor(id)!.status).toBe('racing')
+    expect(gameStatus(session.server.gameFor(id)!)).toBe('racing')
     expect(a.prediction.race!.ofWorlds).toBe(3)
 
     // Every gate of every leg, in order, and on through the portal the last of each leads by. B never moves.
@@ -1219,7 +1219,7 @@ describe('a session', () => {
 
     // Nobody left to wait for: the standings come at once, with the one place filled and no DNF.
     await session.run(0.5)
-    expect(session.server.gameFor(id)!.status).toBe('finished')
+    expect(gameStatus(session.server.gameFor(id)!)).toBe('finished')
     const standings = a.client.standings()
     expect(standings).toHaveLength(1)
     expect(standings![0]).toMatchObject({ place: 1, name: 'Ada', vehicle: 'sportsCar', dnf: false })
@@ -2024,7 +2024,7 @@ describe('a session', () => {
     expect(leader()).toBe(map.seed)
     // The countdown over, the gates are the ones that count.
     await session.run(COUNTDOWN_TICKS / TICKS_PER_SECOND + 0.5)
-    expect(session.server.gameFor(id)!.status).toBe('racing')
+    expect(gameStatus(session.server.gameFor(id)!)).toBe('racing')
 
     // B through the first gate takes the lead, and is still on this world.
     const plan = (await a.client.racePlan())!
@@ -2061,7 +2061,7 @@ describe('a session', () => {
     // The bots take their places on the grid with the player, and count as seated.
     await session.until(() => session.server.roomFor(id, map.seed)?.bots.size === bots.length)
     await session.run(COUNTDOWN_TICKS / TICKS_PER_SECOND + 0.5)
-    expect(game.status).toBe('racing')
+    expect(gameStatus(game)).toBe('racing')
 
     // Every gate of every leg, the bots driven through them in order, and out of the portal each leg leads by.
     const course = game.course!
@@ -2112,6 +2112,20 @@ describe('a session', () => {
     await session.run(3)
     expect(bots.some((bot, at) => distance(bot.car.vehicle.frame.position, before[at]!) > 20)).toBe(true)
     expect(bots.every((bot) => bot.car.npc)).toBe(true)
+    session.dispose()
+  }, 300_000)
+
+  it('gives a traffic bot’s seat to a player without leaving the bot behind on the island’s list', async () => {
+    // Every seat of the free drive holds a car nobody drives, the game's own bots among them.
+    const session = new Session({ npcs: MAX_PLAYERS })
+    const ada = await session.tab('Ada')
+    const game = await session.host(ada, 'free', 'sportsCar', 2)
+    const a = await session.play(ada, 'sportsCar')
+    const room = session.server.roomFor(game, map.seed)!
+    // Ada takes the first of them, Axle's: Axle's car and its name go with the seat.
+    expect(room.bots).toHaveLength(1)
+    expect([...room.bots.values()].map((bot) => bot.name)).toEqual(['Bolt'])
+    expect(a.client.lobby().players.map((player) => player.name)).toEqual(['Ada', 'Bolt'])
     session.dispose()
   }, 300_000)
 

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Sound } from './audio.ts'
 import type { RoomHost } from './game-room.ts'
 import type { HudState } from './hud.ts'
-import type { Choice, FinishState, LocalDriver, ModeView, PlayRequest, PortalTrip, Screen, ShellModes, WatchRequest } from './mode.ts'
+import type { Choice, DriveMode, FinishState, LiveMode, LocalDriver, ModeView, PlayRequest, PortalTrip, Screen, ShellModes, WatchRequest } from './mode.ts'
 import { Shell, type ScreenHost, type ShellLobby, type ShellScreens } from './shell.ts'
 import type { ShowroomView } from './showroom-mode.ts'
 import { Sun } from './sun.ts'
@@ -33,7 +33,9 @@ interface StubLobby extends ShellLobby {
 }
 
 /** A drive that only remembers what was done to it. */
-interface StubGame extends ModeView {
+interface StubGame extends DriveMode {
+  /** The game's clock: never moved by a stub. */
+  tick(): number
   kind: string
   through: number
   tripTo: PortalTrip | null
@@ -43,11 +45,11 @@ interface StubGame extends ModeView {
   came: FinishState | null
   disposed: boolean
   updates: { dt: number; active: boolean }[]
-  swaps: VehicleProfileId[]
 }
 
 /** A race looked on at that only remembers what was done to it. */
-interface StubWatch extends ModeView {
+interface StubWatch extends LiveMode {
+  tick(): number
   disposed: boolean
   /** Why its room closed, as the mode says: `null` while it is there. */
   reason: string | null
@@ -280,8 +282,8 @@ function build(options: { name?: string; game?: number } = {}) {
         came: null,
         disposed: false,
         updates: [],
-        swaps: [],
         camera: new THREE.PerspectiveCamera(),
+        tick: () => 0,
         resize() {},
         update(dt, active) {
           game.updates.push({ dt, active })
@@ -308,9 +310,6 @@ function build(options: { name?: string; game?: number } = {}) {
         lost() {
           return game.dropped
         },
-        changeVehicle(profile) {
-          game.swaps.push(profile)
-        },
         dispose() {
           game.disposed = true
         },
@@ -327,6 +326,7 @@ function build(options: { name?: string; game?: number } = {}) {
         disposed: false,
         updates: 0,
         camera: new THREE.PerspectiveCamera(),
+        tick: () => 0,
         resize() {},
         update() {
           watch.updates += 1

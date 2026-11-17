@@ -1,6 +1,9 @@
 import { VEHICLE_PROFILE_LABELS } from '@buggies/game'
 import type { Standing } from '@buggies/net'
 
+import { button, element } from './dom.ts'
+import { timeLabel } from './race-text.ts'
+
 /** A standing as a row of the table. */
 export interface StandingRow {
   /** Where the racer came, 1 upward. */
@@ -15,12 +18,6 @@ export interface StandingRow {
   winner: boolean
 }
 
-/** A race time as minutes and seconds: `3:07`. */
-export function timeLabel(seconds: number): string {
-  const whole = Math.max(Math.round(seconds), 0)
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
-}
-
 /** A standing as the table shows it: the place, the racer and what it drove, and its time or `DNF`. A bot's name says it is one. */
 export function standingRow(standing: Standing): StandingRow {
   return {
@@ -32,31 +29,21 @@ export function standingRow(standing: Standing): StandingRow {
   }
 }
 
-function cell(text: string, className = ''): HTMLTableCellElement {
-  const made = document.createElement('td')
-  made.className = className
-  made.textContent = text
-  return made
-}
-
 /** The table a race's standings go in: its headings, and the body to fill with its rows. */
 export function standingsTable(): { table: HTMLTableElement; body: HTMLTableSectionElement } {
-  const table = document.createElement('table')
-  const head = document.createElement('thead')
-  const titleRow = document.createElement('tr')
+  const table = element('table')
+  const head = element('thead')
+  const titleRow = element('tr')
   for (const [text, className] of [
     ['#', ''],
     ['Racer', ''],
     ['Vehicle', ''],
     ['Time', 'time'],
   ] as const) {
-    const th = document.createElement('th')
-    th.className = className
-    th.textContent = text
-    titleRow.append(th)
+    titleRow.append(element('th', className, text))
   }
   head.append(titleRow)
-  const body = document.createElement('tbody')
+  const body = element('tbody')
   table.append(head, body)
   return { table, body }
 }
@@ -66,11 +53,11 @@ export function fillStandings(body: HTMLTableSectionElement, rows: readonly Stan
   body.replaceChildren()
   for (const standing of rows) {
     const row = standingRow(standing)
-    const made = document.createElement('tr')
+    const made = element('tr')
     if (row.winner) made.classList.add('winner')
     // A finisher's place is theirs alone, so the place the player came marks their row.
     if (ownPlace > 0 && !standing.dnf && standing.place === ownPlace) made.classList.add('you')
-    made.append(cell(row.place), cell(row.name), cell(row.vehicle), cell(row.time, 'time'))
+    made.append(element('td', '', row.place), element('td', '', row.name), element('td', '', row.vehicle), element('td', 'time', row.time))
     body.append(made)
   }
 }
@@ -86,20 +73,14 @@ export class Standings {
   private readonly back: HTMLButtonElement
 
   constructor(root: HTMLElement, back: () => void) {
-    this.panel = document.createElement('div')
-    this.panel.className = 'panel standings'
+    this.panel = element('div', 'panel standings')
     this.panel.hidden = true
 
-    const heading = document.createElement('h1')
-    heading.textContent = 'Standings'
     const { table, body } = standingsTable()
     this.body = body
-    this.back = document.createElement('button')
-    this.back.type = 'button'
-    this.back.className = 'back'
-    this.back.textContent = 'Back to lobby'
+    this.back = button('Back to lobby', 'back')
     this.back.addEventListener('click', back)
-    this.panel.append(heading, table, this.back)
+    this.panel.append(element('h1', '', 'Standings'), table, this.back)
     root.append(this.panel)
   }
 
@@ -108,6 +89,7 @@ export class Standings {
     return !this.panel.hidden
   }
 
+  /** Put the standings up: how each racer came, and the way back to the lobby under them. */
   show(rows: readonly Standing[]): void {
     fillStandings(this.body, rows)
     this.panel.hidden = false

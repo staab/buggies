@@ -64,6 +64,26 @@ export function earshot(distance: number): number {
 /** How smoothly an engine follows its rev, in seconds. */
 const ENGINE_FOLLOW = 0.08
 
+/** How finely a voice's level and its distance are told, so that a frame with nothing new to say is not told at all. */
+const LEVEL_STEPS = 200
+const DISTANCE_STEPS = 4
+
+/** What a voice was last told: its level and how far off it is, in the whole steps above, `NaN` until it is told anything. */
+interface VoiceLevel {
+  level: number
+  distance: number
+}
+
+/** A voice at this level, this far off, is one it is already at: nothing is told it, and nothing is scheduled on the audio thread for it. */
+function voiceChanged(shown: VoiceLevel, level: number, distance: number): boolean {
+  const told = Math.round(level * LEVEL_STEPS)
+  const away = Math.round(distance * DISTANCE_STEPS)
+  if (told === shown.level && away === shown.distance) return false
+  shown.level = told
+  shown.distance = away
+  return true
+}
+
 /** How loud engines are against everything else: they run all the time, so they sit well back. */
 const ENGINE_LEVEL = 0.6
 
@@ -107,6 +127,7 @@ export class EngineVoice {
   private readonly chug: GainNode
   private readonly beat: OscillatorNode | null
   private readonly beatDepth: GainNode | null
+  private readonly shown: VoiceLevel = { level: Number.NaN, distance: Number.NaN }
   private stopped = false
 
   constructor(
@@ -149,9 +170,10 @@ export class EngineVoice {
     }
   }
 
-  /** How hard it works, 0 to 1, and how far off it is. */
+  /** How hard it works, 0 to 1, and how far off it is: told every frame, and the engine steered only where that has changed. */
   set(rev: number, distance = 0): void {
     if (this.stopped) return
+    if (!voiceChanged(this.shown, rev, distance)) return
     const { timbre, context } = this
     const now = context.currentTime
     const frequency = engineFrequency(timbre, rev)
@@ -190,6 +212,7 @@ export class SkidVoice {
   private readonly band: BiquadFilterNode
   private readonly tone: OscillatorNode
   private readonly gain: GainNode
+  private readonly shown: VoiceLevel = { level: Number.NaN, distance: Number.NaN }
   private stopped = false
 
   constructor(
@@ -222,9 +245,10 @@ export class SkidVoice {
     this.tone.start(now)
   }
 
-  /** How hard the tires are sliding, 0 to 1, and how far off. */
+  /** How hard the tires are sliding, 0 to 1, and how far off: told every frame, and the squeal steered only where that has changed. */
   set(slip: number, distance = 0): void {
     if (this.stopped) return
+    if (!voiceChanged(this.shown, slip, distance)) return
     const now = this.context.currentTime
     this.gain.gain.setTargetAtTime(0.3 * slip * earshot(distance), now, SKID_FOLLOW)
     this.band.frequency.setTargetAtTime(800 + 450 * slip, now, SKID_FOLLOW)
@@ -250,6 +274,7 @@ export class ThrustVoice {
   private readonly rush: AudioBufferSourceNode
   private readonly rumble: OscillatorNode
   private readonly gain: GainNode
+  private readonly shown: VoiceLevel = { level: Number.NaN, distance: Number.NaN }
   private stopped = false
 
   constructor(
@@ -278,9 +303,10 @@ export class ThrustVoice {
     this.rumble.start(now)
   }
 
-  /** How hard it is burning, 0 to 1, and how far off. */
+  /** How hard it is burning, 0 to 1, and how far off: told every frame, and the roar steered only where that has changed. */
   set(burn: number, distance = 0): void {
     if (this.stopped) return
+    if (!voiceChanged(this.shown, burn, distance)) return
     this.gain.gain.setTargetAtTime(0.5 * burn * earshot(distance), this.context.currentTime, 0.08)
   }
 
@@ -320,6 +346,7 @@ export class SirenVoice {
   private readonly tone: OscillatorNode
   private readonly wail: OscillatorNode
   private readonly gain: GainNode
+  private readonly shown: VoiceLevel = { level: Number.NaN, distance: Number.NaN }
   private stopped = false
 
   constructor(
@@ -348,9 +375,10 @@ export class SirenVoice {
     this.wail.start(now)
   }
 
-  /** Whether it is on, and how far off. */
+  /** Whether it is on, and how far off: told every frame, and the wail started and stopped only where that has changed. */
   set(on: boolean, distance = 0): void {
     if (this.stopped) return
+    if (!voiceChanged(this.shown, on ? 1 : 0, distance)) return
     this.gain.gain.setTargetAtTime(on ? SIREN.level * earshot(distance) : 0, this.context.currentTime, 0.05)
   }
 

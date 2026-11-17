@@ -162,6 +162,9 @@ export class LocalPrediction {
   private readonly lastSentInput = createVehicleInput()
   private readonly stepInput = createVehicleInput()
   private readonly displacement = v3()
+  /** Where the local car and each other car are, kept from one snapshot to the next: a reconcile measures them all. */
+  private readonly ownPosition = v3()
+  private readonly otherPosition = v3()
 
   /**
    * How the race this world is one of stands, as the server last said: the
@@ -405,10 +408,12 @@ export class LocalPrediction {
    * nothing to replay.
    */
   private chooseCoasting(): void {
-    const own = this.seat.vehicle.body.translation()
+    const own = this.ownPosition
+    const at = this.otherPosition
+    this.seat.vehicle.body.translation(own)
     for (const seat of this.mirror.seats) {
       if (seat === this.seat || !seat.occupied) continue
-      const at = seat.vehicle.body.translation()
+      seat.vehicle.body.translation(at)
       const apart = Math.hypot(at.x - own.x, at.y - own.y, at.z - own.z)
       if (seat.coasting ? apart < DRIVEN_WITHIN : apart > COASTING_BEYOND) setCoasting(this.mirror, seat, !seat.coasting)
     }

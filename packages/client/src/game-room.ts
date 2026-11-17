@@ -3,6 +3,7 @@ import { SLOTS_MOST, type GameMode, type GameOptions, type GameSlotView, type Ga
 import { WORLD_KINDS, WORLD_TRAITS, planetSeedOf, type WorldKind } from '@buggies/terrain'
 
 import { CarPicker, startPicking } from './car-picker.ts'
+import { button, element, setClass, setHidden, writeAttribute, writeText } from './dom.ts'
 
 import './room.css'
 
@@ -117,17 +118,146 @@ export function roomStatus(game: GameView): string {
   return `hosted by ${host} · ${waiting}`
 }
 
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
-  const made = document.createElement(tag)
-  if (className !== '') made.className = className
-  if (text !== '') made.textContent = text
-  return made
-}
+/** What a slot's row offers, which is what this tab may do about the seat and not what the seat is doing. */
+type RowParts = 'own-free' | 'own-race' | 'bot' | 'other'
 
-function button(text: string, className = ''): HTMLButtonElement {
-  const made = element('button', className, text)
-  made.type = 'button'
-  return made
+/**
+ * One seat's row in the room: whose it is, what they drive, whether they are
+ * ready, and the one or two things this tab may do about it: ready up and
+ * choose a car in its own seat, or choose a bot's car and take its slot
+ * away. A row is kept from message to message, and says only what changed.
+ */
+class SlotRow {
+  readonly element = element('li', 'slot')
+  private readonly said = element('div', 'said')
+  private readonly name = element('span', 'name')
+  private readonly note = element('span', 'note', 'you')
+  private readonly state = element('span', 'state')
+  private readonly doing = element('div', 'doing')
+  /** What the row is made of, and the parts of it, kept while that stays the same. */
+  private parts: RowParts | null = null
+  private drive: HTMLButtonElement | null = null
+  private tick: HTMLInputElement | null = null
+  private car: HTMLButtonElement | null = null
+  private drop: HTMLButtonElement | null = null
+  private vehicle: HTMLElement | null = null
+  /** The seat as last shown, for the buttons that act on it to read. */
+  private current: GameSlotView | null = null
+
+  constructor(
+    private readonly host: RoomHost,
+    /** A car is being chosen for this seat. */
+    private readonly chooseCar: (slot: GameSlotView) => void,
+  ) {
+    this.said.append(this.name, this.note)
+    // Another's readiness is said beside their name; this tab's own is the box it ticks in the doing, under it.
+    this.element.append(this.said, this.state)
+  }
+
+  /** Say what this seat is now, and offer what this tab may do about it. */
+  show(slot: GameSlotView, game: GameView, own: GameSlotView | null, host: boolean): void {
+    this.current = slot
+    const you = slot === own
+    const parts: RowParts = you ? (game.options.mode === 'free' ? 'own-free' : 'own-race') : slot.bot && host ? 'bot' : 'other'
+    setClass(this.element, 'you', you)
+    setClass(this.element, 'bot', slot.bot)
+    setClass(this.element, 'in', slot.ready || slot.driving)
+    writeText(this.name, slotName(slot, game.host))
+    setHidden(this.note, !you)
+    // Another's readiness is said; this tab's own is the box it ticks, or the button it drives with.
+    setHidden(this.state, you)
+    if (!you) writeText(this.state, slot.driving ? 'driving' : slot.ready ? 'ready' : 'not ready')
+    if (parts !== this.parts) {
+      this.parts = parts
+      this.build(parts)
+    }
+    this.showControls(slot, game, host)
+  }
+
+  /** The things the row offers, made anew only where they are not the ones it offers now. */
+  private build(parts: RowParts): void {
+    this.doing.replaceChildren()
+    this.drive = null
+    this.tick = null
+    this.car = null
+    this.drop = null
+    this.vehicle = null
+    if (parts === 'own-free') {
+      this.drive = button('Drive', 'go')
+      this.drive.addEventListener('click', () => this.askDrive())
+      this.doing.append(this.drive)
+    } else if (parts === 'own-race') {
+      this.tick = element('input')
+      this.tick.type = 'checkbox'
+      this.tick.addEventListener('change', () => this.askReady())
+      const label = element('label', 'ready')
+      label.append(this.tick, element('span', '', 'Ready'))
+      this.doing.append(label)
+    }
+    if (parts !== 'other') {
+      this.car = button('', 'vehicle')
+      this.car.addEventListener('click', () => this.askCar())
+      this.doing.append(this.car)
+    }
+    if (parts === 'bot') {
+      this.drop = button('✕', 'remove')
+      this.drop.addEventListener('click', () => this.askRemove())
+      this.doing.append(this.drop)
+    }
+    if (parts === 'other') {
+      // A car this tab may not change is only said.
+      this.vehicle = element('span', 'vehicle')
+      this.doing.append(this.vehicle)
+    }
+    this.element.append(this.doing)
+  }
+
+  /** What the row's parts say now: what this seat is driving, and what may be done about it. */
+  private showControls(slot: GameSlotView, game: GameView, host: boolean): void {
+    if (this.drive !== null) {
+      writeText(this.drive, slot.driving ? 'Driving' : 'Drive')
+      if (this.drive.disabled !== slot.driving) this.drive.disabled = slot.driving
+    }
+    if (this.tick !== null) {
+      if (this.tick.checked !== slot.ready) this.tick.checked = slot.ready
+      const open = game.status === 'open'
+      if (this.tick.disabled !== !open) this.tick.disabled = !open
+    }
+    if (this.car !== null) {
+      writeText(this.car, `${VEHICLE_PROFILE_LABELS[slot.vehicle]} ▾`)
+      writeAttribute(this.car, 'title', `Choose ${slot.bot ? `${slot.name}'s` : 'your'} car`)
+    }
+    if (this.drop !== null) {
+      writeAttribute(this.drop, 'title', `Take ${slot.name}'s slot away`)
+      writeAttribute(this.drop, 'aria-label', `Take ${slot.name}'s slot away`)
+      const removable = !mayRemoveSlot(game, host, slot.slot)
+      if (this.drop.disabled !== removable) this.drop.disabled = removable
+    }
+    if (this.vehicle !== null) writeText(this.vehicle, VEHICLE_PROFILE_LABELS[slot.vehicle])
+  }
+
+  /** This tab is ready to drive, or no longer is. */
+  private askReady(): void {
+    if (this.tick !== null) this.host.ready(this.tick.checked)
+  }
+
+  /** This tab drives into the world, or is already driving. */
+  private askDrive(): void {
+    const slot = this.current
+    if (slot !== null) this.host.ready(!slot.driving)
+  }
+
+  /** A car is chosen for this seat. */
+  private askCar(): void {
+    const slot = this.current
+    if (slot !== null) this.chooseCar(slot)
+  }
+
+  /** The host takes this bot's slot away. */
+  private askRemove(): void {
+    const slot = this.current
+    if (slot !== null) this.host.removeSlot(slot.slot)
+  }
 }
 
 /**
@@ -147,6 +277,8 @@ export class GameRoom {
   private readonly title = element('h1')
   private readonly status = element('p', 'status')
   private readonly slots = element('ul', 'slots')
+  /** A row for each seat in the game, kept from message to message: only the seats that change are written. */
+  private readonly rows = new Map<number, SlotRow>()
   private readonly add = button('+ Add a bot', 'add')
   private readonly warning = element('p', 'warning')
   private readonly options = element('fieldset', 'options')
@@ -266,7 +398,7 @@ export class GameRoom {
 
   /** Whether the world is still being made for its stage: said there until it is. */
   making(making: boolean): void {
-    this.worldStage.classList.toggle('making', making)
+    setClass(this.worldStage, 'making', making)
   }
 
   /** The stage the vehicle being chosen is drawn in, or nothing while the car modal is shut. */
@@ -281,7 +413,7 @@ export class GameRoom {
       return
     }
     this.shown = game
-    this.root.hidden = false
+    setHidden(this.root, false)
     // Another seed is another set of worlds: the preview goes back to the island on it.
     if (game.options.seed !== this.shownSeed) {
       this.shownSeed = game.options.seed
@@ -292,7 +424,7 @@ export class GameRoom {
   }
 
   hide(): void {
-    this.root.hidden = true
+    setHidden(this.root, true)
     this.shown = null
     this.shownSeed = -1
     this.preview = 'planet'
@@ -301,8 +433,8 @@ export class GameRoom {
 
   /** Why the room could not be entered, or the course could not be built: kept in view until something changes. */
   warn(text: string): void {
-    this.warning.textContent = text
-    this.warning.hidden = text === ''
+    writeText(this.warning, text)
+    setHidden(this.warning, text === '')
   }
 
   private render(): void {
@@ -311,94 +443,64 @@ export class GameRoom {
     const host = this.host.isHost()
     const own = ownMember(game)
     const racing = game.options.mode === 'race'
-    this.title.textContent = racing ? 'Race' : 'Free drive'
-    this.status.textContent = roomStatus(game)
+    writeText(this.title, racing ? 'Race' : 'Free drive')
+    writeText(this.status, roomStatus(game))
     this.renderSlots(game, own, host)
     this.renderOptions(game, host, racing)
 
     this.leaveChosenSlot(game)
-    this.startButton.hidden = !(racing && host)
-    this.startButton.disabled = !mayStart(game, host)
-    this.startButton.textContent =
-      game.status === 'preparing' ? 'Preparing the course…' : game.status === 'starting' ? 'Starting…' : 'Start the race'
+    setHidden(this.startButton, !(racing && host))
+    const startable = mayStart(game, host)
+    if (this.startButton.disabled !== !startable) this.startButton.disabled = !startable
+    writeText(
+      this.startButton,
+      game.status === 'preparing' ? 'Preparing the course…' : game.status === 'starting' ? 'Starting…' : 'Start the race',
+    )
     this.warn(game.fault ?? '')
   }
 
   /** One row a seat: whose it is, what they drive, whether they are ready, and what this tab may do about it. */
   private renderSlots(game: GameView, own: GameSlotView | null, host: boolean): void {
-    this.slots.replaceChildren()
+    const order: number[] = []
     for (const slot of game.slots) {
-      const you = slot === own
-      const row = element('li', 'slot')
-      if (you) row.classList.add('you')
-      if (slot.bot) row.classList.add('bot')
-      if (slot.ready || slot.driving) row.classList.add('in')
-
-      const said = element('div', 'said')
-      said.append(element('span', 'name', slotName(slot, game.host)))
-      if (you) said.append(element('span', 'note', 'you'))
-      row.append(said)
-      // Another's readiness is said; this tab's own is the box it ticks, or the button it drives with.
-      if (!you) row.append(element('span', 'state', slot.driving ? 'driving' : slot.ready ? 'ready' : 'not ready'))
-
-      const doing = element('div', 'doing')
-      if (you) {
-        if (game.options.mode === 'free') {
-          const drive = button(slot.driving ? 'Driving' : 'Drive', 'go')
-          drive.disabled = slot.driving
-          drive.addEventListener('click', () => this.host.ready(!slot.driving))
-          doing.append(drive)
-        } else {
-          const tick = element('input')
-          tick.type = 'checkbox'
-          tick.checked = slot.ready
-          tick.disabled = game.status !== 'open'
-          tick.addEventListener('change', () => this.host.ready(tick.checked))
-          const label = element('label', 'ready')
-          label.append(tick, element('span', '', 'Ready'))
-          doing.append(label)
-        }
-        doing.append(this.carButton(slot))
-      } else if (slot.bot && host) {
-        doing.append(this.carButton(slot))
-        const drop = button('✕', 'remove')
-        drop.title = `Take ${slot.name}'s slot away`
-        drop.setAttribute('aria-label', `Take ${slot.name}'s slot away`)
-        drop.disabled = !mayRemoveSlot(game, host, slot.slot)
-        drop.addEventListener('click', () => this.host.removeSlot(slot.slot))
-        doing.append(drop)
-      } else {
-        // A car this tab may not change is only said.
-        doing.append(element('span', 'vehicle', VEHICLE_PROFILE_LABELS[slot.vehicle]))
+      let row = this.rows.get(slot.slot)
+      if (row === undefined) {
+        row = new SlotRow(this.host, (each) => this.chooseFor(each))
+        this.rows.set(slot.slot, row)
       }
-      row.append(doing)
-      this.slots.append(row)
+      row.show(slot, game, own, host)
+      order.push(slot.slot)
     }
-    this.add.hidden = !mayAddSlot(game, host)
+    const kept = new Set(order)
+    for (const [at, row] of this.rows) {
+      if (kept.has(at)) continue
+      this.rows.delete(at)
+      row.element.remove()
+    }
+    // The seats keep the order the game has them in, which is the order of their numbers.
+    for (const [index, at] of order.entries()) {
+      const row = this.rows.get(at)!
+      if (this.slots.children[index] !== row.element) this.slots.insertBefore(row.element, this.slots.children[index] ?? null)
+    }
+    setHidden(this.add, !mayAddSlot(game, host))
   }
 
   /** The game's world and rules, as the host may set them and everyone may see them. */
   private renderOptions(game: GameView, host: boolean, racing: boolean): void {
     const editable = mayEdit(game, host)
     const { options } = game
-    this.options.disabled = !editable
-    this.hostOnly.textContent = host ? 'The game is under way: its course and rules are set.' : 'Only the host sets the game.'
-    this.hostOnly.hidden = editable
-    for (const [mode, choice] of this.modes) choice.setAttribute('aria-pressed', String(mode === options.mode))
-    if (document.activeElement !== this.seed) this.seed.value = String(planetSeedOf(options.seed))
-    this.raceLength.hidden = !racing
-    for (const choice of this.lengths) choice.setAttribute('aria-pressed', String(Number(choice.dataset.length) === options.raceLength))
-    this.weapons.setAttribute('aria-pressed', String(options.weapons))
-    this.bananas.setAttribute('aria-pressed', String(options.bananas))
-    for (const [kind, choice] of this.worlds) choice.setAttribute('aria-pressed', String(kind === this.preview))
-  }
-
-  /** The button that opens the car modal on this slot's vehicle, named for the car it is now. */
-  private carButton(slot: GameSlotView): HTMLButtonElement {
-    const made = button(`${VEHICLE_PROFILE_LABELS[slot.vehicle]} ▾`, 'vehicle')
-    made.title = `Choose ${slot.bot ? `${slot.name}'s` : 'your'} car`
-    made.addEventListener('click', () => this.chooseFor(slot))
-    return made
+    if (this.options.disabled !== !editable) this.options.disabled = !editable
+    writeText(this.hostOnly, host ? 'The game is under way: its course and rules are set.' : 'Only the host sets the game.')
+    setHidden(this.hostOnly, editable)
+    for (const [mode, choice] of this.modes) writeAttribute(choice, 'aria-pressed', String(mode === options.mode))
+    // The seed is not taken off a host in the middle of typing it.
+    const seed = String(planetSeedOf(options.seed))
+    if (document.activeElement !== this.seed && this.seed.value !== seed) this.seed.value = seed
+    setHidden(this.raceLength, !racing)
+    for (const choice of this.lengths) writeAttribute(choice, 'aria-pressed', String(Number(choice.dataset.length) === options.raceLength))
+    writeAttribute(this.weapons, 'aria-pressed', String(options.weapons))
+    writeAttribute(this.bananas, 'aria-pressed', String(options.bananas))
+    for (const [kind, choice] of this.worlds) writeAttribute(choice, 'aria-pressed', String(kind === this.preview))
   }
 
   /** Open the car modal on this slot's car: this tab's own, or a bot's, which is the host's to set. */
@@ -430,7 +532,7 @@ export class GameRoom {
   private look(kind: WorldKind): void {
     if (this.preview === kind) return
     this.preview = kind
-    for (const [each, choice] of this.worlds) choice.setAttribute('aria-pressed', String(each === kind))
+    for (const [each, choice] of this.worlds) writeAttribute(choice, 'aria-pressed', String(each === kind))
     this.host.previewWorld(kind)
   }
 

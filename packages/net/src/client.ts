@@ -233,11 +233,14 @@ export class NetClient {
     }
     return {
       estimatedServerTick: this.timeline.estimatedServerTick(this.clock()),
-      stepsFor: (nextTick) => this.stepsFor(nextTick),
+      stepsFor: this.stepsForMirror,
       input,
       newestSnapshot: this.newestSnapshot,
     }
   }
+
+  /** How many ticks the prediction should run this step: `stepsFor`, bound once so that a frame makes nothing. */
+  private readonly stepsForMirror = (nextTick: number): number => this.stepsFor(nextTick)
 
   /**
    * How many ticks the prediction should run this step, given that its

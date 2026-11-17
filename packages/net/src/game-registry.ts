@@ -61,6 +61,8 @@ export interface Racer {
   readonly key: number
   /** The slot it holds, which is how fast a bot dares go. */
   readonly slot: number
+  /** Its place in the line the racers start in, from the order they were seated. */
+  readonly grid: number
   readonly name: string
   readonly vehicle: VehicleProfileId
   /** Driven by a bot rather than a person. */
@@ -73,6 +75,21 @@ export interface Racer {
   /** 1 upward once it has finished and while it races: where it stands, from the last placing. */
   place: number
 }
+
+/**
+ * Where a game is in its life, and the ticks that moved it on. One value
+ * rather than a status and a handful of ticks that are only meaningful in
+ * some of its states, so that a game cannot be, say, racing with no start.
+ */
+export type GamePhase =
+  | { readonly kind: 'open' }
+  | { readonly kind: 'preparing' }
+  /** Its racers take their places: the countdown begins once they are all there or by `seatedBy`, and ends at `startsAt`. */
+  | { readonly kind: 'starting'; readonly seatedBy: number; readonly startsAt: number | null }
+  /** Driving from `startsAt`; `overAt` is set once the race is called over, and its standings still to be posted. */
+  | { readonly kind: 'racing'; readonly startsAt: number; readonly overAt: number | null }
+  /** Over, its standings up until it is deleted at `closesAt`. */
+  | { readonly kind: 'finished'; readonly startsAt: number; readonly overAt: number; readonly closesAt: number }
 
 /** A game on the server, from the moment its host makes it until its standings have been shown. */
 export interface GameRecord {
@@ -87,13 +104,7 @@ export interface GameRecord {
   readonly slots: Slot[]
   /** By member id, in the order they joined. */
   readonly members: Map<number, GameMember>
-  status: GameStatus
-  /** The server tick by which every racer must be on the grid; the countdown starts then at the latest. */
-  seatedBy: number
-  /** The server tick the 3-2-1 ends and driving begins; `NO_TICK` until the countdown starts. */
-  startsAt: number
-  /** The server tick the race was called over and the standings stand; `NO_TICK` until then. */
-  overAt: number
+  phase: GamePhase
   /** The race's course, once the host has started it and the worlds are made. */
   course: Course | null
   /** Every racer, by the pass it drives with: it outlives any one room. */
@@ -106,13 +117,13 @@ export interface GameRecord {
   nextMember: number
   /** How many bots the game has seated all told, which is how far down the pool its next one's name is. */
   nextBot: number
-  /** The server tick the game is deleted, once its standings have been shown. */
-  closesAt: number
 }
 
 /** What one step of a game changed about where it is in its life. */
 export interface GameEffect {
-  /** The countdown is over and driving has begun. */
+  /** The countdown has just begun: every racer is on the grid, or their waiting time is up. */
+  countdown: boolean
+  /** Driving has begun. */
   started: boolean
   /** The race is over and the standings stand. */
   finished: boolean
@@ -120,12 +131,54 @@ export interface GameEffect {
   closed: boolean
 }
 
-/** Nothing changed about where the game is in its life. */
-function noEffect(): GameEffect {
-  return { started: false, finished: false, closed: false }
+/** Nothing changed about where the game is in its life, which is what most steps are. */
+const NO_EFFECT: GameEffect = { countdown: false, started: false, finished: false, closed: false }
+
+/** Where the game is in its life, as the wire names it. */
+export function gameStatus(game: GameRecord): GameStatus {
+  return game.phase.kind
 }
 
-/** A game its host has just made: a planet of its own to start on, every rule on, and a race three worlds long unless it is changed. */
+/** Whether a race of it is under way: its countdown, or its driving. That is what the start screen may watch. */
+export function raceUnderWay(game: GameRecord): boolean {
+  return game.phase.kind === 'starting' || game.phase.kind === 'racing'
+}
+
+/** The tick driving began or will, or `NO_TICK` until the countdown has. */
+export function startsAtOf(game: GameRecord): number {
+  return 'startsAt' in game.phase ? (game.phase.startsAt ?? NO_TICK) : NO_TICK
+}
+
+/** The tick the race was called over, or `NO_TICK` while it has not been. */
+export function overAtOf(game: GameRecord): number {
+  return 'overAt' in game.phase ? (game.phase.overAt ?? NO_TICK) : NO_TICK
+}
+
+/** Whether the game waits for its host to start it: nothing is driven in it yet. */
+export function gameOpen(game: GameRecord): boolean {
+  return game.phase.kind === 'open'
+}
+
+/** The game its host has just made, before anything is in it: a planet of its own to start on, every rule on, a race three worlds long. */
+function emptyGame(id: number, demo: boolean, options: GameOptions): GameRecord {
+  return {
+    id,
+    demo,
+    host: 0,
+    options,
+    slots: [],
+    members: new Map(),
+    phase: { kind: 'open' },
+    course: null,
+    racers: new Map(),
+    standings: [],
+    lastFault: null,
+    nextMember: 1,
+    nextBot: 0,
+  }
+}
+
+/** A game its host has just made, in the vehicle they joined in, with the pass they drive it by. */
 export function createGame(
   id: number,
   connection: TransportConnection,
@@ -135,25 +188,7 @@ export function createGame(
   seed: number,
   pass: number,
 ): GameRecord {
-  const game: GameRecord = {
-    id,
-    demo: false,
-    host: 0,
-    options: { mode: 'race', seed: planetSeedOf(seed), weapons: true, bananas: true, raceLength: WORLDS_DEFAULT },
-    slots: [],
-    members: new Map(),
-    status: 'open',
-    seatedBy: NO_TICK,
-    startsAt: NO_TICK,
-    overAt: NO_TICK,
-    course: null,
-    racers: new Map(),
-    standings: [],
-    lastFault: null,
-    nextMember: 1,
-    nextBot: 0,
-    closesAt: NO_TICK,
-  }
+  const game = emptyGame(id, false, { mode: 'race', seed: planetSeedOf(seed), weapons: true, bananas: true, raceLength: WORLDS_DEFAULT })
   // The first slot is the host's from the moment it takes it, as a player takes any bot's slot.
   game.slots.push({ kind: 'bot', name: BOT_NAMES[0]!, vehicle, pass: NO_PASS })
   const member = addMember(game, connection, name, vehicle, challenge, pass)
@@ -166,25 +201,7 @@ export function createGame(
 
 /** The server's own demo race: four bots, two worlds, and nobody hosting it. */
 export function createDemoGame(id: number, seed: number): GameRecord {
-  const game: GameRecord = {
-    id,
-    demo: true,
-    host: 0,
-    options: { mode: 'race', seed: planetSeedOf(seed), weapons: true, bananas: true, raceLength: WORLDS_LEAST },
-    slots: [],
-    members: new Map(),
-    status: 'open',
-    seatedBy: NO_TICK,
-    startsAt: NO_TICK,
-    overAt: NO_TICK,
-    course: null,
-    racers: new Map(),
-    standings: [],
-    lastFault: null,
-    nextMember: 1,
-    nextBot: 0,
-    closesAt: NO_TICK,
-  }
+  const game = emptyGame(id, true, { mode: 'race', seed: planetSeedOf(seed), weapons: true, bananas: true, raceLength: WORLDS_LEAST })
   while (game.slots.length < SLOTS_START) addBotSlot(game)
   return game
 }
@@ -235,8 +252,7 @@ export function addMember(
 /** Whether a game may still be joined: a race while it waits, a free drive at any time, with a bot's slot to spare. The server's own demo race is nobody's to join. */
 export function joinable(game: GameRecord): boolean {
   if (game.demo) return false
-  const race = game.options.mode === 'race'
-  if (race && game.status !== 'open') return false
+  if (game.options.mode === 'race' && !gameOpen(game)) return false
   return game.slots.some((slot) => slot.kind === 'bot')
 }
 
@@ -281,16 +297,15 @@ function cleanOptions(options: GameOptions): GameOptions {
  * drive while nobody is out in it. Whether it happened.
  */
 export function editGame(game: GameRecord, member: number, options: GameOptions): boolean {
-  if (game.host !== member || !mayEdit(game)) return false
+  if (game.host !== member || !mayEditOptions(game)) return false
   game.options = cleanOptions(options)
   game.lastFault = null
   return true
 }
 
 /** Whether the host may change the game's options: a race before it starts, a free drive nobody is out in. */
-function mayEdit(game: GameRecord): boolean {
-  if (game.options.mode === 'race') return game.status === 'open'
-  return !anyoneDriving(game)
+function mayEditOptions(game: GameRecord): boolean {
+  return game.options.mode === 'race' ? gameOpen(game) : !anyoneDriving(game)
 }
 
 /**
@@ -299,7 +314,7 @@ function mayEdit(game: GameRecord): boolean {
  * world already being driven in.
  */
 function slotsEditable(game: GameRecord): boolean {
-  return game.options.mode === 'free' || game.status === 'open'
+  return game.options.mode === 'free' || gameOpen(game)
 }
 
 /** Whether anyone in a free drive is out in the world: its rules may not change under them. */
@@ -343,20 +358,29 @@ export function setReady(game: GameRecord, member: number, vehicle: VehicleProfi
 
 /** The race's course is to be built, and the room says so: its host's Start, or the server's own for its demo. Whether it is. */
 export function prepareRace(game: GameRecord): boolean {
-  if (game.options.mode !== 'race' || game.status !== 'open') return false
-  game.status = 'preparing'
+  if (game.options.mode !== 'race' || !gameOpen(game)) return false
+  game.phase = { kind: 'preparing' }
   game.lastFault = null
   return true
 }
 
+/** A course that could not be built puts the game back to waiting, its host to be told why. */
+export function failCourse(game: GameRecord, reason: string): void {
+  if (game.phase.kind !== 'preparing') return
+  game.phase = { kind: 'open' }
+  game.lastFault = reason
+}
+
 /** The course is built and the racers are to take their places on the grid of its first world: a racer for every slot, bots included. */
 export function beginRace(game: GameRecord, course: Course, at: number): void {
-  if (game.status !== 'preparing') return
+  if (game.phase.kind !== 'preparing') return
   game.course = course
   game.racers.clear()
   game.slots.forEach((slot, index) => {
+    const grid = game.racers.size
     if (slot.kind === 'bot') {
-      game.racers.set(slot.pass, { key: slot.pass, slot: index, name: slot.name, vehicle: slot.vehicle, bot: true, leg: 0, checkpoint: 0, finishedAt: 0, place: 0 })
+      const racer: Racer = { key: slot.pass, slot: index, grid, name: slot.name, vehicle: slot.vehicle, bot: true, leg: 0, checkpoint: 0, finishedAt: 0, place: 0 }
+      game.racers.set(slot.pass, racer)
       return
     }
     const member = game.members.get(slot.member)
@@ -364,6 +388,7 @@ export function beginRace(game: GameRecord, course: Course, at: number): void {
     game.racers.set(member.drivePass, {
       key: member.drivePass,
       slot: index,
+      grid,
       name: member.name,
       vehicle: member.vehicle,
       bot: false,
@@ -373,15 +398,14 @@ export function beginRace(game: GameRecord, course: Course, at: number): void {
       place: 0,
     })
   })
-  game.seatedBy = at + SEATING_TICKS
-  game.status = 'starting'
-  placeRacers(game)
+  game.phase = { kind: 'starting', seatedBy: at + SEATING_TICKS, startsAt: null }
+  placeRacers(game, [])
 }
 
 /** Why the host cannot start the race now, or `null` if they can: someone not ready, nobody here, or a race already on. */
 export function gameFault(game: GameRecord): string | null {
   if (game.options.mode !== 'race') return 'a free drive has no start'
-  if (game.status !== 'open') return 'the race has already started'
+  if (!gameOpen(game)) return 'the race has already started'
   if (game.members.size === 0) return 'nobody is in the game'
   for (const member of game.members.values()) if (!member.ready) return `${member.name} is not ready`
   return null
@@ -395,7 +419,7 @@ export function gameSummary(game: GameRecord): GameSummary {
     id: game.id,
     seed: game.options.seed,
     mode: game.options.mode,
-    status: game.status,
+    status: gameStatus(game),
     host: game.members.get(game.host)?.name ?? '',
     humans,
     slots: game.slots.length,
@@ -410,7 +434,7 @@ export function gameSummary(game: GameRecord): GameSummary {
  * follow: a free drive, or a race that is over or not yet under way.
  */
 export function leaderWorld(game: GameRecord): number {
-  if (game.options.mode !== 'race' || (game.status !== 'starting' && game.status !== 'racing')) return 0
+  if (game.options.mode !== 'race' || !raceUnderWay(game)) return 0
   const course = game.course
   if (course === null) return 0
   let leading: Racer | null = null
@@ -423,7 +447,7 @@ export function leaderWorld(game: GameRecord): number {
 
 /** Whether a member of a game has gone into its world: a race under way, or a free drive's member who is ready. */
 function drivingOf(game: GameRecord, member: GameMember): boolean {
-  if (game.options.mode === 'race') return (game.status === 'starting' || game.status === 'racing') && game.racers.has(member.drivePass)
+  if (game.options.mode === 'race') return raceUnderWay(game) && game.racers.has(member.drivePass)
   return member.ready
 }
 
@@ -431,7 +455,7 @@ function drivingOf(game: GameRecord, member: GameMember): boolean {
 function slotView(game: GameRecord, slot: Slot, at: number): GameSlotView {
   if (slot.kind === 'bot') {
     // A race's bots are out in it from the start; a free drive's roam it as soon as a world of it is made.
-    const driving = game.options.mode === 'race' ? game.status === 'starting' || game.status === 'racing' : true
+    const driving = game.options.mode === 'race' ? raceUnderWay(game) : true
     return { slot: at, bot: true, member: 0, name: slot.name, vehicle: slot.vehicle, ready: true, driving }
   }
   const member = game.members.get(slot.member)
@@ -445,7 +469,7 @@ export function gameView(game: GameRecord, member: number): GameView {
   game.slots.forEach((slot, at) => slots.push(slotView(game, slot, at)))
   return {
     id: game.id,
-    status: game.status,
+    status: gameStatus(game),
     host: game.host,
     options: game.options,
     slots,
@@ -467,70 +491,71 @@ export function botOfPass(game: GameRecord, pass: number): Slot | undefined {
   return undefined
 }
 
-/** How far into the game's racers a pass is: its place in the starting grid, from the order they joined in. */
-export function racerIndexOf(game: GameRecord, pass: number): number {
-  let at = 0
-  for (const key of game.racers.keys()) {
-    if (key === pass) return at
-    at += 1
-  }
-  return 0
-}
-
 /**
- * One step of a game's life: the countdown starts when every racer is on the
+ * One step of a game's life: the countdown begins when every racer is on the
  * grid or its waiting time is up, driving begins when the countdown is, and
  * the game is deleted once its standings have stood long enough.
  * `everyoneSeated` is the server's word that each racer has a seat in the
  * first world.
  */
 export function stepGame(game: GameRecord, clock: number, everyoneSeated = false): GameEffect {
-  if (game.status === 'starting') {
-    if (game.startsAt === NO_TICK && (everyoneSeated || clock >= game.seatedBy)) game.startsAt = clock + COUNTDOWN_TICKS
-    if (game.startsAt === NO_TICK || clock < game.startsAt) return noEffect()
-    game.status = 'racing'
-    return { started: true, finished: false, closed: false }
+  const phase = game.phase
+  if (phase.kind === 'starting') {
+    const begins = phase.startsAt ?? (everyoneSeated || clock >= phase.seatedBy ? clock + COUNTDOWN_TICKS : null)
+    if (begins === null) return NO_EFFECT
+    if (clock < begins) {
+      if (begins !== phase.startsAt) {
+        game.phase = { kind: 'starting', seatedBy: phase.seatedBy, startsAt: begins }
+        return { ...NO_EFFECT, countdown: true }
+      }
+      return NO_EFFECT
+    }
+    game.phase = { kind: 'racing', startsAt: begins, overAt: null }
+    return { countdown: begins !== phase.startsAt, started: true, finished: false, closed: false }
   }
-  if (game.status === 'racing' && game.overAt !== NO_TICK) {
-    game.status = 'finished'
-    game.closesAt = game.overAt + STANDINGS_TICKS
+  if (phase.kind === 'racing' && phase.overAt !== null) {
+    game.phase = { kind: 'finished', startsAt: phase.startsAt, overAt: phase.overAt, closesAt: phase.overAt + STANDINGS_TICKS }
     game.standings = standingsOf(game)
-    return { started: false, finished: true, closed: false }
+    return { countdown: false, started: false, finished: true, closed: false }
   }
-  if (game.status === 'finished' && game.closesAt !== NO_TICK && clock >= game.closesAt) return { started: false, finished: false, closed: true }
-  return noEffect()
+  if (phase.kind === 'finished' && clock >= phase.closesAt) return { countdown: false, started: false, finished: false, closed: true }
+  return NO_EFFECT
+}
+
+/** The race is called over at this tick: nobody finishes after it, and its standings are posted a grace from then. */
+export function callRaceOver(game: GameRecord, clock: number): void {
+  const phase = game.phase
+  if (phase.kind !== 'racing' || phase.overAt !== null) return
+  game.phase = { kind: 'racing', startsAt: phase.startsAt, overAt: clock }
 }
 
 /**
  * Where every racer stands: those that have finished in the order they did,
  * then the rest by how far through the course they are, ties by the order
- * they joined. Places are 1 upward and always consecutive.
+ * they joined. Places are 1 upward and always consecutive. `order` is the
+ * caller's to hold, so that placing a race every tick makes nothing.
  */
-export function placeRacers(game: GameRecord): void {
-  const order = new Map<number, number>()
-  const racers: Racer[] = []
-  for (const racer of game.racers.values()) {
-    order.set(racer.key, racers.length)
-    racers.push(racer)
-  }
-  const joined = (racer: Racer): number => order.get(racer.key) ?? 0
-  racers.sort((a, b) => {
+export function placeRacers(game: GameRecord, order: Racer[]): void {
+  order.length = 0
+  for (const racer of game.racers.values()) order.push(racer)
+  order.sort((a, b) => {
     const finished = a.finishedAt !== 0
     const alsoFinished = b.finishedAt !== 0
     if (finished !== alsoFinished) return finished ? -1 : 1
     if (finished && alsoFinished && a.finishedAt !== b.finishedAt) return a.finishedAt - b.finishedAt
     if (a.leg !== b.leg) return b.leg - a.leg
     if (a.checkpoint !== b.checkpoint) return b.checkpoint - a.checkpoint
-    return joined(a) - joined(b)
+    return a.grid - b.grid
   })
-  racers.forEach((racer, at) => (racer.place = at + 1))
+  for (let at = 0; at < order.length; at++) order[at]!.place = at + 1
 }
 
 /** How the race finished: every racer's place, and its time or a DNF. */
 function standingsOf(game: GameRecord): Standing[] {
+  const begins = startsAtOf(game)
   const rows: Standing[] = []
   for (const racer of game.racers.values()) {
-    const seconds = racer.finishedAt === 0 || game.startsAt === NO_TICK ? 0 : Math.round((racer.finishedAt - game.startsAt) / TICKS_PER_SECOND)
+    const seconds = racer.finishedAt === 0 || begins === NO_TICK ? 0 : Math.round((racer.finishedAt - begins) / TICKS_PER_SECOND)
     rows.push({ place: racer.place, name: racer.name, vehicle: racer.vehicle, seconds, dnf: racer.finishedAt === 0, bot: racer.bot })
   }
   return rows.sort((a, b) => a.place - b.place)

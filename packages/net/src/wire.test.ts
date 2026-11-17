@@ -720,6 +720,37 @@ describe('wire', () => {
   })
 })
 
+/**
+ * A fingerprint of a run of bytes: the same bytes always give the same
+ * number, and one byte changed in a thousand gives another.
+ */
+function fingerprint(bytes: Uint8Array): number {
+  let hash = 0x811c9dc5
+  for (const byte of bytes) {
+    hash ^= byte
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return hash
+}
+
+describe('wire bytes', () => {
+  it('keeps the bytes of every message where they were, as the clients in the wild read them', () => {
+    // A message that changes shape takes a new `PROTOCOL_VERSION` with it, never a quiet edit of one of these.
+    const lobbyBytes = encodeLobby({ players: [{ seat: 0, name: 'Ada' }, { seat: 3, name: 'Zoë ✨' }, { seat: 4, name: '' }] })
+    const gamesBytes = encodeGames([
+      { id: 1, seed: 4_000_000_001, mode: 'race', status: 'open', host: 'Ada', humans: 3, slots: 4, leader: 0, demo: false },
+    ])
+    const roomBytes = encodeGame(view, view.you, view.drivePass)
+    const planBytes = encodeRacePlan(plan)
+    const standingsBytes = encodeStandings([{ place: 1, name: 'Ada', vehicle: 'pickup', seconds: 93, dnf: false, bot: false }])
+    const fullBytes = encodeSnapshot(snapshot)
+    const changesBytes = encodeSnapshot({ ...snapshot, full: false, pickups: [], loose: [], removed: [], rockets: [], props: [] })
+    expect([lobbyBytes, gamesBytes, roomBytes, planBytes, standingsBytes, fullBytes, changesBytes].map(fingerprint)).toEqual([
+      2879811925, 885305893, 4247210214, 4060262060, 2328184866, 3503868358, 2839255302,
+    ])
+  })
+})
+
 describe('proving a nostr key', () => {
   const secret = newSecretKey()
   const pubkey = publicKeyOf(secret)

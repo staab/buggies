@@ -1,6 +1,8 @@
 import type { GameStatus, GameSummary } from '@buggies/net'
 import { WORLD_TRAITS, planetSeedOf } from '@buggies/terrain'
 
+import { button, element, setClass, setHidden, writeAttribute, writeText } from './dom.ts'
+
 /** How wide an island's thumbnail is drawn, in pixels: twice its height, as pictures are. */
 export const THUMB_PIXELS = 256
 
@@ -76,39 +78,107 @@ export function describeGame(game: GameSummary): GameCard {
   }
 }
 
-function span(className: string, text = ''): HTMLSpanElement {
-  const element = document.createElement('span')
-  element.className = className
-  element.textContent = text
-  return element
-}
-
-function line(className: string, text = ''): HTMLParagraphElement {
-  const paragraph = document.createElement('p')
-  paragraph.className = className
-  paragraph.textContent = text
-  return paragraph
-}
-
-function button(text: string, className = ''): HTMLButtonElement {
-  const made = document.createElement('button')
-  made.type = 'button'
-  made.className = className
-  made.textContent = text
-  return made
-}
-
-/** An island's picture painted into the card's own little canvas, twice its size on the page for sharpness. */
-function thumbnail(picture: HTMLCanvasElement | null): HTMLElement {
-  if (picture === null) return span('thumb')
-  const canvas = document.createElement('canvas')
-  canvas.className = 'thumb'
+/** An island's picture painted into a card's own little canvas, twice its size on the page for sharpness. */
+function paintThumbnail(canvas: HTMLCanvasElement, picture: HTMLCanvasElement): void {
   canvas.width = picture.width
   canvas.height = picture.height
   const context = canvas.getContext('2d')
-  if (context === null) return canvas
-  context.drawImage(picture, 0, 0)
-  return canvas
+  if (context !== null) context.drawImage(picture, 0, 0)
+}
+
+/** What a card's game offers to do with it, which is what its one button does. */
+type CardAction = 'none' | 'join' | 'watch'
+
+/**
+ * One game's card on the start screen: the world it is played on drawn
+ * beside it, what the game is and who is in it, and the one button that
+ * joins it or looks on at it. It is shown every frame the screen is up, so
+ * it keeps what it says and writes only what has changed.
+ */
+class GameEntry {
+  readonly element = element('div', 'entry')
+  private readonly placeholder = element('span', 'thumb')
+  private readonly picture = element('canvas', 'thumb')
+  private readonly name = element('span', 'name')
+  private readonly note = element('p', 'note')
+  private readonly top = element('div', 'entry-top')
+  private action: HTMLButtonElement | null = null
+  private actionKind: CardAction = 'none'
+  private shownThumbnail: HTMLCanvasElement | null = null
+  /** What the card was last told of its game, to tell whether it says what the game says now. */
+  private readonly shown = { seed: Number.NaN, mode: '', status: '', host: '', humans: Number.NaN, slots: Number.NaN, watching: false }
+
+  constructor(private readonly host: StartHost) {
+    this.picture.hidden = true
+    this.top.append(this.name)
+    this.element.append(this.placeholder, this.picture, this.top, this.note)
+  }
+
+  /** Whether the card already says what this game is now, watched as it is. */
+  sameAs(game: GameSummary, watching: number, picture: HTMLCanvasElement | null): boolean {
+    const shown = this.shown
+    return (
+      shown.seed === game.seed &&
+      shown.mode === game.mode &&
+      shown.status === game.status &&
+      shown.host === game.host &&
+      shown.humans === game.humans &&
+      shown.slots === game.slots &&
+      shown.watching === (watching === game.id) &&
+      this.shownThumbnail === picture
+    )
+  }
+
+  /** Say what this game is now, on its card. */
+  show(game: GameSummary, watching: number): void {
+    const card = describeGame(game)
+    writeText(this.name, card.world)
+    writeText(this.note, `${card.mode} · ${card.host} · ${card.players} · ${card.status}`)
+    setClass(this.element, 'watched', watching === game.id)
+    this.showAction(game, watching)
+    this.showThumbnail(this.host.picture(game))
+    const shown = this.shown
+    shown.seed = game.seed
+    shown.mode = game.mode
+    shown.status = game.status
+    shown.host = game.host
+    shown.humans = game.humans
+    shown.slots = game.slots
+    shown.watching = watching === game.id
+  }
+
+  /** The one button, which joins the game, watches it, or is not there at all. */
+  private showAction(game: GameSummary, watching: number): void {
+    const kind: CardAction = this.host.watchable(game) ? 'watch' : game.status === 'open' ? 'join' : 'none'
+    if (kind !== this.actionKind) {
+      this.actionKind = kind
+      this.action?.remove()
+      this.action = kind === 'none' ? null : button(kind === 'watch' ? 'Watch' : 'Join')
+      if (this.action !== null) {
+        const action = this.action
+        if (kind === 'watch') action.addEventListener('click', () => this.host.watch(game.id))
+        else action.addEventListener('click', () => this.host.join(game.id))
+        this.top.append(action)
+      }
+    }
+    if (this.action === null) return
+    if (kind === 'watch') {
+      // A race under way takes nobody: it is watched, and it plays on behind the screen while it is.
+      writeAttribute(this.action, 'aria-pressed', String(watching === game.id))
+      return
+    }
+    const open = this.host.joinable(game)
+    if (this.action.disabled !== !open) this.action.disabled = !open
+  }
+
+  /** The world's picture, into the card's own canvas: a blank card until it has been drawn. */
+  private showThumbnail(thumbnail: HTMLCanvasElement | null): void {
+    if (thumbnail === this.shownThumbnail) return
+    this.shownThumbnail = thumbnail
+    if (thumbnail !== null) paintThumbnail(this.picture, thumbnail)
+    setHidden(this.picture, thumbnail === null)
+    setHidden(this.placeholder, thumbnail !== null)
+  }
 }
 
 /**
@@ -118,40 +188,37 @@ function thumbnail(picture: HTMLCanvasElement | null): HTMLElement {
  * joined but watched, and whichever is watched plays on behind the screen:
  * the server's demo until one is picked. Whatever a game is doing, it is
  * shown; only the ones that may be joined have a Join to press.
+ *
+ * The screen is asked every frame whether it is what the server last said,
+ * a game at a time, and only a game that has changed is written to the page.
  */
 export class StartScreen {
   private readonly host: StartHost
-  private readonly panel: HTMLElement
-  private readonly lobby: HTMLElement
-  private readonly as: HTMLParagraphElement
-  private readonly warning: HTMLParagraphElement
-  private readonly change: HTMLButtonElement
-  private signature = ''
+  private readonly panel = element('div', 'panel')
+  private readonly lobby = element('div', 'lobby')
+  private readonly empty = element('p', 'list-empty', 'No games yet: host one.')
+  private readonly as = element('p', 'status')
+  private readonly warning = element('p', 'warning')
+  private readonly entries = new Map<number, GameEntry>()
+  /** The games on the screen, in the order they are on it, and the name they are playing as. */
+  private shownOrder: readonly number[] = []
+  private shownName = ''
 
   constructor(root: HTMLElement, host: StartHost) {
     this.host = host
-    this.panel = document.createElement('div')
-    this.panel.className = 'panel'
     this.panel.hidden = true
-
-    const heading = document.createElement('h1')
-    heading.textContent = 'Play'
-    this.as = line('status')
-    this.warning = line('warning')
     this.warning.hidden = true
-    this.lobby = document.createElement('div')
-    this.lobby.className = 'lobby'
 
+    const heading = element('h1', '', 'Play')
     const hosting = button('Host a game', 'host')
-    hosting.append(span('note', 'A race through several worlds, or the room’s switch makes it a free drive.'))
+    hosting.append(element('span', 'note', 'A race through several worlds, or the room’s switch makes it a free drive.'))
     hosting.addEventListener('click', () => this.host.host())
+    const change = button('Change name')
+    change.addEventListener('click', () => this.host.changeName())
+    const nav = element('div', 'nav')
+    nav.append(change)
 
-    this.change = button('Change name')
-    this.change.addEventListener('click', () => this.host.changeName())
-    const nav = document.createElement('div')
-    nav.className = 'nav'
-    nav.append(this.change)
-
+    this.lobby.append(this.empty)
     this.panel.append(heading, this.as, this.warning, hosting, this.lobby, nav)
     root.append(this.panel)
   }
@@ -173,61 +240,66 @@ export class StartScreen {
 
   /**
    * Put up the games as they are now, and a thumbnail for each that has
-   * one: called every frame, doing nothing until something has changed.
+   * one: called every frame, writing nothing until something has changed.
    */
   update(): void {
     if (this.panel.hidden) return
-    if (this.signatureOf() !== this.signature) this.render()
+    if (this.stale()) this.render()
   }
 
   /** Why nothing could be joined, kept in view until the player moves on. */
   warn(text: string): void {
-    this.warning.textContent = text
-    this.warning.hidden = text === ''
+    writeText(this.warning, text)
+    setHidden(this.warning, text === '')
   }
 
-  /** What the screen shows, in as much as tells it whether anything on it has changed. */
-  private signatureOf(): string {
-    return this.host
-      .games()
-      .filter((game) => !game.demo)
-      .map((game) => `${game.id}:${game.humans}:${game.slots}:${game.status}:${this.host.joinable(game) ? 1 : 0}:${this.host.picture(game) === null ? 0 : 1}`)
-      .concat(`${this.host.watching()}`)
-      .join('|')
-  }
-
-  private render(): void {
-    const games = this.host.games().filter((game) => !game.demo)
+  /** Whether any card on the screen is not what the server last said of its game. */
+  private stale(): boolean {
+    if (this.host.name() !== this.shownName) return true
     const watching = this.host.watching()
-    this.signature = this.signatureOf()
-    this.as.textContent = `Playing as ${this.host.name()}`
-    this.lobby.replaceChildren()
-    if (games.length === 0) {
-      this.lobby.append(line('list-empty', 'No games yet: host one.'))
-      return
+    let seen = 0
+    for (const game of this.host.games()) {
+      if (game.demo) continue
+      if (this.shownOrder[seen] !== game.id) return true
+      const entry = this.entries.get(game.id)
+      if (entry === undefined || !entry.sameAs(game, watching, this.host.picture(game))) return true
+      seen += 1
     }
-    for (const game of games) {
-      const card = describeGame(game)
-      const entry = document.createElement('div')
-      entry.className = watching === game.id ? 'entry watched' : 'entry'
-      const top = document.createElement('div')
-      top.className = 'entry-top'
-      top.append(span('name', card.world))
-      // A race under way takes nobody: it is watched, and it plays on behind the screen while it is.
-      const watch = this.host.watchable(game)
-      if (watch || game.status === 'open') {
-        const action = button(watch ? 'Watch' : 'Join')
-        if (watch) {
-          action.setAttribute('aria-pressed', String(watching === game.id))
-          action.addEventListener('click', () => this.host.watch(game.id))
-        } else {
-          action.disabled = !this.host.joinable(game)
-          action.addEventListener('click', () => this.host.join(game.id))
-        }
-        top.append(action)
+    return seen !== this.shownOrder.length
+  }
+
+  /** Write the games onto their cards: one card a game, kept from frame to frame and from lobby message to lobby message. */
+  private render(): void {
+    const watching = this.host.watching()
+    this.shownName = this.host.name()
+    writeText(this.as, `Playing as ${this.shownName}`)
+    const order: number[] = []
+    for (const game of this.host.games()) {
+      if (game.demo) continue
+      let entry = this.entries.get(game.id)
+      if (entry === undefined) {
+        entry = new GameEntry(this.host)
+        this.entries.set(game.id, entry)
       }
-      entry.append(thumbnail(this.host.picture(game)), top, line('note', `${card.mode} · ${card.host} · ${card.players} · ${card.status}`))
-      this.lobby.append(entry)
+      entry.show(game, watching)
+      order.push(game.id)
+    }
+    const kept = new Set(order)
+    for (const [id, entry] of this.entries) {
+      if (kept.has(id)) continue
+      this.entries.delete(id)
+      entry.element.remove()
+    }
+    this.arrange(order)
+    this.shownOrder = order
+  }
+
+  /** The cards in the order the games are in, the word on there being none at the end of them. */
+  private arrange(order: readonly number[]): void {
+    setHidden(this.empty, order.length !== 0)
+    for (const [index, id] of order.entries()) {
+      const entry = this.entries.get(id)!
+      if (this.lobby.children[index] !== entry.element) this.lobby.insertBefore(entry.element, this.lobby.children[index] ?? null)
     }
   }
 }

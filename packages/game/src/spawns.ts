@@ -13,11 +13,10 @@ const FACING_REACH = 3
 
 /** A sample of a road: the point, and where along the road it is. */
 export interface RoadSpot {
-  road: WorldRoad
-  index: number
-  point: Vec3
+  readonly road: WorldRoad
+  readonly index: number
+  readonly point: Vec3
 }
-
 
 /** A spawn at a point, standing upright there and facing along this way. */
 export function spawnHere(position: Vec3, forward: Vec3): VehicleSpawn {
@@ -49,19 +48,126 @@ export function spawnFacing(spot: RoadSpot, forward: Vec3): VehicleSpawn {
   return spawnHere(point, way)
 }
 
-/** The road point nearest a position, on any road that is not a tunnel. */
+/**
+ * How big a cell of the search for the road point nearest a place is, and how
+ * many cells either way from the middle of the world a cell of it may stand: a
+ * world's roads run over a ball a few hundred metres across.
+ */
+const ROAD_CELL = 30
+const ROAD_CELLS_EITHER_WAY = 512
+
+/** How many cells of the search the world's own reach from side to side: what a key of a cell is packed into. */
+const ROAD_CELLS_SPAN = ROAD_CELLS_EITHER_WAY * 2
+
+/**
+ * The points of a world's roads a car drives on, each with the cell of the
+ * search that holds it, kept for each world asked: a course asks where the
+ * road nearest a place is for every point of every route it lays.
+ */
+interface RoadIndex {
+  /** Every point of a road that is not a tunnel's, in the order of the roads, which is the order a tie is settled in. */
+  readonly spots: readonly RoadSpot[]
+  /** The points that lie in each cell of the search, by the cell's key. */
+  readonly cells: ReadonlyMap<number, readonly number[]>
+  /** How far the cells that hold a point reach either way from the middle of the world, as a bound to stop a search with. */
+  readonly least: number
+  readonly most: number
+}
+
+const roadIndexes = new WeakMap<World, RoadIndex>()
+
+/** The key of the cell of the search a place in a cell stands in, three cells across the world packed into one number. */
+function roadCellKey(x: number, y: number, z: number): number {
+  return ((x + ROAD_CELLS_EITHER_WAY) * ROAD_CELLS_SPAN + (y + ROAD_CELLS_EITHER_WAY)) * ROAD_CELLS_SPAN + (z + ROAD_CELLS_EITHER_WAY)
+}
+
+/** The cell of the search a place along one of the world's axes stands in. */
+function roadCellOf(value: number): number {
+  return Math.floor(value / ROAD_CELL)
+}
+
+/** The points of a world's roads, cell by cell, made once for each world asked. */
+function roadIndexOf(world: World): RoadIndex {
+  const known = roadIndexes.get(world)
+  if (known !== undefined) return known
+  const spots: RoadSpot[] = []
+  const cells = new Map<number, number[]>()
+  let least = Infinity
+  let most = -Infinity
+  for (const road of world.roads) {
+    const segments = road.closed ? road.points.length : road.points.length - 1
+    for (let index = 0; index < segments; index++) {
+      if (road.structure[index] === ROAD_TUNNEL) continue
+      const point = road.points[index]!
+      spots.push({ road, index, point })
+      const x = roadCellOf(point.x)
+      const y = roadCellOf(point.y)
+      const z = roadCellOf(point.z)
+      const key = roadCellKey(x, y, z)
+      const cell = cells.get(key)
+      if (cell === undefined) cells.set(key, [spots.length - 1])
+      else cell.push(spots.length - 1)
+      least = Math.min(least, x, y, z)
+      most = Math.max(most, x, y, z)
+    }
+  }
+  const fresh = { spots, cells, least: least === Infinity ? 0 : least, most: most === -Infinity ? 0 : most }
+  roadIndexes.set(world, fresh)
+  return fresh
+}
+
+/**
+ * The road point nearest a position, on any road that is not a tunnel: looked
+ * for cell by cell of the search, the nearest cells first, and the nearest
+ * point of them all. Of two points as near, the one first along the world's
+ * roads wins.
+ */
 export function nearestRoadSpotTo(planet: World, at: Vec3): RoadSpot | null {
+  const index = roadIndexOf(planet)
+  if (index.spots.length === 0) return null
+  const x = roadCellOf(at.x)
+  const y = roadCellOf(at.y)
+  const z = roadCellOf(at.z)
+  // Every cell that holds a point stands within this many cells of the one the place stands in.
+  const reach = Math.max(
+    Math.abs(x - index.least),
+    Math.abs(x - index.most),
+    Math.abs(y - index.least),
+    Math.abs(y - index.most),
+    Math.abs(z - index.least),
+    Math.abs(z - index.most),
+  )
   let best: RoadSpot | null = null
-  let bestDistance = Infinity
-  for (const road of planet.roads) {
-    const segmentCount = road.closed ? road.points.length : road.points.length - 1
-    for (const [i, point] of road.points.entries()) {
-      if (i >= segmentCount) break
-      if (road.structure[i] === ROAD_TUNNEL) continue
-      const distance = vdistance(point, at)
-      if (distance >= bestDistance) continue
-      bestDistance = distance
-      best = { road, index: i, point }
+  let bestSquare = Infinity
+  // The points of one cell of the search, taken up where they come nearer than the nearest so far.
+  const scan = (dx: number, dy: number, dz: number): void => {
+    const cell = index.cells.get(roadCellKey(x + dx, y + dy, z + dz))
+    if (cell === undefined) return
+    for (const ordinal of cell) {
+      const point = index.spots[ordinal]!.point
+      const awayX = point.x - at.x
+      const awayY = point.y - at.y
+      const awayZ = point.z - at.z
+      const square = awayX * awayX + awayY * awayY + awayZ * awayZ
+      if (square >= bestSquare) continue
+      bestSquare = square
+      best = index.spots[ordinal]!
+    }
+  }
+  for (let ring = 0; ring <= reach; ring++) {
+    // A cell of this ring stands no nearer than the ring within it: once the nearest point is nearer than that, the search is done.
+    const nearest = Math.max(ring - 1, 0) * ROAD_CELL
+    if (bestSquare < nearest * nearest) break
+    for (let dy = -ring; dy <= ring; dy++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        // The cells of a ring are its four sides and the rows across it: a cell on a side is one of a run of them.
+        if (Math.abs(dy) === ring || Math.abs(dz) === ring) {
+          for (let dx = -ring; dx <= ring; dx++) scan(dx, dy, dz)
+        } else {
+          scan(-ring, dy, dz)
+          scan(ring, dy, dz)
+        }
+      }
     }
   }
   return best

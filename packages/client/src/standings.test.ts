@@ -1,7 +1,8 @@
 import type { Standing } from '@buggies/net'
 import { describe, expect, it } from 'vitest'
 
-import { standingRow, timeLabel } from './standings.ts'
+import { timeLabel } from './race-text.ts'
+import { standingRow } from './standings.ts'
 
 function standing(patch: Partial<Standing> = {}): Standing {
   return { place: 1, name: 'Ada', vehicle: 'sportsCar', seconds: 67, dnf: false, bot: false, ...patch }

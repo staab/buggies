@@ -13,10 +13,6 @@
   box-sizing: border-box;
   pointer-events: auto;
 }
-.finish[hidden] {
-  display: none;
-}
-
 /* The world behind the celebration is dimmed, not hidden: the others are still coming home. */
 .finish-scrim {
   position: absolute;
@@ -79,7 +75,7 @@
   text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
 }
 .finish-card.win .finish-place {
-  color: #ffd24a;
+  color: var(--gold);
 }
 .finish-place.pop .finish-place-word {
   animation: finish-pop 0.75s cubic-bezier(0.16, 1.7, 0.4, 1) both;
@@ -96,7 +92,7 @@
   font-weight: 700;
 }
 .finish-card.win .finish-line {
-  color: #ffd24a;
+  color: var(--gold);
 }
 .finish-time {
   margin: 0;
@@ -109,10 +105,6 @@
 .finish-home {
   width: 100%;
   margin-top: 6px;
-}
-.finish-home[hidden],
-.finish-table[hidden] {
-  display: none;
 }
 .finish-home-list {
   list-style: none;
@@ -164,13 +156,13 @@
   outline-offset: 2px;
 }
 .finish-card.win .finish-back {
-  border-color: #ffd24a;
+  border-color: var(--gold);
   background: rgba(255, 210, 74, 0.16);
 }
 .finish-card.win .finish-back:hover,
 .finish-card.win .finish-back:focus-visible {
   background: rgba(255, 210, 74, 0.3);
-  outline-color: #ffd24a;
+  outline-color: var(--gold);
 }
 
 /* The confetti falls the whole screen over, from above it to below it. */

@@ -7,7 +7,7 @@ import { bendAround, bendMaterials } from './bend.ts'
 import { ChaseCamera, createCameraTuning, createChaseTarget } from './chase-camera.ts'
 import { cameraBounds } from './driver-hud.ts'
 import { MirrorCars, type CarField } from './mirror-cars.ts'
-import type { ModeView, WatchRequest } from './mode.ts'
+import type { LiveMode, WatchRequest } from './mode.ts'
 import { RaceView } from './race-view.ts'
 import { SUN_DISTANCE } from './sun.ts'
 import { WORLD_LOOKS } from './world-looks.ts'
@@ -28,7 +28,7 @@ const MAX_CATCH_UP = 0.25
  * shows the gate that racer is heading for. When the room closes, the mode
  * says why and the view that made it goes elsewhere.
  */
-export async function createWatchMode(request: WatchRequest): Promise<ModeView> {
+export async function createWatchMode(request: WatchRequest): Promise<LiveMode> {
   const { scene, sound, sun } = request
   let lost: string | null = null
   const client = new NetClient(
@@ -71,16 +71,17 @@ export async function createWatchMode(request: WatchRequest): Promise<ModeView> 
   let followedSeat = NO_SEAT
   let chaseSnapped = false
 
-  /**
-   * The racer to keep the camera on: the best placed here, or, before anyone
+  /** The racer to keep the camera on: the best placed here, or, before anyone
    * has a place, the one furthest round this world. In a free drive, whoever
    * came first.
    */
   const leaderSeat = (): number => {
     const race = watched.race
     if (race === null) {
-      const occupied = mirror.seats.find((seat) => seat.occupied)
-      return occupied === undefined ? NO_SEAT : occupied.id
+      for (const seat of mirror.seats) {
+        if (seat.occupied) return seat.id
+      }
+      return NO_SEAT
     }
     let best = NO_SEAT
     let bestPlace = Number.POSITIVE_INFINITY
@@ -96,7 +97,14 @@ export async function createWatchMode(request: WatchRequest): Promise<ModeView> 
   }
 
   /** How many gates of this world the racer in this seat has passed, for the ones shown over the road. */
-  const gatesPassed = (seat: number): number => watched.race?.racers.find((racer) => racer.seat === seat)?.checkpoint ?? 0
+  const gatesPassed = (seat: number): number => {
+    const race = watched.race
+    if (race === null) return 0
+    for (const racer of race.racers) {
+      if (racer.seat === seat) return racer.checkpoint
+    }
+    return 0
+  }
 
   /** Keep the eye on whoever leads, and the gates with it: as the race goes the car to watch changes. */
   const follow = (): void => {
@@ -117,7 +125,6 @@ export async function createWatchMode(request: WatchRequest): Promise<ModeView> 
     camera: chase.camera,
     // The game's time, as every mirror keeps it, so the day, the boats and the clouds are where they are for whoever is watching.
     tick: () => watched.tick(),
-    position: () => field.vehicle.frame.position,
     render(renderer) {
       const { frame, up } = field.vehicle
       sun.follow(frame.position, up)
@@ -153,7 +160,6 @@ export async function createWatchMode(request: WatchRequest): Promise<ModeView> 
         }
       }
     },
-    map,
     lost() {
       return lost
     },

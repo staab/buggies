@@ -14,9 +14,6 @@
   font-size: 13px;
   pointer-events: none;
 }
-.game-room[hidden] {
-  display: none;
-}
 .game-room h1,
 .game-room h2,
 .game-room h3,
@@ -151,17 +148,10 @@
   margin-top: 10px;
   text-align: center;
 }
-.game-room .add[hidden],
-.game-room .foot .big[hidden] {
-  display: none;
-}
 .game-room .warning {
   margin-top: 10px;
   color: #ffb4a2;
   font-size: 12px;
-}
-.game-room .warning[hidden] {
-  display: none;
 }
 .game-room .foot {
   display: flex;
@@ -187,9 +177,9 @@
   white-space: nowrap;
 }
 .game-room .big.go:not(:disabled) {
-  border-color: #ffd24a;
-  background: #ffd24a;
-  color: #1d1a10;
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--on-gold);
 }
 
 /* Down the right: the options card on top, the seed's worlds under it, and the stage they are looked at in. */
@@ -229,9 +219,6 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-}
-.game-room .field[hidden] {
-  display: none;
 }
 .game-room .seed {
   display: flex;
@@ -278,9 +265,6 @@
   margin-top: 10px;
   color: var(--dim);
   font-size: 12px;
-}
-.game-room .host-note[hidden] {
-  display: none;
 }
 .game-room .worlds {
   display: grid;
@@ -339,9 +323,6 @@
   place-items: center;
   pointer-events: auto;
 }
-.game-room .car-modal[hidden] {
-  display: none;
-}
 .game-room .car-dialog {
   display: flex;
   flex-direction: column;
@@ -396,11 +377,8 @@
 }
 .game-room .car-ability {
   margin-top: 3px;
-  color: #ffd24a;
+  color: var(--gold);
   font-size: 12px;
-}
-.game-room .car-ability[hidden] {
-  display: none;
 }
 .game-room .stats {
   display: grid;
@@ -426,7 +404,7 @@
 .game-room .bar .fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, var(--accent), #ffd24a);
+  background: linear-gradient(90deg, var(--accent), var(--gold));
   transition: width 200ms;
 }
 .game-room .pips {
@@ -456,9 +434,9 @@
   text-align: center;
 }
 .game-room .car-foot .choose {
-  border-color: #ffd24a;
-  background: #ffd24a;
-  color: #1d1a10;
+  border-color: var(--gold);
+  background: var(--gold);
+  color: var(--on-gold);
   font-weight: 800;
 }
 

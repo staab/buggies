@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { finishLine, finishTime, ordinal } from './finish-screen.ts'
+import { finishLine } from './finish-screen.ts'
+import { finishTime, ordinal } from './race-text.ts'
 
 describe('a finish’s place', () => {
   it('says a place the way a place is said', () => {

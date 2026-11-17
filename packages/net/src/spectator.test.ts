@@ -129,6 +129,20 @@ describe("a watcher's mirror", () => {
     mirror.dispose()
   })
 
+  it('says whether it walked the ticks on to the server’s word or jumped to it', () => {
+    const mirror = new SpectatorMirror(createArena(map, MAX_PLAYERS, OPEN_RULES), 100, new BananaLedger())
+    const driving = createVehicleInput()
+    driving.throttle = 1
+    const spawn = mirror.arena.seats[0]!.spawn
+    expect(mirror.take(snapshotAt(100, [vehicleAt(0, 'raceCar', spawn, driving)]))).toBe('resynced')
+    // A word from behind where the mirror had got to: it is walked on from there, not jumped to.
+    for (let frame = 0; frame < 30; frame++) mirror.run(() => 1)
+    expect(mirror.tick()).toBe(130)
+    expect(mirror.take(snapshotAt(120, [vehicleAt(0, 'raceCar', spawn, driving)]))).toBe('replayed')
+    expect(mirror.tick()).toBe(130)
+    mirror.dispose()
+  })
+
   it('holds the cars it watches through a countdown, as the server holds them', () => {
     const mirror = new SpectatorMirror(createArena(map, MAX_PLAYERS, OPEN_RULES), 100, new BananaLedger())
     const driving = createVehicleInput()

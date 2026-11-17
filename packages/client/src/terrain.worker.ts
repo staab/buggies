@@ -15,6 +15,7 @@ interface WorkerScope {
   postMessage(message: unknown, transfer: Transferable[]): void
 }
 
+/** The worker's own side of the page: what it is sent, and what it may send back and hand over. */
 const scope = self as unknown as WorkerScope
 scope.onmessage = (event) => {
   const request = event.data

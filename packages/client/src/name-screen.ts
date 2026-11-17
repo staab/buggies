@@ -1,15 +1,9 @@
 import { NAME_MOST, cleanName } from '@buggies/net'
 
+import { button, element } from './dom.ts'
+
 /** What the screen tells the app: what the player is to be known by. */
 export type NameChosen = (name: string) => void
-
-/** A line of words, of a class. */
-function line(className: string, text = ''): HTMLParagraphElement {
-  const paragraph = document.createElement('p')
-  paragraph.className = className
-  paragraph.textContent = text
-  return paragraph
-}
 
 /**
  * The first page: what the player goes by. It is up when the page is opened
@@ -22,13 +16,10 @@ export class NameScreen {
   private readonly go: HTMLButtonElement
 
   constructor(root: HTMLElement, onName: NameChosen) {
-    this.panel = document.createElement('div')
-    this.panel.className = 'panel'
+    this.panel = element('div', 'panel')
     this.panel.hidden = true
 
-    const heading = document.createElement('h1')
-    heading.textContent = 'Buggies'
-    this.field = document.createElement('input')
+    this.field = element('input')
     this.field.type = 'text'
     this.field.name = 'name'
     this.field.placeholder = 'Your name'
@@ -48,17 +39,13 @@ export class NameScreen {
       this.go.disabled = this.field.value === ''
     })
 
-    this.go = document.createElement('button')
-    this.go.type = 'button'
-    this.go.className = 'go'
-    this.go.textContent = 'Continue'
+    this.go = button('Continue', 'go')
     this.go.disabled = true
     this.go.addEventListener('click', () => this.confirm(onName))
 
-    const nav = document.createElement('div')
-    nav.className = 'nav'
+    const nav = element('div', 'nav')
     nav.append(this.go)
-    this.panel.append(heading, line('blurb', 'The name everyone on the road knows you by.'), this.field, nav)
+    this.panel.append(element('h1', '', 'Buggies'), element('p', 'blurb', 'The name everyone on the road knows you by.'), this.field, nav)
     root.append(this.panel)
   }
 

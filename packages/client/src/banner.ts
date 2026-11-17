@@ -1,3 +1,5 @@
+import { setHidden } from './dom.ts'
+
 /**
  * What the big words across the middle of the screen say: a game starting,
  * counting down to its start, or over. A new `key` starts it over, its
@@ -48,7 +50,7 @@ export class Banner {
 
   /** Show this, or nothing. */
   render(state: BannerState | undefined): void {
-    this.root.hidden = state === undefined
+    setHidden(this.root, state === undefined)
     if (state === undefined) {
       this.shownKey = ''
       return

@@ -229,7 +229,7 @@ describe('a car on the screen', () => {
     presence.render(0.5, 0.016)
     expect(explosions.object.children).toHaveLength(1)
     expect(presence.object.visible).toBe(false)
-    expect(presence.wrecked).toBe(true)
+    expect(presence.wrecked()).toBe(true)
     expect(presence.hudState('me', [])).toMatchObject({ damage: 1 })
     // And not again while it lies there.
     presence.render(0.5, 0.016)

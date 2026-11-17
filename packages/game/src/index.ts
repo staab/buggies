@@ -53,6 +53,7 @@ import {
   type Robot,
 } from './robots.ts'
 import { ceilingOf } from './sky.ts'
+import { OPEN_RULES, type ArenaRules } from './rules.ts'
 import { findSpawns, forwardOf, nearestRoadSpotTo, spawnFacing } from './spawns.ts'
 
 export { FIXED_TIMESTEP } from '@buggies/physics'
@@ -69,6 +70,7 @@ export {
 } from './achievements.ts'
 export * from './course.ts'
 export * from './racer-bot.ts'
+export * from './rules.ts'
 export {
   CHASSIS_FORWARD,
   copyVehicleInput,
@@ -291,18 +293,6 @@ function pullToMiddle(arena: Arena, gravity: number): void {
 
 /** How many vehicles a map is laid out for. Every seat exists from the start. */
 export const MAX_PLAYERS = 32
-
-/**
- * What a game is played by: whether weapons are had at all, and whether
- * there are bananas out to be taken, which are what a weapon costs.
- */
-export interface ArenaRules {
-  readonly weapons: boolean
-  readonly bananas: boolean
-}
-
-/** A game with everything on: weapons, and the bananas that pay for them. */
-export const OPEN_RULES: ArenaRules = { weapons: true, bananas: true }
 
 /**
  * A hold that is never up, in ticks, for a room waiting on a race to be
@@ -662,6 +652,15 @@ function waterAt(arena: Arena, seat: Seat): number {
 }
 
 /**
+ * The cars a race's countdown holds still, and how much of each was damaged
+ * before the step: whatever hurts a car where it waits is undone at the end of
+ * the step, and it is never wrecked there. Reused from step to step, so that a
+ * hold costs the step no memory.
+ */
+const heldSeats: Seat[] = []
+const heldDamage: number[] = []
+
+/**
  * Advance the arena by exactly one fixed step, driving every occupied seat
  * with whatever its driver asks for. `stepVehicle` only applies forces, so
  * the world is stepped once afterward however many vehicles were driven
@@ -678,9 +677,19 @@ export function advance(
   const cling = WORLD_TRAITS[arena.planet.kind].cling * DEFAULT_WORLD_TUNING.gravity
   pullToMiddle(arena, gravity)
   // A car held still for a race's start is not to be knocked about where it waits: whatever hurts it there is undone at the end of the step.
-  const held = arena.tick < arena.holdUntil ? arena.seats.filter((seat) => seat.occupied && !seat.npc).map((seat) => ({ seat, damage: seat.vehicle.damage })) : []
+  const holding = arena.tick < arena.holdUntil
+  heldSeats.length = 0
+  heldDamage.length = 0
+  if (holding) {
+    for (const seat of arena.seats) {
+      if (!seat.occupied || seat.npc) continue
+      heldSeats.push(seat)
+      heldDamage.push(seat.vehicle.damage)
+    }
+  }
   for (const seat of arena.seats) {
-    seat.vehicle.spared = arena.mirror || held.some((each) => each.seat === seat)
+    const held = holding && seat.occupied && !seat.npc
+    seat.vehicle.spared = arena.mirror || held
     const clinging = cling > 0 && clingUp(seat.vehicle)
     if (!clinging) upOf(seat.vehicle.frame.position, seat.vehicle.up)
     if (!seat.occupied) continue
@@ -689,7 +698,7 @@ export function advance(
       continue
     }
     // A stunned car takes no driving, and nor does one held for a countdown, though it may pick its weapon.
-    const input = stunned(seat) ? NEUTRAL_INPUT : arena.tick < arena.holdUntil && !seat.npc ? heldStill(inputFor(seat)) : inputFor(seat)
+    const input = stunned(seat) ? NEUTRAL_INPUT : held ? heldStill(inputFor(seat)) : inputFor(seat)
     // A car its engine or wings are driving along is not one the tires hold
     // still, and one its wings are lifting is not one the road holds down.
     seat.vehicle.boosted = arena.rules.weapons && burning(seat, input)
@@ -754,7 +763,10 @@ export function advance(
     }
   }
   trimLoose(arena)
-  for (const { seat, damage } of held) if (!seat.vehicle.wrecked) seat.vehicle.damage = Math.min(seat.vehicle.damage, damage)
+  for (let index = 0; index < heldSeats.length; index++) {
+    const seat = heldSeats[index]!
+    if (!seat.vehicle.wrecked) seat.vehicle.damage = Math.min(seat.vehicle.damage, heldDamage[index]!)
+  }
 }
 
 /** What a car held still is driven with: nothing, but the weapon picked and the handbrake on. */

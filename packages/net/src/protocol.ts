@@ -23,6 +23,10 @@ export const UNACKNOWLEDGED_INPUT_TICK = -1
 export const NO_SEAT = 0xff
 /** In a hello's profile byte: nobody's car, since a spectator drives none. */
 export const NO_PROFILE = 0xff
+/** In a hello, a portal that is not one: the car starts where the world's spawns are. */
+export const NO_ARRIVAL = 0xff
+/** In a hello, no pass at all: the connection names no member of the game. */
+export const NO_PASS = 0
 
 /** Into a world: a seat in it, by the pass of the member it belongs to. */
 export const CLIENT_HELLO = 0x01

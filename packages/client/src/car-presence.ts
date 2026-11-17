@@ -132,7 +132,8 @@ export class CarPresence {
     this.lastHornTicks = seat.hornTicks
   }
 
-  get wrecked(): boolean {
+  /** Whether the car has been wrecked: it draws nothing of itself any more, and stays where it stopped. */
+  wrecked(): boolean {
     return this.seat.vehicle.wrecked
   }
 

@@ -41,12 +41,21 @@ export function onPicture(point: Vec3): { u: number; v: number } {
   return { u: (longitude + Math.PI) / (2 * Math.PI), v: 0.5 - latitude / Math.PI }
 }
 
-/** The way out from the planet's middle through a spot of its picture. */
-export function offPicture(u: number, v: number): Vec3 {
+/** The way out from the planet's middle through a spot of its picture, laid out into `out` rather than anew for every pixel. */
+function placeOffPicture(u: number, v: number, out: Vec3): void {
   const longitude = u * 2 * Math.PI - Math.PI
   const latitude = (0.5 - v) * Math.PI
   const ring = Math.cos(latitude)
-  return { x: ring * Math.sin(longitude), y: Math.sin(latitude), z: ring * Math.cos(longitude) }
+  out.x = ring * Math.sin(longitude)
+  out.y = Math.sin(latitude)
+  out.z = ring * Math.cos(longitude)
+}
+
+/** The way out from the planet's middle through a spot of its picture. */
+export function offPicture(u: number, v: number): Vec3 {
+  const out: Vec3 = { x: 0, y: 1, z: 0 }
+  placeOffPicture(u, v, out)
+  return out
 }
 
 /**
@@ -71,9 +80,11 @@ export function islandPixels(world: World, pixels: number): IslandPicture {
   }
   const color = new THREE.Color()
   const rgb = { r: 0, g: 0, b: 0 }
+  // One direction at a time, reused: a picture is tens of thousands of pixels.
+  const direction: Vec3 = { x: 0, y: 1, z: 0 }
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
-      const direction = offPicture((col + 0.5) / width, (row + 0.5) / height)
+      placeOffPicture((col + 0.5) / width, (row + 0.5) / height, direction)
       const nearest = nearestGridPoint(world, direction)
       if (roomAt(world.roof, heights, nearest)) groundTone(look, sphereHeight(world.ground, direction), lowest, highest, world.seaLevel, world.districtOf[nearest]!, color)
       else color.copy(SOLID)

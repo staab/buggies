@@ -13,6 +13,7 @@ import {
   type Spider,
   type Ufo,
   type VehicleInput,
+  type VehicleProfileId,
 } from '@buggies/game'
 import { HELD, LocalPrediction, NetClient, rulesOf, type RaceRacerView } from '@buggies/net'
 import type { Vec3 } from '@buggies/physics'
@@ -31,7 +32,7 @@ import { playerKey } from './identity.ts'
 import { Keyboard } from './input.ts'
 import { SOLO_KEYS } from './keys.ts'
 import { MirrorCars } from './mirror-cars.ts'
-import type { GateArrow, ModeView, PlayRequest, RaceHud, RadarBlip, RadarGate, RadarState } from './mode.ts'
+import type { ControlHint, DriveMode, FinishedRacer, GateArrow, PlayRequest, RaceHud, RadarBlip, RadarGate, RadarState } from './mode.ts'
 import { PredictedCar } from './predicted-car.ts'
 import { RaceView, gateLabels } from './race-view.ts'
 import { SUN_DISTANCE } from './sun.ts'
@@ -54,12 +55,11 @@ const PARKED_SPEED = 1
 /**
  * What a car that has finished its race is driven with, whatever the player
  * holds: the brake hard on while it rolls forward, the handbrake alone once
- * it has all but stopped, and no weapon to fire.
+ * it has all but stopped, and no weapon to fire. Only these two are ever
+ * driven, so each is made once.
  */
-function parkedInput(forwardSpeed: number): VehicleInput {
-  const rolling = forwardSpeed > PARKED_SPEED
-  return { steer: 0, throttle: 0, brake: rolling ? 1 : 0, handbrake: !rolling, weapon: 0, fire: false, signal: false }
-}
+const BRAKING_INPUT: VehicleInput = { steer: 0, throttle: 0, brake: 1, handbrake: false, weapon: 0, fire: false, signal: false }
+const HANDBRAKE_INPUT: VehicleInput = { steer: 0, throttle: 0, brake: 0, handbrake: true, weapon: 0, fire: false, signal: false }
 
 /** The colors the robots, the cars nobody drives, the saucers and the spiders are marked in on the mini-map. */
 const ROBOT_COLOR = 0xff3030
@@ -67,35 +67,100 @@ const NPC_COLOR = 0x9aa0a6
 const UFO_COLOR = 0x5cff8a
 const SPIDER_COLOR = 0xc15cff
 
+/** The mini-map as it is filled: the HUD's own state, with the blips that are moved frame by frame left open to being moved. */
+interface RadarBoardState extends RadarState {
+  position: { x: number; z: number }
+  forward: { x: number; z: number }
+  others: RadarBlip[]
+  gates: RadarGate[]
+}
+
 /**
  * The mini-map from a seat: where it is and faces, every other occupied
- * seat, the robots and the course's gates, laid out on the ground round
- * the car, east across and south down, as a map is.
+ * seat, the robots and the course's gates, laid out on the ground round the
+ * car, east across and south down, as a map is. What it fills is made once
+ * and moved frame by frame: the HUD reads it as it is drawn, and nothing
+ * keeps it.
  */
-function radarOf(own: Seat, seats: readonly Seat[], robots: readonly Robot[], ufos: readonly Ufo[], spiders: readonly Spider[], gates: readonly { at: Vec3; label: string; next: boolean }[]): RadarState {
-  const { position, forward } = own.vehicle.frame
-  const { east, north } = tangentFrame(upOf(position))
+class RadarBoard {
+  private readonly state: RadarBoardState = { position: { x: 0, z: 0 }, forward: { x: 0, z: 0 }, others: [], gates: [] }
+  /** The car the map is laid round, and its ground: what every blip is placed on. */
+  private from: Vec3 = { x: 0, y: 0, z: 0 }
+  private up: Vec3 = { x: 0, y: 0, z: 0 }
+  private east: Vec3 = { x: 0, y: 0, z: 1 }
+  private north: Vec3 = { x: 0, y: 0, z: 0 }
+  /** What is worked out of a point before it is a place on the map: a scratch of its own, frame after frame. */
+  private readonly delta: Vec3 = { x: 0, y: 0, z: 0 }
+  private readonly toward: Vec3 = { x: 0, y: 0, z: 0 }
+
+  /** Take the map round this seat: its car in the middle, its heading straight up. */
+  read(
+    own: Seat,
+    seats: readonly Seat[],
+    robots: readonly Robot[],
+    ufos: readonly Ufo[],
+    spiders: readonly Spider[],
+    checkpoints: readonly { at: Vec3 }[],
+    next: number,
+  ): RadarState {
+    const { position, forward } = own.vehicle.frame
+    this.from = position
+    this.up = upOf(position, this.up)
+    const frame = tangentFrame(this.up)
+    this.east = frame.east
+    this.north = frame.north
+    const state = this.state
+    state.position.x = 0
+    state.position.z = 0
+    state.forward.x = forward.x * this.east.x + forward.y * this.east.y + forward.z * this.east.z
+    state.forward.z = -(forward.x * this.north.x + forward.y * this.north.y + forward.z * this.north.z)
+    let blips = 0
+    for (const seat of seats) {
+      if (seat.id === own.id || !seat.occupied) continue
+      blips = this.addBlip(blips, seat.vehicle.frame.position, seat.npc ? NPC_COLOR : seatColor(seat.id))
+    }
+    for (const robot of robots) blips = this.addBlip(blips, robot.position, ROBOT_COLOR)
+    for (const ufo of ufos) blips = this.addBlip(blips, ufo.position, UFO_COLOR)
+    for (const spider of spiders) blips = this.addBlip(blips, spider.position, SPIDER_COLOR)
+    // Whatever is not there this frame is not drawn: its blip was made by a fuller one.
+    state.others.length = blips
+    for (let i = 0; i < checkpoints.length; i++) {
+      let gate = state.gates[i]
+      if (gate === undefined) {
+        gate = { x: 0, z: 0, label: String(i + 1), next: false }
+        state.gates[i] = gate
+      }
+      this.place(checkpoints[i]!.at, gate)
+      gate.next = i === next
+    }
+    state.gates.length = checkpoints.length
+    return state
+  }
+
+  /** Put a blip of this color on the map at this place, making a place for it if the last frame had fewer. */
+  private addBlip(count: number, at: Vec3, color: number): number {
+    let blip = this.state.others[count]
+    if (blip === undefined) {
+      blip = { x: 0, z: 0, color }
+      this.state.others[count] = blip
+    }
+    blip.color = color
+    this.place(at, blip)
+    return count + 1
+  }
+
   /** A point on the ground round the car, as far from it and the same way as it is round the planet. */
-  const onRadar = (at: Vec3): { x: number; z: number } => {
-    const toward = alongGround({ x: at.x - position.x, y: at.y - position.y, z: at.z - position.z }, upOf(position))
+  private place(at: Vec3, out: { x: number; z: number }): void {
+    const from = this.from
+    const delta = this.delta
+    delta.x = at.x - from.x
+    delta.y = at.y - from.y
+    delta.z = at.z - from.z
+    const toward = alongGround(delta, this.up, this.toward)
     const length = Math.sqrt(toward.x * toward.x + toward.y * toward.y + toward.z * toward.z) || 1
-    const distance = groundDistance(at, position)
-    return { x: ((toward.x * east.x + toward.y * east.y + toward.z * east.z) / length) * distance, z: (-(toward.x * north.x + toward.y * north.y + toward.z * north.z) / length) * distance }
-  }
-  const blip = (at: Vec3, color: number): RadarBlip => ({ ...onRadar(at), color })
-  const others: RadarBlip[] = []
-  for (const seat of seats) {
-    if (seat.id === own.id || !seat.occupied) continue
-    others.push(blip(seat.vehicle.frame.position, seat.npc ? NPC_COLOR : seatColor(seat.id)))
-  }
-  for (const robot of robots) others.push(blip(robot.position, ROBOT_COLOR))
-  for (const ufo of ufos) others.push(blip(ufo.position, UFO_COLOR))
-  for (const spider of spiders) others.push(blip(spider.position, SPIDER_COLOR))
-  return {
-    position: { x: 0, z: 0 },
-    forward: { x: forward.x * east.x + forward.y * east.y + forward.z * east.z, z: -(forward.x * north.x + forward.y * north.y + forward.z * north.z) },
-    others,
-    gates: gates.map((gate): RadarGate => ({ ...onRadar(gate.at), label: gate.label, next: gate.next })),
+    const distance = groundDistance(at, from)
+    out.x = ((toward.x * this.east.x + toward.y * this.east.y + toward.z * this.east.z) / length) * distance
+    out.z = (-(toward.x * this.north.x + toward.y * this.north.y + toward.z * this.north.z) / length) * distance
   }
 }
 
@@ -136,7 +201,7 @@ function whereOf(map: World): string {
  * gate when it is out of sight; the portals this world keeps for the course
  * are the only ones it has, and the one out is followed to the next world.
  */
-export async function createOnlineMode(request: PlayRequest): Promise<ModeView> {
+export async function createOnlineMode(request: PlayRequest): Promise<DriveMode> {
   const { scene, driver, sound, sun } = request
   let lost: string | null = null
   const client = new NetClient(
@@ -207,7 +272,11 @@ export async function createOnlineMode(request: PlayRequest): Promise<ModeView> 
   const ownRacer = (): RaceRacerView | undefined => {
     const race = prediction.race
     if (race === null) return undefined
-    return race.racers.find((racer) => racer.seat === prediction.ownSeat.id)
+    const seat = prediction.ownSeat.id
+    for (const racer of race.racers) {
+      if (racer.seat === seat) return racer
+    }
+    return undefined
   }
 
   /** Note the moment the car comes home, if it has: where it came, out of how many, and the race's clock then. */
@@ -220,13 +289,22 @@ export async function createOnlineMode(request: PlayRequest): Promise<ModeView> 
   }
 
   /** The racers home so far in this world, in the order they came, the car's own left out: the celebration says where it came itself. */
-  const homeNow = (): { place: number; name: string }[] => {
+  const home = { placed: -1, racers: [] as FinishedRacer[] }
+  const homeNow = (): readonly FinishedRacer[] => {
     const race = prediction.race
-    if (race === null) return []
-    return race.racers
+    if (race === null) return home.racers
+    // Only as they come home does the list change, and it is asked for every frame the celebration is up.
+    let placed = 0
+    for (const racer of race.racers) {
+      if (racer.finished && racer.place > 0) placed += 1
+    }
+    if (placed === home.placed) return home.racers
+    home.placed = placed
+    home.racers = race.racers
       .filter((racer) => racer.finished && racer.place > 0 && racer.seat !== prediction.ownSeat.id)
       .sort((one, other) => one.place - other.place)
       .map((racer) => ({ place: racer.place, name: nameOf(racer.seat) }))
+    return home.racers
   }
 
   /**
@@ -261,18 +339,27 @@ export async function createOnlineMode(request: PlayRequest): Promise<ModeView> 
   /** What each of this world's gates is called, on its sign and on the compass. */
   const labels = plan === null ? [] : gateLabels(plan.checkpoints.length, plan.exit === null)
 
-  /** This leg's gates, numbered along it, the one to head for next marked as such. */
-  const gateMarks = (): { at: Vec3; label: string; next: boolean }[] => {
-    if (plan === null) return []
-    const next = ownRacer()?.checkpoint ?? 0
-    return plan.checkpoints.map((checkpoint, index) => ({ at: checkpoint.at, label: String(index + 1), next: index === next }))
+  /** This world's gates, as the mini-map has them, and the one to head for next. */
+  const radar = new RadarBoard()
+
+  /** What the title over the HUD says, and the keys under it: the same frame after frame until the car or the company changes. */
+  let heading: { profile: VehicleProfileId; players: number; title: string; controls: readonly ControlHint[] } | null = null
+  const headingNow = (profile: VehicleProfileId, players: number): { title: string; controls: readonly ControlHint[] } => {
+    if (heading !== null && heading.profile === profile && heading.players === players) return heading
+    heading = {
+      profile,
+      players,
+      title: `${nameOf(welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | ${whereOf(map)} | ${players} ${players === 1 ? 'player' : 'players'}`,
+      // The keys, told with what this car does of its own.
+      controls: SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn'),
+    }
+    return heading
   }
 
   return {
     camera: chase.camera,
     // The game's time, the same on every mirror, so the day, the boats and the clouds are where they are for everyone.
     tick: () => prediction.tick,
-    position: () => prediction.vehicle.frame.position,
     render(renderer) {
       const { frame, up } = prediction.vehicle
       sun.follow(frame.position, up)
@@ -293,7 +380,7 @@ export async function createOnlineMode(request: PlayRequest): Promise<ModeView> 
       // to a stop past the line and sits there while the others come in.
       const racing = came === null
       const held = active && racing ? keyboard.read() : null
-      const input = held ?? (racing ? NEUTRAL_INPUT : parkedInput(prediction.ownSeat.vehicle.forwardSpeed))
+      const input = held ?? (racing ? NEUTRAL_INPUT : prediction.ownSeat.vehicle.forwardSpeed > PARKED_SPEED ? BRAKING_INPUT : HANDBRAKE_INPUT)
       owed = Math.min(owed + dt, MAX_CATCH_UP)
       while (owed >= FIXED_TIMESTEP) {
         holdMirror()
@@ -327,9 +414,7 @@ export async function createOnlineMode(request: PlayRequest): Promise<ModeView> 
       // Those driving here, not the cars nobody drives.
       const players = Math.max(client.lobby().players.length, 1)
       const { profile } = prediction.ownSeat
-      // The keys, told with what this car does of its own.
-      const controls = SOLO_KEYS.controls(hasSiren(profile) ? 'siren' : 'horn')
-      const title = `${nameOf(welcome.seat)} · ${VEHICLE_PROFILE_LABELS[profile]} | ${whereOf(map)} | ${players} ${players === 1 ? 'player' : 'players'}`
+      const { title, controls } = headingNow(profile, players)
       // Cut off from the server, there is nothing more to show but that: the shell is on its way back.
       if (lost !== null) return { title, game: `Disconnected from the server (${lost}). Reconnecting...` }
       const { stats } = prediction
@@ -345,17 +430,13 @@ export async function createOnlineMode(request: PlayRequest): Promise<ModeView> 
       const block = raceHud()
       return {
         ...car.presence.hudState(title, controls, sync),
-        radar: radarOf(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, gateMarks()),
+        radar: radar.read(own, prediction.seats, prediction.robots, prediction.ufos, prediction.spiders, plan?.checkpoints ?? [], racer?.checkpoint ?? 0),
         ...(block === undefined ? {} : { race: block }),
         ...(arrow === undefined ? {} : { arrow }),
         ...(banner === undefined ? {} : { banner }),
         ...(achievement === undefined ? {} : { achievement }),
       }
     },
-    changeVehicle(profile) {
-      client.changeVehicle(profile)
-    },
-    map,
     portal() {
       // In a race the world's only portals are the course's, and the way on is `trip`, once the exit is the next gate.
       if (plan !== null) return -1

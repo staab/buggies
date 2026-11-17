@@ -31,7 +31,7 @@ import { SPIDER_BELLY, SPIDER_BODY } from './spiders.ts'
 import type * as RAPIER from '@dimforge/rapier3d-compat'
 
 import { PICKUP_HEIGHT, LOOSE_IDS, type Loose, type LooseKind } from './pickups.ts'
-import type { ArenaRules } from './index.ts'
+import type { ArenaRules } from './rules.ts'
 
 /** A weapon every car has, each on its own number key, or none. */
 export type Weapon = 'none' | 'rocket' | 'machineGun' | 'mines' | 'engine' | 'wings' | 'magnet' | 'plow' | 'laser' | 'shockwave'

@@ -22,12 +22,15 @@ export interface PlayerRecord {
   bananas: number
 }
 
+/** What is known of a key that has never been paid a feat, given to every such key rather than made again for each. */
+const NOTHING_EARNED: ReadonlySet<number> = new Set()
+
 /** A store kept in memory alone: forgotten when the server stops. What the server keeps when it is given nowhere to keep it, and what tests keep. */
 export class MemoryPlayerStore implements PlayerStore {
   protected readonly byKey = new Map<string, PlayerRecord>()
 
   earned(pubkey: string): ReadonlySet<number> {
-    return this.byKey.get(pubkey)?.earned ?? new Set()
+    return this.byKey.get(pubkey)?.earned ?? NOTHING_EARNED
   }
 
   record(pubkey: string, id: number): void {

@@ -44,22 +44,36 @@ function beatOf(race: RaceView): string {
   return race.elapsed === 0 ? 'Go!' : String(Math.min(Math.max(Math.ceil(-race.elapsed * FIXED_TIMESTEP), 1), 9))
 }
 
+/** The banner for a race won by one of these seats, lost by it, or over without it in it. */
+function moodOf(winnerSeat: number | undefined, ownSeat: number, raced: boolean): BannerState['mood'] {
+  if (winnerSeat === undefined) return 'over'
+  if (winnerSeat === ownSeat) return 'won'
+  return raced ? 'lost' : 'over'
+}
+
 /**
  * The big words for a race: the wait for its racers to line up, the
  * countdown to its go, and who won it once it is over, thrown up in
- * confetti for the winner and rained on for the rest of its racers.
+ * confetti for the winner and rained on for the rest of its racers. It is
+ * told how the race stands every frame, and answers with the one banner it
+ * is showing, made again only where it says something else.
  */
 export class GameBanners {
   /** How many races this has ended, so that a second one gets a banner of its own. */
   private ended = 0
   /** What the last countdown beat was, to sound a new one only when it changes. */
   private beat = ''
+  /** The wait for the grid, and the countdown: one banner, replaced where it says something else. */
   private start: BannerState | null = null
   private goFor = 0
+  /** The race over, and how long it has left to be told of. */
   private over: BannerState | null = null
   private overFor = 0
   /** Whether the end of this race has been told of. */
   private toldOver = false
+  /** What `state()` answers with, and what it is made of: the countdown beat is laid over the banner it belongs to. */
+  private showing: BannerState | null = null
+  private showingBeat = ''
 
   constructor(
     /** The island the race is on, for what a seat goes by. */
@@ -77,50 +91,119 @@ export class GameBanners {
   update(dt: number, view: GameView): void {
     const { race } = view
     if (race === null) {
-      this.start = null
-      this.over = null
-      this.beat = ''
+      this.clear()
       return
     }
     if (race.over) {
-      if (!this.toldOver) {
-        this.toldOver = true
-        this.endWith(race, view)
-      }
-      this.overFor = Math.max(this.overFor - dt, 0)
-      if (this.overFor === 0) this.over = null
+      this.endWith(race, view, dt)
       return
     }
     if (race.elapsed === HELD) {
-      // The racers are still being put on the grid: nobody drives till they are all there.
-      if (this.start?.key !== `held:${race.world}`) {
-        this.start = { key: `held:${race.world}`, title: 'Get ready', subtitle: 'Waiting for every racer to line up.', mood: 'start' }
-      }
+      this.waitOnGrid(race)
       return
     }
     if (race.elapsed <= 0) {
-      // The countdown: nothing but its beats, big, once the grid is full.
-      if (this.start?.key !== `start:${race.world}`) this.start = { key: `start:${race.world}`, title: '', subtitle: '', mood: 'start' }
-      const beat = beatOf(race)
-      if (beat !== this.beat) {
-        this.beat = beat
-        this.sound.beep(beat === 'Go!')
-        if (beat === 'Go!') this.goFor = GO_SECONDS
-      }
+      this.countDown(race)
       return
     }
-    // Driving has begun: the go stays up a moment, and then it all goes.
-    if (this.start !== null) {
-      this.goFor = Math.max(this.goFor - dt, 0)
-      if (this.goFor === 0) this.start = null
-    }
+    this.driveAway(dt)
   }
 
-  /** What the banner shows now, if anything. */
+  /** What the banner shows now, if anything: the same banner every frame until it says something else. */
   state(): BannerState | undefined {
-    if (this.over !== null) return this.over
-    if (this.start !== null) return { ...this.start, ...(this.beat === '' ? {} : { countdown: this.beat }) }
-    return undefined
+    return this.showing ?? undefined
+  }
+
+  /** Nothing to tell of: a free drive, or a race not yet in this world. */
+  private clear(): void {
+    this.start = null
+    this.over = null
+    this.beat = ''
+    this.toldOver = false
+    this.show(null)
+  }
+
+  /** The racers are still being put on the grid: nobody drives till they are all there. */
+  private waitOnGrid(race: RaceView): void {
+    this.over = null
+    if (this.start?.key === `held:${race.world}`) return
+    this.start = { key: `held:${race.world}`, title: 'Get ready', subtitle: 'Waiting for every racer to line up.', mood: 'start' }
+    this.beat = ''
+    this.show(this.start)
+  }
+
+  /** The countdown: nothing but its beats, big, once the grid is full. */
+  private countDown(race: RaceView): void {
+    this.over = null
+    if (this.start?.key !== `start:${race.world}`) {
+      this.start = { key: `start:${race.world}`, title: '', subtitle: '', mood: 'start' }
+      this.beat = ''
+      this.show(this.start)
+    }
+    const beat = beatOf(race)
+    if (beat === this.beat) return
+    this.beat = beat
+    this.sound.beep(beat === 'Go!')
+    if (beat === 'Go!') this.goFor = GO_SECONDS
+    this.show(this.start)
+  }
+
+  /** Driving has begun: the go stays up a moment, and then it all goes. */
+  private driveAway(dt: number): void {
+    this.toldOver = false
+    if (this.start === null) {
+      this.show(this.over)
+      return
+    }
+    this.goFor = Math.max(this.goFor - dt, 0)
+    if (this.goFor > 0) return
+    this.start = null
+    this.show(this.over)
+  }
+
+  /** The race is over: who won it is told of, and stays up its while. */
+  private endWith(race: RaceView, view: GameView, dt: number): void {
+    this.overFor = Math.max(this.overFor - dt, 0)
+    if (!this.toldOver) {
+      this.toldOver = true
+      this.tellTheEnd(race, view)
+      return
+    }
+    if (this.overFor > 0 || this.over === null) return
+    this.over = null
+    this.show(this.start)
+  }
+
+  /** Put up who won, in what, for whichever of the racers is looking at it. */
+  private tellTheEnd(race: RaceView, view: GameView): void {
+    const winner = this.winnerOf(view)
+    const winnerSeat = race.racers.find((racer) => racer.place === 1)?.seat
+    const raced = race.racers.some((racer) => racer.seat === view.own.id)
+    const mood = moodOf(winnerSeat, view.own.id, raced)
+    this.ended += 1
+    this.over = {
+      key: `over:${this.ended}`,
+      title: 'Race over!',
+      subtitle: winner === null ? 'Nobody crossed the finish in time.' : `${driverOf(this.seed, { id: 0, profile: winner.vehicle }, winner.name)} wins!`,
+      mood,
+    }
+    this.overFor = OVER_SECONDS
+    this.start = null
+    this.show(this.over)
+    if (mood === 'won') this.sound.chime()
+    if (mood === 'lost') this.sound.bummer()
+  }
+
+  /** Take the banner to show as this one, with the countdown beat laid over it: made again only where it says something else. */
+  private show(banner: BannerState | null): void {
+    if (banner === null) {
+      this.showing = null
+      this.showingBeat = ''
+      return
+    }
+    if (this.showing !== null && this.showingBeat === (banner === this.over ? '' : this.beat) && this.showing.key === banner.key) return
+    this.showingBeat = banner === this.over ? '' : this.beat
+    this.showing = this.showingBeat === '' ? banner : { ...banner, countdown: this.showingBeat }
   }
 
   /** Who won the race, in what: from the standings if they have come, and from the racers in this world if they have not. */
@@ -131,23 +214,5 @@ export class GameBanners {
     const seat = winner === undefined ? undefined : view.seats[winner.seat]
     if (seat === undefined) return null
     return { name: this.nameOf(seat.id), vehicle: seat.profile }
-  }
-
-  private endWith(race: RaceView, view: GameView): void {
-    const winner = this.winnerOf(view)
-    const winnerSeat = race.racers.find((racer) => racer.place === 1)?.seat
-    const raced = race.racers.some((racer) => racer.seat === view.own.id)
-    const mood: BannerState['mood'] = winner === null ? 'over' : winnerSeat === view.own.id ? 'won' : raced ? 'lost' : 'over'
-    this.ended += 1
-    this.over = {
-      key: `over:${this.ended}`,
-      title: 'Race over!',
-      subtitle: winner === null ? 'Nobody crossed the finish in time.' : `${driverOf(this.seed, { id: 0, profile: winner.vehicle }, winner.name)} wins!`,
-      mood,
-    }
-    this.overFor = OVER_SECONDS
-    this.start = null
-    if (mood === 'won') this.sound.chime()
-    if (mood === 'lost') this.sound.bummer()
   }
 }

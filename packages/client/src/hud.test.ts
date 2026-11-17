@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { DIAL_LENGTH, DIAL_SWEEP, clockLabel, compassText, damageColor, dialArc, dialFraction, dialTop, needleAngle, placeLabel, raceText } from './hud.ts'
+import { DIAL_LENGTH, DIAL_SWEEP, compassText, damageColor, dialArc, dialFraction, dialTop, needleAngle, raceText } from './hud.ts'
+import { clockLabel, placeLabel } from './race-text.ts'
 
 function channels(style: string): number[] {
   return style.match(/\d+/g)!.map(Number)

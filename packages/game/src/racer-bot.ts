@@ -1,6 +1,6 @@
-import { FIXED_TIMESTEP, v3, vcross, vdistance, vlength, vnormalize, type Vec3 } from '@buggies/physics'
+import { FIXED_TIMESTEP, clamp, v3, vcopy, vcross, vdistance, vdot, vlength, vnormalize, type Vec3 } from '@buggies/physics'
 import { alongGround, upOf } from '@buggies/terrain'
-import { NEUTRAL_INPUT, type VehicleInput, type VehicleSpawn } from '@buggies/vehicle'
+import type { VehicleInput, VehicleSpawn } from '@buggies/vehicle'
 
 import { corridorAt } from './course.ts'
 import type { Arena, Seat } from './index.ts'
@@ -121,25 +121,124 @@ export function botSetBack(bot: RacerBot, along: number): void {
 }
 
 /**
- * The point of the route a bot is nearest to, from the one it had got to
- * onward: it looks for itself a window of the route at a time, so that a
- * route that doubles back does not send it off down the other way. One put
- * back at a gate behind it, further off the route than that window reaches,
- * looks back down the route for itself as well.
+ * A route as a bot drives it: its points, and what they say about the way at
+ * them, which is the same for every bot on a leg and does not change as they
+ * drive. It is worked out once from the route and kept, so a route must not be
+ * altered while a bot follows it.
  */
-function nearestPoint(bot: RacerBot, route: readonly Vec3[], at: Vec3, last: number): number {
-  const from = Math.min(Math.max(Math.floor(bot.along), 0), last)
-  let best = from
-  let nearest = vdistance(route[from]!, at)
-  for (let point = from + 1; point <= Math.min(from + SEARCH_AHEAD, last); point++) {
-    const distance = vdistance(route[point]!, at)
-    if (distance >= nearest) continue
-    nearest = distance
-    best = point
+interface RouteShape {
+  /** The points of the route, in the order they are passed. */
+  readonly points: readonly Vec3[]
+  /** How far each point stands from the next one along the route, in meters. */
+  readonly runs: Float64Array
+  /** How sharply the route turns at each point, in radians a meter, or `NO_BEND` where there is no bend to read there. */
+  readonly bends: Float64Array
+  /** The way across the route at each point, along the ground, three numbers a point: the way it runs, turned to the left. */
+  readonly sides: Float64Array
+  /** Whether a point has a way across it at all, which it has not where the ones either side of it stand on top of one another. */
+  readonly hasSide: Uint8Array
+}
+
+/** The shape of every route a bot has followed, worked out the first time it drives one. */
+const shapes = new WeakMap<readonly Vec3[], RouteShape>()
+
+/** What a point of a route's bend is where there is none to read: no turn to slow for, and no run counted toward the bends read. */
+const NO_BEND = -1
+
+/** What a route says about its points, worked out the first time a bot drives it. */
+function shapeOf(points: readonly Vec3[]): RouteShape {
+  const known = shapes.get(points)
+  if (known !== undefined) return known
+  const count = points.length
+  const shape: RouteShape = {
+    points,
+    runs: new Float64Array(count),
+    bends: new Float64Array(count).fill(NO_BEND),
+    sides: new Float64Array(count * 3),
+    hasSide: new Uint8Array(count),
   }
-  if (nearest <= LOST) return best
-  for (let point = Math.max(from - SEARCH_BACK, 0); point < from; point++) {
-    const distance = vdistance(route[point]!, at)
+  const up = v3()
+  const run = v3()
+  const ground = v3()
+  const across = v3()
+  const into = v3()
+  const outOf = v3()
+  for (let index = 0; index < count; index++) {
+    const point = points[index]!
+    const before = points[Math.max(index - 1, 0)]!
+    const after = points[Math.min(index + 1, count - 1)]!
+    upOf(point, up)
+    if (index < count - 1) shape.runs[index] = vdistance(point, points[index + 1]!)
+    // The way across it, from the point before to the point after, along the ground and turned to the left.
+    run.x = after.x - before.x
+    run.y = after.y - before.y
+    run.z = after.z - before.z
+    alongGround(run, up, ground)
+    if (vlength(ground) >= 1e-6) {
+      vcross(across, up, ground)
+      vnormalize(across, across)
+      shape.hasSide[index] = 1
+      shape.sides[index * 3] = across.x
+      shape.sides[index * 3 + 1] = across.y
+      shape.sides[index * 3 + 2] = across.z
+    }
+    if (index === 0 || index === count - 1) continue
+    // The bend at it: the turn from the way in to the way out, over the run to the point after it.
+    const step = shape.runs[index]!
+    if (step < 1e-6) continue
+    run.x = point.x - before.x
+    run.y = point.y - before.y
+    run.z = point.z - before.z
+    alongGround(run, up, into)
+    run.x = after.x - point.x
+    run.y = after.y - point.y
+    run.z = after.z - point.z
+    alongGround(run, up, outOf)
+    const inLength = vlength(into)
+    const outLength = vlength(outOf)
+    if (inLength < 1e-6 || outLength < 1e-6) continue
+    shape.bends[index] = Math.acos(clamp(vdot(into, outOf) / (inLength * outLength), -1, 1)) / step
+  }
+  shapes.set(points, shape)
+  return shape
+}
+
+/** Points and ways the tick's arithmetic is done in, so that driving a bot costs no memory. */
+const aimed = v3()
+const beside = v3()
+const side = v3()
+const carSide = v3()
+const ownSide = v3()
+
+/** The way across the route at a point of it, written into `out`: whether the route has one there at all. */
+function sideAt(shape: RouteShape, index: number, out: Vec3): boolean {
+  if (shape.hasSide[index] === 0) return false
+  const at = index * 3
+  out.x = shape.sides[at]!
+  out.y = shape.sides[at + 1]!
+  out.z = shape.sides[at + 2]!
+  return true
+}
+
+/** A point of the route, moved across it and written into `out`: a positive number of meters to its left. */
+function acrossPoint(shape: RouteShape, index: number, metres: number, out: Vec3): void {
+  const point = shape.points[index]!
+  if (metres === 0 || !sideAt(shape, index, side)) {
+    vcopy(out, point)
+    return
+  }
+  out.x = point.x + side.x * metres
+  out.y = point.y + side.y * metres
+  out.z = point.z + side.z * metres
+}
+
+/** The point of the route between two of them that is nearest to a car, which is the one it is beside. */
+function nearestBetween(shape: RouteShape, from: number, to: number, at: Vec3): number {
+  const { points } = shape
+  let best = from
+  let nearest = vdistance(points[from]!, at)
+  for (let point = from + 1; point <= to; point++) {
+    const distance = vdistance(points[point]!, at)
     if (distance >= nearest) continue
     nearest = distance
     best = point
@@ -148,48 +247,52 @@ function nearestPoint(bot: RacerBot, route: readonly Vec3[], at: Vec3, last: num
 }
 
 /**
- * The way across the route at a point of it, along the ground: from the point
- * before it to the point after it, turned to the left; or nothing where the
- * route has no way along it there.
+ * The point of the route a bot is nearest to, from the one it had got to
+ * onward: it looks for itself a window of the route at a time, so that a
+ * route that doubles back does not send it off down the other way. One put
+ * back at a gate behind it, further off the route than that window reaches,
+ * looks back down the route for itself as well.
  */
-function sideAt(route: readonly Vec3[], index: number): Vec3 | null {
-  const point = route[index]!
-  const before = route[Math.max(index - 1, 0)]!
-  const after = route[Math.min(index + 1, route.length - 1)]!
-  const up = upOf(point)
-  const way = alongGround(v3(after.x - before.x, after.y - before.y, after.z - before.z), up)
-  if (vlength(way) < 1e-6) return null
-  const side = vcross(v3(), up, way)
-  return vnormalize(side, side)
+function nearestPoint(bot: RacerBot, shape: RouteShape, at: Vec3): number {
+  const last = shape.points.length - 1
+  const from = clamp(Math.floor(bot.along), 0, last)
+  const ahead = nearestBetween(shape, from, Math.min(from + SEARCH_AHEAD, last), at)
+  const nearest = vdistance(shape.points[ahead]!, at)
+  if (nearest <= LOST) return ahead
+  const behind = nearestBetween(shape, Math.max(from - SEARCH_BACK, 0), from - 1, at)
+  return vdistance(shape.points[behind]!, at) < nearest ? behind : ahead
 }
 
-/** A point of the route, moved across it: a positive number of meters to its left. */
-function acrossPoint(route: readonly Vec3[], index: number, metres: number): Vec3 {
-  const point = route[index]!
-  if (metres === 0) return point
-  const side = sideAt(route, index)
-  if (side === null) return point
-  return v3(point.x + side.x * metres, point.y + side.y * metres, point.z + side.z * metres)
-}
-
-/** Which way down the route it goes at a point of it: from the point before to the point after, or to its one neighbour at an end. */
-function alongRoute(route: readonly Vec3[], index: number): Vec3 {
-  const point = route[index]!
-  const other = route[index < route.length - 1 ? index + 1 : Math.max(index - 1, 0)]!
-  return v3(other.x - point.x, other.y - point.y, other.z - point.z)
-}
-
-/** The point of the route between two of them that is nearest to a car, which is the one it is beside. */
-function nearestBetween(route: readonly Vec3[], from: number, to: number, at: Vec3): number {
-  let best = from
-  let nearest = vdistance(route[from]!, at)
-  for (let point = from + 1; point <= to; point++) {
-    const distance = vdistance(route[point]!, at)
-    if (distance >= nearest) continue
-    nearest = distance
-    best = point
+/** The point of the route a bot aims at this tick: as far down it as the bot will have gone by the time it gets there. */
+function aimPoint(shape: RouteShape, from: number, speed: number): number {
+  const last = shape.points.length - 1
+  let aim = from
+  let reach = LOOKAHEAD + LOOK_SPEED * speed
+  while (aim < last && reach > 0) {
+    reach -= shape.runs[aim]!
+    aim++
   }
-  return best
+  return aim
+}
+
+/**
+ * The fastest a bot may go and still take the bends ahead of it: the turn of
+ * the sharpest of them it will have to take before it could stop for it, at
+ * the grip its car has sideways. `CORNER_REACH` of the route is read at the
+ * least, however slowly it is going.
+ */
+function cornerSpeed(shape: RouteShape, from: number, speed: number): number {
+  const last = shape.points.length - 1
+  const reach = Math.max(CORNER_REACH, (speed * speed) / (2 * CORNER_GRIP))
+  let sharpest = 0
+  let traveled = 0
+  for (let index = Math.max(from, 1); index < last && traveled < reach; index++) {
+    const bend = shape.bends[index]!
+    if (bend === NO_BEND) continue
+    if (bend > sharpest) sharpest = bend
+    traveled += shape.runs[index]!
+  }
+  return Math.sqrt(CORNER_GRIP / Math.max(sharpest, 1e-4))
 }
 
 /** What a bot makes of the nearest car in its way. */
@@ -213,12 +316,12 @@ interface InTheWay {
  * cars abreast, or with the car already too close to pull out round, it does
  * not try, and follows it instead.
  */
-function carInTheWay(seat: Seat, route: readonly Vec3[], from: number, to: number, arena: Arena): InTheWay | null {
+function carInTheWay(seat: Seat, shape: RouteShape, from: number, to: number, arena: Arena): InTheWay | null {
   const { position, forward, right } = seat.vehicle.frame
   const speed = seat.vehicle.speed
   const reach = CAR_AHEAD + CAR_AHEAD_SPEED * speed
   let at: Vec3 | null = null
-  let ahead = Infinity
+  let nearest = Infinity
   let theirSpeed = 0
   for (const other of arena.seats) {
     if (other === seat || !other.occupied || other.coasting) continue
@@ -226,58 +329,75 @@ function carInTheWay(seat: Seat, route: readonly Vec3[], from: number, to: numbe
     const dx = place.x - position.x
     const dy = place.y - position.y
     const dz = place.z - position.z
-    const before = dx * forward.x + dy * forward.y + dz * forward.z
-    if (before <= 0 || before > reach || before >= ahead) continue
+    const ahead = dx * forward.x + dy * forward.y + dz * forward.z
+    if (ahead <= 0 || ahead > reach || ahead >= nearest) continue
     if (Math.abs(dx * right.x + dy * right.y + dz * right.z) > CAR_ACROSS) continue
     if (other.vehicle.speed > speed - CAR_SLOWER) continue
     at = place
-    ahead = before
+    nearest = ahead
     theirSpeed = other.vehicle.speed
   }
   if (at === null) return null
-  if (ahead < CAR_CLEAR) return { ahead, speed: theirSpeed, pass: 0 }
-  const near = nearestBetween(route, from, to, at)
-  const side = sideAt(route, near)
-  if (side === null) return { ahead, speed: theirSpeed, pass: 0 }
-  const point = route[near]!
-  const offset = (at.x - point.x) * side.x + (at.y - point.y) * side.y + (at.z - point.z) * side.z
+  if (nearest < CAR_CLEAR) return { ahead: nearest, speed: theirSpeed, pass: 0 }
+  const near = nearestBetween(shape, from, to, at)
+  const point = shape.points[near]!
+  if (!sideAt(shape, near, carSide)) return { ahead: nearest, speed: theirSpeed, pass: 0 }
+  const offset = (at.x - point.x) * carSide.x + (at.y - point.y) * carSide.y + (at.z - point.z) * carSide.z
   // Away from the side of the route the car stands on; and standing on the middle of it, away from the side the bot is on.
-  const own = route[from]!
-  const beside = sideAt(route, from)
-  const myOffset =
-    beside === null ? 0 : (position.x - own.x) * beside.x + (position.y - own.y) * beside.y + (position.z - own.z) * beside.z
+  const own = shape.points[from]!
+  const myOffset = sideAt(shape, from, ownSide)
+    ? (position.x - own.x) * ownSide.x + (position.y - own.y) * ownSide.y + (position.z - own.z) * ownSide.z
+    : 0
   const away = -Math.sign(offset) || -Math.sign(myOffset) || 1
   const corridor = corridorAt(arena.planet, position, forward)
-  if (corridor !== null && corridor.width < PASS_CORRIDOR) return { ahead, speed: theirSpeed, pass: 0 }
-  return { ahead, speed: theirSpeed, pass: Math.min(Math.max(offset + away * PASS_ASIDE, -PASS_ASIDE), PASS_ASIDE) }
+  if (corridor !== null && corridor.width < PASS_CORRIDOR) return { ahead: nearest, speed: theirSpeed, pass: 0 }
+  return { ahead: nearest, speed: theirSpeed, pass: clamp(offset + away * PASS_ASIDE, -PASS_ASIDE, PASS_ASIDE) }
 }
 
 /**
- * How sharply the route bends away over the stretch of it a bot must slow
-down over: the turn of the way by the metre, in radians, of the sharpest
- * bend it will have to take before it could stop for it.
+ * How hard a bot steers back onto its way, -1 to 1: as far as the point of the
+ * route beside it lies to its right, so that a way with water or a tree close
+ * beside it is driven down its middle. Beyond `BESIDE` off the way it does not
+ * steer back at all, having lost the way, and follows the point it aims at.
  */
-function bendAhead(route: readonly Vec3[], from: number, last: number, speed: number): number {
-  const reach = Math.max(CORNER_REACH, (speed * speed) / (2 * CORNER_GRIP))
-  let sharpest = 0
-  let traveled = 0
-  for (let index = Math.max(from, 1); index < last && traveled < reach; index++) {
-    const before = route[index - 1]!
-    const point = route[index]!
-    const after = route[index + 1]!
-    const step = vdistance(point, after)
-    if (step < 1e-6) continue
-    const up = upOf(point)
-    const inWay = alongGround(v3(point.x - before.x, point.y - before.y, point.z - before.z), up)
-    const outWay = alongGround(v3(after.x - point.x, after.y - point.y, after.z - point.z), up)
-    const inLength = Math.sqrt(inWay.x * inWay.x + inWay.y * inWay.y + inWay.z * inWay.z)
-    const outLength = Math.sqrt(outWay.x * outWay.x + outWay.y * outWay.y + outWay.z * outWay.z)
-    if (inLength < 1e-6 || outLength < 1e-6) continue
-    const cos = (inWay.x * outWay.x + inWay.y * outWay.y + inWay.z * outWay.z) / (inLength * outLength)
-    sharpest = Math.max(sharpest, Math.acos(Math.min(Math.max(cos, -1), 1)) / step)
-    traveled += step
+function steerBack(seat: Seat, own: Vec3): number {
+  const { position, right } = seat.vehicle.frame
+  const bx = own.x - position.x
+  const by = own.y - position.y
+  const bz = own.z - position.z
+  const off = Math.sqrt(bx * bx + by * by + bz * bz) || 1
+  if (off > BESIDE) return 0
+  return ((bx * right.x + by * right.y + bz * right.z) / off) * STEER_BACK
+}
+
+/**
+ * What a bot does about a car or a wall it cannot get by, written into `out`:
+ * under a walking pace with its foot down for a second, it backs out, braking
+ * at a standstill to drive a car in reverse, the wheel turned the other way
+ * from the one it was turning so that backing out takes it clear. It keeps
+ * count of how long it has been getting nowhere, and of how much of a reverse
+ * it has left to do.
+ */
+function backOut(bot: RacerBot, speed: number, steer: number, out: VehicleInput): void {
+  if (bot.reverseFor === 0 && speed < STUCK_SPEED) {
+    bot.stuckFor += 1
+    bot.blockedFor += 1
+    if (bot.blockedFor >= BACK_OUT_TICKS) {
+      bot.blockedFor = 0
+      bot.reverseFor = REVERSE_TICKS
+      bot.reverseSteer = -Math.sign(steer || 1)
+    }
+  } else if (bot.reverseFor > 0) {
+    bot.stuckFor += 1
+  } else {
+    bot.blockedFor = 0
   }
-  return sharpest
+  if (bot.reverseFor === 0) return
+  // This tick is one of the reverse's, whether it is the first of them or another.
+  bot.reverseFor -= 1
+  out.steer = bot.reverseSteer
+  out.throttle = 0
+  out.brake = 1
 }
 
 /**
@@ -289,15 +409,23 @@ function bendAhead(route: readonly Vec3[], from: number, last: number, speed: nu
  * followed where there is none; and a bot blocked for a second with its foot
  * down backs out, the wheel turned the other way, before trying again. It never
  * selects nor fires a weapon. The arena is what the other cars in its way are
- * read from, and what lies over the road it is on.
+ * read from, and what lies over the road it is on. The route is read as it was
+ * the first time a bot drove it, so it must not be altered while one follows it.
  */
 export function botInput(bot: RacerBot, seat: Seat, route: readonly Vec3[], out: VehicleInput, arena: Arena): VehicleInput {
-  Object.assign(out, NEUTRAL_INPUT)
-  const last = route.length - 1
-  if (last < 1 || seat.vehicle.wrecked) return out
+  // Nothing it asked for last tick is left in what it asks for now, and a car with no route to follow asks for nothing at all.
+  out.steer = 0
+  out.throttle = 0
+  out.brake = 0
+  out.handbrake = false
+  out.weapon = 0
+  out.fire = false
+  out.signal = false
+  if (route.length < 2 || seat.vehicle.wrecked) return out
+  const shape = shapeOf(route)
   const { position, forward, right } = seat.vehicle.frame
   const speed = seat.vehicle.speed
-  bot.along = nearestPoint(bot, route, position, last)
+  bot.along = nearestPoint(bot, shape, position)
 
   // A couple of points further on than it was blocked at is getting going: whatever was counted against it is forgotten.
   if (bot.along >= bot.reached + GOING_ON) {
@@ -306,70 +434,34 @@ export function botInput(bot: RacerBot, seat: Seat, route: readonly Vec3[], out:
     bot.blockedFor = 0
   }
 
-  // A point down the route, as far ahead as it will have gone by the time it gets there.
-  let aim = bot.along
-  let reach = LOOKAHEAD + LOOK_SPEED * speed
-  while (aim < last && reach > 0) {
-    reach -= vdistance(route[aim]!, route[aim + 1]!)
-    aim++
-  }
-
   // A car in its way is gone round on the side of the route with more room, which is where it aims and where it steers back to.
-  const car = carInTheWay(seat, route, bot.along, Math.min(aim + 1, last), arena)
+  const aim = aimPoint(shape, bot.along, speed)
+  const car = carInTheWay(seat, shape, bot.along, Math.min(aim + 1, shape.points.length - 1), arena)
   const pass = car === null ? 0 : car.pass
-  const target = acrossPoint(route, aim, pass)
-  const dx = target.x - position.x
-  const dy = target.y - position.y
-  const dz = target.z - position.z
+  acrossPoint(shape, aim, pass, aimed)
+  acrossPoint(shape, bot.along, pass, beside)
+
+  // Steer for the aimed point: hard round if it is behind, as much as the way bends if ahead, and back onto the line if off it.
+  const dx = aimed.x - position.x
+  const dy = aimed.y - position.y
+  const dz = aimed.z - position.z
   const distance = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1
   const across = (dx * right.x + dy * right.y + dz * right.z) / distance
   const facing = (dx * forward.x + dy * forward.y + dz * forward.z) / distance
-  // Behind it, the wheel is turned to it hard; ahead, as much as the way bends away. Having wandered off the way, it is steered
-  // back onto it, so that a way with water or a tree close beside it is driven down its middle; but a car that has lost the way
-  // altogether aims at the point ahead of it and nothing else.
-  const beside = acrossPoint(route, bot.along, pass)
-  const bx = beside.x - position.x
-  const by = beside.y - position.y
-  const bz = beside.z - position.z
-  const back = Math.sqrt(bx * bx + by * by + bz * bz) || 1
-  const offset = back <= BESIDE ? (bx * right.x + by * right.y + bz * right.z) / back : 0
-  out.steer = Math.min(Math.max((facing < 0 ? Math.sign(across || 1) : across * STEER) + offset * STEER_BACK, -1), 1)
+  const turn = facing < 0 ? Math.sign(across || 1) : across * STEER
+  out.steer = clamp(turn + steerBack(seat, beside), -1, 1)
 
   // Flat out where the way runs straight on, easing off as it bends, and braking
   // when the bend is taken faster than its own pace would have it; and never so
   // fast that a bend ahead cannot be taken at that speed. A car it cannot get
   // past is followed, off the throttle by the time it is a gap behind it.
-  const bend = Math.acos(Math.min(Math.max(facing, -1), 1))
-  const turn = Math.min(Math.max((bend - EASE) / (SHARP - EASE), 0), 1)
-  const sharpest = bendAhead(route, bot.along, last, speed)
-  const cornerSpeed = Math.sqrt(CORNER_GRIP / Math.max(sharpest, 1e-4))
+  const bend = Math.acos(clamp(facing, -1, 1))
+  const easing = clamp((bend - EASE) / (SHARP - EASE), 0, 1)
   const follow = car === null || car.pass !== 0 ? Infinity : Math.max(car.speed, (car.ahead - FOLLOW_GAP) * FOLLOW_EASE)
-  const wanted = Math.min(bot.pace * seat.tuning.maxSpeed, cornerSpeed, follow)
-  out.throttle = speed < wanted ? 1 - EASE_OFF * turn : 0
-  out.brake = speed > wanted ? Math.min(1, turn + (speed - wanted) / OVER) : 0
-
-  // Under a walking pace with its foot down for a second, it backs out: braking
-  // at a standstill drives a car in reverse, and the wheel is turned the other
-  // way from the way it was turning, so that backing out takes it clear.
-  if (bot.reverseFor > 0) {
-    bot.stuckFor += 1
-  } else if (speed < STUCK_SPEED) {
-    bot.stuckFor += 1
-    bot.blockedFor += 1
-    if (bot.blockedFor >= BACK_OUT_TICKS) {
-      bot.blockedFor = 0
-      bot.reverseFor = REVERSE_TICKS
-      bot.reverseSteer = -Math.sign(out.steer || 1)
-    }
-  } else {
-    bot.blockedFor = 0
-  }
-  if (bot.reverseFor > 0) {
-    bot.reverseFor -= 1
-    out.steer = bot.reverseSteer
-    out.throttle = 0
-    out.brake = 1
-  }
+  const wanted = Math.min(bot.pace * seat.tuning.maxSpeed, cornerSpeed(shape, bot.along, speed), follow)
+  out.throttle = speed < wanted ? 1 - EASE_OFF * easing : 0
+  out.brake = speed > wanted ? Math.min(1, easing + (speed - wanted) / OVER) : 0
+  backOut(bot, speed, out.steer, out)
   return out
 }
 
@@ -384,16 +476,29 @@ export function botStuck(bot: RacerBot): boolean {
   return bot.stuckFor > STUCK_TICKS
 }
 
+/** Which way down the route it goes at a point of it: from the point before to the point after, or to its one neighbour at an end. */
+function alongRoute(shape: RouteShape, index: number): Vec3 {
+  const { points } = shape
+  const point = points[index]!
+  const other = points[index < points.length - 1 ? index + 1 : Math.max(index - 1, 0)]!
+  return v3(other.x - point.x, other.y - point.y, other.z - point.z)
+}
+
 /**
  * Where to put a bot back that has been stuck: on its route a few points back
  * from where it got to, facing along it, and clear of every other car by a few
  * meters. The point and its neighbours are tried, and either side of each; and
  * nothing where every one of them has a car on it.
  */
-export function botPutBackSpot(route: readonly Vec3[], along: number, cars: readonly Vec3[]): { spawn: VehicleSpawn; along: number } | null {
+export function botPutBackSpot(
+  route: readonly Vec3[],
+  along: number,
+  cars: readonly Vec3[],
+): { spawn: VehicleSpawn; along: number } | null {
+  if (route.length < 2) return null
+  const shape = shapeOf(route)
   const last = route.length - 1
-  if (last < 1) return null
-  const base = Math.min(Math.max(Math.floor(along) - PUT_BACK, 0), last)
+  const base = clamp(Math.floor(along) - PUT_BACK, 0, last)
   const points = [base]
   for (let step = 1; step <= PUT_BACK_TRIES; step++) {
     if (base - step >= 0) points.push(base - step)
@@ -401,9 +506,9 @@ export function botPutBackSpot(route: readonly Vec3[], along: number, cars: read
   }
   for (const point of points) {
     for (const metres of [0, PUT_BACK_ASIDE, -PUT_BACK_ASIDE]) {
-      const at = acrossPoint(route, point, metres)
-      if (cars.some((car) => vdistance(car, at) < PUT_BACK_CLEAR)) continue
-      return { spawn: spawnHere(at, alongRoute(route, point)), along: point }
+      acrossPoint(shape, point, metres, beside)
+      if (cars.some((car) => vdistance(car, beside) < PUT_BACK_CLEAR)) continue
+      return { spawn: spawnHere(beside, alongRoute(shape, point)), along: point }
     }
   }
   return null

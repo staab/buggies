@@ -1,5 +1,7 @@
 import { NATURE_NOTES, PLAYABLE_PROFILE_IDS, VEHICLE_PROFILE_LABELS, armorShare, createVehicleTuning, type VehicleProfileId } from '@buggies/game'
 
+import { button, element, setHidden, writeAttribute, writeText } from './dom.ts'
+
 /** What the car modal asks of the room that shows it. */
 export interface CarPickerHost {
   /** Put this vehicle on the showroom turntable, in the modal's stage. */
@@ -86,19 +88,6 @@ export function carTitle(picking: Picking): string {
 /** The modal turned this many vehicles along the garage's line, round from the end to the start. */
 export function stepPicking(picking: Picking, step: number): Picking {
   return { ...picking, profile: stepVehicle(picking.profile, step) }
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
-  const made = document.createElement(tag)
-  if (className !== '') made.className = className
-  if (text !== '') made.textContent = text
-  return made
-}
-
-function button(text: string, className = ''): HTMLButtonElement {
-  const made = element('button', className, text)
-  made.type = 'button'
-  return made
 }
 
 /**
@@ -221,14 +210,15 @@ export class CarPicker {
     if (this.choosing !== null) this.turnTo({ ...this.choosing, profile })
   }
 
+  /** Turn to this vehicle: its words, its readings, the pip that stands for it, and the car itself into the stage. */
   private turnTo(picking: Picking): void {
     this.choosing = picking
-    this.heading.textContent = carTitle(picking)
-    this.name.textContent = VEHICLE_PROFILE_LABELS[picking.profile]
-    this.note.textContent = vehicleNote(picking.profile)
+    writeText(this.heading, carTitle(picking))
+    writeText(this.name, VEHICLE_PROFILE_LABELS[picking.profile])
+    writeText(this.note, vehicleNote(picking.profile))
     const ability = vehicleAbility(picking.profile)
-    this.ability.textContent = ability
-    this.ability.hidden = ability === ''
+    writeText(this.ability, ability)
+    setHidden(this.ability, ability === '')
     this.stats.replaceChildren()
     for (const stat of vehicleStats(picking.profile)) {
       const row = element('div', 'stat')
@@ -239,7 +229,7 @@ export class CarPicker {
       row.append(element('span', 'label', stat.name), bar)
       this.stats.append(row)
     }
-    for (const [profile, pip] of this.pips) pip.setAttribute('aria-pressed', String(profile === picking.profile))
+    for (const [profile, pip] of this.pips) writeAttribute(pip, 'aria-pressed', String(profile === picking.profile))
     this.host.show(picking.profile)
   }
 

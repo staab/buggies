@@ -1,6 +1,5 @@
 import type { VehicleProfileId } from '@buggies/game'
 import type { Standing } from '@buggies/net'
-import type { Vec3 } from '@buggies/physics'
 import type { World } from '@buggies/terrain'
 import type * as THREE from 'three'
 
@@ -11,11 +10,22 @@ import type { ShowroomView } from './showroom-mode.ts'
 import type { Sun } from './sun.ts'
 
 /**
- * Which screen is up. One at a time, from the name asked for at the door to
- * the celebration a racer's own finish throws up, or the standings a race of
- * one who did not finish ends on.
+ * A screen of the game, and what it holds: the name asked for at the door;
+ * the list of the server's games, with a race playing behind it; the room of
+ * one; the world being driven; the celebration a racer's own finish throws
+ * up, with the standings that go under it once they come; or the standings a
+ * race of one who did not finish ends on.
  */
-export type Screen = 'name' | 'start' | 'room' | 'drive' | 'finish' | 'standings'
+export type Page =
+  | { readonly kind: 'name' }
+  | { readonly kind: 'start' }
+  | { readonly kind: 'room' }
+  | { readonly kind: 'drive' }
+  | { readonly kind: 'finish'; readonly came: FinishState; readonly standings: readonly Standing[] | null }
+  | { readonly kind: 'standings'; readonly standings: readonly Standing[] }
+
+/** Which screen is up: one at a time, from the name asked for at the door to the standings a race ends on. */
+export type Screen = Page['kind']
 
 /** What the player wants: who they go by, what they drive, and the game they are in, `0` for none. */
 export interface Choice {
@@ -38,9 +48,10 @@ export interface PortalTrip {
 }
 
 /**
- * One way of being on a map. Modes own their camera and whatever they add to
- * the scene; the shell owns the renderer, the lights and the terrain itself.
- * Nothing here is an accessor: every answer is asked for with a method.
+ * One way of being on a map, as far as it is seen: it owns its camera and
+ * whatever it adds to the scene; the shell owns the renderer, the lights and
+ * the terrain itself. The world looked over, the showroom turntable and a
+ * drive are all of these.
  */
 export interface ModeView {
   readonly camera: THREE.PerspectiveCamera
@@ -49,45 +60,53 @@ export interface ModeView {
   resize(aspect: number): void
   /** `active` is false while a screen is up over the top and the player is not driving. */
   update(dt: number, active: boolean): void
-  /** The game's tick, the same on every mirror, for whatever on the island keeps time by it. */
-  tick?(): number
   /** Draw itself, if it is not simply its scene through its camera. */
   render?(renderer: THREE.WebGLRenderer): void
-  /** What the HUD should say of the mode; a mode with no one driving has nothing to say. */
-  hud?(): HudState | null
-  /** The island being driven. */
-  readonly map?: World
-  /** Where the player is. */
-  position?(): Vec3
+  dispose(): void
+}
+
+/**
+ * A mode the game goes on in, whether or not anyone is driving it: it keeps
+ * the game's clock, and its connection to the server may be lost under it.
+ * The drive's own is one, and so is a race looked on at.
+ */
+export interface LiveMode extends ModeView {
+  /** The game's tick, the same on every mirror, for whatever on the island keeps time by it. */
+  tick(): number
+  /** Why the connection to the server was lost, if it has been, for the world to be joined again. */
+  lost(): string | null
+}
+
+/**
+ * A live mode with this player's own car in it: what the HUD says of the
+ * drive, and what the shell reads of how the race is going, each at the
+ * moment it is asked for. Nothing here is an accessor: every answer is asked
+ * for with a method.
+ */
+export interface DriveMode extends LiveMode {
+  /** What the HUD should say of the drive; nothing while it has nothing to say. */
+  hud(): HudState | null
   /** The portal the player has driven through since last asked, or -1: in free drive, the shell picks where it leads. */
-  portal?(): number
+  portal(): number
   /** Where a race's next portal on the course leads, once the car is through it; nothing off the course. */
-  trip?(): PortalTrip | null
+  trip(): PortalTrip | null
   /** How the race ended, once it has, for the standings; nothing while it is on. */
-  standings?(): readonly Standing[] | null
+  standings(): readonly Standing[] | null
   /**
    * How the player's own racer came, from the moment it comes home: for the
    * celebration; nothing while it races, or in a free drive.
    */
-  finished?(): FinishState | null
-  /** Why the connection to the server was lost, if it has been, for the world to be joined again. */
-  lost?(): string | null
-  /** Put the player into this vehicle, where they are; a mode with no one driving has none. */
-  changeVehicle?(profile: VehicleProfileId): void
-  dispose(): void
+  finished(): FinishState | null
 }
 
-/** Everything a mode is made with: whose it is, where, and the world it is on. */
-export interface PlayRequest {
+/**
+ * What every mode is made with, whatever it is for: the scene it draws into,
+ * the server it talks to, and the world it is put in, made or on its way.
+ */
+export interface ModeRequest {
   scene: THREE.Scene
   /** The game server. */
   url: string
-  game: number
-  /** The world to drive, by its id. */
-  world: number
-  /** The portal to arrive out of, or `NO_ARRIVAL` to start from the beginning of the world. */
-  arrival: number
-  driver: LocalDriver
   /**
    * The world with this id, made or on its way; `keep` names the portals a race's world keeps,
    * or `null` for every portal it has. The same world again is the same world.
@@ -95,6 +114,16 @@ export interface PlayRequest {
   mapFor(world: number, keep: readonly number[] | null): Promise<World>
   sound: Sound
   sun: Sun
+}
+
+/** Everything a drive is made with: whose it is, where, and the world it is on. */
+export interface PlayRequest extends ModeRequest {
+  game: number
+  /** The world to drive, by its id. */
+  world: number
+  /** The portal to arrive out of, or `NO_ARRIVAL` to start from the beginning of the world. */
+  arrival: number
+  driver: LocalDriver
 }
 
 /**
@@ -107,9 +136,10 @@ export interface ShellModes {
   showroom(sound: Sound): ShowroomView
   /** An island drawn flat, 2 wide by 1 high, for a game's thumbnail on the start screen. */
   picture(world: number, pixels: number): Promise<HTMLCanvasElement>
-  play(request: PlayRequest): Promise<ModeView>
+  /** Join a game's world with a car of one's own in it. */
+  play(request: PlayRequest): Promise<DriveMode>
   /** Look on at a game's world without a car of one's own in it. */
-  watch(request: WatchRequest): Promise<ModeView>
+  watch(request: WatchRequest): Promise<LiveMode>
 }
 
 /**
@@ -117,20 +147,10 @@ export interface ShellModes {
  * the world to look on at, and the world itself. A watcher takes no seat and
  * sends nothing; it follows whichever racer leads.
  */
-export interface WatchRequest {
-  scene: THREE.Scene
-  /** The game server. */
-  url: string
+export interface WatchRequest extends ModeRequest {
   game: number
   /** The world to watch, by its id. */
   world: number
-  /**
-   * The world with this id, made or on its way; `keep` names the portals a race's world keeps,
-   * or `null` for every portal it has. The same world again is the same world.
-   */
-  mapFor(world: number, keep: readonly number[] | null): Promise<World>
-  sound: Sound
-  sun: Sun
 }
 
 /** What the HUD shows of a mode: a title always, and the driving gauges when someone is driving. */
